@@ -1,0 +1,212 @@
+@startuml ResearchFlow Sequence Diagram
+!theme blueprint
+
+title ResearchFlow - Complete Data Flow Sequence
+
+actor Researcher
+participant "Researcher Portal\n(Streamlit UI)" as UI
+participant "Orchestrator" as Orch
+participant "Workflow Engine" as WF
+participant "Requirements Agent" as RA
+participant "Claude API" as Claude
+participant "Phenotype Agent" as PA
+participant "SQL Generator" as SQL
+participant "Calendar Agent" as CA
+participant "Extraction Agent" as EA
+participant "QA Agent" as QA
+participant "Delivery Agent" as DA
+database "Database" as DB
+database "Clinical Data\nWarehouse" as CDW
+
+== Phase 1: Request Submission ==
+
+Researcher -> UI: Enter request:\n"I need clinical notes for\nheart failure patients in 2024"
+activate UI
+
+UI -> Orch: process_new_request(\nresearcher_request,\nresearcher_info)
+activate Orch
+
+Orch -> WF: Initialize workflow
+activate WF
+WF -> DB: Save ResearchRequest\nState: NEW_REQUEST
+WF --> Orch: request_id
+deactivate WF
+
+Orch -> RA: route_task(\ntask='gather_requirements')
+deactivate Orch
+
+== Phase 2: Requirements Gathering (LLM) ==
+
+activate RA
+RA -> Claude: extract_requirements(\nconversation_history)
+activate Claude
+Claude --> RA: {\n  extracted_requirements,\n  completeness_score: 0.85,\n  ready_for_submission: true\n}
+deactivate Claude
+
+RA -> DB: Save RequirementsData:\n- inclusion_criteria\n- data_elements\n- time_period\n- phi_level
+RA --> Orch: {\n  requirements_complete: true,\n  next_agent: 'phenotype_agent'\n}
+deactivate RA
+
+note right of RA
+  State: REQUIREMENTS_GATHERING
+  ↓
+  State: REQUIREMENTS_COMPLETE
+end note
+
+== Phase 3: Phenotype Validation ==
+
+Orch -> PA: route_task(\ntask='validate_feasibility')
+activate PA
+
+PA -> SQL: generate_phenotype_sql(\nrequirements)
+activate SQL
+SQL --> PA: SELECT COUNT(*)\nFROM patient p\nWHERE EXISTS (\n  SELECT 1 FROM condition c\n  WHERE c.patient_id = p.id\n  AND c.code LIKE '%heart failure%'\n)
+deactivate SQL
+
+PA -> CDW: Execute COUNT query
+activate CDW
+CDW --> PA: estimated_count = 187
+deactivate CDW
+
+PA -> CDW: Check data availability
+activate CDW
+CDW --> PA: {\n  clinical_notes: 95%,\n  overall: 95%\n}
+deactivate CDW
+
+PA -> DB: Save FeasibilityReport:\n- feasible: true\n- estimated_size: 187\n- phenotype_sql
+
+PA --> Orch: {\n  feasible: true,\n  feasibility_report,\n  next_agent: 'calendar_agent'\n}
+deactivate PA
+
+note right of PA
+  State: FEASIBILITY_VALIDATION
+  ↓
+  State: FEASIBLE
+end note
+
+== Phase 4: Calendar Scheduling ==
+
+Orch -> CA: route_task(\ntask='schedule_kickoff')
+activate CA
+
+CA -> CA: identify_stakeholders()
+CA -> CA: find_common_availability()
+CA -> CA: generate_meeting_agenda()
+
+CA --> Orch: {\n  meeting_scheduled: true,\n  meeting_details,\n  next_agent: 'extraction_agent'\n}
+deactivate CA
+
+note right of CA
+  State: SCHEDULE_KICKOFF
+  ↓
+  State: KICKOFF_COMPLETE
+end note
+
+== Phase 5: Data Extraction ==
+
+Orch -> EA: route_task(\ntask='extract_data')
+activate EA
+
+EA -> CDW: Execute phenotype SQL\n(get patient cohort)
+activate CDW
+CDW --> EA: 187 patients:\n[{patient_id, birthDate, ...}]
+deactivate CDW
+
+EA -> CDW: Extract clinical_notes\nfor 187 patients
+activate CDW
+CDW --> EA: 523 clinical notes
+deactivate CDW
+
+EA -> EA: apply_deidentification(\nphi_level='de-identified')
+EA -> EA: format_data(\nformat='CSV')
+
+EA -> DB: Save extraction metadata
+
+EA --> Orch: {\n  extraction_complete: true,\n  data_package: {\n    cohort: 187 patients,\n    clinical_notes: 523 records\n  },\n  next_agent: 'qa_agent'\n}
+deactivate EA
+
+note right of EA
+  State: DATA_EXTRACTION
+  ↓
+  State: EXTRACTION_COMPLETE
+end note
+
+== Phase 6: Quality Assurance ==
+
+Orch -> QA: route_task(\ntask='validate_data')
+activate QA
+
+QA -> QA: check_completeness()
+note right: All requested\ndata elements present
+
+QA -> QA: check_data_quality()
+note right: Missing rate: 5%\nNo duplicates
+
+QA -> QA: validate_deidentification()
+note right: No PHI detected\nPatient IDs masked
+
+QA -> QA: validate_cohort()
+note right: 187 patients\n(within 15% of estimate)
+
+QA -> DB: Save QA report
+
+QA --> Orch: {\n  overall_status: 'passed',\n  qa_report: {\n    checks: 4 passed,\n    issues: 0 critical\n  },\n  next_agent: 'delivery_agent'\n}
+deactivate QA
+
+note right of QA
+  State: QA_VALIDATION
+  ↓
+  State: QA_PASSED
+end note
+
+== Phase 7: Data Delivery ==
+
+Orch -> DA: route_task(\ntask='deliver_data')
+activate DA
+
+DA -> DA: generate_data_dictionary()
+DA -> DA: document_extraction_methods()
+DA -> DA: generate_citation_info()
+
+DA -> DA: package_data(\nformat='CSV')
+
+DA -> DA: upload_to_secure_storage()
+note right: Location:\ns3://research-data/\nREQ-20241006-ABC123/
+
+DA -> DA: send_notification(\nemail=researcher)
+
+DA -> DB: Save DataDelivery:\n- delivery_location\n- cohort_size: 187\n- notification_sent: true
+
+DA --> Orch: {\n  delivered: true,\n  delivery_location,\n  next_agent: null\n}
+deactivate DA
+
+note right of DA
+  State: DATA_DELIVERY
+  ↓
+  State: DELIVERED
+  ↓
+  State: COMPLETE
+end note
+
+== Phase 8: Completion ==
+
+Orch -> WF: complete_workflow(\nstate='COMPLETE')
+activate WF
+WF -> DB: Update ResearchRequest:\n- completed_at\n- final_state: 'delivered'
+deactivate WF
+
+Orch --> UI: Workflow complete\nData ready for download
+deactivate Orch
+
+UI --> Researcher: ✅ Your data is ready!\nCohort: 187 patients\nDownload: [Link]
+deactivate UI
+
+note over Researcher, DB
+  **Total Time: ~23 minutes**
+  (vs 2-3 weeks manually)
+
+  **Cost: $150**
+  (vs $1,500 manually)
+end note
+
+@enduml

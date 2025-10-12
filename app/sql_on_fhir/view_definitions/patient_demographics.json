@@ -1,0 +1,125 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "Patient",
+  "name": "patient_demographics",
+  "title": "Patient Demographics",
+  "description": "Core demographic information for patients including identifiers, name, contact, and administrative data",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "Patient resource ID"
+        },
+        {
+          "name": "patient_id",
+          "path": "getResourceKey()",
+          "description": "Patient resource key"
+        },
+        {
+          "name": "active",
+          "path": "active",
+          "description": "Whether patient record is active"
+        },
+        {
+          "name": "birth_date",
+          "path": "birthDate",
+          "description": "Date of birth"
+        },
+        {
+          "name": "gender",
+          "path": "gender",
+          "description": "Administrative gender"
+        },
+        {
+          "name": "deceased",
+          "path": "deceased.exists()",
+          "description": "Whether patient is deceased"
+        },
+        {
+          "name": "deceased_date",
+          "path": "deceased",
+          "description": "Date of death if deceased"
+        }
+      ]
+    },
+    {
+      "forEach": "name.where(use = 'official').first()",
+      "column": [
+        {
+          "name": "family_name",
+          "path": "family",
+          "description": "Family/last name"
+        },
+        {
+          "name": "given_name",
+          "path": "given.first()",
+          "description": "First given/first name"
+        },
+        {
+          "name": "full_name",
+          "path": "given.first() + ' ' + family",
+          "description": "Full name"
+        }
+      ]
+    },
+    {
+      "forEachOrNull": "telecom.where(system = 'phone' and use = 'home').first()",
+      "column": [
+        {
+          "name": "phone",
+          "path": "value",
+          "description": "Home phone number"
+        }
+      ]
+    },
+    {
+      "forEachOrNull": "telecom.where(system = 'email').first()",
+      "column": [
+        {
+          "name": "email",
+          "path": "value",
+          "description": "Email address"
+        }
+      ]
+    },
+    {
+      "forEachOrNull": "address.where(use = 'home').first()",
+      "column": [
+        {
+          "name": "address_line",
+          "path": "line.first()",
+          "description": "Street address"
+        },
+        {
+          "name": "city",
+          "path": "city",
+          "description": "City"
+        },
+        {
+          "name": "state",
+          "path": "state",
+          "description": "State/province"
+        },
+        {
+          "name": "postal_code",
+          "path": "postalCode",
+          "description": "Postal/ZIP code"
+        },
+        {
+          "name": "country",
+          "path": "country",
+          "description": "Country"
+        }
+      ]
+    }
+  ],
+  "where": [
+    {
+      "path": "active = true or active.exists().not()",
+      "description": "Include active or unknown status patients"
+    }
+  ]
+}

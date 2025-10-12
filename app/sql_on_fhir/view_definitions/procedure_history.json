@@ -1,0 +1,155 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "Procedure",
+  "name": "procedure_history",
+  "title": "Procedure History",
+  "description": "Patient procedures including surgeries, therapeutic procedures, and diagnostic procedures",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "Procedure resource ID"
+        },
+        {
+          "name": "procedure_id",
+          "path": "getResourceKey()",
+          "description": "Procedure resource key"
+        },
+        {
+          "name": "patient_id",
+          "path": "subject.reference.replace('Patient/', '')",
+          "description": "Patient ID"
+        },
+        {
+          "name": "status",
+          "path": "status",
+          "description": "Procedure status (completed, in-progress, etc.)"
+        },
+        {
+          "name": "category",
+          "path": "category.coding.display.first()",
+          "description": "Procedure category"
+        },
+        {
+          "name": "cpt_code",
+          "path": "code.coding.where(system = 'http://www.ama-assn.org/go/cpt').code.first()",
+          "description": "CPT procedure code"
+        },
+        {
+          "name": "cpt_display",
+          "path": "code.coding.where(system = 'http://www.ama-assn.org/go/cpt').display.first()",
+          "description": "CPT procedure description"
+        },
+        {
+          "name": "snomed_code",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').code.first()",
+          "description": "SNOMED CT procedure code"
+        },
+        {
+          "name": "snomed_display",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').display.first()",
+          "description": "SNOMED CT procedure description"
+        },
+        {
+          "name": "code_text",
+          "path": "code.text",
+          "description": "Human-readable procedure text"
+        },
+        {
+          "name": "performed_datetime",
+          "path": "performed.ofType(dateTime)",
+          "description": "When procedure was performed"
+        },
+        {
+          "name": "performed_period_start",
+          "path": "performed.ofType(Period).start",
+          "description": "Start of procedure period"
+        },
+        {
+          "name": "performed_period_end",
+          "path": "performed.ofType(Period).end",
+          "description": "End of procedure period"
+        },
+        {
+          "name": "encounter_id",
+          "path": "encounter.reference.replace('Encounter/', '')",
+          "description": "Associated encounter ID"
+        },
+        {
+          "name": "location_id",
+          "path": "location.reference.replace('Location/', '')",
+          "description": "Where procedure was performed"
+        },
+        {
+          "name": "outcome_text",
+          "path": "outcome.text",
+          "description": "Procedure outcome"
+        },
+        {
+          "name": "recorded_date",
+          "path": "recorded",
+          "description": "When procedure was recorded"
+        },
+        {
+          "name": "recorder_id",
+          "path": "recorder.reference",
+          "description": "Who recorded the procedure"
+        }
+      ]
+    },
+    {
+      "forEach": "performer",
+      "column": [
+        {
+          "name": "performer_id",
+          "path": "actor.reference",
+          "description": "Who performed the procedure"
+        },
+        {
+          "name": "performer_function",
+          "path": "function.coding.display.first()",
+          "description": "Performer role/function"
+        }
+      ]
+    },
+    {
+      "forEach": "reasonCode",
+      "column": [
+        {
+          "name": "reason_code",
+          "path": "coding.code.first()",
+          "description": "Reason code for procedure"
+        },
+        {
+          "name": "reason_display",
+          "path": "coding.display.first()",
+          "description": "Reason description"
+        }
+      ]
+    },
+    {
+      "forEach": "bodySite",
+      "column": [
+        {
+          "name": "body_site_code",
+          "path": "coding.where(system = 'http://snomed.info/sct').code.first()",
+          "description": "Body site SNOMED code"
+        },
+        {
+          "name": "body_site_display",
+          "path": "coding.where(system = 'http://snomed.info/sct').display.first()",
+          "description": "Body site description"
+        }
+      ]
+    }
+  ],
+  "where": [
+    {
+      "path": "status in ('completed' | 'in-progress')",
+      "description": "Include completed and in-progress procedures"
+    }
+  ]
+}

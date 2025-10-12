@@ -1,0 +1,124 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "Observation",
+  "name": "observation_labs",
+  "title": "Laboratory Observations",
+  "description": "Laboratory test results with values, units, and reference ranges",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "Observation resource ID"
+        },
+        {
+          "name": "observation_id",
+          "path": "getResourceKey()",
+          "description": "Observation resource key"
+        },
+        {
+          "name": "patient_id",
+          "path": "subject.reference.replace('Patient/', '')",
+          "description": "Patient ID"
+        },
+        {
+          "name": "status",
+          "path": "status",
+          "description": "Observation status (final, preliminary, etc.)"
+        },
+        {
+          "name": "category",
+          "path": "category.coding.where(system = 'http://terminology.hl7.org/CodeSystem/observation-category').code.first()",
+          "description": "Observation category"
+        },
+        {
+          "name": "code",
+          "path": "code.coding.where(system = 'http://loinc.org').code.first()",
+          "description": "LOINC code"
+        },
+        {
+          "name": "code_display",
+          "path": "code.coding.where(system = 'http://loinc.org').display.first()",
+          "description": "LOINC display name"
+        },
+        {
+          "name": "code_text",
+          "path": "code.text",
+          "description": "Code text"
+        },
+        {
+          "name": "effective_datetime",
+          "path": "effective.ofType(dateTime)",
+          "description": "When observation was made"
+        },
+        {
+          "name": "effective_period_start",
+          "path": "effective.ofType(Period).start",
+          "description": "Start of observation period"
+        },
+        {
+          "name": "effective_period_end",
+          "path": "effective.ofType(Period).end",
+          "description": "End of observation period"
+        },
+        {
+          "name": "issued",
+          "path": "issued",
+          "description": "When observation was issued"
+        },
+        {
+          "name": "value_quantity",
+          "path": "value.ofType(Quantity).value",
+          "description": "Numeric value"
+        },
+        {
+          "name": "value_unit",
+          "path": "value.ofType(Quantity).unit",
+          "description": "Unit of measure"
+        },
+        {
+          "name": "value_code",
+          "path": "value.ofType(CodeableConcept).coding.code.first()",
+          "description": "Coded value"
+        },
+        {
+          "name": "value_string",
+          "path": "value.ofType(string)",
+          "description": "String value"
+        },
+        {
+          "name": "interpretation",
+          "path": "interpretation.coding.code.first()",
+          "description": "Interpretation code (H, L, N, etc.)"
+        },
+        {
+          "name": "ref_range_low",
+          "path": "referenceRange.first().low.value",
+          "description": "Reference range low value"
+        },
+        {
+          "name": "ref_range_high",
+          "path": "referenceRange.first().high.value",
+          "description": "Reference range high value"
+        },
+        {
+          "name": "performer_id",
+          "path": "performer.first().reference",
+          "description": "Who performed the observation"
+        }
+      ]
+    }
+  ],
+  "where": [
+    {
+      "path": "category.coding.where(system = 'http://terminology.hl7.org/CodeSystem/observation-category' and code = 'laboratory').exists()",
+      "description": "Only laboratory observations"
+    },
+    {
+      "path": "status in ('final' | 'amended' | 'corrected')",
+      "description": "Only finalized results"
+    }
+  ]
+}

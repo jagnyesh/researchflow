@@ -1,0 +1,354 @@
+@startuml ResearchFlow Architecture
+
+title ResearchFlow - Multi-Agent System Architecture & Data Flow\n(7 Agents with Human-in-Loop Approval Workflow)
+
+' Clean, readable theme with white background
+skinparam BackgroundColor white
+skinparam DefaultFontColor #333333
+skinparam ArrowColor #2C3E50
+skinparam ArrowFontColor #2C3E50
+
+' Define high-contrast readable colors
+skinparam component {
+    BackgroundColor<<Agent>> #AED6F1
+    BorderColor<<Agent>> #2E86C1
+    FontColor<<Agent>> #1A5490
+
+    BackgroundColor<<Orchestrator>> #F9E79F
+    BorderColor<<Orchestrator>> #D4AC0D
+    FontColor<<Orchestrator>> #7D6608∂
+
+    BackgroundColor<<Database>> #ABEBC6
+    BorderColor<<Database>> #27AE60
+    FontColor<<Database>> #186A3B 
+
+    BackgroundColor<<MCP>> #F5B7B1
+    BorderColor<<MCP>> #CB4335
+    FontColor<<MCP>> #7B241C
+
+    BackgroundColor<<UI>> #D7BDE2
+    BorderColor<<UI>> #8E44AD
+    FontColor<<UI>> #512E5F
+
+    BackgroundColor<<External>> #D5D8DC
+    BorderColor<<External>> #5D6D7E
+    FontColor<<External>> #2C3E50
+}
+
+' Database styling
+skinparam database {
+    BackgroundColor #ABEBC6
+    BorderColor #27AE60
+    FontColor #186A3B
+}
+
+' Package styling for better grouping
+skinparam package {
+    BackgroundColor #FDFEFE
+    BorderColor #85929E
+    FontColor #34495E
+    BorderThickness 2
+}
+
+' Note styling
+skinparam note {
+    BackgroundColor #FEF9E7
+    BorderColor #F39C12
+    FontColor #7D6608
+}
+
+' Legend styling
+skinparam legend {
+    BackgroundColor white
+    BorderColor #BDC3C7
+    FontColor #2C3E50
+}
+
+' UI Layer
+package "User Interfaces" {
+    component [Researcher Portal\n(Streamlit)] as ResearcherUI <<UI>>
+    component [Admin Dashboard\n(Streamlit)] as AdminUI <<UI>>
+}
+
+' Orchestration Layer
+package "Orchestration Layer" {
+    component [ResearchRequestOrchestrator\nA2A Communication] as Orchestrator <<Orchestrator>>
+    component [WorkflowEngine\n20 States] as WorkflowEngine <<Orchestrator>>
+}
+
+' Agent Layer
+package "Specialized Agents" {
+    component [Requirements Agent\nLLM Conversation] as ReqAgent <<Agent>>
+    component [Phenotype Agent\nSQL Generation] as PhenoAgent <<Agent>>
+    component [Calendar Agent\nMeeting Scheduling] as CalAgent <<Agent>>
+    component [Extraction Agent\nData Retrieval] as ExtAgent <<Agent>>
+    component [QA Agent\nQuality Validation] as QAAgent <<Agent>>
+    component [Delivery Agent\nData Packaging] as DelAgent <<Agent>>
+    component [Coordinator Agent\nApproval Orchestration] as CoordAgent <<Agent>>
+}
+
+' Services & Utilities
+package "Services & Utilities" {
+    component [LLM Client\nClaude API] as LLM
+    component [SQL Generator\nSQL-on-FHIR] as SQLGen
+    component [SQL Adapter\nDatabase Access] as SQLAdapter
+    component [Approval Service\nHuman-in-Loop] as ApprovalService
+}
+
+' MCP Infrastructure
+package "MCP Server Infrastructure" {
+    component [MCP Registry] as MCPRegistry <<MCP>>
+    component [Terminology Server\nSNOMED/LOINC/RxNorm] as TermServer <<MCP>>
+    component [Epic Clarity Server\n(Stub)] as EpicServer <<MCP>>
+    component [FHIR Server\n(Stub)] as FHIRServer <<MCP>>
+}
+
+' Database Layer
+package "Database Layer" {
+    database "PostgreSQL/SQLite" as DB <<Database>> {
+        component [ResearchRequest]
+        component [RequirementsData]
+        component [FeasibilityReport]
+        component [AgentExecution]
+        component [Escalation]
+        component [DataDelivery]
+        component [Approval]
+    }
+}
+
+' External Systems
+package "External Systems" {
+    component [Anthropic API\nClaude] as AnthropicAPI <<External>>
+    component [Clinical Data\nWarehouse] as CDW <<External>>
+    component [Email/Calendar\n(Future)] as EmailCal <<External>>
+}
+
+' ========================================
+' DATA FLOW - Request Submission
+' ========================================
+
+ResearcherUI -down-> Orchestrator : "1. Submit Request\n{researcher_request,\nresearcher_info}"
+note right of ResearcherUI
+  User enters:
+  - Name, Email, IRB
+  - Natural language request
+end note
+
+Orchestrator -down-> WorkflowEngine : "2. Initialize Workflow\nState: NEW_REQUEST"
+WorkflowEngine -right-> DB : "Save Request"
+
+Orchestrator -down-> ReqAgent : "3. Route to Requirements Agent\ntask: gather_requirements"
+
+' ========================================
+' DATA FLOW - Requirements Gathering
+' ========================================
+
+ReqAgent -right-> LLM : "4. Extract Requirements\n{conversation_history}"
+LLM -right-> AnthropicAPI : "API Call"
+AnthropicAPI -left-> LLM : "Structured JSON"
+LLM -left-> ReqAgent : "{requirements,\ncompleteness_score,\nnext_question}"
+
+ReqAgent -down-> TermServer : "5. Map Medical Concepts\nsearch_snomed/loinc"
+TermServer -up-> ReqAgent : "{codes, display}"
+
+ReqAgent -up-> Orchestrator : "6. Requirements Complete\n{structured_requirements,\nrequires_approval: true}"
+ReqAgent -right-> DB : "Save Requirements"
+
+Orchestrator -down-> ApprovalService : "6a. Create Approval Request\ntype: requirements"
+ApprovalService -right-> DB : "Save Approval"
+ApprovalService -up-> Orchestrator : "{approval_id}"
+
+Orchestrator -down-> CoordAgent : "6b. Notify Informatician\ntask: send_approval_email"
+CoordAgent -right-> EmailCal : "Email Notification"
+
+note right of ReqAgent
+  State: REQUIREMENTS_GATHERING
+  ↓
+  State: REQUIREMENTS_REVIEW
+  (HUMAN APPROVAL GATE)
+  ↓
+  State: REQUIREMENTS_COMPLETE
+end note
+
+' ========================================
+' DATA FLOW - Phenotype Validation
+' ========================================
+
+Orchestrator -down-> PhenoAgent : "7. Route to Phenotype Agent\ntask: validate_feasibility"
+
+PhenoAgent -right-> SQLGen : "8. Generate SQL\n{inclusion_criteria,\nexclusion_criteria}"
+SQLGen -down-> PhenoAgent : "SELECT ... SQL query"
+
+PhenoAgent -down-> SQLAdapter : "9. Execute COUNT query"
+SQLAdapter -down-> CDW : "SQL Query"
+CDW -up-> SQLAdapter : "{patient_count}"
+SQLAdapter -up-> PhenoAgent : "estimated_cohort_size"
+
+PhenoAgent -up-> Orchestrator : "10. Feasibility Report\n{feasible: true,\nestimated_count,\nrequires_approval: true}"
+PhenoAgent -left-> DB : "Save Feasibility"
+
+Orchestrator -down-> ApprovalService : "10a. Create SQL Approval\ntype: phenotype_sql (CRITICAL)"
+ApprovalService -right-> DB : "Save SQL Approval"
+ApprovalService -up-> Orchestrator : "{approval_id}"
+
+Orchestrator -down-> CoordAgent : "10b. Notify Informatician\ntask: send_sql_review_email"
+CoordAgent -right-> EmailCal : "CRITICAL: SQL Review Needed"
+
+note right of PhenoAgent
+  State: FEASIBILITY_VALIDATION
+  ↓
+  State: PHENOTYPE_REVIEW
+  (CRITICAL SQL APPROVAL GATE)
+  ↓
+  State: FEASIBLE (or NOT_FEASIBLE)
+end note
+
+' ========================================
+' DATA FLOW - Calendar & Extraction
+' ========================================
+
+Orchestrator -down-> CalAgent : "11. Route to Calendar Agent\ntask: schedule_kickoff"
+
+CalAgent -right-> EmailCal : "Find Availability\n(Future MCP)"
+CalAgent -up-> Orchestrator : "12. Meeting Scheduled\n{meeting_details,\nnext_agent: extraction_agent}"
+
+note right of CalAgent
+  State: SCHEDULE_KICKOFF
+  ↓
+  State: KICKOFF_COMPLETE
+end note
+
+Orchestrator -down-> ExtAgent : "13. Route to Extraction Agent\ntask: extract_data"
+
+ExtAgent -down-> SQLAdapter : "14. Execute Phenotype SQL"
+SQLAdapter -down-> CDW : "Get Patient Cohort"
+CDW -up-> SQLAdapter : "{patient_list}"
+
+ExtAgent -right-> EpicServer : "15. Extract Clinical Notes\n(via MCP)"
+ExtAgent -right-> FHIRServer : "16. Extract Lab Results\n(via MCP)"
+
+EpicServer -down-> CDW : "Query Data"
+FHIRServer -down-> CDW : "Query Data"
+
+CDW -up-> EpicServer : "Notes Data"
+CDW -up-> FHIRServer : "Lab Data"
+
+EpicServer -left-> ExtAgent : "{clinical_notes}"
+FHIRServer -left-> ExtAgent : "{lab_results}"
+
+ExtAgent -up-> Orchestrator : "17. Extraction Complete\n{data_package,\nnext_agent: qa_agent}"
+
+note right of ExtAgent
+  State: DATA_EXTRACTION
+  ↓
+  State: EXTRACTION_COMPLETE
+end note
+
+' ========================================
+' DATA FLOW - QA & Delivery
+' ========================================
+
+Orchestrator -down-> QAAgent : "18. Route to QA Agent\ntask: validate_data"
+
+QAAgent -down-> QAAgent : "19. Run QA Checks:\n- Completeness\n- Quality Metrics\n- PHI Scrubbing\n- Cohort Validation"
+
+QAAgent -up-> Orchestrator : "20. QA Report\n{status: passed,\nchecks: [],\nnext_agent: delivery_agent}"
+QAAgent -left-> DB : "Save QA Results"
+
+note right of QAAgent
+  State: QA_VALIDATION
+  ↓
+  State: QA_PASSED (or QA_FAILED)
+end note
+
+Orchestrator -down-> DelAgent : "21. Route to Delivery Agent\ntask: deliver_data"
+
+DelAgent -down-> DelAgent : "22. Package Data:\n- Data Dictionary\n- Documentation\n- Metadata"
+
+DelAgent -right-> EmailCal : "23. Send Notification\n(Future MCP)"
+DelAgent -left-> DB : "Save Delivery Record"
+
+DelAgent -up-> Orchestrator : "24. Delivered\n{delivery_location,\nworkflow: COMPLETE}"
+
+note right of DelAgent
+  State: DATA_DELIVERY
+  ↓
+  State: DELIVERED
+  ↓
+  State: COMPLETE
+end note
+
+' ========================================
+' DATA FLOW - Monitoring & Approval Review
+' ========================================
+
+Orchestrator -up-> AdminUI : "Real-time Status Updates"
+Orchestrator -up-> ResearcherUI : "Request Progress"
+
+AdminUI -down-> Orchestrator : "Get Agent Metrics"
+AdminUI -down-> ApprovalService : "Get Pending Approvals"
+ResearcherUI -down-> Orchestrator : "Get Request Status"
+
+ApprovalService -right-> DB : "Query Approvals"
+DB -up-> ApprovalService : "Approval List"
+ApprovalService -up-> AdminUI : "Pending Approvals"
+
+AdminUI -down-> ApprovalService : "Approve/Reject/Modify"
+ApprovalService -down-> Orchestrator : "Continue Workflow"
+
+DB -up-> AdminUI : "Escalations, Metrics"
+DB -up-> ResearcherUI : "Request Details"
+
+' ========================================
+' Error Handling & Escalation
+' ========================================
+
+note top of Orchestrator
+  **Error Handling & Approvals:**
+  1. Agent fails after 3 retries
+  2. Escalate to human review
+  3. Save to Escalation table
+  4. Show in Admin Dashboard
+  5. State → HUMAN_REVIEW
+
+  **Approval Workflow:**
+  1. Agent requests approval
+  2. Create approval record (DB)
+  3. Notify informatician/admin
+  4. Wait for human decision
+  5. Timeout → auto-escalate
+  6. Approved → continue workflow
+  7. Rejected → return to agent
+end note
+
+' ========================================
+' Legend
+' ========================================
+
+legend right
+  |<#AED6F1> Agent |
+  |<#F9E79F> Orchestrator |
+  |<#ABEBC6> Database |
+  |<#F5B7B1> MCP Server |
+  |<#D7BDE2> User Interface |
+  |<#D5D8DC> External System |
+
+  **Data Flow Sequence:**
+  1-6:   Requirements Gathering (LLM)
+  6a-6b: Requirements Approval Gate
+  7-10:  Phenotype Validation (SQL)
+  10a-10b: SQL Approval Gate (CRITICAL)
+  11-12: Calendar Scheduling
+  13-17: Data Extraction (Multi-source)
+  18-20: Quality Assurance
+  21-24: Data Delivery
+
+  **Human Approval Gates:**
+  - Requirements Review (24h timeout)
+  - SQL Review (24h timeout, CRITICAL)
+  - Extraction Approval (12h timeout)
+  - QA Review (24h timeout)
+  - Scope Changes (48h timeout)
+endlegend
+
+@enduml

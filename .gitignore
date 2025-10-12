@@ -1,0 +1,209 @@
+# ============================================
+# Python
+# ============================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ============================================
+# Virtual Environments
+# ============================================
+.venv/
+venv/
+ENV/
+env/
+.virtualenv
+
+# ============================================
+# Testing & Coverage
+# ============================================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+
+# ============================================
+# Type Checking
+# ============================================
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+
+# ============================================
+# IDEs & Editors
+# ============================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# ============================================
+# Operating System Files
+# ============================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ============================================
+# Environment & Secrets
+# ============================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets.yaml
+credentials.json
+
+# ============================================
+# Databases
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+dev.db
+test.db
+
+# ============================================
+# Logs
+# ============================================
+*.log
+logs/
+*.log.*
+log/
+
+# ============================================
+# Documentation
+# ============================================
+docs/_build/
+docs/.doctrees/
+site/
+.mkdocs/
+
+# ============================================
+# Jupyter Notebooks
+# ============================================
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# ============================================
+# Project Specific
+# ============================================
+# Streamlit
+.streamlit/secrets.toml
+
+# Local data directory
+data/
+local_data/
+temp/
+tmp/
+
+# Instance folder
+instance/
+
+# Generated files
+generated/
+output/
+
+# Test output
+test_output/
+test-results/
+
+# ============================================
+# Distribution / Packaging
+# ============================================
+*.tar.gz
+*.whl
+*.zip
+
+# ============================================
+# Backup files
+# ============================================
+*.bak
+*.backup
+*.old
+*.orig
+
+# ============================================
+# CI/CD
+# ============================================
+.github/workflows/*.tmp
+
+# ============================================
+# FastAPI
+# ============================================
+*.pid
+celerybeat-schedule

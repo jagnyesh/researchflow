@@ -1,0 +1,114 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validate-diagrams:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install PlantUML
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y plantuml
+
+    - name: Validate PlantUML diagrams
+      run: |
+        plantuml -checkonly diagrams/*.puml
+
+    - name: Generate diagram PNGs
+      run: |
+        plantuml diagrams/*.puml
+
+    - name: Upload generated diagrams
+      uses: actions/upload-artifact@v3
+      with:
+        name: diagrams
+        path: diagrams/*.png
+
+  check-documentation:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for broken links in markdown
+      uses: gaurav-nelson/github-action-markdown-link-check@v1
+      with:
+        use-quiet-mode: 'yes'
+        use-verbose-mode: 'yes'
+        config-file: '.github/markdown-link-check-config.json'
+      continue-on-error: true
+
+    - name: Validate README.md structure
+      run: |
+        # Check for required sections
+        grep -q "## Table of Contents" README.md || echo "Missing: Table of Contents"
+        grep -q "## Installation" README.md || echo "Missing: Installation"
+        grep -q "## Usage" README.md || echo "Missing: Usage"
+        grep -q "## Contributing" README.md || echo "Missing: Contributing"
+        grep -q "## License" README.md || echo "Missing: License"
+
+  api-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r config/requirements.txt
+
+    - name: Generate OpenAPI schema
+      run: |
+        python -c "from app.main import app; import json; print(json.dumps(app.openapi()))" > openapi.json
+
+    - name: Validate OpenAPI schema
+      run: |
+        pip install openapi-spec-validator
+        openapi-spec-validator openapi.json
+
+    - name: Upload OpenAPI schema
+      uses: actions/upload-artifact@v3
+      with:
+        name: openapi-schema
+        path: openapi.json
+
+  check-docstrings:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install pydocstyle
+      run: |
+        python -m pip install --upgrade pip
+        pip install pydocstyle
+
+    - name: Check docstring coverage
+      run: |
+        pydocstyle app/ --count || true
+      continue-on-error: true

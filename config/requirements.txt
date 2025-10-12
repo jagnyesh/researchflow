@@ -1,0 +1,23 @@
+fastapi==0.95.2
+uvicorn[standard]==0.22.0
+httpx==0.24.1
+sqlalchemy[asyncio]==2.0.18
+asyncpg==0.28.0
+aiosqlite==0.19.0
+pydantic==1.10.12
+python-jose==3.3.0
+pytest==7.4.2
+pytest-asyncio==0.21.1
+alembic==1.11.1
+anthropic==0.39.0
+streamlit==1.29.0
+python-dotenv==1.0.0
+
+# SQL-on-FHIR v2 dependencies
+fhirpathpy==2.1.0
+tenacity==8.2.3
+
+# Research Notebook dependencies
+pandas==2.0.3
+plotly==5.14.1
+scipy==1.11.4

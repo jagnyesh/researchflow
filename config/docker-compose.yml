@@ -1,0 +1,105 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/fhir_db
+      - A2A_JWT_SECRET=supersecret
+      - FHIR_SERVER_URL=http://hapi-fhir:8080/fhir
+    depends_on:
+      - db
+      - hapi-fhir
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: fhir_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  # HAPI FHIR Server with PostgreSQL backend
+  hapi-fhir:
+    image: hapiproject/hapi:latest
+    container_name: hapi-fhir-server
+    ports:
+      - "8081:8080"
+    environment:
+      # Database configuration
+      spring.datasource.url: jdbc:postgresql://hapi-db:5432/hapi
+      spring.datasource.username: hapi
+      spring.datasource.password: hapi
+      spring.datasource.driverClassName: org.postgresql.Driver
+      spring.jpa.properties.hibernate.dialect: ca.uhn.fhir.jpa.model.dialect.HapiFhirPostgres94Dialect
+
+      # FHIR version
+      hapi.fhir.fhir_version: R4
+
+      # Server configuration
+      hapi.fhir.server_address: http://localhost:8081/fhir
+      hapi.fhir.allow_external_references: "true"
+      hapi.fhir.allow_multiple_delete: "true"
+      hapi.fhir.reuse_cached_search_results_millis: 60000
+
+      # Performance tuning
+      hapi.fhir.max_page_size: 200
+      hapi.fhir.default_page_size: 20
+
+      # Enable SQL-on-FHIR support
+      hapi.fhir.bulk_export_enabled: "true"
+    depends_on:
+      - hapi-db
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/fhir/metadata || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # PostgreSQL database for HAPI FHIR
+  hapi-db:
+    image: postgres:15
+    container_name: hapi-postgres
+    environment:
+      POSTGRES_USER: hapi
+      POSTGRES_PASSWORD: hapi
+      POSTGRES_DB: hapi
+    volumes:
+      - hapi_postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  # Synthea synthetic data generator (run once to populate)
+  synthea:
+    image: conceptant/synthea-fhir:latest
+    container_name: synthea-generator
+    environment:
+      # Generate 100 patients
+      - POPULATION=100
+      # Target HAPI FHIR server
+      - FHIR_SERVER=http://hapi-fhir:8080/fhir
+      # State to generate data for
+      - STATE=Massachusetts
+      # Seed for reproducible data
+      - SEED=12345
+    depends_on:
+      hapi-fhir:
+        condition: service_healthy
+    profiles:
+      - synthea  # Only run when explicitly requested
+
+  # Legacy mock FHIR server (kept for backward compatibility)
+  mock-fhir:
+    image: mitre/clinical_ig_mock_server:latest
+    ports:
+      - "8080:8080"
+    profiles:
+      - legacy  # Only run when explicitly requested
+
+volumes:
+  postgres_data:
+  hapi_postgres_data:

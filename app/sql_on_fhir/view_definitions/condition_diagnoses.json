@@ -1,0 +1,115 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "Condition",
+  "name": "condition_diagnoses",
+  "title": "Patient Conditions and Diagnoses",
+  "description": "Patient conditions, diagnoses, and problems with clinical status and coding",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "Condition resource ID"
+        },
+        {
+          "name": "condition_id",
+          "path": "getResourceKey()",
+          "description": "Condition resource key"
+        },
+        {
+          "name": "patient_id",
+          "path": "subject.reference.replace('Patient/', '')",
+          "description": "Patient ID"
+        },
+        {
+          "name": "clinical_status",
+          "path": "clinicalStatus.coding.code.first()",
+          "description": "Clinical status (active, resolved, etc.)"
+        },
+        {
+          "name": "verification_status",
+          "path": "verificationStatus.coding.code.first()",
+          "description": "Verification status (confirmed, provisional, etc.)"
+        },
+        {
+          "name": "category",
+          "path": "category.coding.code.first()",
+          "description": "Condition category (problem-list-item, encounter-diagnosis, etc.)"
+        },
+        {
+          "name": "severity",
+          "path": "severity.coding.display.first()",
+          "description": "Condition severity (severe, moderate, mild)"
+        },
+        {
+          "name": "icd10_code",
+          "path": "code.coding.where(system = 'http://hl7.org/fhir/sid/icd-10-cm').code.first()",
+          "description": "ICD-10-CM diagnosis code"
+        },
+        {
+          "name": "icd10_display",
+          "path": "code.coding.where(system = 'http://hl7.org/fhir/sid/icd-10-cm').display.first()",
+          "description": "ICD-10-CM diagnosis description"
+        },
+        {
+          "name": "snomed_code",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').code.first()",
+          "description": "SNOMED CT code"
+        },
+        {
+          "name": "snomed_display",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').display.first()",
+          "description": "SNOMED CT description"
+        },
+        {
+          "name": "code_text",
+          "path": "code.text",
+          "description": "Human-readable condition text"
+        },
+        {
+          "name": "onset_datetime",
+          "path": "onset.ofType(dateTime)",
+          "description": "When condition began"
+        },
+        {
+          "name": "onset_age",
+          "path": "onset.ofType(Age).value",
+          "description": "Age at onset"
+        },
+        {
+          "name": "onset_period_start",
+          "path": "onset.ofType(Period).start",
+          "description": "Start of onset period"
+        },
+        {
+          "name": "abatement_datetime",
+          "path": "abatement.ofType(dateTime)",
+          "description": "When condition resolved"
+        },
+        {
+          "name": "recorded_date",
+          "path": "recordedDate",
+          "description": "When condition was recorded"
+        },
+        {
+          "name": "recorder_id",
+          "path": "recorder.reference",
+          "description": "Who recorded the condition"
+        },
+        {
+          "name": "encounter_id",
+          "path": "encounter.reference.replace('Encounter/', '')",
+          "description": "Associated encounter ID"
+        }
+      ]
+    }
+  ],
+  "where": [
+    {
+      "path": "clinicalStatus.coding.code.where($this in ('active' | 'recurrence' | 'relapse' | 'resolved' | 'remission')).exists()",
+      "description": "Include active and resolved conditions"
+    }
+  ]
+}

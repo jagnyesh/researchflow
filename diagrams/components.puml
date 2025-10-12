@@ -1,0 +1,203 @@
+@startuml ResearchFlow Components
+!theme blueprint
+
+title ResearchFlow - Component Architecture\n(7 Agents with Human-in-Loop Approval Workflow)
+
+skinparam componentStyle rectangle
+
+' Define component colors
+skinparam component {
+    BackgroundColor<<Frontend>> LightBlue
+    BackgroundColor<<Agent>> Gold
+    BackgroundColor<<Core>> Orange
+    BackgroundColor<<Data>> LightGreen
+    BackgroundColor<<External>> LightGray
+}
+
+package "Frontend Layer" <<Frontend>> {
+    [Researcher Portal\n(Streamlit)] as ResearcherUI
+    [Admin Dashboard\n(Streamlit)] as AdminUI
+}
+
+package "Core Orchestration" <<Core>> {
+    [ResearchRequest\nOrchestrator] as Orchestrator
+    [Workflow Engine\n(State Machine)] as WorkflowEngine
+    [MCP Server\nRegistry] as MCPRegistry
+}
+
+package "Agent Layer" <<Agent>> {
+    [Requirements\nAgent] as Agent1
+    [Phenotype\nAgent] as Agent2
+    [Calendar\nAgent] as Agent3
+    [Extraction\nAgent] as Agent4
+    [QA\nAgent] as Agent5
+    [Delivery\nAgent] as Agent6
+    [Coordinator\nAgent] as Agent7
+}
+
+package "Utilities & Services" {
+    [LLM Client\n(Claude API)] as LLM
+    [SQL Generator\n(SQL-on-FHIR)] as SQLGen
+    [SQL Adapter\n(Database Access)] as SQLAdapter
+    [Approval Service\n(Human-in-Loop)] as ApprovalService
+}
+
+package "MCP Servers" {
+    [Terminology\nServer] as TermServer
+    [Epic Clarity\nServer (Stub)] as EpicServer
+    [FHIR\nServer (Stub)] as FHIRServer
+}
+
+package "Data Layer" <<Data>> {
+    database "PostgreSQL/SQLite" as DB {
+        [ResearchRequest\nTable] as T1
+        [RequirementsData\nTable] as T2
+        [FeasibilityReport\nTable] as T3
+        [AgentExecution\nTable] as T4
+        [Escalation\nTable] as T5
+        [DataDelivery\nTable] as T6
+        [Approval\nTable] as T7
+    }
+}
+
+package "External Systems" <<External>> {
+    [Anthropic API\n(Claude)] as Claude
+    [Clinical Data\nWarehouse] as CDW
+}
+
+' ============================================
+' CONNECTIONS - User Interface Layer
+' ============================================
+
+ResearcherUI -down-> Orchestrator : Submit Requests\nGet Status
+AdminUI -down-> Orchestrator : Monitor System\nView Metrics
+AdminUI -down-> DB : Query Escalations\nView Analytics
+
+' ============================================
+' CONNECTIONS - Orchestrator to Agents
+' ============================================
+
+Orchestrator -down-> Agent1 : Route Tasks (A2A)
+Orchestrator -down-> Agent2 : Route Tasks (A2A)
+Orchestrator -down-> Agent3 : Route Tasks (A2A)
+Orchestrator -down-> Agent4 : Route Tasks (A2A)
+Orchestrator -down-> Agent5 : Route Tasks (A2A)
+Orchestrator -down-> Agent6 : Route Tasks (A2A)
+Orchestrator -down-> Agent7 : Route Tasks (A2A)
+
+Orchestrator -right-> WorkflowEngine : Determine Next Step
+WorkflowEngine -down-> DB : Save State
+
+' ============================================
+' CONNECTIONS - Agents to Services
+' ============================================
+
+Agent1 -down-> LLM : Extract Requirements
+Agent1 -down-> TermServer : Map Concepts
+
+Agent2 -down-> SQLGen : Generate SQL
+Agent2 -down-> SQLAdapter : Execute Queries
+
+Agent4 -down-> SQLAdapter : Extract Data
+Agent4 -down-> EpicServer : Get Clinical Notes
+Agent4 -down-> FHIRServer : Get Lab Results
+
+' ============================================
+' CONNECTIONS - Approval Workflow
+' ============================================
+
+AdminUI -down-> ApprovalService : Get Pending\nApprove/Reject
+Orchestrator -down-> ApprovalService : Create Approval
+ApprovalService -down-> T7 : Save Approvals
+ApprovalService -up-> Orchestrator : Continue Workflow
+
+' ============================================
+' CONNECTIONS - Services to External
+' ============================================
+
+LLM -down-> Claude : API Calls
+SQLAdapter -down-> CDW : SQL Queries
+EpicServer -down-> CDW : Data Access
+FHIRServer -down-> CDW : Data Access
+
+' ============================================
+' CONNECTIONS - MCP Registry
+' ============================================
+
+Orchestrator -right-> MCPRegistry : Get Server
+MCPRegistry -down-> TermServer : Register
+MCPRegistry -down-> EpicServer : Register
+MCPRegistry -down-> FHIRServer : Register
+
+' ============================================
+' CONNECTIONS - Database
+' ============================================
+
+Agent1 -down-> T2 : Save Requirements
+Agent2 -down-> T3 : Save Feasibility
+Agent5 -down-> DB : Save QA Results
+Agent6 -down-> T6 : Save Delivery
+
+Orchestrator -down-> T1 : Track Requests
+Orchestrator -down-> T4 : Log Executions
+Orchestrator -down-> T5 : Save Escalations
+
+' ============================================
+' NOTES
+' ============================================
+
+note right of Orchestrator
+  **Central Coordinator**
+  - A2A message routing
+  - Workflow state management
+  - Request tracking
+  - Error handling
+end note
+
+note bottom of Agent1
+  **Agent Responsibilities**
+
+  1. Requirements: LLM conversation
+  2. Phenotype: SQL generation
+  3. Calendar: Meeting scheduling
+  4. Extraction: Data retrieval
+  5. QA: Quality validation
+  6. Delivery: Data packaging
+  7. Coordinator: Approval orchestration
+end note
+
+note bottom of DB
+  **7 Database Tables**
+  - ResearchRequest (main)
+  - RequirementsData
+  - FeasibilityReport
+  - AgentExecution (logs)
+  - Escalation (human review)
+  - DataDelivery
+  - Approval (human-in-loop)
+end note
+
+note left of WorkflowEngine
+  **20 Workflow States**
+
+  new_request →
+  requirements_gathering →
+  requirements_review (APPROVAL) →
+  requirements_complete →
+  feasibility_validation →
+  phenotype_review (APPROVAL) →
+  feasible →
+  schedule_kickoff →
+  extraction_approval (APPROVAL) →
+  data_extraction →
+  qa_validation →
+  qa_review (APPROVAL) →
+  qa_passed →
+  data_delivery →
+  delivered →
+  complete
+
+  + scope_change (APPROVAL)
+end note
+
+@enduml

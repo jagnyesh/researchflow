@@ -1,0 +1,140 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "MedicationRequest",
+  "name": "medication_requests",
+  "title": "Medication Orders and Prescriptions",
+  "description": "Medication requests including prescriptions, orders, dosage, and timing",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "MedicationRequest resource ID"
+        },
+        {
+          "name": "medication_request_id",
+          "path": "getResourceKey()",
+          "description": "MedicationRequest resource key"
+        },
+        {
+          "name": "patient_id",
+          "path": "subject.reference.replace('Patient/', '')",
+          "description": "Patient ID"
+        },
+        {
+          "name": "status",
+          "path": "status",
+          "description": "Medication request status (active, completed, etc.)"
+        },
+        {
+          "name": "intent",
+          "path": "intent",
+          "description": "Intent (order, plan, proposal, etc.)"
+        },
+        {
+          "name": "priority",
+          "path": "priority",
+          "description": "Priority (routine, urgent, etc.)"
+        },
+        {
+          "name": "medication_code",
+          "path": "medication.ofType(CodeableConcept).coding.where(system = 'http://www.nlm.nih.gov/research/umls/rxnorm').code.first()",
+          "description": "RxNorm medication code"
+        },
+        {
+          "name": "medication_display",
+          "path": "medication.ofType(CodeableConcept).coding.where(system = 'http://www.nlm.nih.gov/research/umls/rxnorm').display.first()",
+          "description": "RxNorm medication name"
+        },
+        {
+          "name": "medication_text",
+          "path": "medication.ofType(CodeableConcept).text",
+          "description": "Medication text description"
+        },
+        {
+          "name": "authored_on",
+          "path": "authoredOn",
+          "description": "When request was authored"
+        },
+        {
+          "name": "requester_id",
+          "path": "requester.reference",
+          "description": "Who ordered the medication"
+        },
+        {
+          "name": "encounter_id",
+          "path": "encounter.reference.replace('Encounter/', '')",
+          "description": "Associated encounter ID"
+        },
+        {
+          "name": "dosage_text",
+          "path": "dosageInstruction.first().text",
+          "description": "Dosage instructions text"
+        },
+        {
+          "name": "dosage_route",
+          "path": "dosageInstruction.first().route.coding.display.first()",
+          "description": "Route of administration"
+        },
+        {
+          "name": "dosage_timing_frequency",
+          "path": "dosageInstruction.first().timing.repeat.frequency",
+          "description": "Dosage frequency"
+        },
+        {
+          "name": "dosage_timing_period",
+          "path": "dosageInstruction.first().timing.repeat.period",
+          "description": "Dosage period"
+        },
+        {
+          "name": "dosage_timing_period_unit",
+          "path": "dosageInstruction.first().timing.repeat.periodUnit",
+          "description": "Dosage period unit (d, h, etc.)"
+        },
+        {
+          "name": "dose_quantity",
+          "path": "dosageInstruction.first().doseAndRate.first().dose.ofType(Quantity).value",
+          "description": "Dose quantity"
+        },
+        {
+          "name": "dose_unit",
+          "path": "dosageInstruction.first().doseAndRate.first().dose.ofType(Quantity).unit",
+          "description": "Dose unit"
+        },
+        {
+          "name": "dispense_quantity",
+          "path": "dispenseRequest.quantity.value",
+          "description": "Quantity to dispense"
+        },
+        {
+          "name": "dispense_unit",
+          "path": "dispenseRequest.quantity.unit",
+          "description": "Dispense unit"
+        },
+        {
+          "name": "num_refills",
+          "path": "dispenseRequest.numberOfRepeatsAllowed",
+          "description": "Number of refills allowed"
+        },
+        {
+          "name": "validity_period_start",
+          "path": "dispenseRequest.validityPeriod.start",
+          "description": "Start of validity period"
+        },
+        {
+          "name": "validity_period_end",
+          "path": "dispenseRequest.validityPeriod.end",
+          "description": "End of validity period"
+        }
+      ]
+    }
+  ],
+  "where": [
+    {
+      "path": "status in ('active' | 'completed' | 'on-hold')",
+      "description": "Include active and completed medication requests"
+    }
+  ]
+}
