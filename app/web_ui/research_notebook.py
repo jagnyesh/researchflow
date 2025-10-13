@@ -1,14 +1,22 @@
 """
-Research Notebook - Interactive Query Interface
+Research Notebook - Conversational Research Workflow
 
-Jupyter notebook-style interface for natural language queries against FHIR data.
-Seamlessly translates queries to SQL-on-FHIR ViewDefinitions and displays results.
+Two-stage workflow:
+1. Feasibility Check (SQL-on-FHIR) - Fast, no PHI, counts only
+2. Data Extraction (Orchestrator) - Full workflow with approvals
+
+Features:
+- Conversational AI with intent detection
+- Summary statistics before extraction
+- Approval workflow integration
+- Real-time status tracking
 """
 
 import streamlit as st
 import asyncio
 import sys
 import os
+import httpx
 from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
@@ -19,68 +27,57 @@ load_dotenv()
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
-from app.services.query_interpreter import QueryInterpreter, QueryIntent
-from app.clients.analytics_client import AnalyticsClient, QueryResult
-from app.components.results_renderer import ResultsRenderer
-from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
-from app.utils.view_definition_sql import view_definition_to_sql
-
+from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
+from app.services.feasibility_service import FeasibilityService
+from app.services.query_interpreter import QueryInterpreter
+from app.components.approval_tracker import ApprovalTracker
 
 # Page config
 st.set_page_config(
-    page_title="ResearchFlow - Interactive Research Notebook",
-    page_icon="📊",
+    page_title="ResearchFlow - Interactive Research Assistant",
+    page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for better notebook styling
+# Custom CSS
 st.markdown("""
 <style>
-    /* Chat message styling - improved contrast */
-    [data-testid="stChatMessageContent"][data-testid*="user"] {
-        background-color: #e3f2fd !important;
-        border-radius: 10px;
-        padding: 12px;
-        margin: 5px 0;
-        border: 1px solid #90caf9;
+    .chat-message {
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
+        display: flex;
+        flex-direction: column;
     }
-
-    [data-testid="stChatMessageContent"][data-testid*="assistant"] {
-        background-color: #f5f5f5 !important;
-        border-radius: 10px;
-        padding: 12px;
-        margin: 5px 0;
-        border: 1px solid #e0e0e0;
+    .user-message {
+        background-color: #e3f2fd;
+        border-left: 5px solid #2196f3;
     }
-
-    /* Notebook cell styling */
-    .notebook-cell {
-        background-color: white;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
+    .assistant-message {
+        background-color: #f5f5f5;
+        border-left: 5px solid #4caf50;
+    }
+    .feasibility-card {
+        background-color: #fff;
+        border: 2px solid #1f77b4;
+        border-radius: 10px;
         padding: 20px;
         margin: 15px 0;
     }
-
-    /* Query code styling */
-    .query-code {
-        background-color: #f5f5f5;
-        border-left: 4px solid #1f77b4;
-        padding: 10px;
-        font-family: monospace;
-    }
-
-    /* SQL code block styling */
-    .sql-query-box {
-        background-color: #2e3440;
-        color: #d8dee9;
+    .warning-box {
+        background-color: #fff3cd;
+        border-left: 5px solid #ffc107;
         padding: 15px;
-        border-radius: 5px;
-        font-family: 'Courier New', monospace;
-        font-size: 13px;
-        overflow-x: auto;
         margin: 10px 0;
+        border-radius: 5px;
+    }
+    .success-box {
+        background-color: #d4edda;
+        border-left: 5px solid #28a745;
+        padding: 15px;
+        margin: 10px 0;
+        border-radius: 5px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -91,202 +88,317 @@ def initialize_session_state():
     if 'messages' not in st.session_state:
         st.session_state.messages = []
 
-    if 'notebook_cells' not in st.session_state:
-        st.session_state.notebook_cells = []
+    if 'conversation_manager' not in st.session_state:
+        st.session_state.conversation_manager = ConversationManager()
 
-    if 'cell_counter' not in st.session_state:
-        st.session_state.cell_counter = 0
+    if 'feasibility_service' not in st.session_state:
+        st.session_state.feasibility_service = FeasibilityService()
 
     if 'query_interpreter' not in st.session_state:
         st.session_state.query_interpreter = QueryInterpreter()
 
-    if 'analytics_client' not in st.session_state:
-        st.session_state.analytics_client = AnalyticsClient()
+    if 'approval_tracker' not in st.session_state:
+        st.session_state.approval_tracker = ApprovalTracker()
+
+    if 'conversation_state' not in st.session_state:
+        st.session_state.conversation_state = ConversationState.INITIAL
+
+    if 'pending_feasibility' not in st.session_state:
+        st.session_state.pending_feasibility = None
+
+    if 'pending_request_id' not in st.session_state:
+        st.session_state.pending_request_id = None
+
+    if 'last_query_intent' not in st.session_state:
+        st.session_state.last_query_intent = None
 
 
-async def process_query(user_query: str):
+async def handle_user_input(user_input: str):
     """
-    Process natural language query end-to-end
+    Handle user input with conversational flow
 
-    Steps:
-    1. Interpret query using LLM
-    2. Execute ViewDefinitions
-    3. Post-process and filter results
-    4. Display in notebook cell
+    Workflow:
+    1. Detect intent (greeting/query/confirmation/status)
+    2. Route to appropriate handler
+    3. Update conversation state
     """
-    # Increment cell counter
-    st.session_state.cell_counter += 1
-    cell_num = st.session_state.cell_counter
+    # Detect intent
+    intent = st.session_state.conversation_manager.detect_intent(user_input)
 
-    try:
-        # Step 1: Interpret query
-        with st.status("Interpreting query...", expanded=True) as status:
-            st.write("Analyzing natural language query...")
-            query_intent = await st.session_state.query_interpreter.interpret_query(user_query)
-            st.write(f"Identified ViewDefinitions: {', '.join(query_intent.view_definitions)}")
-            status.update(label="Query interpreted", state="complete")
+    # Handle based on intent
+    if intent == UserIntent.GREETING:
+        await handle_greeting()
 
-        # Step 2: Load ViewDefinitions and generate SQL representations
-        view_manager = ViewDefinitionManager()
-        sql_queries = {}
+    elif intent == UserIntent.HELP:
+        await handle_help()
 
-        for view_name in query_intent.view_definitions:
+    elif intent == UserIntent.STATUS_CHECK:
+        await handle_status_check()
+
+    elif intent == UserIntent.CONFIRMATION:
+        await handle_confirmation(user_input)
+
+    elif intent == UserIntent.QUERY:
+        await handle_query(user_input)
+
+    else:
+        # Unknown intent
+        response = "I'm not sure I understand. Type **'help'** to see what I can do."
+        st.session_state.messages.append({"role": "assistant", "content": response})
+
+
+async def handle_greeting():
+    """Handle greeting intent"""
+    introduction = st.session_state.conversation_manager.get_introduction()
+    st.session_state.messages.append({"role": "assistant", "content": introduction})
+    st.session_state.conversation_state = ConversationState.INITIAL
+
+
+async def handle_help():
+    """Handle help intent"""
+    help_message = st.session_state.conversation_manager.get_help_message()
+    st.session_state.messages.append({"role": "assistant", "content": help_message})
+
+
+async def handle_status_check():
+    """Handle status check intent"""
+    if st.session_state.pending_request_id:
+        request_id = st.session_state.pending_request_id
+
+        # Get status from API
+        async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                view_def = view_manager.load(view_name)
-                sql_repr = view_definition_to_sql(view_def, query_intent.search_params)
-                sql_queries[view_name] = sql_repr
-            except Exception as e:
-                st.warning(f"Could not load ViewDefinition '{view_name}': {e}")
+                response = await client.get(f"http://localhost:8000/research/{request_id}")
+                response.raise_for_status()
+                status_data = response.json()
 
-        # Step 3: Execute ViewDefinitions
-        with st.status("Executing SQL-on-FHIR queries...", expanded=True) as status:
-            results = {}
-            total_time = 0
-
-            for view_name in query_intent.view_definitions:
-                st.write(f"Executing {view_name}...")
-                result = await st.session_state.analytics_client.execute_view_definition(
-                    view_name=view_name,
-                    search_params=query_intent.search_params,
-                    max_resources=1000  # Get up to 1000 resources
+                # Format status response
+                status_message = st.session_state.conversation_manager.format_approval_status(
+                    request_id=request_id,
+                    current_state=status_data.get("current_state", "unknown")
                 )
-                results[view_name] = result
-                total_time += result.execution_time_ms
-                st.write(f"{view_name}: {result.row_count} rows in {result.execution_time_ms:.0f}ms")
+                st.session_state.messages.append({"role": "assistant", "content": status_message})
 
-            status.update(label=f"Executed {len(results)} ViewDefinitions in {total_time:.0f}ms", state="complete")
+            except Exception as e:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": f"Error retrieving status: {str(e)}"
+                })
+    else:
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "You don't have any active requests. Ask a research question to get started!"
+        })
 
-        # Step 3: Post-process results
-        with st.status("Processing results...", expanded=False) as status:
-            # Join results if multiple ViewDefinitions
-            if len(results) == 1:
-                final_rows = list(results.values())[0].rows
-                resource_type = list(results.values())[0].resource_type
-            else:
-                # Join on patient_id
-                primary_result = results.get('patient_demographics') or list(results.values())[0]
-                final_rows = primary_result.rows
-                resource_type = primary_result.resource_type
 
-                # Join with other results
-                for view_name, result in results.items():
-                    if view_name != 'patient_demographics':
-                        final_rows = await st.session_state.analytics_client.join_results(
-                            QueryResult(
-                                view_name="joined",
-                                resource_type=resource_type,
-                                row_count=len(final_rows),
-                                rows=final_rows,
-                                schema={}
-                            ),
-                            result
-                        )
+async def handle_confirmation(user_input: str):
+    """Handle confirmation/rejection"""
+    is_confirmation = st.session_state.conversation_manager.is_confirmation(user_input)
+    is_rejection = st.session_state.conversation_manager.is_rejection(user_input)
 
-            # Apply post-filters
-            if query_intent.post_filters:
-                for post_filter in query_intent.post_filters:
-                    filter_spec = {
-                        "field": post_filter.get("field"),
-                        "value": post_filter.get("value"),
-                        "operator": "eq"
-                    }
-                    final_rows = await st.session_state.analytics_client.filter_rows(
-                        final_rows,
-                        [filter_spec]
-                    )
-                st.write(f"Applied {len(query_intent.post_filters)} post-filters: {len(final_rows)} rows remain")
+    if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
+        if is_confirmation:
+            # User confirmed - submit to research API
+            await submit_research_request()
+        elif is_rejection:
+            # User rejected - clear pending data
+            st.session_state.pending_feasibility = None
+            st.session_state.last_query_intent = None
+            st.session_state.conversation_state = ConversationState.INITIAL
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "Understood. Feel free to refine your criteria and ask again!"
+            })
+        else:
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": "Please answer **'yes'** to proceed or **'no'** to cancel."
+            })
+    else:
+        # Not awaiting confirmation
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": "I'm not waiting for a confirmation. Ask a research question to get started!"
+        })
 
-            status.update(label=f"Processed {len(final_rows)} final results", state="complete")
 
-        # Step 4: Display results
-        st.success(f"Query completed! Found {len(final_rows)} matching records.")
+async def handle_query(user_input: str):
+    """
+    Handle research query
 
-        # Store in notebook cells
-        notebook_cell = {
-            'cell_number': cell_num,
-            'query': user_query,
-            'query_intent': query_intent,
-            'results': final_rows,
-            'resource_type': resource_type,
-            'execution_time_ms': total_time,
-            'sql_queries': sql_queries
+    Two-stage workflow:
+    1. Feasibility check (SQL-on-FHIR) - Fast COUNT query
+    2. Show results and ask for confirmation
+    """
+    # Show status
+    with st.status("Processing your query...", expanded=True) as status:
+        # Step 1: Interpret query using LLM
+        st.write("🔍 Analyzing your research question...")
+        query_intent = await st.session_state.query_interpreter.interpret_query(user_input)
+        st.write(f"✅ Identified criteria and data elements")
+
+        # Step 2: Execute feasibility check (SQL-on-FHIR COUNT queries)
+        st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
+        feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
+            query_intent.__dict__ if hasattr(query_intent, '__dict__') else query_intent
+        )
+        st.write(f"✅ Found approximately {feasibility_data['estimated_cohort']} patients")
+
+        status.update(label="Feasibility analysis complete!", state="complete")
+
+    # Store for later
+    st.session_state.pending_feasibility = feasibility_data
+    st.session_state.last_query_intent = query_intent
+    st.session_state.conversation_state = ConversationState.AWAITING_CONFIRMATION
+
+    # Format and show feasibility response
+    feasibility_response = st.session_state.conversation_manager.format_feasibility_response(
+        cohort_size=feasibility_data['estimated_cohort'],
+        feasibility_data=feasibility_data
+    )
+
+    st.session_state.messages.append({
+        "role": "assistant",
+        "content": feasibility_response
+    })
+
+
+async def submit_research_request():
+    """Submit research request to orchestrator via API"""
+    try:
+        # Get stored data
+        query_intent = st.session_state.last_query_intent
+        feasibility_data = st.session_state.pending_feasibility
+
+        # Build structured requirements from feasibility data
+        structured_requirements = {
+            "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
+            "principal_investigator": "Research Notebook User",
+            "inclusion_criteria": getattr(query_intent, 'inclusion_criteria', []) if hasattr(query_intent, 'inclusion_criteria') else [],
+            "exclusion_criteria": getattr(query_intent, 'exclusion_criteria', []) if hasattr(query_intent, 'exclusion_criteria') else [],
+            "data_elements": getattr(query_intent, 'data_elements', []) if hasattr(query_intent, 'data_elements') else [],
+            "time_period": feasibility_data.get('time_period', {}),
+            "estimated_cohort_size": feasibility_data.get('estimated_cohort', 0),
+            "delivery_format": "CSV",
+            "phi_level": "de-identified"
         }
-        st.session_state.notebook_cells.append(notebook_cell)
 
-        # Render query cell
-        ResultsRenderer.render_query_cell(
-            cell_number=cell_num,
-            query_intent=query_intent,
-            execution_time_ms=total_time,
-            sql_queries=sql_queries
-        )
+        # Prepare submission
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            # Submit to research API
+            response = await client.post(
+                "http://localhost:8000/research/submit",
+                json={
+                    "researcher_name": "Research Notebook User",
+                    "researcher_email": "researcher@hospital.org",
+                    "researcher_department": "Clinical Research",
+                    "irb_number": "IRB-NOTEBOOK-001",
+                    "initial_request": st.session_state.messages[-2]["content"],  # User's original query
+                    "structured_requirements": structured_requirements  # Pass pre-structured requirements
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
 
-        # Render results cell
-        ResultsRenderer.render_results_cell(
-            cell_number=cell_num,
-            rows=final_rows,
-            resource_type=resource_type,
-            max_display=20,  # Top 20 results
-            show_stats=True,
-            show_charts=True
-        )
+            request_id = result.get("request_id")
+            st.session_state.pending_request_id = request_id
+
+            # Trigger processing with structured requirements
+            process_response = await client.post(
+                f"http://localhost:8000/research/process/{request_id}",
+                json={
+                    "structured_requirements": structured_requirements,
+                    "skip_conversation": True  # Indicate we already have requirements
+                }
+            )
+            process_response.raise_for_status()
+
+            # Update conversation state
+            st.session_state.conversation_state = ConversationState.AWAITING_APPROVAL
+
+            # Show confirmation message
+            confirmation_message = f"""### ✅ Research Request Submitted!
+
+**Request ID:** {request_id}
+
+Your data request has been submitted and is now entering the approval workflow:
+
+1. ✅ Requirements extracted
+2. ⏸️ **Awaiting informatician SQL review** (CRITICAL)
+3. ⏸️ Data extraction (after approval)
+4. ⏸️ Quality assurance
+5. ⏸️ Data delivery
+
+**Estimated Time:** 1-24 hours (depending on informatician availability)
+
+💡 **Tip:** Type **'status'** anytime to check progress. I'll notify you when approved!
+
+You can continue using the notebook for other queries while waiting."""
+
+            st.session_state.messages.append({
+                "role": "assistant",
+                "content": confirmation_message
+            })
 
     except Exception as e:
-        st.error(f"Error processing query: {str(e)}")
-        ResultsRenderer.render_error_cell(cell_num, str(e))
+        error_message = f"❌ **Error submitting request:** {str(e)}\n\nPlease try again or contact support."
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": error_message
+        })
 
 
 def render_sidebar():
-    """Render sidebar with session info and controls"""
+    """Render sidebar"""
     with st.sidebar:
-        st.header("Notebook Session")
+        st.header("🤖 ResearchFlow")
 
         # Session info
-        st.metric("Total Queries", len(st.session_state.notebook_cells))
-        st.metric("Total Cells", st.session_state.cell_counter)
+        st.metric("Messages", len(st.session_state.messages))
+
+        # Conversation state
+        state = st.session_state.conversation_state.value
+        st.metric("Conversation State", state.replace('_', ' ').title())
+
+        # Pending request
+        if st.session_state.pending_request_id:
+            st.metric("Active Request", st.session_state.pending_request_id)
+
+            # Show approval tracking
+            if st.button("🔍 Check Request Status", use_container_width=True):
+                asyncio.run(handle_status_check())
+                st.rerun()
 
         # Quick actions
+        st.markdown("---")
         st.markdown("### Quick Actions")
 
-        if st.button("Clear Notebook", use_container_width=True):
-            st.session_state.notebook_cells = []
+        if st.button("🗑️ Clear Chat", use_container_width=True):
             st.session_state.messages = []
-            st.session_state.cell_counter = 0
+            st.session_state.conversation_state = ConversationState.INITIAL
+            st.session_state.pending_feasibility = None
+            st.session_state.pending_request_id = None
+            st.session_state.last_query_intent = None
             st.rerun()
 
-        if st.button("Export Session", use_container_width=True):
-            import json
-            session_data = {
-                'cells': st.session_state.notebook_cells,
-                'messages': st.session_state.messages,
-                'timestamp': datetime.now().isoformat()
-            }
-            st.download_button(
-                label="Download JSON",
-                data=json.dumps(session_data, indent=2, default=str),
-                file_name=f"research_session_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json"
-            )
-
         # Example queries
-        st.markdown("### Example Queries")
-        example_queries = [
+        st.markdown("### 💡 Example Queries")
+        examples = [
             "How many patients are available?",
-            "Show me all male patients under age 30",
-            "Give me all male patients under the age of 30 with type 2 diabetes",
-            "Show me patients with hypertension",
-            "Get female patients with diabetes and their lab results",
+            "Patients with diabetes and HbA1c > 8%",
+            "Female patients with hypertension under 65",
         ]
 
-        for example in example_queries:
-            if st.button(f"{example[:40]}...", key=f"example_{example[:20]}", use_container_width=True):
+        for example in examples:
+            if st.button(example, key=f"ex_{example[:20]}", use_container_width=True):
                 st.session_state.example_query = example
                 st.rerun()
 
         # System info
         st.markdown("---")
-        st.caption("Powered by SQL-on-FHIR v2")
-        st.caption("Claude API for query interpretation")
+        st.caption("**Two-Stage Workflow:**")
+        st.caption("1️⃣ Feasibility (SQL-on-FHIR)")
+        st.caption("2️⃣ Extraction (Orchestrator)")
 
 
 def main():
@@ -295,72 +407,49 @@ def main():
     initialize_session_state()
 
     # Header
-    st.title("ResearchFlow - Interactive Research Notebook")
-    st.caption("Ask questions in natural language, get instant answers from FHIR data")
+    st.title("🤖 ResearchFlow - AI Research Assistant")
+    st.caption("Ask questions naturally, get approved data extractions")
 
     # Sidebar
     render_sidebar()
 
-    # Main chat interface
-    st.markdown("### Natural Language Query Interface")
-
     # Display chat messages
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        role = message["role"]
+        content = message["content"]
 
-    # Display notebook cells
-    if st.session_state.notebook_cells:
-        st.markdown("---")
-        st.markdown("### Notebook Cells")
-
-        for cell in st.session_state.notebook_cells:
-            # Query cell
-            ResultsRenderer.render_query_cell(
-                cell_number=cell['cell_number'],
-                query_intent=cell['query_intent'],
-                execution_time_ms=cell['execution_time_ms'],
-                sql_queries=cell.get('sql_queries')
-            )
-
-            # Results cell
-            ResultsRenderer.render_results_cell(
-                cell_number=cell['cell_number'],
-                rows=cell['results'],
-                resource_type=cell.get('resource_type', 'Patient'),
-                max_display=20,
-                show_stats=True,
-                show_charts=True
-            )
+        if role == "user":
+            st.markdown(f"""
+<div class="chat-message user-message">
+    <strong>👤 You:</strong><br/>
+    {content}
+</div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+<div class="chat-message assistant-message">
+    <strong>🤖 ResearchFlow:</strong><br/>
+            """, unsafe_allow_html=True)
+            st.markdown(content)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     # Chat input
-    user_query = st.chat_input("Ask a question about patient data...")
+    user_input = st.chat_input("Ask about patient data, check status, or get help...")
 
     # Handle example query from sidebar
     if 'example_query' in st.session_state:
-        user_query = st.session_state.example_query
+        user_input = st.session_state.example_query
         del st.session_state.example_query
 
     # Process user input
-    if user_query:
-        # Add user message to chat
-        st.session_state.messages.append({"role": "user", "content": user_query})
+    if user_input:
+        # Add user message
+        st.session_state.messages.append({"role": "user", "content": user_input})
 
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(user_query)
+        # Handle input
+        asyncio.run(handle_user_input(user_input))
 
-        # Process query
-        with st.chat_message("assistant"):
-            asyncio.run(process_query(user_query))
-
-        # Add assistant response to chat
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": f"Executed query and created Cell [{st.session_state.cell_counter}]"
-        })
-
-        # Rerun to update UI
+        # Rerun to show new messages
         st.rerun()
 
 

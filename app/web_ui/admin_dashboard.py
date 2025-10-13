@@ -513,9 +513,10 @@ def display_requirements_approval(data):
     if elements:
         st.write(f"**Data Elements:** {', '.join(elements)}")
 
-    # Full requirements
-    with st.expander("View Full Requirements"):
-        st.json(structured_reqs)
+    # Full requirements (using details/summary instead of nested expander)
+    st.markdown("---")
+    st.markdown("**Full Requirements (JSON):**")
+    st.json(structured_reqs)
 
 
 def display_scope_change_approval(data):

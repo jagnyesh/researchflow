@@ -46,7 +46,8 @@ class RequirementsAgent(BaseAgent):
 
         Args:
             context: Contains initial_request, request_id, researcher_info,
-                    conversation_history (optional), user_response (optional)
+                    conversation_history (optional), user_response (optional),
+                    structured_requirements (optional), skip_conversation (optional)
 
         Returns:
             Dict with:
@@ -59,6 +60,49 @@ class RequirementsAgent(BaseAgent):
         initial_request = context.get('initial_request')
         conversation_history = context.get('conversation_history', [])
         user_response = context.get('user_response')
+
+        # Check if pre-structured requirements are provided (from Research Notebook)
+        pre_structured_requirements = context.get('structured_requirements')
+        skip_conversation = context.get('skip_conversation', False)
+
+        # If we have pre-structured requirements and should skip conversation, complete immediately
+        if pre_structured_requirements and skip_conversation:
+            logger.info(f"[{self.agent_id}] Processing pre-structured requirements from Research Notebook")
+
+            # Validate and finalize requirements
+            final_requirements = await self._validate_and_structure_requirements(
+                pre_structured_requirements
+            )
+
+            # Save to database
+            await self._save_requirements(request_id, final_requirements)
+
+            logger.info(f"[{self.agent_id}] Pre-structured requirements complete for {request_id}")
+
+            # Return complete with approval needed
+            return {
+                "requirements_complete": True,
+                "structured_requirements": final_requirements,
+                "conversation_history": [],
+                "completeness_score": 1.0,  # Pre-structured = complete
+                "requires_approval": True,
+                "approval_type": "requirements",
+                "next_agent": None,  # Wait for approval
+                "next_task": None,
+                "additional_context": {
+                    "requirements": final_requirements,
+                    "approval_data": {
+                        "structured_requirements": final_requirements,
+                        "completeness_score": 1.0,
+                        "conversation_history": [
+                            {"role": "system", "content": "Requirements pre-extracted from Research Notebook feasibility check"}
+                        ],
+                        "inclusion_criteria": final_requirements.get('inclusion_criteria', []),
+                        "exclusion_criteria": final_requirements.get('exclusion_criteria', []),
+                        "data_elements": final_requirements.get('data_elements', [])
+                    }
+                }
+            }
 
         # Initialize conversation state if new
         if request_id not in self.conversation_state:

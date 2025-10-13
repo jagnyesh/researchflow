@@ -18,6 +18,14 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Import database models for persistence
+try:
+    from app.database import get_db_session, AgentExecution
+except ImportError:
+    # Handle case where imports fail (e.g., during testing)
+    get_db_session = None
+    AgentExecution = None
+
 
 class AgentState(Enum):
     """Agent operational states"""
@@ -81,6 +89,9 @@ class BaseAgent(ABC):
             # Add to history
             self.task_history.append(self.current_task.copy())
 
+            # Persist to database
+            await self._save_execution_to_db(self.current_task.copy())
+
             # Notify orchestrator if next agent specified
             if result.get('next_agent'):
                 await self.notify_orchestrator(
@@ -101,6 +112,9 @@ class BaseAgent(ABC):
 
             # Add to history
             self.task_history.append(self.current_task.copy())
+
+            # Persist to database
+            await self._save_execution_to_db(self.current_task.copy())
 
             # Attempt retry or escalate
             if self.should_retry(e, context):
@@ -222,3 +236,42 @@ class BaseAgent(ABC):
             "avg_duration_seconds": avg_duration,
             "current_task": self.current_task
         }
+
+    async def _save_execution_to_db(self, execution_data: Dict):
+        """Save agent execution to database for metrics and monitoring"""
+        if not get_db_session or not AgentExecution:
+            # Database not available (e.g., in tests)
+            return
+
+        try:
+            async with get_db_session() as session:
+                # Calculate duration
+                started_at = execution_data.get('started_at')
+                completed_at = execution_data.get('completed_at')
+                duration = None
+                if started_at and completed_at:
+                    duration = (completed_at - started_at).total_seconds()
+
+                # Create AgentExecution record
+                agent_execution = AgentExecution(
+                    request_id=execution_data.get('context', {}).get('request_id'),
+                    agent_id=execution_data.get('agent_id'),
+                    task=execution_data.get('task'),
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    status=execution_data.get('status', 'unknown'),
+                    duration_seconds=duration,
+                    context=execution_data.get('context', {}),
+                    result=execution_data.get('result', {}),
+                    error=execution_data.get('error'),
+                    retry_count=execution_data.get('context', {}).get('retry_count', 0)
+                )
+
+                session.add(agent_execution)
+                await session.commit()
+
+                logger.debug(f"[{self.agent_id}] Saved execution to database")
+
+        except Exception as e:
+            # Don't fail the agent execution if database save fails
+            logger.error(f"[{self.agent_id}] Failed to save execution to database: {str(e)}")
