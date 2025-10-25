@@ -57,6 +57,79 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8502
 
 ---
 
+## Optional: Multi-Provider LLM Setup
+
+ResearchFlow supports using alternative LLM providers for non-critical tasks (calendar scheduling, notifications) while keeping critical medical tasks on Claude.
+
+### Option 1: Use OpenAI for Non-Critical Tasks
+
+```bash
+# Add to .env
+SECONDARY_LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-your-openai-key-here
+SECONDARY_LLM_MODEL=gpt-4o  # or gpt-4-turbo
+```
+
+**Benefits:**
+- Potentially lower cost for simple tasks
+- Different model characteristics
+- Provider redundancy
+
+### Option 2: Use Ollama for Local Development
+
+```bash
+# Install Ollama (if not installed)
+# macOS: brew install ollama
+# Linux: curl https://ollama.ai/install.sh | sh
+
+# Start Ollama server
+ollama serve
+
+# Pull a model
+ollama pull llama3
+
+# Add to .env
+SECONDARY_LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+SECONDARY_LLM_MODEL=llama3  # or mistral, codellama
+```
+
+**Benefits:**
+- No API costs for development
+- Works offline
+- Fast local inference
+
+### Option 3: Keep Everything on Claude (Default)
+
+No additional configuration needed. All agents use Claude API.
+
+```bash
+# In .env (this is the default)
+SECONDARY_LLM_PROVIDER=anthropic
+```
+
+### Which Agents Use Secondary Provider?
+
+**Critical agents (always use Claude):**
+- Requirements Agent (medical requirement extraction)
+- Phenotype Agent (SQL generation)
+- QA Agent (quality validation)
+
+**Non-critical agents (use secondary provider if configured):**
+- Calendar Agent (meeting agenda generation)
+- Delivery Agent (notification emails, citation formatting)
+
+### Automatic Fallback
+
+If the secondary provider fails, ResearchFlow automatically falls back to Claude:
+
+```bash
+# Enable fallback (default: true)
+ENABLE_LLM_FALLBACK=true
+```
+
+---
+
 ## Verify Your Setup
 
 ### Test API Key

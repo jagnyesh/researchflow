@@ -2,12 +2,14 @@
 Calendar Agent
 
 Schedules kickoff meetings with relevant stakeholders using calendar integration.
+Uses MultiLLMClient for intelligent agenda generation and stakeholder identification.
 """
 
 from typing import Dict, Any
 import logging
 from datetime import datetime, timedelta
 from .base_agent import BaseAgent
+from ..utils.multi_llm_client import MultiLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +28,7 @@ class CalendarAgent(BaseAgent):
 
     def __init__(self, orchestrator=None):
         super().__init__(agent_id="calendar_agent", orchestrator=orchestrator)
+        self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute calendar scheduling task"""
@@ -57,7 +60,7 @@ class CalendarAgent(BaseAgent):
         meeting_slot = await self._find_common_availability(attendees)
 
         # Step 3: Generate meeting agenda
-        agenda = self._generate_meeting_agenda(requirements, feasibility_report)
+        agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
 
         # Step 4: Create meeting
         meeting = {
@@ -159,13 +162,60 @@ class CalendarAgent(BaseAgent):
             "timezone": "UTC"
         }
 
-    def _generate_meeting_agenda(
+    async def _generate_meeting_agenda(
         self,
         requirements: Dict,
         feasibility_report: Dict
     ) -> str:
-        """Generate meeting agenda based on request details"""
-        agenda = f"""
+        """
+        Generate meeting agenda based on request details
+
+        Uses LLM to create tailored agenda with intelligent discussion points.
+        This is a non-critical task that uses the secondary provider.
+        """
+        # Build context for LLM
+        prompt = f"""Generate a professional meeting agenda for a clinical research data request kickoff meeting.
+
+Study Details:
+- Title: {requirements.get('study_title', 'TBD')}
+- Principal Investigator: {requirements.get('principal_investigator', 'TBD')}
+- IRB Number: {requirements.get('irb_number', 'TBD')}
+
+Cohort Information:
+- Estimated Size: {feasibility_report.get('estimated_cohort_size', 'TBD')} patients
+- Feasibility Score: {feasibility_report.get('feasibility_score', 0):.1%}
+
+Requested Data Elements:
+{chr(10).join('- ' + elem for elem in requirements.get('data_elements', []))}
+
+Warnings/Issues to Discuss:
+{chr(10).join('- ' + w.get('message', '') for w in feasibility_report.get('warnings', [])) if feasibility_report.get('warnings') else '- None'}
+
+Create a structured agenda with:
+1. Study overview section
+2. Cohort summary
+3. Data elements discussion
+4. Specific discussion points tailored to this request
+5. Warnings/considerations section
+6. Next steps
+
+Keep it professional and concise."""
+
+        system_prompt = "You are a clinical research coordinator creating meeting agendas for data request kickoff meetings."
+
+        try:
+            # Use secondary provider for this non-critical task
+            agenda = await self.llm_client.complete(
+                prompt=prompt,
+                task_type="calendar",  # Non-critical task
+                temperature=0.7,
+                system=system_prompt
+            )
+            return agenda.strip()
+        except Exception as e:
+            logger.warning(f"[{self.agent_id}] Failed to generate LLM agenda: {str(e)}, using template")
+            # Fallback to template-based agenda
+            agenda = f"""
 # Data Request Kickoff Meeting
 
 ## Study Overview
@@ -190,7 +240,7 @@ class CalendarAgent(BaseAgent):
 ## Warnings/Considerations
 {chr(10).join('- ' + w.get('message', '') for w in feasibility_report.get('warnings', []))}
 """
-        return agenda.strip()
+            return agenda.strip()
 
     async def _send_meeting_invites(self, meeting: Dict):
         """Send calendar invites to attendees"""

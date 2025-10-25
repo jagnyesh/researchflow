@@ -658,10 +658,12 @@ class ResearchRequestOrchestrator:
             }
 
     async def get_all_active_requests(self) -> list:
-        """Get all active requests (not completed)"""
+        """Get all active requests (not completed), ordered by newest first"""
         async with get_db_session() as session:
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.completed_at.is_(None))
+                select(ResearchRequest)
+                .where(ResearchRequest.completed_at.is_(None))
+                .order_by(ResearchRequest.created_at.desc())  # Newest first
             )
             active_requests = result.scalars().all()
 

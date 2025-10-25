@@ -1,0 +1,27 @@
+# Streamlit Configuration for ResearchFlow
+# Forces light theme across all apps
+
+[theme]
+# Primary color (blue for buttons, links)
+primaryColor = "#007AFF"
+
+# Main background color (white)
+backgroundColor = "#FFFFFF"
+
+# Secondary background (light gray for sidebars, cards)
+secondaryBackgroundColor = "#F5F7FA"
+
+# Text color (dark gray)
+textColor = "#1D1D1F"
+
+# Font family
+font = "sans serif"
+
+[server]
+# Enable CORS for local development
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+# Disable dark mode detection
+gatherUsageStats = false

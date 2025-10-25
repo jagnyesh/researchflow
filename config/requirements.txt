@@ -13,6 +13,11 @@ anthropic==0.39.0
 streamlit==1.29.0
 python-dotenv==1.0.0
 
+# Multi-provider LLM support
+aisuite==0.1.6
+openai>=1.0.0  # Optional: For OpenAI provider
+# ollama  # Optional: For local Ollama models (installed separately)
+
 # SQL-on-FHIR v2 dependencies
 fhirpathpy==2.1.0
 tenacity==8.2.3

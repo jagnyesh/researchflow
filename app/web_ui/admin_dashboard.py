@@ -11,9 +11,8 @@ import asyncio
 import time
 import sys
 import os
-import requests
-import json
 from dotenv import load_dotenv
+from sqlalchemy import select
 
 # Load environment variables
 load_dotenv()
@@ -30,6 +29,9 @@ from app.agents import (
     QualityAssuranceAgent,
     DeliveryAgent
 )
+from app.database import get_db_session
+from app.database.models import AgentExecution
+from app.services.approval_service import ApprovalService
 
 
 def initialize_orchestrator():
@@ -165,11 +167,65 @@ def show_overview():
 
 
 def show_agent_metrics():
-    """Display agent performance metrics"""
+    """
+    Display agent performance metrics from database
+
+    NOTE: Queries AgentExecution table instead of in-memory state
+    to support cross-process visibility (Researcher Portal → Admin Dashboard)
+    """
     st.header("🤖 Agent Performance Metrics")
 
-    # Get metrics for all agents
-    all_metrics = st.session_state.orchestrator.get_agent_metrics()
+    # Query AgentExecution table from database
+    async def fetch_agent_metrics():
+        async with get_db_session() as session:
+            # Get all agent executions
+            result = await session.execute(
+                select(AgentExecution).order_by(
+                    AgentExecution.started_at.desc()
+                )
+            )
+            all_executions = result.scalars().all()
+
+            # Calculate metrics per agent
+            metrics_by_agent = {}
+            for execution in all_executions:
+                agent_id = execution.agent_id
+                if agent_id not in metrics_by_agent:
+                    metrics_by_agent[agent_id] = {
+                        'total_tasks': 0,
+                        'successful_tasks': 0,
+                        'failed_tasks': 0,
+                        'durations': [],
+                        'state': 'idle'
+                    }
+
+                metrics_by_agent[agent_id]['total_tasks'] += 1
+
+                if execution.status == 'success':
+                    metrics_by_agent[agent_id]['successful_tasks'] += 1
+                elif execution.status == 'failed':
+                    metrics_by_agent[agent_id]['failed_tasks'] += 1
+
+                if execution.completed_at and execution.started_at:
+                    duration = (
+                        execution.completed_at - execution.started_at
+                    ).total_seconds()
+                    metrics_by_agent[agent_id]['durations'].append(duration)
+
+            # Calculate success rate and avg duration
+            for agent_id, metrics in metrics_by_agent.items():
+                metrics['success_rate'] = (
+                    metrics['successful_tasks'] / metrics['total_tasks']
+                    if metrics['total_tasks'] > 0 else 0
+                )
+                metrics['avg_duration_seconds'] = (
+                    sum(metrics['durations']) / len(metrics['durations'])
+                    if metrics['durations'] else 0
+                )
+
+            return metrics_by_agent
+
+    all_metrics = asyncio.run(fetch_agent_metrics())
 
     if not all_metrics:
         st.info("No agent metrics available yet")
@@ -200,7 +256,11 @@ def show_agent_metrics():
         with cols[idx % 3]:
             agent_name = agent_id.replace('_', ' ').title()
             status = metrics['state']
-            status_emoji = "🟢" if status == "idle" else "🔵" if status == "working" else "🔴"
+            status_emoji = (
+                "🟢" if status == "idle"
+                else "🔵" if status == "working"
+                else "🔴"
+            )
 
             st.metric(
                 f"{status_emoji} {agent_name}",
@@ -212,9 +272,6 @@ def show_agent_metrics():
 def show_pending_approvals():
     """Display pending approvals requiring human review"""
     st.header("✋ Pending Approvals - Human-in-Loop Gates")
-
-    # API base URL
-    API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 
     # Filter by approval type
     col1, col2, col3 = st.columns([2, 2, 6])
@@ -233,9 +290,9 @@ def show_pending_approvals():
             key="reviewer_email"
         )
 
-    # Fetch pending approvals
+    # Fetch pending approvals from database
     try:
-        # Map UI selections to API values
+        # Map UI selections to database values
         type_map = {
             "All": None,
             "Requirements": "requirements",
@@ -246,55 +303,68 @@ def show_pending_approvals():
         }
 
         approval_type_param = type_map[approval_type_filter]
-        params = {"approval_type": approval_type_param} if approval_type_param else {}
 
-        response = requests.get(f"{API_BASE}/approvals/pending", params=params, timeout=5)
+        # Fetch approvals directly from database
+        async def fetch_approvals():
+            async with get_db_session() as session:
+                approval_service = ApprovalService(session)
+                approvals = await approval_service.get_pending_approvals(
+                    approval_type=approval_type_param
+                )
+                return approvals
 
-        if response.status_code == 200:
-            data = response.json()
-            approvals = data.get('approvals', [])
+        approvals_db = asyncio.run(fetch_approvals())
 
-            # Metrics
-            st.subheader("📊 Approval Queue Metrics")
+        # Convert to dict format for display
+        approvals = [
+            {
+                "id": approval.id,
+                "request_id": approval.request_id,
+                "approval_type": approval.approval_type,
+                "submitted_at": approval.submitted_at.isoformat(),
+                "submitted_by": approval.submitted_by,
+                "timeout_at": approval.timeout_at.isoformat() if approval.timeout_at else None,
+                "approval_data": approval.approval_data
+            }
+            for approval in approvals_db
+        ]
 
-            col1, col2, col3, col4 = st.columns(4)
+        # Metrics
+        st.subheader("📊 Approval Queue Metrics")
 
-            with col1:
-                st.metric("Total Pending", data.get('count', 0))
+        col1, col2, col3, col4 = st.columns(4)
 
-            with col2:
-                sql_approvals = len([a for a in approvals if a.get('approval_type') == 'phenotype_sql'])
-                st.metric("🔴 SQL Reviews", sql_approvals, help="CRITICAL - SQL must be approved before execution")
+        with col1:
+            st.metric("Total Pending", len(approvals))
 
-            with col3:
-                req_approvals = len([a for a in approvals if a.get('approval_type') == 'requirements'])
-                st.metric("Requirements", req_approvals)
+        with col2:
+            sql_approvals = len([a for a in approvals if a.get('approval_type') == 'phenotype_sql'])
+            st.metric("🔴 SQL Reviews", sql_approvals, help="CRITICAL - SQL must be approved before execution")
 
-            with col4:
-                scope_approvals = len([a for a in approvals if a.get('approval_type') == 'scope_change'])
-                st.metric("Scope Changes", scope_approvals)
+        with col3:
+            req_approvals = len([a for a in approvals if a.get('approval_type') == 'requirements'])
+            st.metric("Requirements", req_approvals)
 
-            # Display approvals
-            st.subheader("📋 Pending Approvals")
+        with col4:
+            scope_approvals = len([a for a in approvals if a.get('approval_type') == 'scope_change'])
+            st.metric("Scope Changes", scope_approvals)
 
-            if not approvals:
-                st.success("✅ No pending approvals - all reviews complete!")
-            else:
-                for approval in approvals:
-                    display_approval_card(approval, reviewer_email, API_BASE)
+        # Display approvals
+        st.subheader("📋 Pending Approvals")
 
+        if not approvals:
+            st.success("✅ No pending approvals - all reviews complete!")
         else:
-            st.error(f"Failed to fetch approvals: {response.status_code}")
-
-    except requests.exceptions.ConnectionError:
-        st.warning("⚠️ Cannot connect to API server. Please ensure the API is running on port 8000.")
-        st.info("Run: `make run` or `uvicorn app.main:app --reload --port 8000`")
+            for approval in approvals:
+                display_approval_card(approval, reviewer_email)
 
     except Exception as e:
         st.error(f"Error fetching approvals: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
-def display_approval_card(approval, reviewer_email, api_base):
+def display_approval_card(approval, reviewer_email):
     """Display a single approval card with all details and action buttons"""
     approval_id = approval['id']
     approval_type = approval['approval_type']
@@ -380,7 +450,7 @@ def display_approval_card(approval, reviewer_email, api_base):
                 if not reviewer_email:
                     st.error("Please enter your email address")
                 else:
-                    handle_approval_response(approval_id, "approve", reviewer_email, "", {}, api_base)
+                    handle_approval_response(approval_id, "approve", reviewer_email, "", {})
 
         with col2:
             if st.button("✏️ Modify & Approve", key=f"modify_{approval_id}", use_container_width=True):
@@ -410,7 +480,7 @@ def display_approval_card(approval, reviewer_email, api_base):
                 if not reviewer_email:
                     st.error("Please enter your email address")
                 else:
-                    handle_approval_response(approval_id, "modify", reviewer_email, notes, modifications, api_base)
+                    handle_approval_response(approval_id, "modify", reviewer_email, notes, modifications)
                     st.session_state[f'show_modify_{approval_id}'] = False
 
         # Rejection interface
@@ -428,7 +498,7 @@ def display_approval_card(approval, reviewer_email, api_base):
                 elif not reject_reason:
                     st.error("Please provide a reason for rejection")
                 else:
-                    handle_approval_response(approval_id, "reject", reviewer_email, reject_reason, {}, api_base)
+                    handle_approval_response(approval_id, "reject", reviewer_email, reject_reason, {})
                     st.session_state[f'show_reject_{approval_id}'] = False
 
 
@@ -581,42 +651,53 @@ def display_extraction_approval(data):
     st.json(data)
 
 
-def handle_approval_response(approval_id, decision, reviewer, notes, modifications, api_base):
-    """Handle approval response (approve/reject/modify)"""
+def handle_approval_response(approval_id, decision, reviewer, notes, modifications):
+    """Handle approval response (approve/reject/modify) using direct database access"""
     try:
-        payload = {
-            "decision": decision,
-            "reviewer": reviewer,
-            "notes": notes
-        }
+        async def process_approval():
+            async with get_db_session() as session:
+                approval_service = ApprovalService(session)
 
-        if modifications:
-            payload["modifications"] = modifications
+                if decision == "approve":
+                    await approval_service.approve(
+                        approval_id,
+                        reviewer,
+                        notes,
+                        modifications
+                    )
+                elif decision == "reject":
+                    await approval_service.reject(
+                        approval_id,
+                        reviewer,
+                        notes or "Rejected"
+                    )
+                elif decision == "modify":
+                    await approval_service.modify(
+                        approval_id,
+                        reviewer,
+                        modifications,
+                        notes
+                    )
+                else:
+                    raise ValueError(f"Invalid decision: {decision}")
 
-        response = requests.post(
-            f"{api_base}/approvals/{approval_id}/respond",
-            json=payload,
-            timeout=10
-        )
+        asyncio.run(process_approval())
 
-        if response.status_code == 200:
-            result = response.json()
+        if decision == "approve":
+            st.success(f"✅ Approval {approval_id} approved! Workflow will continue automatically.")
+        elif decision == "reject":
+            st.error(f"❌ Approval {approval_id} rejected. Request will return to originating agent.")
+        elif decision == "modify":
+            st.success(f"✏️ Approval {approval_id} approved with modifications. Workflow will continue with your changes.")
 
-            if decision == "approve":
-                st.success(f"✅ Approval {approval_id} approved! Workflow will continue automatically.")
-            elif decision == "reject":
-                st.error(f"❌ Approval {approval_id} rejected. Request will return to originating agent.")
-            elif decision == "modify":
-                st.success(f"✏️ Approval {approval_id} approved with modifications. Workflow will continue with your changes.")
-
-            # Trigger refresh after 2 seconds
-            time.sleep(2)
-            st.rerun()
-        else:
-            st.error(f"Failed to process approval: {response.status_code} - {response.text}")
+        # Trigger refresh after 2 seconds
+        time.sleep(2)
+        st.rerun()
 
     except Exception as e:
         st.error(f"Error processing approval: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def show_escalations():

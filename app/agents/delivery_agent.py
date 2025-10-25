@@ -2,12 +2,14 @@
 Delivery Agent
 
 Packages and delivers data to researcher with documentation.
+Uses MultiLLMClient for generating personalized notifications and documentation.
 """
 
 from typing import Dict, Any
 import logging
 from datetime import datetime
 from .base_agent import BaseAgent
+from ..utils.multi_llm_client import MultiLLMClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +29,7 @@ class DeliveryAgent(BaseAgent):
 
     def __init__(self, orchestrator=None):
         super().__init__(agent_id="delivery_agent", orchestrator=orchestrator)
+        self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute delivery task"""
@@ -183,8 +186,43 @@ class DeliveryAgent(BaseAgent):
         }
 
     async def _generate_citation_info(self, requirements: Dict) -> str:
-        """Generate citation information for publications"""
-        citation = f"""
+        """
+        Generate citation information for publications
+
+        Uses LLM to create professional citation text.
+        This is a non-critical task that uses the secondary provider.
+        """
+        prompt = f"""Generate professional citation information for a clinical research data extract.
+
+Study Information:
+- Title: {requirements.get('study_title', 'Untitled Study')}
+- Principal Investigator: {requirements.get('principal_investigator', 'Unknown')}
+- IRB Number: {requirements.get('irb_number', 'Unknown')}
+- Extraction Date: {datetime.now().strftime('%Y-%m-%d')}
+
+Create a professional citation block that includes:
+1. Data source acknowledgment
+2. Study details
+3. Proper citation format
+4. Any necessary disclaimers
+
+Keep it concise and professional."""
+
+        system_prompt = "You are a research librarian creating citation information for clinical data extracts."
+
+        try:
+            # Use secondary provider for this non-critical task
+            citation = await self.llm_client.complete(
+                prompt=prompt,
+                task_type="delivery",  # Non-critical task
+                temperature=0.5,
+                system=system_prompt
+            )
+            return citation.strip()
+        except Exception as e:
+            logger.warning(f"[{self.agent_id}] Failed to generate LLM citation: {str(e)}, using template")
+            # Fallback to template
+            citation = f"""
 Data extracted from Clinical Data Warehouse on {datetime.now().strftime('%Y-%m-%d')}
 for research study: {requirements.get('study_title', 'Untitled Study')}
 Principal Investigator: {requirements.get('principal_investigator', 'Unknown')}
@@ -193,7 +231,7 @@ IRB Protocol: {requirements.get('irb_number', 'Unknown')}
 Please cite as:
 [Institution] Clinical Data Warehouse. Data extracted {datetime.now().strftime('%B %Y')}.
 """
-        return citation.strip()
+            return citation.strip()
 
     def _summarize_qa_report(self, qa_report: Dict) -> Dict:
         """Summarize QA report for researcher"""
@@ -239,14 +277,45 @@ Please cite as:
         """
         Send notification email to researcher
 
+        Uses LLM to generate personalized notification email.
+        This is a non-critical task that uses the secondary provider.
+
         In production: Use MCP email server
         For now: Log the notification
         """
-        # TODO: Implement MCP email server integration
-        # email_server = self.mcp_registry.get_server('email')
-        # await email_server.send_email(...)
+        # Generate personalized notification message
+        prompt = f"""Generate a professional email notification to a researcher that their data request is ready.
 
-        message = f"""
+Recipient: {recipient}
+Request ID: {delivery_info['request_id']}
+Cohort Size: {delivery_info['cohort_size']} patients
+Data Elements: {', '.join(delivery_info['data_elements'])}
+Download Location: {delivery_info['location']}
+
+The email should:
+1. Be professional and friendly
+2. Inform them their data is ready
+3. Provide key statistics
+4. Include download location
+5. Remind them to review the data dictionary and QA report
+6. Include appropriate sign-off
+
+Keep it concise and professional."""
+
+        system_prompt = "You are a clinical research data coordinator sending delivery notifications to researchers."
+
+        try:
+            # Use secondary provider for this non-critical task
+            message = await self.llm_client.complete(
+                prompt=prompt,
+                task_type="delivery",  # Non-critical task
+                temperature=0.7,
+                system=system_prompt
+            )
+        except Exception as e:
+            logger.warning(f"[{self.agent_id}] Failed to generate LLM notification: {str(e)}, using template")
+            # Fallback to template
+            message = f"""
 Dear {recipient},
 
 Your data request ({delivery_info['request_id']}) is ready for download.
@@ -261,6 +330,10 @@ Please review the included data dictionary and QA report.
 Best regards,
 Research Data Services
 """
+
+        # TODO: Implement MCP email server integration
+        # email_server = self.mcp_registry.get_server('email')
+        # await email_server.send_email(...)
 
         logger.info(
             f"[{self.agent_id}] Notification sent to {email}: "

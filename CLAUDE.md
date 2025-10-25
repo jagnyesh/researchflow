@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Core Components
 - **6 Specialized AI Agents**: Requirements, Phenotype, Calendar, Extraction, QA, Delivery
 - **Orchestrator**: Central A2A (Agent-to-Agent) coordinator with workflow state machine
-- **LLM Integration**: Claude API (Anthropic) for conversational requirement extraction
+- **Multi-Provider LLM Integration**: Claude API (primary) with optional secondary providers (OpenAI, Ollama) for non-critical tasks
 - **SQL-on-FHIR**: Automated phenotype SQL generation and execution
 - **MCP Infrastructure**: Model Context Protocol servers for external system integration
 - **Streamlit UIs**: Researcher Portal and Admin Dashboard
@@ -78,7 +78,8 @@ FHIR_PROJECT/
 │   │   └── models.py            # SQLAlchemy models
 │   │
 │   ├── utils/                    # Utilities
-│   │   ├── llm_client.py        # Claude API wrapper
+│   │   ├── llm_client.py        # Claude API wrapper (critical tasks)
+│   │   ├── multi_llm_client.py  # Multi-provider LLM client (AI Suite)
 │   │   └── sql_generator.py     # SQL-on-FHIR generation
 │   │
 │   ├── mcp_servers/             # MCP infrastructure
@@ -158,6 +159,7 @@ ResearchFlow uses 6 autonomous AI agents coordinated by a central orchestrator:
 
 3. **Calendar Agent** (`app/agents/calendar_agent.py`)
    - Schedules kickoff meetings with stakeholders
+   - Uses MultiLLMClient for intelligent agenda generation
    - Future: Integrates with external calendar systems via MCP
 
 4. **Extraction Agent** (`app/agents/extraction_agent.py`)
@@ -172,7 +174,7 @@ ResearchFlow uses 6 autonomous AI agents coordinated by a central orchestrator:
 
 6. **Delivery Agent** (`app/agents/delivery_agent.py`)
    - Packages data with documentation
-   - Sends notifications to researcher
+   - Uses MultiLLMClient for personalized notifications and citations
    - Creates audit trail
 
 ### Orchestrator & Workflow
@@ -207,13 +209,20 @@ ResearchFlow uses 6 autonomous AI agents coordinated by a central orchestrator:
 }
 ```
 
-**LLM Integration**: Claude API wrapper with structured output parsing:
+**LLM Integration**: Multi-provider architecture with intelligent routing:
 ```python
-# app/utils/llm_client.py
+# app/utils/llm_client.py - Critical medical tasks (Requirements, Phenotype agents)
 class LLMClient:
     async def extract_requirements(self, conversation_history, current_requirements):
-        # Prompt engineering for medical domain
+        # Prompt engineering for medical domain using Claude
         # Returns JSON with extracted_requirements, missing_fields, next_question
+
+# app/utils/multi_llm_client.py - Non-critical tasks (Calendar, Delivery agents)
+class MultiLLMClient:
+    async def complete(self, prompt, task_type="general"):
+        # Routes to Claude (critical) or secondary provider (non-critical)
+        # Supports OpenAI, Ollama, or Claude via AI Suite
+        # Auto-fallback to Claude on errors
 ```
 
 **SQL Generation**: SQL-on-FHIR query builder:
@@ -235,10 +244,17 @@ class SQLGenerator:
 
 ## Environment Variables
 
-Required:
-- `ANTHROPIC_API_KEY`: Claude API key (from Anthropic Console)
+**Required:**
+- `ANTHROPIC_API_KEY`: Claude API key (from Anthropic Console) - used for all critical medical tasks
 
-Optional (have defaults):
+**Optional Multi-Provider LLM Configuration:**
+- `SECONDARY_LLM_PROVIDER`: Provider for non-critical tasks (options: `openai`, `ollama`, `anthropic`)
+- `OPENAI_API_KEY`: OpenAI API key (only if using OpenAI as secondary provider)
+- `OLLAMA_BASE_URL`: Ollama server URL (default: `http://localhost:11434`, only if using Ollama)
+- `SECONDARY_LLM_MODEL`: Model name for secondary provider (e.g., `gpt-4o`, `llama3`)
+- `ENABLE_LLM_FALLBACK`: Auto-fallback to Claude if secondary fails (default: `true`)
+
+**Other Optional:**
 - `DATABASE_URL`: Database connection (default: `sqlite+aiosqlite:///./dev.db`)
 - `A2A_JWT_SECRET`: JWT signing secret (default: `devsecret`)
 

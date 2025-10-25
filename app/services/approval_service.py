@@ -95,8 +95,8 @@ class ApprovalService:
         if approval_type:
             query = query.where(Approval.approval_type == approval_type)
 
-        # Order by submission time (oldest first)
-        query = query.order_by(Approval.submitted_at)
+        # Order by submission time (newest first)
+        query = query.order_by(Approval.submitted_at.desc())
 
         result = await self.db.execute(query)
         approvals = result.scalars().all()
