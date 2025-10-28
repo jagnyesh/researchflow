@@ -185,18 +185,20 @@ class ColumnExtractor:
         # Check if forEach path returns array or single element
         if '.first()' in for_each_path or base_expr.requires_subquery:
             # Single element - use it directly as context
+            # Note: LATERAL joins in PostgreSQL don't use ON clause
             lateral_join = f"""
 {join_type} (
     SELECT {base_expr.sql} AS {foreach_alias}
-) AS {foreach_alias}_row ON true
+) AS {foreach_alias}_row
             """.strip()
             context_path = f"{foreach_alias}_row.{foreach_alias}"
         else:
             # Array - use jsonb_array_elements
+            # Note: LATERAL joins in PostgreSQL don't use ON clause
             lateral_join = f"""
 {join_type} jsonb_array_elements(
     COALESCE({base_expr.sql}, '[]'::jsonb)
-) AS {foreach_alias} ON true
+) AS {foreach_alias}
             """.strip()
             context_path = foreach_alias
 

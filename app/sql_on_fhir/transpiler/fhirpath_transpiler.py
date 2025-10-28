@@ -86,6 +86,10 @@ class FHIRPathTranspiler:
                 sql=base_path
             )
 
+        # Check for string concatenation with + operator
+        if ' + ' in fhir_path:
+            return self._transpile_concatenation(fhir_path, as_text, context_path)
+
         # Check for where() clause
         if '.where(' in fhir_path:
             return self._transpile_where_clause(fhir_path, as_text, context_path)
@@ -263,7 +267,7 @@ class FHIRPathTranspiler:
         if match:
             field = match.group(1)
             value = match.group(2)
-            return f"{elem_alias}->>>'{field}' = '{value}'"
+            return "{}->>'{}'  = '{}'".format(elem_alias, field, value)
 
         # TODO: Support more complex conditions
         logger.warning(f"Unsupported where condition: {condition}")
@@ -372,6 +376,47 @@ class FHIRPathTranspiler:
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
         sql = f"({base_expr.sql} IS NULL OR {base_expr.sql} = '[]'::jsonb)"
+
+        return FHIRPathExpression(
+            path=fhir_path,
+            sql=sql
+        )
+
+    def _transpile_concatenation(
+        self,
+        fhir_path: str,
+        as_text: bool,
+        context_path: Optional[str]
+    ) -> FHIRPathExpression:
+        """
+        Transpile string concatenation using + operator
+
+        Args:
+            fhir_path: Path with + operator (e.g., "given.first() + ' ' + family")
+            as_text: Use ->> for text output
+            context_path: Optional context
+
+        Returns:
+            FHIRPathExpression with SQL concatenation using ||
+        """
+        # Split by + operator
+        parts = fhir_path.split(' + ')
+
+        sql_parts = []
+        for part in parts:
+            part = part.strip()
+
+            # Check if it's a string literal (quoted)
+            if part.startswith("'") and part.endswith("'"):
+                # Keep string literal as-is
+                sql_parts.append(part)
+            else:
+                # Transpile as FHIRPath expression
+                expr = self.transpile(part, as_text=True, context_path=context_path)
+                sql_parts.append(f"COALESCE({expr.sql}, '')")
+
+        # Join with SQL concatenation operator ||
+        sql = " || ".join(sql_parts)
 
         return FHIRPathExpression(
             path=fhir_path,

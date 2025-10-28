@@ -150,8 +150,9 @@ class SQLQueryBuilder:
             FROM clause SQL
         """
         # Join hfj_resource (metadata) with hfj_res_ver (content)
+        # Must match on BOTH res_id (resource ID) and res_ver (version number)
         from_clause = """FROM hfj_resource r
-JOIN hfj_res_ver v ON r.res_ver = v.pid"""
+JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
 
         return from_clause
 
@@ -183,11 +184,47 @@ JOIN hfj_res_ver v ON r.res_ver = v.pid"""
                     f"v.res_text_vc::jsonb->>'gender' = '{param_value}'"
                 )
 
-            elif param_name == 'birthdate':
-                # Date search - exact match for now
-                conditions.append(
-                    f"v.res_text_vc::jsonb->>'birthDate' = '{param_value}'"
-                )
+            elif param_name == 'birthdate' or param_name == 'birthdate_min' or param_name == 'birthdate_max':
+                # Date search with FHIR prefix support (ge, le, gt, lt, eq)
+                # Examples: "ge1995-01-01" means >= 1995-01-01
+                #           "le2005-12-31" means <= 2005-12-31
+                # birthdate_min and birthdate_max allow separate min/max constraints
+                if isinstance(param_value, str):
+                    if param_value.startswith('ge'):
+                        # Greater than or equal
+                        date_val = param_value[2:]
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' >= '{date_val}'"
+                        )
+                    elif param_value.startswith('le'):
+                        # Less than or equal
+                        date_val = param_value[2:]
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' <= '{date_val}'"
+                        )
+                    elif param_value.startswith('gt'):
+                        # Greater than
+                        date_val = param_value[2:]
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' > '{date_val}'"
+                        )
+                    elif param_value.startswith('lt'):
+                        # Less than
+                        date_val = param_value[2:]
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' < '{date_val}'"
+                        )
+                    elif param_value.startswith('eq'):
+                        # Equal
+                        date_val = param_value[2:]
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' = '{date_val}'"
+                        )
+                    else:
+                        # No prefix - exact match
+                        conditions.append(
+                            f"v.res_text_vc::jsonb->>'birthDate' = '{param_value}'"
+                        )
 
             elif param_name == 'family':
                 # Name search - check in name array
@@ -244,7 +281,7 @@ JOIN hfj_res_ver v ON r.res_ver = v.pid"""
         # Build count query
         count_sql = f"""SELECT COUNT(DISTINCT r.res_id) AS count
 FROM hfj_resource r
-JOIN hfj_res_ver v ON r.res_ver = v.pid
+JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver
 {where_clause}"""
 
         return count_sql

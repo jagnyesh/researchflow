@@ -1,16 +1,16 @@
-fastapi==0.95.2
+fastapi
 uvicorn[standard]==0.22.0
-httpx==0.24.1
-sqlalchemy[asyncio]==2.0.18
+httpx
+sqlalchemy[asyncio]
 asyncpg==0.28.0
 aiosqlite==0.19.0
-pydantic==1.10.12
+pydantic
 python-jose==3.3.0
-pytest==7.4.2
-pytest-asyncio==0.21.1
-alembic==1.11.1
-anthropic==0.39.0
-streamlit==1.29.0
+pytest
+pytest-asyncio
+alembic
+anthropic
+streamlit
 python-dotenv==1.0.0
 
 # Multi-provider LLM support
@@ -23,9 +23,9 @@ fhirpathpy==2.1.0
 tenacity==8.2.3
 
 # Research Notebook dependencies
-pandas==2.0.3
+pandas
 plotly==5.14.1
-scipy==1.11.4
+scipy
 
 # LangChain/LangGraph exploration dependencies
 langchain>=0.3.7

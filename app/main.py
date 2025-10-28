@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
 import logging
+import os
 
 # Load environment variables from .env file
 load_dotenv()
@@ -48,9 +49,13 @@ async def lifespan(app: FastAPI):
     orchestrator = ResearchRequestOrchestrator()
     logger.info("Orchestrator initialized")
 
+    # Get HAPI FHIR database URL from environment
+    hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+    logger.info(f"Using HAPI database: {hapi_db_url}")
+
     # Initialize and register all agents
     requirements_agent = RequirementsAgent()
-    phenotype_agent = PhenotypeValidationAgent()
+    phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
     calendar_agent = CalendarAgent()
     extraction_agent = DataExtractionAgent()
     qa_agent = QualityAssuranceAgent()

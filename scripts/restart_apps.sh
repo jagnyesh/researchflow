@@ -24,20 +24,20 @@ if [ -d ".venv" ]; then
     echo "✅ Activated virtual environment"
 fi
 
-# Start Researcher Portal (port 8501)
-echo "🔬 Starting Researcher Portal on port 8501..."
-streamlit run app/web_ui/researcher_portal.py --server.port 8501 > logs/portal.log 2>&1 &
+# Start Exploratory Analytics Portal (port 8501)
+echo "📊 Starting Exploratory Analytics Portal (Chat) on port 8501..."
+streamlit run app/web_ui/research_notebook.py --server.port 8501 > logs/notebook.log 2>&1 &
+NOTEBOOK_PID=$!
+
+# Start Formal Request Portal (port 8502)
+echo "📋 Starting Formal Request Portal (Forms) on port 8502..."
+streamlit run app/web_ui/researcher_portal.py --server.port 8502 > logs/portal.log 2>&1 &
 PORTAL_PID=$!
 
-# Start Admin Dashboard (port 8502)
-echo "⚙️  Starting Admin Dashboard on port 8502..."
-streamlit run app/web_ui/admin_dashboard.py --server.port 8502 > logs/dashboard.log 2>&1 &
+# Start Admin Dashboard (port 8503)
+echo "⚙️  Starting Admin Dashboard on port 8503..."
+streamlit run app/web_ui/admin_dashboard.py --server.port 8503 > logs/dashboard.log 2>&1 &
 DASHBOARD_PID=$!
-
-# Start Research Notebook (port 8503)
-echo "🤖 Starting Research Notebook on port 8503..."
-streamlit run app/web_ui/research_notebook.py --server.port 8503 > logs/notebook.log 2>&1 &
-NOTEBOOK_PID=$!
 
 # Wait a moment for startup
 sleep 3
@@ -46,14 +46,14 @@ echo ""
 echo "✅ All apps started!"
 echo ""
 echo "📊 Process IDs:"
-echo "   Researcher Portal: $PORTAL_PID"
-echo "   Admin Dashboard:   $DASHBOARD_PID"
-echo "   Research Notebook: $NOTEBOOK_PID"
+echo "   Exploratory Analytics Portal: $NOTEBOOK_PID"
+echo "   Formal Request Portal:        $PORTAL_PID"
+echo "   Admin Dashboard:              $DASHBOARD_PID"
 echo ""
 echo "🌐 Access URLs:"
-echo "   Researcher Portal: http://localhost:8501"
-echo "   Admin Dashboard:   http://localhost:8502"
-echo "   Research Notebook: http://localhost:8503"
+echo "   Exploratory Analytics (Chat): http://localhost:8501"
+echo "   Formal Request Portal (Form): http://localhost:8502"
+echo "   Admin Dashboard:              http://localhost:8503"
 echo ""
 echo "📝 Logs:"
 echo "   Portal:    tail -f logs/portal.log"

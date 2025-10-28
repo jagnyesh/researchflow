@@ -1,0 +1,54 @@
+{
+  "resourceType": "ViewDefinition",
+  "resource": "Condition",
+  "name": "condition_simple",
+  "title": "Patient Conditions - Simplified",
+  "description": "Simplified condition view without replace() functions for basic filtering",
+  "status": "active",
+  "select": [
+    {
+      "column": [
+        {
+          "name": "id",
+          "path": "id",
+          "description": "Condition resource ID"
+        },
+        {
+          "name": "patient_ref",
+          "path": "subject.reference",
+          "description": "Patient reference (full format: 'Patient/123')"
+        },
+        {
+          "name": "clinical_status",
+          "path": "clinicalStatus.coding.code.first()",
+          "description": "Clinical status (active, resolved, etc.)"
+        },
+        {
+          "name": "icd10_code",
+          "path": "code.coding.where(system = 'http://hl7.org/fhir/sid/icd-10-cm').code.first()",
+          "description": "ICD-10-CM diagnosis code"
+        },
+        {
+          "name": "icd10_display",
+          "path": "code.coding.where(system = 'http://hl7.org/fhir/sid/icd-10-cm').display.first()",
+          "description": "ICD-10-CM diagnosis description"
+        },
+        {
+          "name": "snomed_code",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').code.first()",
+          "description": "SNOMED CT code"
+        },
+        {
+          "name": "snomed_display",
+          "path": "code.coding.where(system = 'http://snomed.info/sct').display.first()",
+          "description": "SNOMED CT description"
+        },
+        {
+          "name": "code_text",
+          "path": "code.text",
+          "description": "Human-readable condition text"
+        }
+      ]
+    }
+  ]
+}

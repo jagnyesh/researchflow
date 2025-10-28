@@ -202,14 +202,15 @@ Focus on:
         # Age range to birthdate filter
         if "age_min" in filters or "age_max" in filters:
             current_year = datetime.now().year
+            # Use separate parameters for min and max to avoid overwriting
             if "age_max" in filters:
                 # age < X means birthdate > (current_year - X)
                 min_birth_year = current_year - filters["age_max"]
-                search_params["birthdate"] = f"ge{min_birth_year}-01-01"
+                search_params["birthdate_min"] = f"ge{min_birth_year}-01-01"
             if "age_min" in filters:
                 # age > X means birthdate < (current_year - X)
                 max_birth_year = current_year - filters["age_min"]
-                search_params["birthdate"] = f"le{max_birth_year}-12-31"
+                search_params["birthdate_max"] = f"le{max_birth_year}-12-31"
 
         # Post-filters for conditions (applied after results)
         post_filters = []

@@ -1,0 +1,67 @@
+{
+  "researcher_info": {
+    "name": "Dr. Sarah Chen",
+    "email": "sarah.chen@hospital.edu",
+    "department": "Endocrinology"
+  },
+  "initial_request": "I need patients with Type 2 Diabetes who have HbA1c > 7.0% for a clinical study on glycemic control interventions. Need demographics, lab results (HbA1c, glucose), and medication history for the past 2 years.",
+  "structured_requirements": {
+    "study_title": "Glycemic Control in Type 2 Diabetes - E2E Test",
+    "principal_investigator": "Dr. Sarah Chen",
+    "irb_number": "IRB-2025-E2E-TEST-001",
+    "inclusion_criteria": [
+      {
+        "description": "Type 2 Diabetes Mellitus diagnosis",
+        "type": "condition",
+        "concepts": [
+          {
+            "type": "condition",
+            "term": "Type 2 Diabetes",
+            "code": "44054006",
+            "system": "SNOMED-CT"
+          }
+        ]
+      },
+      {
+        "description": "HbA1c > 7.0%",
+        "type": "lab_value",
+        "concepts": [
+          {
+            "type": "lab",
+            "term": "HbA1c",
+            "code": "4548-4",
+            "system": "LOINC",
+            "value": "> 7.0",
+            "unit": "%"
+          }
+        ]
+      }
+    ],
+    "exclusion_criteria": [
+      {
+        "description": "Type 1 Diabetes",
+        "type": "condition",
+        "concepts": [
+          {
+            "type": "condition",
+            "term": "Type 1 Diabetes",
+            "code": "46635009",
+            "system": "SNOMED-CT"
+          }
+        ]
+      }
+    ],
+    "data_elements": [
+      "demographics",
+      "lab_results",
+      "medications"
+    ],
+    "time_period": {
+      "start": "2023-01-01",
+      "end": "2025-01-01"
+    },
+    "estimated_cohort_size": 150,
+    "delivery_format": "CSV",
+    "phi_level": "limited_dataset"
+  }
+}

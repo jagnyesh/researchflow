@@ -39,9 +39,12 @@ def initialize_orchestrator():
     if 'orchestrator' not in st.session_state:
         orchestrator = ResearchRequestOrchestrator()
 
-        # Register all agents
+        # Get HAPI FHIR database URL from environment
+        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+
+        # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
         orchestrator.register_agent('requirements_agent', RequirementsAgent())
-        orchestrator.register_agent('phenotype_agent', PhenotypeValidationAgent())
+        orchestrator.register_agent('phenotype_agent', PhenotypeValidationAgent(database_url=hapi_db_url))
         orchestrator.register_agent('calendar_agent', CalendarAgent())
         orchestrator.register_agent('extraction_agent', DataExtractionAgent())
         orchestrator.register_agent('qa_agent', QualityAssuranceAgent())

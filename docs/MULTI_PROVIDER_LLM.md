@@ -51,6 +51,7 @@ NON_CRITICAL_TASK_TYPES = ["calendar", "delivery", "notification", "scheduling"]
 
 ## Configuration
 
+
 ### Environment Variables
 
 Add to `.env` file:

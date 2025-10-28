@@ -76,6 +76,9 @@ class PostgresRunner:
         self._total_queries = 0
         self._total_execution_time_ms = 0.0
 
+        # Store last executed SQL for retrieval
+        self._last_executed_sql: Optional[str] = None
+
         logger.info(
             f"Initialized PostgresRunner "
             f"(cache={'enabled' if enable_cache else 'disabled'}, TTL={cache_ttl_seconds}s)"
@@ -138,6 +141,7 @@ class PostgresRunner:
             )
 
             logger.debug(f"Built SQL query: {len(query.sql)} characters, {query.column_count} columns")
+            logger.debug(f"Generated SQL:\n{query.sql}")
 
         except Exception as e:
             logger.error(f"Failed to build SQL query for '{view_name}': {e}")
@@ -145,6 +149,9 @@ class PostgresRunner:
 
         # Step 2: Execute SQL query
         start_time = datetime.now()
+
+        # Store SQL for retrieval
+        self._last_executed_sql = query.sql
 
         try:
             rows = await self.db_client.execute_query(query.sql)
@@ -387,6 +394,15 @@ class PostgresRunner:
             'total_execution_time_ms': round(self._total_execution_time_ms, 2),
             'average_execution_time_ms': round(avg_time, 2)
         }
+
+    def get_last_executed_sql(self) -> Optional[str]:
+        """
+        Get the last executed SQL query
+
+        Returns:
+            Last executed SQL string, or None if no queries executed yet
+        """
+        return self._last_executed_sql
 
 
 async def create_postgres_runner(

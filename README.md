@@ -91,6 +91,20 @@ ResearchFlow employs seven specialized autonomous agents:
 - **Scope Change Support**: Mid-workflow requirement modifications with impact analysis
 - **Timeout Detection**: Proactive escalation of delayed approvals
 
+### LangSmith Observability ⭐ NEW
+
+**Sprint 5 Enhancement**: Complete workflow observability with LangSmith tracing
+
+- **Workflow Tracing**: Monitor every execution from start to finish
+- **Agent Performance**: Track execution time and success rate for all 6 agents
+- **LLM Cost Tracking**: Monitor token usage, costs, and latency for Claude API calls
+- **Error Debugging**: Full stack traces with request context for failed workflows
+- **Smart Tagging**: Separate E2E test runs from production executions
+- **Hierarchical Traces**: Workflow → Agent → LLM call hierarchy for deep visibility
+
+**Dashboard**: Access real-time traces at [smith.langchain.com](https://smith.langchain.com)
+**Guide**: See `docs/LANGSMITH_DASHBOARD_GUIDE.md` for complete usage instructions
+
 ---
 
 ## Architecture
@@ -177,21 +191,129 @@ cp config/.env.example .env
 # Terminal 1: Start API server
 uvicorn app.main:app --reload --port 8000
 
-# Terminal 2: Start Research Notebook
+# Terminal 2: Start Exploratory Analytics Portal (Chat Interface)
 streamlit run app/web_ui/research_notebook.py --server.port 8501
 
-# Terminal 3: Start Admin Dashboard
-streamlit run app/web_ui/admin_dashboard.py --server.port 8502
+# Terminal 3: Start Formal Request Portal (Form-based)
+streamlit run app/web_ui/researcher_portal.py --server.port 8502
+
+# Terminal 4: Start Admin Dashboard
+streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 ```
 
 ### Access Points
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Research Notebook | http://localhost:8501 | Submit requests, track progress |
-| Admin Dashboard | http://localhost:8502 | Review approvals, monitor system |
+| Exploratory Analytics Portal | http://localhost:8501 | Interactive SQL-on-FHIR analytics with chat interface |
+| Formal Request Portal | http://localhost:8502 | Structured data requests with approval workflow |
+| Admin Dashboard | http://localhost:8503 | Review approvals, monitor system |
 | API Server | http://localhost:8000 | REST API endpoints |
 | API Documentation | http://localhost:8000/docs | Interactive API docs |
+
+---
+
+## Two Researcher Interfaces
+
+ResearchFlow provides two complementary interfaces for different research workflows:
+
+### 1. 📊 Exploratory Analytics Portal (Chat Interface)
+
+**URL**: http://localhost:8501
+**File**: `app/web_ui/research_notebook.py`
+
+**Purpose**: Quick, interactive exploration of available data using natural language queries
+
+#### Features
+- 💬 **Conversational AI** - Ask questions naturally, get instant answers
+- ⚡ **Real-time SQL-on-FHIR Analytics** - Fast COUNT queries, no approvals needed
+- 📈 **Feasibility Metrics** - Cohort size estimates, data availability scores
+- 🔄 **Convert to Formal** - Option to proceed to full extraction workflow
+
+#### Use Cases
+- "How many patients with diabetes do we have?"
+- "What's the age distribution of heart failure patients?"
+- "Patients with HbA1c > 8% in the last year?"
+- Exploring data availability before writing research protocol
+
+#### Workflow
+```
+1. User asks natural language question
+   ↓
+2. AI interprets query (LLM-powered)
+   ↓
+3. Generates SQL-on-FHIR ViewDefinition
+   ↓
+4. Executes COUNT query against FHIR data
+   ↓
+5. Shows cohort size, feasibility metrics
+   ↓
+6. [Optional] User confirms → Submit to formal workflow
+```
+
+**Key Advantage**: Get answers in **seconds**, not weeks. No approvals required for counts.
+
+**Start**: `streamlit run app/web_ui/research_notebook.py --server.port 8501`
+
+---
+
+### 2. 📋 Formal Request Portal (Structured Forms)
+
+**URL**: http://localhost:8502
+**File**: `app/web_ui/researcher_portal.py`
+
+**Purpose**: Submit structured data requests with proper terminologies for full data extraction
+
+#### Features
+- 📝 **Form-based Submission** - Required fields (IRB, researcher info, data elements)
+- 🔐 **Full Approval Workflow** - Informatician SQL review, extraction approval, QA review
+- 🤖 **Multi-Agent Orchestration** - Requirements → Phenotype → Extraction → QA → Delivery
+- 📊 **Compliance & Audit** - Complete audit trail, HIPAA-compliant de-identification
+
+#### Use Cases
+- "I need to extract diabetes patient data for IRB-2025-001 study"
+- "Formal data request with specific terminologies (SNOMED, LOINC)"
+- "Upload data request form with inclusion/exclusion criteria"
+- "IRB-approved research requiring full dataset delivery"
+
+#### Workflow
+```
+1. Fill form with researcher info, IRB, data request
+   ↓
+2. Submit to Orchestrator
+   ↓
+3. Requirements Agent extracts structured requirements
+   ↓
+4. Phenotype Agent generates SQL
+   ↓
+5. 🚨 CRITICAL: Informatician approval required
+   ↓
+6. Data Extraction → QA → Delivery
+   ↓
+7. Delivered data with documentation
+```
+
+**Key Requirement**: **Informatician must approve SQL** before execution (safety gate)
+
+**Start**: `streamlit run app/web_ui/researcher_portal.py --server.port 8502`
+
+---
+
+### When to Use Which Interface?
+
+| Scenario | Recommended Interface | Why? |
+|----------|----------------------|------|
+| "What data is available?" | 📊 Exploratory Analytics | Instant counts, no approvals |
+| "Quick cohort size check" | 📊 Exploratory Analytics | Feasibility in seconds |
+| "Need formal IRB-approved extraction" | 📋 Formal Request Portal | Full audit trail, compliance |
+| "Upload data request with terminologies" | 📋 Formal Request Portal | Structured requirements |
+| "Exploring before writing protocol" | 📊 Exploratory → 📋 Formal | Explore first, then formal request |
+| "Delivery of full dataset" | 📋 Formal Request Portal | Requires approvals, de-identification, QA |
+
+**Typical Researcher Workflow**:
+1. **Explore** using chat interface → Get fast feasibility estimates
+2. **Refine** research question based on available data
+3. **Submit formal** request once IRB approved and criteria defined
 
 ---
 
@@ -375,6 +497,12 @@ ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 DATABASE_URL=sqlite+aiosqlite:///./dev.db
 # Or PostgreSQL: postgresql+asyncpg://user:pass@localhost/dbname
 
+# LangSmith Observability (Sprint 5)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_API_KEY=lsv2_pt_your-langsmith-key-here
+LANGCHAIN_PROJECT=researchflow-production
+
 # Performance
 ENABLE_QUERY_CACHE=true
 CACHE_TTL_SECONDS=300
@@ -426,6 +554,151 @@ python scripts/test_approval_workflow.py
 
 ---
 
+## Troubleshooting
+
+### Common Installation Issues
+
+#### 1. Missing `aiosqlite` Module
+
+**Error**: `ModuleNotFoundError: No module named 'aiosqlite'`
+
+**Solution**:
+```bash
+# Install aiosqlite specifically
+pip install aiosqlite==0.19.0
+
+# Or install all dependencies
+pip install -r config/requirements.txt
+```
+
+**Note**: If full installation fails on scipy (requires Fortran compiler), you can run the API server without it. Scipy is only needed for research notebook analytics.
+
+#### 2. Mixed Python Version in Virtual Environment
+
+**Error**: `ImportError: cannot import name 'Undefined' from 'pydantic.fields'`
+
+**Cause**: Virtual environment has mixed Python 3.11 and 3.13 packages
+
+**Solution - Recreate virtual environment**:
+```bash
+# Remove old venv
+rm -rf .venv
+
+# Create new venv with specific Python version
+python3.11 -m venv .venv  # Or python3.13
+source .venv/bin/activate
+
+# Install core dependencies
+pip install --upgrade pip
+pip install aiosqlite fastapi uvicorn httpx sqlalchemy python-dotenv anthropic
+pip install python-jose[cryptography] streamlit alembic asyncpg
+
+# Install LangChain/LangGraph dependencies
+pip install langchain langchain-anthropic langgraph langsmith
+```
+
+#### 3. Pydantic Version Conflicts
+
+**Error**: `pydantic>=2.7.4 required but you have pydantic 1.10.12`
+
+**Solution - Upgrade to compatible versions**:
+```bash
+pip install --upgrade fastapi pydantic uvicorn
+```
+
+**Note**: The requirements.txt may have outdated versions. Use the latest compatible versions:
+- FastAPI: 0.100+
+- Pydantic: 2.7+
+- LangChain: 0.3+
+
+#### 4. LangSmith Traces Not Appearing
+
+**Error**: No traces showing up in LangSmith dashboard
+
+**Solutions**:
+1. Verify environment variables in `.env`:
+   ```bash
+   LANGCHAIN_TRACING_V2=true
+   LANGCHAIN_API_KEY=lsv2_pt_...
+   LANGCHAIN_PROJECT=researchflow-production
+   ```
+
+2. Test LangSmith connection:
+   ```python
+   from langsmith import Client
+   client = Client()  # Should not raise errors
+   ```
+
+3. Wait 5-10 seconds for traces to appear (async upload)
+4. Refresh dashboard page
+5. Check firewall allows HTTPS to `api.smith.langchain.com`
+
+### Database Issues
+
+#### SQLite Permission Errors
+
+**Error**: `PermissionError: [Errno 13] Permission denied: './dev.db'`
+
+**Solution**:
+```bash
+# Ensure current directory is writable
+chmod +w .
+
+# Or use absolute path in .env
+DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/dev.db
+```
+
+#### PostgreSQL Connection Failures
+
+**Error**: `could not connect to server: Connection refused`
+
+**Solution**:
+```bash
+# Check PostgreSQL is running
+psql -U postgres -c "SELECT 1"
+
+# Verify connection string in .env
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
+```
+
+### Running the Server
+
+#### Port Already in Use
+
+**Error**: `Error: [Errno 48] Address already in use`
+
+**Solution**:
+```bash
+# Find and kill process on port 8000
+lsof -ti:8000 | xargs kill -9
+
+# Or use a different port
+uvicorn app.main:app --port 8001
+```
+
+#### Import Errors on Startup
+
+**Error**: Various `ModuleNotFoundError` or `ImportError`
+
+**Solution**:
+```bash
+# Verify you're in the virtual environment
+which python  # Should show .venv/bin/python
+
+# Reinstall dependencies
+pip install --force-reinstall -r config/requirements.txt
+```
+
+### Getting Help
+
+If issues persist:
+1. Check [GitHub Issues](https://github.com/yourusername/researchflow/issues)
+2. Review complete setup guide: `docs/SETUP_GUIDE.md`
+3. Enable debug logging: `export LOG_LEVEL=DEBUG`
+4. Test with minimal configuration (SQLite, no LangSmith)
+
+---
+
 ## Documentation
 
 ### User Guides
@@ -434,6 +707,8 @@ python scripts/test_approval_workflow.py
 - [Research Notebook Guide](docs/RESEARCH_NOTEBOOK_GUIDE.md) - Researcher portal usage
 - [Approval Workflow Guide](docs/APPROVAL_WORKFLOW_GUIDE.md) - Human-in-loop workflow
 - [Quick Reference](docs/QUICK_REFERENCE.md) - Commands and key concepts
+- **[LangSmith Dashboard Guide](docs/LANGSMITH_DASHBOARD_GUIDE.md)** ⭐ NEW - Observability & monitoring
+- **[LangSmith Workflow Traces](docs/LANGSMITH_WORKFLOW_TRACES.md)** ⭐ NEW - All execution paths & trace patterns
 
 ### Technical Documentation
 
@@ -451,6 +726,12 @@ python scripts/test_approval_workflow.py
 - [Parallel Processing](docs/implementation/PARALLEL_PROCESSING_COMPLETE.md)
 - [Human-in-Loop Enhancement](docs/implementation/HUMAN_IN_LOOP_COMPLETE.md)
 - [Approval Workflow Test Results](docs/implementation/APPROVAL_WORKFLOW_TEST_RESULTS.md)
+
+### Sprint Documentation
+
+- [Sprint 5: LangSmith Observability](docs/sprints/SPRINT_05_LANGSMITH_OBSERVABILITY.md) - Sprint plan
+- [Sprint 5: Progress Report](docs/sprints/SPRINT_05_PROGRESS_REPORT.md) - Implementation progress
+- **[Sprint 5: Completion Summary](docs/sprints/SPRINT_05_COMPLETION_SUMMARY.md)** ⭐ NEW - Final deliverables
 
 ---
 

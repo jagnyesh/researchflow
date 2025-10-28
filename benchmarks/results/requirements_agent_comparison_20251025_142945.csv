@@ -1,0 +1,6 @@
+Agent,Test,Iteration,Execution Time (ms),Memory Peak (MB),Success,Completeness Score
+Custom,Single-Turn,1,0.8836250053718686,0.0823831558227539,True,0.4
+Custom,Single-Turn,2,0.651958049274981,0.0742807388305664,True,0.4
+Custom,Single-Turn,3,0.7965830154716969,0.07338809967041016,True,0.4
+Custom,Single-Turn,4,0.5878749070689082,0.0733346939086914,True,0.4
+Custom,Single-Turn,5,0.6137080490589142,0.0747385025024414,True,0.4

@@ -93,6 +93,7 @@ class ViewDefinitionResponse(BaseModel):
     row_count: int
     rows: List[Dict[str, Any]]
     column_schema: Dict[str, str]
+    generated_sql: Optional[str] = None  # SQL query that was executed
 
 
 class ViewDefinitionListResponse(BaseModel):
@@ -260,6 +261,11 @@ async def execute_view_definition(request: ViewDefinitionRequest):
             # Get schema
             schema = runner.get_schema(view_def)
 
+            # Get generated SQL (if PostgresRunner)
+            generated_sql = None
+            if hasattr(runner, 'get_last_executed_sql'):
+                generated_sql = runner.get_last_executed_sql()
+
             logger.info(f"ViewDefinition '{request.view_name}' returned {len(rows)} rows")
 
             return ViewDefinitionResponse(
@@ -267,7 +273,8 @@ async def execute_view_definition(request: ViewDefinitionRequest):
                 resource_type=view_def.get("resource"),
                 row_count=len(rows),
                 rows=rows,
-                column_schema=schema
+                column_schema=schema,
+                generated_sql=generated_sql
             )
 
         finally:
