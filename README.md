@@ -554,6 +554,77 @@ python scripts/test_approval_workflow.py
 
 ---
 
+## Recent Updates
+
+### ✅ October 2025: Research Notebook Query Fixes
+
+**Issue Resolved**: Research Notebook displaying "0 patients" for valid diabetes queries
+
+#### Problems Fixed
+
+**1. Environment Variable Loading in Streamlit Context**
+- **Symptom**: LLM falling back to dummy mode, extracting no filters
+- **Root Cause**: `ANTHROPIC_API_KEY` not loaded in Streamlit's working directory context
+- **Fix**: Added explicit `.env` path loading in both entry points
+  - `app/web_ui/research_notebook.py` - Explicit dotenv path with verification logging
+  - `app/utils/llm_client.py` - Module-level env loading at import time
+- **Impact**: Query interpretation now works correctly, proper filter extraction
+
+**2. Medical Terminology Text Matching**
+- **Symptom**: LLM generates "Diabetes mellitus (all types)" but database has "Diabetes mellitus type 2 (disorder)" → No matches
+- **Root Cause**: Exact text matching too specific for real-world FHIR data with incomplete SNOMED/ICD-10 coding
+- **Fix**: Smart core term extraction with fallback matching strategy
+  - Added `_extract_core_medical_term()` method to extract "diabetes" from verbose condition names
+  - Updated JOIN query builder to use OR clauses with multiple matching strategies:
+    1. Try SNOMED/ICD-10 codes first (if present)
+    2. Fall back to core medical term (e.g., "diabetes")
+    3. Also try full condition name as backup
+- **Impact**: Queries now successfully match patients even with incomplete medical terminology
+
+#### Verification Results
+
+**Before Fix**:
+```
+Query: "count of all male patients with diabetes?"
+Result: 0 patients ❌
+SQL visibility: Hidden
+```
+
+**After Fix**:
+```
+Query: "count of all male patients with diabetes?"
+Result: 28 patients ✅
+Execution Time: 91.3 ms
+SQL visibility: Displayed with expander
+
+Generated SQL:
+  SELECT COUNT(DISTINCT p.patient_id)
+    FROM sqlonfhir.patient_demographics p
+    JOIN sqlonfhir.condition_simple c
+      ON p.patient_id = c.patient_id
+   WHERE LOWER(p.gender) = 'male'
+     AND (c.snomed_code = '73211009'
+          OR c.code_text ILIKE '%diabetes%'  -- Core term
+          OR c.code_text ILIKE '%Diabetes mellitus (all types)%')
+```
+
+#### Files Modified
+
+- `app/web_ui/research_notebook.py:24-41` - Fixed .env loading with verification
+- `app/utils/llm_client.py:14-18` - Added module-level .env loading
+- `app/sql_on_fhir/join_query_builder.py:236-296` - Smart medical term matching
+
+#### Testing
+
+Run verification test:
+```bash
+PYTHONPATH=/Users/jagnyesh/Development/FHIR_PROJECT python /tmp/verify_ui_fix.py
+```
+
+Expected output: `✅ SUCCESS: Found 28 patients!`
+
+---
+
 ## Troubleshooting
 
 ### Common Installation Issues

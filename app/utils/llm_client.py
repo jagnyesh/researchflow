@@ -9,6 +9,13 @@ import json
 import logging
 from typing import Dict, Any, Optional
 import anthropic
+from dotenv import load_dotenv
+
+# Load .env file from project root when this module is imported
+# This ensures ANTHROPIC_API_KEY is available before LLMClient is initialized
+_project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+_dotenv_path = os.path.join(_project_root, '.env')
+load_dotenv(_dotenv_path)
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +39,7 @@ class LLMClient:
     async def complete(
         self,
         prompt: str,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-3-7-sonnet-20250219",
         max_tokens: int = 4096,
         temperature: float = 0.7,
         system: Optional[str] = None
@@ -77,7 +84,7 @@ class LLMClient:
         self,
         prompt: str,
         schema_description: str,
-        model: str = "claude-3-5-sonnet-20241022",
+        model: str = "claude-3-7-sonnet-20250219",
         system: Optional[str] = None
     ) -> Dict[str, Any]:
         """

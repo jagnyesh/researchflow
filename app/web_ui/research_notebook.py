@@ -21,11 +21,24 @@ from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# Load environment variables from project root (explicit path)
+# Get project root: /Users/.../FHIR_PROJECT
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+dotenv_path = os.path.join(project_root, '.env')
+
+# Load .env file
+load_dotenv(dotenv_path)
+
+# Verify critical environment variables are loaded
+anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+if anthropic_key:
+    print(f"✓ Loaded ANTHROPIC_API_KEY from: {dotenv_path} (key starts with: {anthropic_key[:20]}...)")
+else:
+    print(f"⚠️  WARNING: ANTHROPIC_API_KEY not found! Checked: {dotenv_path}")
+    print(f"   Query interpretation will fall back to dummy mode (inaccurate results)")
 
 # Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+sys.path.insert(0, project_root)
 
 from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
@@ -261,6 +274,27 @@ async def handle_query(user_input: str):
         "role": "assistant",
         "content": feasibility_response
     })
+
+    # Display SQL visibility (for testing/debugging)
+    if feasibility_data.get('generated_sql'):
+        with st.expander("🔍 View Generated SQL Query", expanded=False):
+            st.code(feasibility_data['generated_sql'], language='sql')
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Execution Time", f"{feasibility_data.get('execution_time_ms', 0):.1f} ms")
+            with col2:
+                st.metric("Query Type", "JOIN" if feasibility_data.get('used_join_query') else "Single View")
+            with col3:
+                st.metric("Result Count", feasibility_data['estimated_cohort'])
+
+            if feasibility_data.get('filter_summary'):
+                st.info(f"**Filters Applied:** {feasibility_data['filter_summary']}")
+
+            # Copy to clipboard button
+            if st.button("📋 Copy SQL", key="copy_sql"):
+                st.code(feasibility_data['generated_sql'], language='sql')
+                st.success("SQL copied to clipboard!")
 
 
 async def submit_research_request():

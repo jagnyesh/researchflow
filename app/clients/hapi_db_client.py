@@ -48,10 +48,16 @@ class HAPIDBClient:
             max_pool_size: Maximum connections in pool
             command_timeout: Query timeout in seconds
         """
-        self.connection_url = connection_url or os.getenv(
+        # Get raw connection URL from parameter or environment
+        raw_url = connection_url or os.getenv(
             'HAPI_DB_URL',
             'postgresql://hapi:hapi@localhost:5433/hapi'
         )
+
+        # Normalize DSN: strip SQLAlchemy dialect specifiers
+        # asyncpg expects 'postgresql://' but SQLAlchemy uses 'postgresql+asyncpg://'
+        self.connection_url = raw_url.replace('postgresql+asyncpg://', 'postgresql://')
+
         self.min_pool_size = min_pool_size
         self.max_pool_size = max_pool_size
         self.command_timeout = command_timeout
