@@ -249,3 +249,6 @@ docs/UX_UI_IMPROVEMENT*.md
 
 # Benchmarks folder (performance testing artifacts)
 benchmarks/
+
+# Miscellaneous enhancements folder (archived development docs)
+docs/misc_enhancements/
