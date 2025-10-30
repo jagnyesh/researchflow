@@ -1,0 +1,53 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	new_request(new_request)
+	requirements_gathering(requirements_gathering)
+	requirements_review(requirements_review)
+	feasibility_validation(feasibility_validation)
+	phenotype_review(phenotype_review)
+	schedule_kickoff(schedule_kickoff)
+	extraction_approval(extraction_approval)
+	data_extraction(data_extraction)
+	qa_validation(qa_validation)
+	qa_review(qa_review)
+	data_delivery(data_delivery)
+	complete(complete)
+	not_feasible(not_feasible)
+	qa_failed(qa_failed)
+	human_review(human_review)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> new_request;
+	data_delivery --> complete;
+	data_extraction --> qa_validation;
+	extraction_approval -. &nbsp;wait_for_approval&nbsp; .-> __end__;
+	extraction_approval -.-> data_extraction;
+	extraction_approval -.-> human_review;
+	feasibility_validation -.-> not_feasible;
+	feasibility_validation -.-> phenotype_review;
+	new_request --> requirements_gathering;
+	phenotype_review -. &nbsp;wait_for_approval&nbsp; .-> __end__;
+	phenotype_review -.-> feasibility_validation;
+	phenotype_review -.-> schedule_kickoff;
+	qa_review -. &nbsp;wait_for_approval&nbsp; .-> __end__;
+	qa_review -.-> data_delivery;
+	qa_review -.-> data_extraction;
+	qa_validation -.-> qa_failed;
+	qa_validation -.-> qa_review;
+	requirements_gathering -. &nbsp;wait_for_input&nbsp; .-> __end__;
+	requirements_gathering -.-> requirements_review;
+	requirements_review -. &nbsp;wait_for_approval&nbsp; .-> __end__;
+	requirements_review -.-> feasibility_validation;
+	requirements_review -.-> requirements_gathering;
+	schedule_kickoff --> extraction_approval;
+	complete --> __end__;
+	human_review --> __end__;
+	not_feasible --> __end__;
+	qa_failed --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc

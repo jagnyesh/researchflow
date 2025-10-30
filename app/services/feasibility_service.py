@@ -16,6 +16,10 @@ import logging
 import httpx
 from datetime import datetime
 
+from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
+from app.clients.hapi_db_client import HAPIDBClient
+import os
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,6 +29,10 @@ class FeasibilityService:
     def __init__(self, api_base_url: str = "http://localhost:8000"):
         self.api_base_url = api_base_url
         self.client = httpx.AsyncClient(timeout=30.0)
+        self.join_query_builder = JoinQueryBuilder()
+        # Initialize direct database client for JOIN queries
+        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+        self.db_client = HAPIDBClient(hapi_db_url)
 
     async def execute_feasibility_check(
         self,
@@ -49,25 +57,83 @@ class FeasibilityService:
                 - recommendations: List of suggestions
         """
         try:
-            # Execute COUNT query for each ViewDefinition
-            cohort_counts = {}
+            # Detect if this is a multi-view query (e.g., demographics + conditions)
+            view_definitions = query_intent.get('view_definitions', [])
+            post_filters = query_intent.get('post_filters', [])
+            search_params = query_intent.get('search_params', {})
 
-            for view_name in query_intent.get('view_definitions', []):
+            # Use JOIN query if:
+            # 1. Multiple views specified, OR
+            # 2. Single view with post_filters (need JOIN to apply condition filters)
+            use_join_query = len(view_definitions) > 1 or (post_filters and len(post_filters) > 0)
+
+            if use_join_query:
+                # Multi-view query - use JOIN
+                logger.info(f"Using JOIN query for views: {view_definitions}")
+                query_result = self.join_query_builder.build_multi_view_count_query(
+                    view_definitions=view_definitions,
+                    search_params=search_params,
+                    post_filters=post_filters
+                )
+
+                # Execute JOIN query
                 try:
-                    count = await self._execute_count_query(
-                        view_name=view_name,
-                        search_params=query_intent.get('search_params', {})
-                    )
-                    cohort_counts[view_name] = count
-                except Exception as e:
-                    logger.warning(f"Failed to count {view_name}: {e}")
-                    cohort_counts[view_name] = 0
+                    start_time = datetime.now()
+                    result = await self.db_client.execute_query(query_result['sql'])
+                    execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
 
-            # Calculate estimated cohort (use primary ViewDefinition, usually demographics)
-            estimated_cohort = cohort_counts.get('patient_demographics', 0)
-            if estimated_cohort == 0 and cohort_counts:
-                # Fall back to first ViewDefinition with non-zero count
-                estimated_cohort = next((v for v in cohort_counts.values() if v > 0), 0)
+                    estimated_cohort = result[0]['count'] if result else 0
+                    cohort_counts = {
+                        query_result['primary_view']: estimated_cohort
+                    }
+
+                    # Store SQL visibility info
+                    generated_sql = query_result['sql']
+                    filter_summary = query_result['filter_summary']
+
+                    logger.info(f"JOIN query returned {estimated_cohort} patients ({execution_time_ms:.1f}ms)")
+
+                except Exception as e:
+                    logger.error(f"JOIN query failed: {e}")
+                    logger.debug(f"SQL: {query_result['sql']}")
+                    estimated_cohort = 0
+                    cohort_counts = {}
+                    generated_sql = query_result['sql']
+                    filter_summary = str(e)
+                    execution_time_ms = 0
+
+            else:
+                # Single-view query - use existing API approach
+                logger.info(f"Using single-view query for: {view_definitions}")
+                cohort_counts = {}
+                demographic_views = ['patient_demographics', 'patient_simple']
+
+                for view_name in view_definitions:
+                    try:
+                        # Only pass demographic search_params to demographic views
+                        if view_name in demographic_views:
+                            view_search_params = search_params
+                        else:
+                            view_search_params = {}
+
+                        count = await self._execute_count_query(
+                            view_name=view_name,
+                            search_params=view_search_params
+                        )
+                        cohort_counts[view_name] = count
+                    except Exception as e:
+                        logger.warning(f"Failed to count {view_name}: {e}")
+                        cohort_counts[view_name] = 0
+
+                # Calculate estimated cohort
+                estimated_cohort = cohort_counts.get('patient_demographics', 0)
+                if estimated_cohort == 0 and cohort_counts:
+                    estimated_cohort = next((v for v in cohort_counts.values() if v > 0), 0)
+
+                # Generate simple SQL for visibility
+                generated_sql = f"SELECT COUNT(*) FROM sqlonfhir.{view_definitions[0]}" if view_definitions else ""
+                filter_summary = f"Gender: {search_params.get('gender', 'any')}"
+                execution_time_ms = 0
 
             # Calculate data availability
             data_availability = await self._calculate_data_availability(
@@ -103,7 +169,12 @@ class FeasibilityService:
                 "warnings": warnings,
                 "recommendations": recommendations,
                 "time_period": query_intent.get('time_period', {}),
-                "executed_at": datetime.now().isoformat()
+                "executed_at": datetime.now().isoformat(),
+                # SQL visibility fields
+                "generated_sql": generated_sql,
+                "filter_summary": filter_summary,
+                "execution_time_ms": execution_time_ms,
+                "used_join_query": use_join_query
             }
 
         except Exception as e:
@@ -308,5 +379,6 @@ class FeasibilityService:
         return min(feasibility_score, 1.0)
 
     async def close(self):
-        """Close HTTP client"""
+        """Close HTTP client and database client"""
         await self.client.aclose()
+        await self.db_client.close()

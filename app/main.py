@@ -13,6 +13,7 @@ from .api.sql_on_fhir import router as sql_router
 from .api.mcp import router as mcp_router
 from .api.a2a import router as a2a_router
 from .api.analytics import router as analytics_router
+from .api.materialized_views import router as materialized_views_router
 from .api.approvals import router as approvals_router, set_orchestrator as set_approvals_orch
 from .api.research import router as research_router, set_orchestrator as set_research_orch
 from .orchestrator.orchestrator import ResearchRequestOrchestrator
@@ -45,36 +46,46 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database initialized")
 
-    # Initialize orchestrator
-    orchestrator = ResearchRequestOrchestrator()
-    logger.info("Orchestrator initialized")
+    # Check if orchestrator should be enabled (for full workflow automation)
+    # Set ENABLE_ORCHESTRATOR=false to run analytics-only mode
+    enable_orchestrator = os.getenv("ENABLE_ORCHESTRATOR", "true").lower() == "true"
 
-    # Get HAPI FHIR database URL from environment
-    hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-    logger.info(f"Using HAPI database: {hapi_db_url}")
+    if enable_orchestrator:
+        logger.info("Initializing orchestrator and agents (full workflow mode)...")
 
-    # Initialize and register all agents
-    requirements_agent = RequirementsAgent()
-    phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
-    calendar_agent = CalendarAgent()
-    extraction_agent = DataExtractionAgent()
-    qa_agent = QualityAssuranceAgent()
-    delivery_agent = DeliveryAgent()
-    coordinator_agent = CoordinatorAgent()
+        # Initialize orchestrator
+        orchestrator = ResearchRequestOrchestrator()
+        logger.info("Orchestrator initialized")
 
-    orchestrator.register_agent("requirements_agent", requirements_agent)
-    orchestrator.register_agent("phenotype_agent", phenotype_agent)
-    orchestrator.register_agent("calendar_agent", calendar_agent)
-    orchestrator.register_agent("extraction_agent", extraction_agent)
-    orchestrator.register_agent("qa_agent", qa_agent)
-    orchestrator.register_agent("delivery_agent", delivery_agent)
-    orchestrator.register_agent("coordinator_agent", coordinator_agent)
-    logger.info("All agents registered with orchestrator")
+        # Get HAPI FHIR database URL from environment
+        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+        logger.info(f"Using HAPI database: {hapi_db_url}")
 
-    # Set orchestrator in API routers
-    set_approvals_orch(orchestrator)
-    set_research_orch(orchestrator)
-    logger.info("Orchestrator connected to API endpoints")
+        # Initialize and register all agents
+        requirements_agent = RequirementsAgent()
+        phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
+        calendar_agent = CalendarAgent()
+        extraction_agent = DataExtractionAgent()
+        qa_agent = QualityAssuranceAgent()
+        delivery_agent = DeliveryAgent()
+        coordinator_agent = CoordinatorAgent()
+
+        orchestrator.register_agent("requirements_agent", requirements_agent)
+        orchestrator.register_agent("phenotype_agent", phenotype_agent)
+        orchestrator.register_agent("calendar_agent", calendar_agent)
+        orchestrator.register_agent("extraction_agent", extraction_agent)
+        orchestrator.register_agent("qa_agent", qa_agent)
+        orchestrator.register_agent("delivery_agent", delivery_agent)
+        orchestrator.register_agent("coordinator_agent", coordinator_agent)
+        logger.info("All agents registered with orchestrator")
+
+        # Set orchestrator in API routers
+        set_approvals_orch(orchestrator)
+        set_research_orch(orchestrator)
+        logger.info("Orchestrator connected to API endpoints")
+    else:
+        logger.info("Orchestrator disabled - running in analytics-only mode")
+        orchestrator = None
 
     logger.info("ResearchFlow application ready")
 
@@ -99,6 +110,7 @@ app.include_router(sql_router)
 app.include_router(mcp_router)
 app.include_router(a2a_router)
 app.include_router(analytics_router)
+app.include_router(materialized_views_router)
 app.include_router(approvals_router)
 
 

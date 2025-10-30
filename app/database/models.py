@@ -271,3 +271,57 @@ class AuditLog(Base):
 
     # Severity (for filtering)
     severity = Column(String, default="info")  # debug, info, warning, error, critical
+
+
+class MaterializedViewMetadata(Base):
+    """Metadata for materialized views in sqlonfhir schema"""
+    __tablename__ = "materialized_view_metadata"
+
+    id = Column(Integer, primary_key=True)
+    view_name = Column(String, unique=True, nullable=False, index=True)  # Name of the materialized view
+    created_at = Column(DateTime, default=datetime.now, nullable=False)  # When view was first created
+    last_refreshed_at = Column(DateTime, nullable=True)  # When view was last refreshed
+    next_refresh_at = Column(DateTime, nullable=True)  # Scheduled next refresh time
+
+    # View size and content metrics
+    row_count = Column(Integer, nullable=True)  # Number of rows in view
+    size_bytes = Column(Integer, nullable=True)  # Size of view in bytes
+    column_count = Column(Integer, nullable=True)  # Number of columns
+
+    # Performance metrics
+    refresh_duration_ms = Column(Float, nullable=True)  # Last refresh duration in milliseconds
+    last_query_time_ms = Column(Float, nullable=True)  # Last query execution time
+    query_count = Column(Integer, default=0)  # Total queries against this view
+
+    # Health and status
+    status = Column(String, default="active", nullable=False)  # active, stale, refreshing, failed
+    is_stale = Column(Boolean, default=False)  # True if data is considered stale
+    staleness_hours = Column(Float, nullable=True)  # Hours since last refresh
+    error_message = Column(Text, nullable=True)  # Last error message if refresh failed
+
+    # Configuration
+    auto_refresh_enabled = Column(Boolean, default=True)  # Enable automatic refresh
+    refresh_interval_hours = Column(Integer, default=24)  # Refresh frequency in hours
+
+    # ViewDefinition reference
+    view_definition_name = Column(String, nullable=True)  # Source ViewDefinition name
+    resource_type = Column(String, nullable=True)  # FHIR resource type (Patient, Observation, etc.)
+
+    # Indexes and dependencies
+    index_count = Column(Integer, default=0)  # Number of indexes on view
+    depends_on = Column(JSON, default=[])  # List of tables/views this view depends on
+
+    def __repr__(self):
+        return f"<MaterializedViewMetadata(view_name='{self.view_name}', status='{self.status}', row_count={self.row_count})>"
+
+    @property
+    def is_healthy(self) -> bool:
+        """Check if view is in healthy state"""
+        return self.status == 'active' and not self.is_stale
+
+    @property
+    def needs_refresh(self) -> bool:
+        """Check if view needs refresh based on staleness"""
+        if self.auto_refresh_enabled and self.staleness_hours:
+            return self.staleness_hours >= self.refresh_interval_hours
+        return False

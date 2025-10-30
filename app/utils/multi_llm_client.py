@@ -111,11 +111,11 @@ class MultiLLMClient:
         """
         # Critical tasks always use Claude
         if task_type in CRITICAL_TASK_TYPES:
-            return "anthropic:claude-3-5-sonnet-20241022"
+            return "anthropic:claude-3-7-sonnet-20250219"
 
         # Non-critical tasks use secondary provider
         if self.secondary_provider == 'anthropic':
-            return "anthropic:claude-3-5-sonnet-20241022"
+            return "anthropic:claude-3-7-sonnet-20250219"
         elif self.secondary_provider == 'openai':
             model = self.secondary_model or "gpt-4o"
             return f"openai:{model}"
@@ -124,7 +124,7 @@ class MultiLLMClient:
             return f"ollama:{model}"
         else:
             logger.warning(f"Unknown provider {self.secondary_provider}, using Claude")
-            return "anthropic:claude-3-5-sonnet-20241022"
+            return "anthropic:claude-3-7-sonnet-20250219"
 
     async def complete(
         self,
@@ -161,7 +161,7 @@ class MultiLLMClient:
             logger.debug(f"Using Claude for task_type={task_type}")
             return await self.claude_client.complete(
                 prompt=prompt,
-                model=model or "claude-3-5-sonnet-20241022",
+                model=model or "claude-3-7-sonnet-20250219",
                 max_tokens=max_tokens,
                 temperature=temperature,
                 system=system
@@ -196,7 +196,7 @@ class MultiLLMClient:
                 logger.warning(f"Falling back to Claude for task_type={task_type}")
                 return await self.claude_client.complete(
                     prompt=prompt,
-                    model="claude-3-5-sonnet-20241022",
+                    model="claude-3-7-sonnet-20250219",
                     max_tokens=max_tokens,
                     temperature=temperature,
                     system=system
@@ -230,7 +230,7 @@ class MultiLLMClient:
             return await self.claude_client.extract_structured_json(
                 prompt=prompt,
                 schema_description=schema_description,
-                model=model or "claude-3-5-sonnet-20241022",
+                model=model or "claude-3-7-sonnet-20250219",
                 system=system
             )
 

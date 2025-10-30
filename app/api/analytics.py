@@ -19,6 +19,8 @@ from ..clients.fhir_client import create_fhir_client
 from ..clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
+from ..sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
+from ..sql_on_fhir.runner.hybrid_runner import HybridRunner
 from ..sql_on_fhir.runner import create_postgres_runner
 
 logger = logging.getLogger(__name__)
@@ -32,19 +34,40 @@ async def create_runner():
 
     Returns:
         Tuple of (runner, cleanup_function)
-        - runner: InMemoryRunner or PostgresRunner
+        - runner: InMemoryRunner, PostgresRunner, MaterializedViewRunner, or HybridRunner
         - cleanup_function: async function to call for cleanup (or None)
 
     Environment Variables:
-        VIEWDEF_RUNNER: 'postgres' (default) or 'in_memory'
+        VIEWDEF_RUNNER: 'hybrid' (default), 'postgres', 'materialized', or 'in_memory'
         ENABLE_QUERY_CACHE: 'true' or 'false' (default: true)
         CACHE_TTL_SECONDS: Cache TTL in seconds (default: 300)
     """
-    runner_type = os.getenv('VIEWDEF_RUNNER', 'postgres').lower()
+    runner_type = os.getenv('VIEWDEF_RUNNER', 'hybrid').lower()
     enable_cache = os.getenv('ENABLE_QUERY_CACHE', 'true').lower() == 'true'
     cache_ttl = int(os.getenv('CACHE_TTL_SECONDS', '300'))
 
-    if runner_type == 'postgres':
+    if runner_type == 'hybrid':
+        logger.info(
+            f"Using HybridRunner (materialized views when available, postgres fallback, cache={enable_cache}, TTL={cache_ttl}s)"
+        )
+
+        # Create HAPI DB client
+        db_client = await create_hapi_db_client()
+
+        # Create HybridRunner
+        runner = HybridRunner(
+            db_client,
+            enable_cache=enable_cache,
+            cache_ttl_seconds=cache_ttl
+        )
+
+        # Cleanup function
+        async def cleanup():
+            await close_hapi_db_client()
+
+        return runner, cleanup
+
+    elif runner_type == 'postgres':
         logger.info(f"Using PostgresRunner (cache={enable_cache}, TTL={cache_ttl}s)")
 
         # Create HAPI DB client
@@ -56,6 +79,21 @@ async def create_runner():
             enable_cache=enable_cache,
             cache_ttl_seconds=cache_ttl
         )
+
+        # Cleanup function
+        async def cleanup():
+            await close_hapi_db_client()
+
+        return runner, cleanup
+
+    elif runner_type == 'materialized':
+        logger.info("Using MaterializedViewRunner (10-100x faster, queries pre-computed views)")
+
+        # Create HAPI DB client
+        db_client = await create_hapi_db_client()
+
+        # Create MaterializedViewRunner
+        runner = MaterializedViewRunner(db_client)
 
         # Cleanup function
         async def cleanup():
@@ -221,7 +259,9 @@ async def execute_view_definition(request: ViewDefinitionRequest):
     Execute a ViewDefinition and return tabular results
 
     Runner selection is controlled by VIEWDEF_RUNNER environment variable:
-    - 'postgres': Fast in-database execution (10-100x faster)
+    - 'hybrid': Smart routing - uses materialized views when available, postgres when not (RECOMMENDED, default)
+    - 'materialized': Ultra-fast queries against pre-computed views only (10-100x faster)
+    - 'postgres': Fast in-database execution with SQL generation
     - 'in_memory': REST API-based execution (slower but more flexible)
 
     Args:

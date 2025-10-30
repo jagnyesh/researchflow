@@ -207,3 +207,45 @@ test-results/
 # ============================================
 *.pid
 celerybeat-schedule
+
+# ============================================
+# Personal/Trivial Documentation
+# ============================================
+# Job search materials (not for open source)
+docs/TECHNICAL_INTERVIEW_PREP*.md
+docs/PROJECT_PORTFOLIO_ASSESSMENT.md
+LINKEDIN_POST*.md
+
+# Temporary development completion markers
+PHASE*.md
+*_COMPLETE.md
+*_INSTALLATION_COMPLETE.md
+*_SETUP_COMPLETE.md
+VIEWDEF_TEST_RESULTS.md
+PRE_PUBLICATION_CHECKLIST.md
+RESEARCH_NOTEBOOK_IMPROVEMENTS.md
+
+# One-off troubleshooting docs (outdated/resolved)
+UI_FIX_TROUBLESHOOTING.md
+docs/*_FIX*.md
+docs/DASHBOARD_FIX.md
+docs/DASHBOARD_FIX_SUMMARY.md
+docs/DARK_THEME_FIX.md
+docs/CIRCULAR_CONVERSATION_FIX.md
+docs/APPROVAL_WORKFLOW_FIX.md
+docs/NAVIGATION_AND_THEME_FIX.md
+docs/PENDING_APPROVALS_DISPLAY_FIX.md
+docs/UX_FIXES_WHITEBG.md
+docs/DEPENDENCY_ISSUES_FIXED.md
+docs/TESTING_AND_DASHBOARD_FIX_COMPLETE.md
+
+# Implementation completion reports (historical artifacts)
+docs/implementation/*_COMPLETE.md
+docs/IMPLEMENTATION_SUMMARY.md
+
+# Transient development notes
+docs/langupdate*.md
+docs/UX_UI_IMPROVEMENT*.md
+
+# Benchmarks folder (performance testing artifacts)
+benchmarks/

@@ -34,3 +34,6 @@ langchain-community>=0.3.5
 langchain-anthropic>=0.3.0
 langgraph>=0.2.45
 langsmith>=0.1.142  # For tracing and debugging
+
+# Lambda Speed Layer dependencies (Sprint 5.5)
+redis[hiredis]>=5.0.0  # Async Redis client with hiredis parser for performance

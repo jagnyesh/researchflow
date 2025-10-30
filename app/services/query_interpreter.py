@@ -57,11 +57,11 @@ class QueryInterpreter:
             "columns": ["patient_id", "code", "code_display", "value_quantity", "value_unit",
                        "effective_datetime", "interpretation", "ref_range_low", "ref_range_high"]
         },
-        "condition_diagnoses": {
+        "condition_simple": {
             "resource": "Condition",
-            "description": "Patient conditions and diagnoses with ICD-10 and SNOMED codes",
-            "columns": ["patient_id", "clinical_status", "icd10_code", "icd10_display",
-                       "snomed_code", "snomed_display", "onset_datetime", "recorded_date"]
+            "description": "Patient conditions with ICD-10 and SNOMED codes (materialized view with dual columns)",
+            "columns": ["id", "patient_ref", "patient_id", "icd10_code", "icd10_display",
+                       "snomed_code", "snomed_display", "code_text", "clinical_status"]
         },
         "medication_requests": {
             "resource": "MedicationRequest",
@@ -79,12 +79,12 @@ class QueryInterpreter:
 
     # Common medical condition mappings
     CONDITION_MAPPINGS = {
-        "type 2 diabetes": {"snomed": "44054006", "icd10": "E11.9", "name": "Type 2 diabetes mellitus"},
-        "diabetes": {"snomed": "44054006", "icd10": "E11.9", "name": "Type 2 diabetes mellitus"},
-        "hypertension": {"snomed": "38341003", "icd10": "I10", "name": "Hypertension"},
-        "high blood pressure": {"snomed": "38341003", "icd10": "I10", "name": "Hypertension"},
-        "hyperlipidemia": {"snomed": "13645005", "icd10": "E78.5", "name": "Hyperlipidemia"},
-        "asthma": {"snomed": "195967001", "icd10": "J45.909", "name": "Asthma"},
+        "type 2 diabetes": {"snomed": "44054006", "icd10": "E11.9", "icd10_pattern": "E11%", "name": "Type 2 diabetes mellitus"},
+        "diabetes": {"snomed": "73211009", "icd10": "E11.9", "icd10_pattern": "E1%", "name": "Diabetes mellitus (all types)"},
+        "hypertension": {"snomed": "38341003", "icd10": "I10", "icd10_pattern": "I10%", "name": "Hypertension"},
+        "high blood pressure": {"snomed": "38341003", "icd10": "I10", "icd10_pattern": "I10%", "name": "Hypertension"},
+        "hyperlipidemia": {"snomed": "13645005", "icd10": "E78.5", "icd10_pattern": "E78%", "name": "Hyperlipidemia"},
+        "asthma": {"snomed": "195967001", "icd10": "J45.909", "icd10_pattern": "J45%", "name": "Asthma"},
     }
 
     def __init__(self):
@@ -128,8 +128,8 @@ class QueryInterpreter:
                 system=system_prompt
             )
 
-            # Parse response
-            query_data = json.loads(response)
+            # Response is already a Dict from extract_structured_json()
+            query_data = response
 
             # Build QueryIntent
             intent = self._build_query_intent(query_data, natural_language_query)
@@ -273,13 +273,15 @@ Focus on:
 
         # Conditions
         if any(cond in query_lower for cond in self.CONDITION_MAPPINGS.keys()):
-            view_definitions.append("condition_diagnoses")
+            view_definitions.append("condition_simple")
             for cond_name, codes in self.CONDITION_MAPPINGS.items():
                 if cond_name in query_lower:
+                    # Use ICD-10 pattern for better matching
                     post_filters.append({
-                        "field": "snomed_code",
-                        "value": codes["snomed"],
-                        "condition_name": codes["name"]
+                        "field": "icd10_code",
+                        "value": codes.get("icd10_pattern", codes["icd10"]),
+                        "condition_name": codes["name"],
+                        "use_like": True  # Use LIKE matching for patterns
                     })
 
         return QueryIntent(

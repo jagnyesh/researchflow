@@ -47,7 +47,7 @@ class LangChainRequirementsAgent:
         self,
         agent_id: str = "langchain_requirements_agent",
         orchestrator=None,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-3-7-sonnet-20250219"
     ):
         """
         Initialize LangChain Requirements Agent
@@ -522,7 +522,7 @@ class LangChainCalendarAgent:
         self,
         agent_id: str = "langchain_calendar_agent",
         orchestrator=None,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-3-7-sonnet-20250219"
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
@@ -761,7 +761,7 @@ class LangChainDeliveryAgent:
         self,
         agent_id: str = "langchain_delivery_agent",
         orchestrator=None,
-        model: str = "claude-3-5-sonnet-20241022"
+        model: str = "claude-3-7-sonnet-20250219"
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator

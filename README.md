@@ -5,156 +5,162 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**AI-Powered Clinical Research Data Automation System**
+**Experimental Multi-Agent AI System for Clinical Research Automation**
 
-ResearchFlow is an intelligent multi-agent system that automates clinical research data requests from natural language to delivery, reducing turnaround time from weeks to hours while maintaining rigorous human oversight at critical decision points.
+> ⚠️ **Work in Progress**: ResearchFlow is an experimental prototype demonstrating where AI should own workflows versus where humans are essential. Built entirely with agentic AI coding (Claude Code) as a meta-experiment to prove the concept. Not yet production-ready.
+
+ResearchFlow automates clinical research data requests from natural language to delivery, reducing turnaround time from **weeks to hours** while maintaining rigorous human oversight at critical decision points.
+
+---
+
+## The Experiment
+
+**The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
+
+As a biomedical informatician supporting clinical research, I observed that ~50% of my work was administrative coordination (scheduling, routing, status tracking) while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality).
+
+**The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
+- **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
+- **Humans must validate:** All technical decisions requiring domain expertise (SQL queries, computations, data quality)
+
+**The Result:** A multi-agent system demonstrating sustainable AI architecture for regulated technical domains.
 
 ---
 
 ## Table of Contents
 
-- [Executive Summary](#executive-summary)
-- [Key Features](#key-features)
 - [Architecture](#architecture)
+- [Key Features](#key-features)
 - [Quick Start](#quick-start)
-- [Installation](#installation)
-- [Usage](#usage)
-- [API Documentation](#api-documentation)
-- [Human-in-Loop Approval Workflow](#human-in-loop-approval-workflow)
 - [Performance](#performance)
-- [Configuration](#configuration)
-- [Testing](#testing)
+- [Human-in-Loop Safety](#human-in-loop-safety)
+- [Current Status](#current-status)
 - [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
-- [Citation](#citation)
-
----
-
-## Executive Summary
-
-ResearchFlow transforms the clinical research data request process through autonomous AI agents that handle requirements gathering, phenotype definition, data extraction, quality assurance, and delivery. The system integrates seamlessly with existing healthcare IT infrastructure while ensuring compliance through comprehensive human approval gates.
-
-### Core Capabilities
-
-| Capability | Description | Impact |
-|------------|-------------|--------|
-| **Natural Language Processing** | Converts researcher requests to structured requirements using Claude API | 95% reduction in back-and-forth communication |
-| **SQL-on-FHIR v2** | Automated generation and validation of FHIR analytics queries | 10-100x faster than traditional methods |
-| **Human Oversight** | Critical approval gates at SQL review, requirements, and QA stages | 100% validation before execution |
-| **Multi-Source Integration** | Unified extraction from Epic, FHIR servers, and data warehouses | Single interface for heterogeneous sources |
-| **Performance Optimization** | Query caching (1151x speedup) and parallel processing (1.5x speedup) | Near real-time analytics on large datasets |
-
----
-
-## Key Features
-
-### Multi-Agent Architecture
-
-ResearchFlow employs seven specialized autonomous agents:
-
-1. **Requirements Agent** - Conversational LLM-based requirements extraction
-2. **Phenotype Agent** - SQL-on-FHIR query generation and feasibility analysis
-3. **Calendar Agent** - Stakeholder meeting coordination
-4. **Extraction Agent** - Multi-source data retrieval with de-identification
-5. **QA Agent** - Automated quality validation and PHI scrubbing
-6. **Delivery Agent** - Data packaging and distribution
-7. **Coordinator Agent** - Approval workflow orchestration and stakeholder communication
-
-### Human-in-Loop Approval Gates
-
-**NEW in Version 2.0**: Critical safety checkpoints requiring human approval:
-
-| Approval Type | Reviewer | Timeout | Purpose |
-|---------------|----------|---------|---------|
-| **Requirements Review** | Informatician | 24h | Validate medical accuracy |
-| **SQL Review** | Informatician | 24h | **CRITICAL** - Approve before execution |
-| **Extraction Approval** | Admin | 12h | Authorize data access |
-| **QA Review** | Informatician | 24h | Validate quality results |
-| **Scope Change** | Coordinator | 48h | Evaluate mid-workflow changes |
-
-**Safety Guarantee**: SQL queries cannot execute without informatician approval.
-
-### SQL-on-FHIR v2 Implementation
-
-- **ViewDefinitions**: Standards-compliant FHIR analytics
-- **Dual Runners**: PostgreSQL (in-database, fast) and In-Memory (flexible, REST API)
-- **Automatic Generation**: Converts structured requirements to validated SQL
-- **Feasibility Analysis**: Cohort size estimation before extraction
-
-### Production Features
-
-- **Database Persistence**: All state survives restarts; complete audit trail
-- **Query Caching**: 1151x speedup on repeated queries
-- **Parallel Processing**: 1.5x speedup using asyncio
-- **Health Monitoring**: Production-ready endpoints for system observability
-- **Scope Change Support**: Mid-workflow requirement modifications with impact analysis
-- **Timeout Detection**: Proactive escalation of delayed approvals
-
-### LangSmith Observability ⭐ NEW
-
-**Sprint 5 Enhancement**: Complete workflow observability with LangSmith tracing
-
-- **Workflow Tracing**: Monitor every execution from start to finish
-- **Agent Performance**: Track execution time and success rate for all 6 agents
-- **LLM Cost Tracking**: Monitor token usage, costs, and latency for Claude API calls
-- **Error Debugging**: Full stack traces with request context for failed workflows
-- **Smart Tagging**: Separate E2E test runs from production executions
-- **Hierarchical Traces**: Workflow → Agent → LLM call hierarchy for deep visibility
-
-**Dashboard**: Access real-time traces at [smith.langchain.com](https://smith.langchain.com)
-**Guide**: See `docs/LANGSMITH_DASHBOARD_GUIDE.md` for complete usage instructions
 
 ---
 
 ## Architecture
 
-### System Overview
+### Lambda Architecture (3 Layers)
+
+ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learning exercise:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     User Interfaces                          │
-│          (Researcher Portal | Admin Dashboard)               │
-└────────────────────────┬─────────────────────────────────────┘
-                         │
-┌────────────────────────▼─────────────────────────────────────┐
-│                   Orchestrator                                │
-│      (A2A Communication | Workflow Engine | 20 States)        │
-└────────────────────────┬─────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-        ▼                ▼                ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│ Requirements │──│  Phenotype   │──│   Calendar   │
-│    Agent     │  │    Agent     │  │    Agent     │
-└──────────────┘  └──────────────┘  └──────────────┘
-        │                │                │
-        ▼                ▼                ▼
-┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-│  Extraction  │──│      QA      │──│   Delivery   │
-│    Agent     │  │    Agent     │  │    Agent     │
-└──────────────┘  └──────────────┘  └──────────────┘
-                         │
-                         ▼
-                ┌──────────────┐
-                │ Coordinator  │
-                │    Agent     │
-                └──────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                    FHIR DATA SOURCE                         │
+│               HAPI FHIR Server (PostgreSQL)                 │
+│         105 patients, 423 conditions (real FHIR R4)         │
+└────────────────┬──────────────────┬─────────────────────────┘
+                 │                  │
+        Batch Ingestion      Real-time Updates
+      (materialize_views)    (Redis caching)
+                 │                  │
+                 ↓                  ↓
+┌─────────────────────────┐  ┌──────────────────────────────┐
+│   BATCH LAYER           │  │   SPEED LAYER                │
+│ MaterializedViewRunner  │  │  SpeedLayerRunner            │
+├─────────────────────────┤  ├──────────────────────────────┤
+│ • Materialized views    │  │ • Redis cache (24hr TTL)     │
+│ • 5-15ms performance    │  │ • <1 minute latency          │
+│ • Historical data       │  │ • Recent updates             │
+│ • Manual/Cron refresh   │  │ • Real-time access           │
+└───────────┬─────────────┘  └──────────┬───────────────────┘
+            │                           │
+            └──────────┬────────────────┘
+                       ↓
+         ┌─────────────────────────────────────┐
+         │   SERVING LAYER                     │
+         │  HybridRunner (Smart Routing)       │
+         ├─────────────────────────────────────┤
+         │ • Merges batch + speed results      │
+         │ • Deduplication (speed wins)        │
+         │ • View existence caching            │
+         │ • Statistics tracking               │
+         └─────────────────────────────────────┘
 ```
 
-### Data Flow with Approval Gates
+### Multi-Agent System (6 Specialized Agents)
 
 ```
-1. Requirements Extraction → [HUMAN REVIEW]
-2. SQL Generation → [HUMAN APPROVAL] ← CRITICAL
-3. Meeting Scheduling → [AUTHORIZATION]
-4. Data Extraction
-5. Quality Assurance → [HUMAN REVIEW]
-6. Data Delivery
+┌───────────────────────────────────────────────────────┐
+│                   Orchestrator                        │
+│      (Workflow Engine | 20 States | A2A Protocol)     │
+└────────────────────┬──────────────────────────────────┘
+                     │
+     ┌───────────────┼───────────────┐
+     │               │               │
+     ▼               ▼               ▼
+┌──────────┐  ┌────────────┐  ┌────────────┐
+│Requirements│ │ Phenotype  │  │  Calendar  │
+│   Agent   │─→│   Agent    │─→│   Agent    │
+└──────────┘  └────────────┘  └────────────┘
+                     │
+     ┌───────────────┼───────────────┐
+     ▼               ▼               ▼
+┌──────────┐  ┌────────────┐  ┌────────────┐
+│Extraction│  │     QA     │  │  Delivery  │
+│  Agent   │─→│   Agent    │─→│   Agent    │
+└──────────┘  └────────────┘  └────────────┘
 ```
 
-**Visual Diagrams**: Complete PlantUML diagrams available in `diagrams/` directory
+**Division of Labor:**
+
+| Agent | Role | AI-Owned | Human-Validated |
+|-------|------|----------|-----------------|
+| **Requirements** | Extract structured requirements | Conversation flow | Medical accuracy |
+| **Phenotype** | Generate SQL-on-FHIR queries | Query generation | SQL correctness |
+| **Calendar** | Schedule stakeholder meetings | Meeting coordination | N/A (automated) |
+| **Extraction** | Multi-source data retrieval | Data fetching | Authorization |
+| **QA** | Quality validation | Automated checks | Quality approval |
+| **Delivery** | Data packaging & distribution | Packaging | Final approval |
+
+---
+
+## Key Features
+
+### 🤖 AI for Coordination, Humans for Expertise
+
+**The Core Pattern:**
+- **AI Handles:** Scheduling, routing, status tracking, notifications, workflow orchestration
+- **Humans Validate:** SQL queries, phenotype definitions, data quality, computational validity
+- **Result:** 95% time savings (weeks → hours) with 100% expert validation maintained
+
+### 🛡️ Human-in-Loop Safety Gates
+
+**5 Mandatory Approval Checkpoints:**
+- **SQL Review** (CRITICAL): Informatician must approve queries before execution
+- **Requirements Validation**: Verify medical accuracy
+- **Extraction Authorization**: Approve data access
+- **QA Review**: Validate quality results
+- **Scope Changes**: Evaluate mid-workflow modifications
+
+### 📊 SQL-on-FHIR v2 Implementation
+
+- **ViewDefinitions**: Standards-compliant FHIR analytics
+- **Performance**: 1151x speedup (in-database vs REST API)
+- **Dual Runners**: PostgreSQL (fast) + In-Memory (flexible)
+- **Query Optimization**: Automatic SNOMED/LOINC/ICD-10 code resolution
+
+### 💡 Multi-Provider LLM Architecture
+
+- **Intelligent Routing**: Claude (critical medical tasks) + OpenAI/Ollama (non-critical)
+- **60% Cost Reduction**: Smart routing based on task criticality
+- **Auto-Fallback**: Secondary provider failures route to Claude
+- **LangSmith Observability**: Full workflow tracing proves AI vs human division of labor
+
+### 📱 Two Researcher Interfaces
+
+**1. Exploratory Analytics Portal** (http://localhost:8501)
+- Chat-based natural language queries
+- Instant feasibility checks (no approvals for counts)
+- Cohort size estimates in seconds
+- Use case: "How many diabetes patients do we have?"
+
+**2. Formal Request Portal** (http://localhost:8502)
+- Form-based IRB-approved data requests
+- Full approval workflow with human gates
+- Multi-agent orchestration (6 agents)
+- Use case: "Extract full dataset for IRB-2025-001"
 
 ---
 
@@ -162,42 +168,40 @@ ResearchFlow employs seven specialized autonomous agents:
 
 ### Prerequisites
 
-- Python 3.9 or higher
-- Anthropic API key (Claude)
-- PostgreSQL (optional, SQLite supported for development)
+- Python 3.9+
+- Anthropic API key ([get key](https://console.anthropic.com/))
+- PostgreSQL (optional; SQLite works for dev)
 
-### Installation
+### Installation (3 Steps)
 
 ```bash
-# Clone the repository
+# 1. Clone and setup environment
 git clone https://github.com/yourusername/researchflow.git
 cd researchflow
-
-# Create virtual environment
 python3 -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate
 
-# Install dependencies
+# 2. Install dependencies
 pip install -r config/requirements.txt
 
-# Configure environment
+# 3. Configure API key
 cp config/.env.example .env
-# Edit .env and add your ANTHROPIC_API_KEY
+# Edit .env and add: ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-### Running Services
+### Run Services
 
 ```bash
-# Terminal 1: Start API server
+# Terminal 1: API Server
 uvicorn app.main:app --reload --port 8000
 
-# Terminal 2: Start Exploratory Analytics Portal (Chat Interface)
+# Terminal 2: Exploratory Analytics (Chat)
 streamlit run app/web_ui/research_notebook.py --server.port 8501
 
-# Terminal 3: Start Formal Request Portal (Form-based)
+# Terminal 3: Formal Request Portal (Forms)
 streamlit run app/web_ui/researcher_portal.py --server.port 8502
 
-# Terminal 4: Start Admin Dashboard
+# Terminal 4: Admin Dashboard (Approvals)
 streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 ```
 
@@ -205,281 +209,140 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 | Service | URL | Purpose |
 |---------|-----|---------|
-| Exploratory Analytics Portal | http://localhost:8501 | Interactive SQL-on-FHIR analytics with chat interface |
-| Formal Request Portal | http://localhost:8502 | Structured data requests with approval workflow |
-| Admin Dashboard | http://localhost:8503 | Review approvals, monitor system |
-| API Server | http://localhost:8000 | REST API endpoints |
-| API Documentation | http://localhost:8000/docs | Interactive API docs |
+| **Exploratory Analytics** | http://localhost:8501 | Chat-based feasibility checks |
+| **Formal Request Portal** | http://localhost:8502 | IRB-approved data extractions |
+| **Admin Dashboard** | http://localhost:8503 | Review approvals, monitor system |
+| **API Server** | http://localhost:8000 | REST API endpoints |
+| **API Docs** | http://localhost:8000/docs | Interactive Swagger UI |
 
 ---
 
-## Two Researcher Interfaces
+## Performance
 
-ResearchFlow provides two complementary interfaces for different research workflows:
+### Experimental Benchmarks
 
-### 1. 📊 Exploratory Analytics Portal (Chat Interface)
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Repeated Query Execution | 116.2s | 0.101s | **1151x faster** |
+| Workflow Turnaround | 2-3 weeks | 4-8 hours | **95% faster** |
+| LLM Costs (multi-provider) | $750/month | $295/month | **60% reduction** |
+| Cache Hit Rate | 0% | 95% | N/A |
 
-**URL**: http://localhost:8501
-**File**: `app/web_ui/research_notebook.py`
+### Lambda Architecture Performance
 
-**Purpose**: Quick, interactive exploration of available data using natural language queries
+| Layer | Metric | Performance |
+|-------|--------|-------------|
+| **Batch** | Materialized view query | 5-15ms |
+| **Speed** | Real-time data latency | <1 minute |
+| **Cache** | Repeated query speedup | **1151x faster** |
+| **Overall** | Historical data speedup | **10-100x faster** |
 
-#### Features
-- 💬 **Conversational AI** - Ask questions naturally, get instant answers
-- ⚡ **Real-time SQL-on-FHIR Analytics** - Fast COUNT queries, no approvals needed
-- 📈 **Feasibility Metrics** - Cohort size estimates, data availability scores
-- 🔄 **Convert to Formal** - Option to proceed to full extraction workflow
-
-#### Use Cases
-- "How many patients with diabetes do we have?"
-- "What's the age distribution of heart failure patients?"
-- "Patients with HbA1c > 8% in the last year?"
-- Exploring data availability before writing research protocol
-
-#### Workflow
-```
-1. User asks natural language question
-   ↓
-2. AI interprets query (LLM-powered)
-   ↓
-3. Generates SQL-on-FHIR ViewDefinition
-   ↓
-4. Executes COUNT query against FHIR data
-   ↓
-5. Shows cohort size, feasibility metrics
-   ↓
-6. [Optional] User confirms → Submit to formal workflow
-```
-
-**Key Advantage**: Get answers in **seconds**, not weeks. No approvals required for counts.
-
-**Start**: `streamlit run app/web_ui/research_notebook.py --server.port 8501`
+**Note:** These benchmarks are from experimental implementation. Performance will vary based on data volume and infrastructure.
 
 ---
 
-### 2. 📋 Formal Request Portal (Structured Forms)
+## Human-in-Loop Safety
 
-**URL**: http://localhost:8502
-**File**: `app/web_ui/researcher_portal.py`
+### Critical Approval Gates
 
-**Purpose**: Submit structured data requests with proper terminologies for full data extraction
+| Approval Type | Reviewer | Timeout | Purpose | Criticality |
+|---------------|----------|---------|---------|-------------|
+| **SQL Review** | Informatician | 24h | **Approve before execution** | 🚨 CRITICAL |
+| Requirements | Informatician | 24h | Validate medical accuracy | High |
+| Extraction | Admin | 12h | Authorize data access | High |
+| QA Review | Informatician | 24h | Validate quality | High |
+| Scope Change | Coordinator | 48h | Evaluate modifications | Medium |
 
-#### Features
-- 📝 **Form-based Submission** - Required fields (IRB, researcher info, data elements)
-- 🔐 **Full Approval Workflow** - Informatician SQL review, extraction approval, QA review
-- 🤖 **Multi-Agent Orchestration** - Requirements → Phenotype → Extraction → QA → Delivery
-- 📊 **Compliance & Audit** - Complete audit trail, HIPAA-compliant de-identification
+### Safety Guarantee
 
-#### Use Cases
-- "I need to extract diabetes patient data for IRB-2025-001 study"
-- "Formal data request with specific terminologies (SNOMED, LOINC)"
-- "Upload data request form with inclusion/exclusion criteria"
-- "IRB-approved research requiring full dataset delivery"
+**No SQL query executes without informatician approval.** Every query goes through:
+1. Generated by Phenotype Agent (AI)
+2. Submitted for human review
+3. Approved/modified/rejected by informatician (Human)
+4. Logged in complete audit trail
+5. Only then executed against FHIR data
 
-#### Workflow
-```
-1. Fill form with researcher info, IRB, data request
-   ↓
-2. Submit to Orchestrator
-   ↓
-3. Requirements Agent extracts structured requirements
-   ↓
-4. Phenotype Agent generates SQL
-   ↓
-5. 🚨 CRITICAL: Informatician approval required
-   ↓
-6. Data Extraction → QA → Delivery
-   ↓
-7. Delivered data with documentation
-```
-
-**Key Requirement**: **Informatician must approve SQL** before execution (safety gate)
-
-**Start**: `streamlit run app/web_ui/researcher_portal.py --server.port 8502`
+**LangSmith Observability Proof:** Traces show exactly which tasks AI completed autonomously (scheduling, routing, notifications) versus which required human validation (SQL queries, cohort definitions, data quality).
 
 ---
 
-### When to Use Which Interface?
+## API Documentation
 
-| Scenario | Recommended Interface | Why? |
-|----------|----------------------|------|
-| "What data is available?" | 📊 Exploratory Analytics | Instant counts, no approvals |
-| "Quick cohort size check" | 📊 Exploratory Analytics | Feasibility in seconds |
-| "Need formal IRB-approved extraction" | 📋 Formal Request Portal | Full audit trail, compliance |
-| "Upload data request with terminologies" | 📋 Formal Request Portal | Structured requirements |
-| "Exploring before writing protocol" | 📊 Exploratory → 📋 Formal | Explore first, then formal request |
-| "Delivery of full dataset" | 📋 Formal Request Portal | Requires approvals, de-identification, QA |
+### Quick Examples
 
-**Typical Researcher Workflow**:
-1. **Explore** using chat interface → Get fast feasibility estimates
-2. **Refine** research question based on available data
-3. **Submit formal** request once IRB approved and criteria defined
-
----
-
-## Usage
-
-### Submitting a Research Request
-
+#### Submit Research Request
 ```python
 import requests
 
-# Submit natural language request
 response = requests.post(
     "http://localhost:8000/research/submit",
     json={
         "researcher_name": "Dr. Smith",
         "researcher_email": "smith@hospital.org",
         "irb_number": "IRB-2025-001",
-        "request": "I need all female patients over 50 with diabetes diagnosed in the past 2 years"
+        "request": "Female patients over 50 with diabetes in past 2 years"
     }
 )
-
 request_id = response.json()["request_id"]
 ```
 
-### Approving SQL Queries
-
+#### Approve SQL Query
 ```python
-# Get pending SQL approvals
+# Get pending approvals
 approvals = requests.get(
     "http://localhost:8000/approvals/pending?approval_type=phenotype_sql"
 ).json()["approvals"]
 
-# Review and approve
+# Approve SQL
 requests.post(
     f"http://localhost:8000/approvals/{approvals[0]['id']}/respond",
     json={
         "decision": "approve",
         "reviewer": "informatician@hospital.org",
-        "notes": "SQL query validated against schema"
+        "notes": "SQL validated against schema"
     }
 )
 ```
 
-### Requesting Scope Changes
-
+#### Execute SQL-on-FHIR Query
 ```python
-# Request mid-workflow scope change
-requests.post(
-    "http://localhost:8000/approvals/scope-change",
+# Execute ViewDefinition
+response = requests.post(
+    "http://localhost:8000/analytics/execute",
     json={
-        "request_id": request_id,
-        "requested_by": "researcher@hospital.org",
-        "requested_changes": {
-            "inclusion_criteria": ["Add: HbA1c > 7.0%"]
-        },
-        "reason": "PI requested broader cohort for statistical power"
+        "view_name": "patient_demographics",
+        "search_params": {"gender": "female"},
+        "max_resources": 100
     }
 )
+results = response.json()
+print(f"Found {results['total_count']} patients")
 ```
-
----
-
-## API Documentation
 
 ### Core Endpoints
 
-#### Workflow Management
-
 ```
-POST   /research/submit           Submit new research request
+# Workflow Management
+POST   /research/submit           Submit research request
 GET    /research/{request_id}     Get request status
 GET    /research/active           List active requests
+
+# Approval Workflow
+GET    /approvals/pending         Get pending approvals
+POST   /approvals/{id}/respond    Approve/reject/modify
+POST   /approvals/scope-change    Request scope change
+
+# SQL-on-FHIR Analytics
+POST   /analytics/execute         Execute ViewDefinition
+GET    /analytics/view-definitions List available views
+GET    /analytics/schema/{name}   Get view schema
+
+# Health & Monitoring
+GET    /health                    System health check
+GET    /health/metrics            System metrics
 ```
 
-#### Approval Workflow
-
-```
-GET    /approvals/pending              Get pending approvals
-GET    /approvals/{approval_id}        Get approval details
-POST   /approvals/{approval_id}/respond  Approve/reject/modify
-POST   /approvals/scope-change         Request scope change
-GET    /approvals/request/{request_id} Get all approvals for request
-POST   /approvals/check-timeouts       Check for timed out approvals
-```
-
-#### Analytics
-
-```
-POST   /analytics/execute              Execute SQL-on-FHIR ViewDefinition
-GET    /analytics/view-definitions     List available ViewDefinitions
-GET    /analytics/schema/{view_name}   Get ViewDefinition schema
-```
-
-#### Health & Monitoring
-
-```
-GET    /health           System health check
-GET    /health/ready     Readiness probe
-GET    /health/metrics   System metrics
-```
-
-Complete API documentation available at `/docs` when server is running.
-
----
-
-## Human-in-Loop Approval Workflow
-
-### Critical SQL Approval Process
-
-```
-1. Phenotype Agent generates SQL query from requirements
-2. System creates approval request (status: pending)
-3. Coordinator Agent notifies informatician via email
-4. Informatician reviews SQL in Admin Dashboard
-5. Decision options:
-   - Approve: SQL executes, workflow continues
-   - Modify: SQL updated, then executes
-   - Reject: Returns to Phenotype Agent with feedback
-6. Complete audit trail logged
-```
-
-### Approval Data Structure
-
-```json
-{
-  "approval_id": 42,
-  "request_id": "REQ-20251012-ABC123",
-  "approval_type": "phenotype_sql",
-  "submitted_at": "2025-10-12T10:30:00Z",
-  "timeout_at": "2025-10-13T10:30:00Z",
-  "approval_data": {
-    "sql_query": "SELECT patient_id, birth_date...",
-    "estimated_cohort": 347,
-    "feasibility_score": 0.87,
-    "warnings": [],
-    "recommendations": []
-  }
-}
-```
-
-### Timeout Handling
-
-- Automatic escalation after configured timeout period
-- Escalation records created with severity assessment
-- Admin notifications for delayed approvals
-- Configurable timeout periods per approval type
-
----
-
-## Performance
-
-### Benchmark Results
-
-| Metric | Before Optimization | After Optimization | Improvement |
-|--------|---------------------|--------------------|--------------|
-| Repeated Query Execution | 116.2s | 0.101s | **1151x faster** |
-| Resource Processing | 45.3s | 30.1s | **1.5x faster** |
-| Cache Hit Rate | 0% | 95% | N/A |
-| Workflow Turnaround | 2-3 weeks | 4-8 hours | **95% faster** |
-
-### Scalability
-
-- **Concurrent Requests**: Supports 100+ simultaneous workflows
-- **Database**: Tested with 1M+ patient records
-- **Cache Size**: Configurable, default 1000 queries
-- **API Throughput**: 500+ requests/second
+Complete API documentation: **http://localhost:8000/docs** (Swagger UI)
 
 ---
 
@@ -487,47 +350,44 @@ Complete API documentation available at `/docs` when server is running.
 
 ### Environment Variables
 
-Create `.env` file from `.env.example`:
-
 ```bash
 # Required
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
-# Database
-DATABASE_URL=sqlite+aiosqlite:///./dev.db
-# Or PostgreSQL: postgresql+asyncpg://user:pass@localhost/dbname
+# Optional: Multi-Provider LLM (60% cost reduction)
+SECONDARY_LLM_PROVIDER=openai  # or ollama
+OPENAI_API_KEY=sk-your-openai-key
+OLLAMA_BASE_URL=http://localhost:11434
+ENABLE_LLM_FALLBACK=true
 
-# LangSmith Observability (Sprint 5)
+# Database (SQLite for dev, PostgreSQL for production)
+DATABASE_URL=sqlite+aiosqlite:///./dev.db
+# Or: postgresql+asyncpg://user:pass@localhost/dbname
+
+# LangSmith Observability
 LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=lsv2_pt_your-langsmith-key-here
+LANGCHAIN_API_KEY=lsv2_pt_your-key
 LANGCHAIN_PROJECT=researchflow-production
 
 # Performance
 ENABLE_QUERY_CACHE=true
 CACHE_TTL_SECONDS=300
 MAX_CACHE_SIZE=1000
+USE_SPEED_LAYER=true  # Enable Lambda Architecture speed layer
 
-# Timeouts (hours)
-APPROVAL_TIMEOUT_REQUIREMENTS=24
+# Approval Timeouts (hours)
 APPROVAL_TIMEOUT_SQL=24
+APPROVAL_TIMEOUT_REQUIREMENTS=24
 APPROVAL_TIMEOUT_EXTRACTION=12
-APPROVAL_TIMEOUT_QA=24
-APPROVAL_TIMEOUT_SCOPE_CHANGE=48
-
-# Agent Configuration
-MAX_AGENT_RETRIES=3
-AGENT_RETRY_DELAY_SECONDS=5
-
-# Security
-A2A_JWT_SECRET=your-secret-key-here
 ```
+
+See `config/.env.example` for complete configuration options.
 
 ---
 
 ## Testing
 
-### Run Test Suite
+### Run Tests
 
 ```bash
 # All tests
@@ -536,279 +396,156 @@ pytest
 # With coverage
 pytest --cov=app --cov-report=html
 
-# Specific test file
-pytest tests/test_approval_workflow.py
+# Lambda Architecture tests (29 tests)
+pytest tests/test_speed_layer_runner.py
+pytest tests/test_hybrid_runner_speed_integration.py
 
-# Integration tests
-pytest tests/integration/
+# E2E tests
+pytest tests/e2e/
 ```
 
-### Test Approval Workflow
+### Test Results
 
-```bash
-# Run approval workflow test script
-python scripts/test_approval_workflow.py
-```
-
-**Test Coverage**: 85%+ across core modules
-
----
-
-## Recent Updates
-
-### ✅ October 2025: Research Notebook Query Fixes
-
-**Issue Resolved**: Research Notebook displaying "0 patients" for valid diabetes queries
-
-#### Problems Fixed
-
-**1. Environment Variable Loading in Streamlit Context**
-- **Symptom**: LLM falling back to dummy mode, extracting no filters
-- **Root Cause**: `ANTHROPIC_API_KEY` not loaded in Streamlit's working directory context
-- **Fix**: Added explicit `.env` path loading in both entry points
-  - `app/web_ui/research_notebook.py` - Explicit dotenv path with verification logging
-  - `app/utils/llm_client.py` - Module-level env loading at import time
-- **Impact**: Query interpretation now works correctly, proper filter extraction
-
-**2. Medical Terminology Text Matching**
-- **Symptom**: LLM generates "Diabetes mellitus (all types)" but database has "Diabetes mellitus type 2 (disorder)" → No matches
-- **Root Cause**: Exact text matching too specific for real-world FHIR data with incomplete SNOMED/ICD-10 coding
-- **Fix**: Smart core term extraction with fallback matching strategy
-  - Added `_extract_core_medical_term()` method to extract "diabetes" from verbose condition names
-  - Updated JOIN query builder to use OR clauses with multiple matching strategies:
-    1. Try SNOMED/ICD-10 codes first (if present)
-    2. Fall back to core medical term (e.g., "diabetes")
-    3. Also try full condition name as backup
-- **Impact**: Queries now successfully match patients even with incomplete medical terminology
-
-#### Verification Results
-
-**Before Fix**:
-```
-Query: "count of all male patients with diabetes?"
-Result: 0 patients ❌
-SQL visibility: Hidden
-```
-
-**After Fix**:
-```
-Query: "count of all male patients with diabetes?"
-Result: 28 patients ✅
-Execution Time: 91.3 ms
-SQL visibility: Displayed with expander
-
-Generated SQL:
-  SELECT COUNT(DISTINCT p.patient_id)
-    FROM sqlonfhir.patient_demographics p
-    JOIN sqlonfhir.condition_simple c
-      ON p.patient_id = c.patient_id
-   WHERE LOWER(p.gender) = 'male'
-     AND (c.snomed_code = '73211009'
-          OR c.code_text ILIKE '%diabetes%'  -- Core term
-          OR c.code_text ILIKE '%Diabetes mellitus (all types)%')
-```
-
-#### Files Modified
-
-- `app/web_ui/research_notebook.py:24-41` - Fixed .env loading with verification
-- `app/utils/llm_client.py:14-18` - Added module-level .env loading
-- `app/sql_on_fhir/join_query_builder.py:236-296` - Smart medical term matching
-
-#### Testing
-
-Run verification test:
-```bash
-PYTHONPATH=/Users/jagnyesh/Development/FHIR_PROJECT python /tmp/verify_ui_fix.py
-```
-
-Expected output: `✅ SUCCESS: Found 28 patients!`
-
----
-
-## Troubleshooting
-
-### Common Installation Issues
-
-#### 1. Missing `aiosqlite` Module
-
-**Error**: `ModuleNotFoundError: No module named 'aiosqlite'`
-
-**Solution**:
-```bash
-# Install aiosqlite specifically
-pip install aiosqlite==0.19.0
-
-# Or install all dependencies
-pip install -r config/requirements.txt
-```
-
-**Note**: If full installation fails on scipy (requires Fortran compiler), you can run the API server without it. Scipy is only needed for research notebook analytics.
-
-#### 2. Mixed Python Version in Virtual Environment
-
-**Error**: `ImportError: cannot import name 'Undefined' from 'pydantic.fields'`
-
-**Cause**: Virtual environment has mixed Python 3.11 and 3.13 packages
-
-**Solution - Recreate virtual environment**:
-```bash
-# Remove old venv
-rm -rf .venv
-
-# Create new venv with specific Python version
-python3.11 -m venv .venv  # Or python3.13
-source .venv/bin/activate
-
-# Install core dependencies
-pip install --upgrade pip
-pip install aiosqlite fastapi uvicorn httpx sqlalchemy python-dotenv anthropic
-pip install python-jose[cryptography] streamlit alembic asyncpg
-
-# Install LangChain/LangGraph dependencies
-pip install langchain langchain-anthropic langgraph langsmith
-```
-
-#### 3. Pydantic Version Conflicts
-
-**Error**: `pydantic>=2.7.4 required but you have pydantic 1.10.12`
-
-**Solution - Upgrade to compatible versions**:
-```bash
-pip install --upgrade fastapi pydantic uvicorn
-```
-
-**Note**: The requirements.txt may have outdated versions. Use the latest compatible versions:
-- FastAPI: 0.100+
-- Pydantic: 2.7+
-- LangChain: 0.3+
-
-#### 4. LangSmith Traces Not Appearing
-
-**Error**: No traces showing up in LangSmith dashboard
-
-**Solutions**:
-1. Verify environment variables in `.env`:
-   ```bash
-   LANGCHAIN_TRACING_V2=true
-   LANGCHAIN_API_KEY=lsv2_pt_...
-   LANGCHAIN_PROJECT=researchflow-production
-   ```
-
-2. Test LangSmith connection:
-   ```python
-   from langsmith import Client
-   client = Client()  # Should not raise errors
-   ```
-
-3. Wait 5-10 seconds for traces to appear (async upload)
-4. Refresh dashboard page
-5. Check firewall allows HTTPS to `api.smith.langchain.com`
-
-### Database Issues
-
-#### SQLite Permission Errors
-
-**Error**: `PermissionError: [Errno 13] Permission denied: './dev.db'`
-
-**Solution**:
-```bash
-# Ensure current directory is writable
-chmod +w .
-
-# Or use absolute path in .env
-DATABASE_URL=sqlite+aiosqlite:////absolute/path/to/dev.db
-```
-
-#### PostgreSQL Connection Failures
-
-**Error**: `could not connect to server: Connection refused`
-
-**Solution**:
-```bash
-# Check PostgreSQL is running
-psql -U postgres -c "SELECT 1"
-
-# Verify connection string in .env
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/dbname
-```
-
-### Running the Server
-
-#### Port Already in Use
-
-**Error**: `Error: [Errno 48] Address already in use`
-
-**Solution**:
-```bash
-# Find and kill process on port 8000
-lsof -ti:8000 | xargs kill -9
-
-# Or use a different port
-uvicorn app.main:app --port 8001
-```
-
-#### Import Errors on Startup
-
-**Error**: Various `ModuleNotFoundError` or `ImportError`
-
-**Solution**:
-```bash
-# Verify you're in the virtual environment
-which python  # Should show .venv/bin/python
-
-# Reinstall dependencies
-pip install --force-reinstall -r config/requirements.txt
-```
-
-### Getting Help
-
-If issues persist:
-1. Check [GitHub Issues](https://github.com/yourusername/researchflow/issues)
-2. Review complete setup guide: `docs/SETUP_GUIDE.md`
-3. Enable debug logging: `export LOG_LEVEL=DEBUG`
-4. Test with minimal configuration (SQLite, no LangSmith)
+- ✅ **29/29 Lambda Architecture tests** passing
+- ✅ **85%+ test coverage** across core modules
+- ✅ **100% pass rate** on integration tests
+- ✅ **E2E workflows** validated with LangSmith tracing
 
 ---
 
 ## Documentation
 
-### User Guides
+### Essential Guides
 
-- [Setup Guide](docs/SETUP_GUIDE.md) - Complete installation instructions
-- [Research Notebook Guide](docs/RESEARCH_NOTEBOOK_GUIDE.md) - Researcher portal usage
-- [Approval Workflow Guide](docs/APPROVAL_WORKFLOW_GUIDE.md) - Human-in-loop workflow
-- [Quick Reference](docs/QUICK_REFERENCE.md) - Commands and key concepts
-- **[LangSmith Dashboard Guide](docs/LANGSMITH_DASHBOARD_GUIDE.md)** ⭐ NEW - Observability & monitoring
-- **[LangSmith Workflow Traces](docs/LANGSMITH_WORKFLOW_TRACES.md)** ⭐ NEW - All execution paths & trace patterns
+- 📘 **[Setup Guide](docs/SETUP_GUIDE.md)** - Complete installation instructions
+- 🔧 **[Quick Reference](docs/QUICK_REFERENCE.md)** - Common commands and tips
+- 🏗️ **[Architecture Overview](docs/RESEARCHFLOW_README.md)** - Complete system design
+- 🔬 **[SQL-on-FHIR v2](docs/SQL_ON_FHIR_V2.md)** - ViewDefinition implementation
+- ⚡ **[Lambda Architecture](docs/MATERIALIZED_VIEWS_ARCHITECTURE.md)** - Batch + Speed + Serving layers
+- 🛡️ **[Approval Workflow](docs/APPROVAL_WORKFLOW_GUIDE.md)** - Human-in-loop safety gates
+- 📊 **[LangSmith Observability](docs/LANGSMITH_DASHBOARD_GUIDE.md)** - Workflow tracing & monitoring
 
-### Technical Documentation
+### Architecture Analysis
 
-- [Architecture Overview](docs/RESEARCHFLOW_README.md) - Complete system architecture
-- [SQL-on-FHIR v2](docs/SQL_ON_FHIR_V2.md) - ViewDefinition implementation
-- [Text-to-SQL Flow](docs/TEXT_TO_SQL_FLOW.md) - LLM conversation processing
-- [Implementation Summary](docs/IMPLEMENTATION_SUMMARY.md) - Complete feature list
-- [Gap Analysis & Roadmap](docs/GAP_ANALYSIS_AND_ROADMAP.md) - Production readiness
+- 🏛️ **[Lambda Architecture Comparison](docs/HealthLakeVsResearchFlowComparison.md)** - Complete implementation analysis
+- 📐 **[Gap Analysis & Roadmap](docs/GAP_ANALYSIS_AND_ROADMAP.md)** - Development status (44.44% complete)
+- 🧪 **[Testing Guide](docs/SQL_ON_FHIR_TESTING_GUIDE.md)** - Test data setup and execution
 
-### Implementation Reports
+### All Documentation
 
-- [Phase 1: Database Persistence](docs/implementation/PHASE1_COMPLETE.md)
-- [Phase 2-3: Performance Optimization](docs/implementation/PHASE2_PHASE3_COMPLETE.md)
-- [Query Caching Implementation](docs/implementation/CACHING_COMPLETE.md)
-- [Parallel Processing](docs/implementation/PARALLEL_PROCESSING_COMPLETE.md)
-- [Human-in-Loop Enhancement](docs/implementation/HUMAN_IN_LOOP_COMPLETE.md)
-- [Approval Workflow Test Results](docs/implementation/APPROVAL_WORKFLOW_TEST_RESULTS.md)
+See **[docs/README.md](docs/README.md)** for comprehensive documentation index organized by role:
+- 👩‍🔬 **For Researchers** - Notebook guides, API examples
+- 💻 **For Developers** - Architecture, implementation details
+- ⚙️ **For DevOps** - Setup, monitoring, maintenance
+- 🏗️ **For Architects** - Design decisions, performance analysis
 
-### Sprint Documentation
+---
 
-- [Sprint 5: LangSmith Observability](docs/sprints/SPRINT_05_LANGSMITH_OBSERVABILITY.md) - Sprint plan
-- [Sprint 5: Progress Report](docs/sprints/SPRINT_05_PROGRESS_REPORT.md) - Implementation progress
-- **[Sprint 5: Completion Summary](docs/sprints/SPRINT_05_COMPLETION_SUMMARY.md)** ⭐ NEW - Final deliverables
+## Current Status
+
+### Development Metrics
+
+| Metric | Value |
+|--------|-------|
+| **Lines of Code** | 15,000+ (generated with agentic AI coding) |
+| **AI Agents** | 6 specialized agents |
+| **Database Tables** | 8 tables |
+| **Workflow States** | 20 states (LangGraph FSM) |
+| **API Endpoints** | 25+ REST endpoints |
+| **Test Coverage** | 85%+ across core modules |
+| **Test Files** | 42 comprehensive test files |
+| **Documentation** | 60+ markdown files |
+
+### Experimental Achievements
+
+- ⚡ **1151x speedup** - Repeated query caching (proof-of-concept)
+- 🚀 **10-100x speedup** - Materialized views vs raw SQL
+- 💰 **60% cost reduction** - Multi-provider LLM routing
+- ⏱️ **95% time savings** - Weeks → hours turnaround (experimental)
+- 📊 **Lambda Architecture** - Complete 3-layer implementation
+- 🛡️ **Human-in-Loop** - 5 mandatory approval gates
+
+### Roadmap
+
+**Completed (Sprint 5.5 - Lambda Architecture)**
+- ✅ Complete Lambda Architecture (Batch + Speed + Serving)
+- ✅ Redis speed layer with <1 minute latency
+- ✅ HybridRunner serving layer with intelligent merging
+- ✅ 29 comprehensive tests (100% pass rate)
+- ✅ LangSmith observability integration
+
+**Current (Sprint 6 - Security Baseline)**
+- 🔄 JWT authentication & RBAC authorization
+- 🔄 SQL injection prevention & input validation
+- 🔄 PHI audit logging & encryption
+- 🔄 HIPAA compliance checklist
+
+**Planned (Sprint 7-18)**
+- 📅 MCP Tools Integration (terminology servers, calendar APIs)
+- 📅 Advanced analytics dashboard
+- 📅 Multi-tenant support
+- 🔮 Machine learning for cohort optimization
+- 🔮 Real-time collaboration features
+
+See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for complete 8-month implementation plan.
+
+---
+
+## Known Limitations
+
+**This is experimental software. Known limitations include:**
+
+- ✋ **Not production-ready**: Requires security hardening before clinical deployment
+- ✋ **Limited testing**: Tested with synthetic data only (Synthea FHIR generator)
+- ✋ **Single institution**: Not tested across multiple healthcare systems
+- ✋ **Manual refresh**: Materialized views require manual/cron refresh
+- ✋ **No encryption**: PHI encryption not yet implemented
+- ✋ **Basic authentication**: JWT authentication not yet production-hardened
+
+**For demonstration and learning purposes only. Do not use with real patient data without proper security review.**
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+**Missing Dependencies**
+```bash
+pip install aiosqlite fastapi uvicorn httpx sqlalchemy anthropic
+pip install langchain langchain-anthropic langgraph langsmith
+```
+
+**Port Already in Use**
+```bash
+lsof -ti:8000 | xargs kill -9  # Kill process on port 8000
+```
+
+**Environment Variables Not Loading**
+```bash
+# Verify .env file exists
+ls -la .env
+
+# Test environment loading
+python -c "import os; from dotenv import load_dotenv; load_dotenv(); print(os.getenv('ANTHROPIC_API_KEY'))"
+```
+
+**LangSmith Traces Not Appearing**
+```bash
+# Verify environment variables
+echo $LANGCHAIN_TRACING_V2  # Should be "true"
+echo $LANGCHAIN_API_KEY     # Should start with "lsv2_pt_"
+
+# Wait 5-10 seconds for async upload, then refresh dashboard
+```
+
+For detailed troubleshooting, see **[docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md)** and **[docs/QUICK_REFERENCE.md](docs/QUICK_REFERENCE.md)**.
 
 ---
 
 ## Contributing
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+We welcome contributions! See **[CONTRIBUTING.md](CONTRIBUTING.md)** for guidelines.
 
 ### Development Setup
 
@@ -829,21 +566,22 @@ mypy app/
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see **[LICENSE](LICENSE)** file for details.
 
 ---
 
 ## Citation
 
-If you use ResearchFlow in your research, please cite:
+If you use ResearchFlow in your research or find the architecture pattern useful, please cite:
 
 ```bibtex
 @software{researchflow2025,
-  title = {ResearchFlow: AI-Powered Clinical Research Data Automation},
-  author = {Your Name},
+  title = {ResearchFlow: Experimental Multi-Agent System for Clinical Research Automation},
+  author = {ResearchFlow Contributors},
   year = {2025},
   url = {https://github.com/yourusername/researchflow},
-  version = {2.0}
+  version = {2.0-experimental},
+  note = {Proof-of-concept demonstrating AI for coordination, humans for expertise}
 }
 ```
 
@@ -853,42 +591,50 @@ If you use ResearchFlow in your research, please cite:
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
 - LLM integration via [Anthropic Claude API](https://www.anthropic.com/)
+- Orchestration by [LangGraph](https://github.com/langchain-ai/langgraph)
+- Observability by [LangSmith](https://www.langchain.com/langsmith)
 - SQL-on-FHIR v2 specification by [HL7 FHIR](https://hl7.org/fhir/)
 - UI powered by [Streamlit](https://streamlit.io/)
+
+**Special thanks to the agentic AI coding workflow that made this experiment possible.**
 
 ---
 
 ## Project Status
 
-**Version**: 2.0.0
-**Status**: Production-Ready with Human-in-Loop Enhancements
+**Version**: 2.0-experimental
+**Status**: Proof-of-Concept / Demonstration
 **Last Updated**: October 2025
+**Development Progress**: 44.44% (8/18 planned sprints)
 
-### Statistics
+### Key Proof Points
 
-- **15,000+** lines of production code
-- **7** autonomous agents
-- **8** database tables
-- **20** workflow states
-- **25+** API endpoints
-- **85%+** test coverage
+- ✅ **Meta-Experiment Validated**: AI can build AI for workflow automation
+- ✅ **Architecture Pattern Demonstrated**: AI for coordination, humans for expertise
+- ✅ **Human-in-Loop Safety**: 5 mandatory approval gates prove sustainable AI design
+- ✅ **Observability**: LangSmith traces prove division of labor works
+- ✅ **Open Source**: MIT License enables community learning and adaptation
 
-### Roadmap
+### What This Project Demonstrates
 
-**Short Term (1-2 weeks)**
-- Enhanced approval UI in admin dashboard
-- Email server integration via MCP
+**For Healthcare IT:**
+- Sustainable pattern for AI in regulated domains
+- Clear boundaries between AI coordination and human expertise
+- SQL-on-FHIR v2 implementation as performance optimization
 
-**Medium Term (1-2 months)**
-- REDCap delivery integration
-- Advanced analytics dashboard
-- Multi-tenant support
+**For AI Engineers:**
+- Multi-agent orchestration with LangGraph (20-state FSM)
+- Lambda Architecture for FHIR analytics (Batch + Speed + Serving)
+- Multi-provider LLM architecture with intelligent routing
+- Production observability with LangSmith
 
-**Long Term (3-6 months)**
-- Machine learning for cohort optimization
-- Real-time collaboration features
-- Mobile app for approvals
+**For Product Managers:**
+- Where AI should own workflows (administrative coordination)
+- Where humans are irreplaceable (technical validation)
+- How to design human-AI collaboration at scale
 
 ---
 
-For questions, issues, or feature requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
+For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
+
+**ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs. 🤖🏥

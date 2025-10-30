@@ -19,6 +19,11 @@
           "description": "Patient reference (full format: 'Patient/123')"
         },
         {
+          "name": "patient_id",
+          "path": "subject.reference.split('/').last()",
+          "description": "Extracted patient ID (for JOINs)"
+        },
+        {
           "name": "clinical_status",
           "path": "clinicalStatus.coding.code.first()",
           "description": "Clinical status (active, resolved, etc.)"
