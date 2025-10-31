@@ -18,12 +18,15 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 from langsmith import traceable
 
+# Import production features mixin (Sprint 6.5)
+from .langchain_base_agent import LangChainBaseAgentMixin
+
 logger = logging.getLogger(__name__)
 
 
-class LangChainRequirementsAgent:
+class LangChainRequirementsAgent(LangChainBaseAgentMixin):
     """
-    Requirements Agent implemented with LangChain
+    Requirements Agent implemented with LangChain + Production Features
 
     Comparison Goals:
     1. Code simplicity: Is LangChain's AgentExecutor simpler than BaseAgent?
@@ -41,6 +44,12 @@ class LangChainRequirementsAgent:
     - Uses ChatPromptTemplate vs string formatting
     - Uses AgentExecutor vs custom retry logic
     - Built-in tool calling vs manual LLM prompting
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
@@ -71,7 +80,10 @@ class LangChainRequirementsAgent:
         # Conversation messages per request (simpler than ConversationBufferMemory)
         self.conversations: Dict[str, List[Any]] = {}
 
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     def _get_or_create_conversation(self, request_id: str) -> List[Any]:
         """Get or create conversation message list for request"""
@@ -152,7 +164,9 @@ Return JSON:
         """
         Execute requirements gathering task (interface compatible with custom agent)
 
-        Now with LangSmith tracing enabled (Sprint 5).
+        Now with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
 
         Args:
             task: Task name ("gather_requirements", "continue_conversation")
@@ -165,10 +179,11 @@ Return JSON:
         request_id = context.get("request_id", "unknown")
         logger.info(f"[RequirementsAgent] Executing task '{task}' for request {request_id}")
 
-        if task == "gather_requirements":
-            return await self._gather_requirements(context)
-        elif task == "continue_conversation":
-            return await self._continue_conversation(context)
+        if task in ["gather_requirements", "continue_conversation"]:
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._gather_requirements
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -403,18 +418,25 @@ Return JSON:
             logger.info(f"[{self.agent_id}] Cleared conversation for {request_id}")
 
 
-class LangChainPhenotypeAgent:
+class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
     """
-    Phenotype Agent implemented with LangChain
+    Phenotype Agent implemented with LangChain + Production Features
 
     This agent validates feasibility by generating SQL and estimating cohort size.
     Uses LangChain for better observability and error handling.
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
         self,
         agent_id: str = "langchain_phenotype_agent",
-        orchestrator=None
+        orchestrator=None,
+        database_url: Optional[str] = None
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
@@ -423,7 +445,11 @@ class LangChainPhenotypeAgent:
         from ..adapters.sql_on_fhir import SQLonFHIRAdapter
         self.sql_generator = SQLGenerator()
         self.sql_adapter = SQLonFHIRAdapter()
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
         run_type="agent",
@@ -432,12 +458,19 @@ class LangChainPhenotypeAgent:
         metadata={"agent_type": "phenotype", "capability": "sql_generation"}
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute phenotype validation task with LangSmith tracing (Sprint 5)"""
+        """
+        Execute phenotype validation task with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
+        """
         request_id = context.get("request_id", "unknown")
         logger.info(f"[PhenotypeAgent] Executing task '{task}' for request {request_id}")
 
         if task == "validate_feasibility":
-            return await self._validate_feasibility(context)
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._validate_feasibility
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -511,11 +544,17 @@ class LangChainPhenotypeAgent:
             return 0  # Conservative estimate
 
 
-class LangChainCalendarAgent:
+class LangChainCalendarAgent(LangChainBaseAgentMixin):
     """
-    Calendar Agent implemented with LangChain
+    Calendar Agent implemented with LangChain + Production Features
 
     Schedules kickoff meetings using LLM for agenda generation.
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
@@ -535,7 +574,10 @@ class LangChainCalendarAgent:
             max_tokens=2048
         )
 
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
         run_type="agent",
@@ -544,12 +586,19 @@ class LangChainCalendarAgent:
         metadata={"agent_type": "calendar", "llm": "claude-3-5-sonnet"}
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute calendar scheduling task with LangSmith tracing (Sprint 5)"""
+        """
+        Execute calendar scheduling task with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
+        """
         request_id = context.get("request_id", "unknown")
         logger.info(f"[CalendarAgent] Executing task '{task}' for request {request_id}")
 
         if task == "schedule_kickoff_meeting":
-            return await self._schedule_kickoff_meeting(context)
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._schedule_kickoff_meeting
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -619,11 +668,17 @@ Return a structured agenda with 3-4 items covering:
             return "1. Study overview\n2. Data requirements\n3. Timeline"
 
 
-class LangChainExtractionAgent:
+class LangChainExtractionAgent(LangChainBaseAgentMixin):
     """
-    Extraction Agent implemented with LangChain
+    Extraction Agent implemented with LangChain + Production Features
 
     Extracts data from FHIR servers and other sources.
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
@@ -633,7 +688,11 @@ class LangChainExtractionAgent:
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
         run_type="agent",
@@ -642,12 +701,19 @@ class LangChainExtractionAgent:
         metadata={"agent_type": "extraction", "capability": "data_retrieval"}
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute data extraction task with LangSmith tracing (Sprint 5)"""
+        """
+        Execute data extraction task with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
+        """
         request_id = context.get("request_id", "unknown")
         logger.info(f"[ExtractionAgent] Executing task '{task}' for request {request_id}")
 
         if task == "extract_data":
-            return await self._extract_data(context)
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._extract_data
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -685,11 +751,17 @@ class LangChainExtractionAgent:
         }
 
 
-class LangChainQAAgent:
+class LangChainQAAgent(LangChainBaseAgentMixin):
     """
-    QA Agent implemented with LangChain
+    QA Agent implemented with LangChain + Production Features
 
     Validates data quality before delivery.
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
@@ -699,7 +771,11 @@ class LangChainQAAgent:
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
         run_type="agent",
@@ -708,12 +784,19 @@ class LangChainQAAgent:
         metadata={"agent_type": "qa", "capability": "data_validation"}
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute QA validation task with LangSmith tracing (Sprint 5)"""
+        """
+        Execute QA validation task with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
+        """
         request_id = context.get("request_id", "unknown")
         logger.info(f"[QAAgent] Executing task '{task}' for request {request_id}")
 
         if task == "validate_extracted_data":
-            return await self._validate_extracted_data(context)
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._validate_extracted_data
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -750,11 +833,17 @@ class LangChainQAAgent:
         }
 
 
-class LangChainDeliveryAgent:
+class LangChainDeliveryAgent(LangChainBaseAgentMixin):
     """
-    Delivery Agent implemented with LangChain
+    Delivery Agent implemented with LangChain + Production Features
 
     Packages and delivers data with LLM-generated documentation.
+
+    Sprint 6.5 Enhancement: Now includes production features via LangChainBaseAgentMixin
+    - Retry logic with exponential backoff
+    - Database persistence (AgentExecution table)
+    - Human escalation workflow
+    - State management (idle/working/failed/waiting)
     """
 
     def __init__(
@@ -774,7 +863,10 @@ class LangChainDeliveryAgent:
             max_tokens=2048
         )
 
-        logger.info(f"[{self.agent_id}] Initialized with LangChain")
+        # Initialize production features mixin (Sprint 6.5)
+        self.init_base_agent(orchestrator)
+
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
         run_type="agent",
@@ -783,12 +875,19 @@ class LangChainDeliveryAgent:
         metadata={"agent_type": "delivery", "llm": "claude-3-5-sonnet"}
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute delivery task with LangSmith tracing (Sprint 5)"""
+        """
+        Execute delivery task with:
+        - LangSmith tracing (Sprint 5)
+        - Production features: retry, persistence, escalation (Sprint 6.5)
+        """
         request_id = context.get("request_id", "unknown")
         logger.info(f"[DeliveryAgent] Executing task '{task}' for request {request_id}")
 
         if task == "deliver_data":
-            return await self._deliver_data(context)
+            # Wrap with production features: retry, persistence, escalation
+            return await self.execute_with_production_features(
+                task, context, self._deliver_data
+            )
         else:
             raise ValueError(f"Unknown task: {task}")
 
