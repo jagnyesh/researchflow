@@ -1,0 +1,49 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-8.4.2, pluggy-1.6.0 -- /Users/jagnyesh/Development/FHIR_PROJECT/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/jagnyesh/Development/FHIR_PROJECT
+configfile: pytest.ini
+plugins: asyncio-1.2.0, anyio-4.11.0, langsmith-0.4.38
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/test_agent_comparison.py::test_requirements_agents_comparison 
+================================================================================
+COMPARING REQUIREMENTS AGENTS
+================================================================================
+
+[1/2] Running PRODUCTION Requirements Agent...
+  ✓ Completed in 2.99s
+  Output keys: ['requirements_complete', 'next_question', 'completeness_score', 'current_requirements', 'missing_fields', 'conversation_history']
+
+[2/2] Running EXPERIMENTAL LangChain Requirements Agent...
+  ✓ Completed in 3.88s
+  Output keys: ['requirements_complete', 'next_question', 'extracted_requirements', 'completeness_score', 'missing_fields', 'conversation_history']
+
+--------------------------------------------------------------------------------
+COMPARISON SUMMARY
+--------------------------------------------------------------------------------
+
+Success Rate:
+  Production:   ✓
+  Experimental: ✓
+
+Execution Time:
+  Production:   2.99s
+  Experimental: 3.88s
+  → Production is 1.30x faster
+
+Output Structure:
+  Common keys: ['completeness_score', 'conversation_history', 'missing_fields', 'next_question', 'requirements_complete']
+  Production only: ['current_requirements']
+  Experimental only: ['extracted_requirements']
+--------------------------------------------------------------------------------
+PASSED
+
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470
+  /Users/jagnyesh/Development/FHIR_PROJECT/.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470: UserWarning: Unrecognized run_type: agent. Must be one of: {'retriever', 'embedding', 'llm', 'prompt', 'chain', 'tool', 'parser'}. Did you mean @traceable(name='agent')?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 1 passed, 1 warning in 7.07s =========================
