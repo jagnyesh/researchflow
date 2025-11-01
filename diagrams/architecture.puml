@@ -1,6 +1,6 @@
 @startuml ResearchFlow Architecture
 
-title ResearchFlow - Multi-Agent System Architecture & Data Flow\n(7 Agents with Human-in-Loop Approval Workflow)
+title ResearchFlow - Multi-Agent System Architecture & Data Flow\n(6 Production + 6 Experimental LangChain Agents | LangGraph Migration 75% Complete)
 
 ' Clean, readable theme with white background
 skinparam BackgroundColor white
@@ -72,8 +72,11 @@ package "User Interfaces" {
 
 ' Orchestration Layer
 package "Orchestration Layer" {
-    component [ResearchRequestOrchestrator\nA2A Communication] as Orchestrator <<Orchestrator>>
-    component [WorkflowEngine\n20 States] as WorkflowEngine <<Orchestrator>>
+    component [ResearchRequestOrchestrator\nA2A Communication + LangGraph StateGraph] as Orchestrator <<Orchestrator>>
+    component [WorkflowEngine\n23 States (75% LangGraph)] as WorkflowEngine <<Orchestrator>>
+    component [Agent Adapter\nBaseAgent Compatibility] as AgentAdapter <<Orchestrator>>
+    component [Approval Bridge\nHuman-in-Loop Sync] as ApprovalBridge <<Orchestrator>>
+    component [Request Facade\nUI Compatibility Layer] as RequestFacade <<Orchestrator>>
 }
 
 ' Agent Layer
@@ -113,7 +116,15 @@ package "Database Layer" {
         component [Escalation]
         component [DataDelivery]
         component [Approval]
+        component [Checkpoints\n(LangGraph)]
     }
+}
+
+' Lambda Architecture Layer
+package "Lambda Architecture (Complete)" {
+    component [MaterializedViewRunner\nBatch Layer (5-15ms)] as BatchLayer <<Database>>
+    component [SpeedLayerRunner\nRedis Cache (<1 min)] as SpeedLayer <<Database>>
+    component [HybridRunner\nServing Layer (Smart Merge)] as ServingLayer <<Database>>
 }
 
 ' External Systems
@@ -304,6 +315,14 @@ DB -up-> ResearcherUI : "Request Details"
 ' ========================================
 
 note top of Orchestrator
+  **LangGraph Migration (Sprint 6.5 - 75% Complete):**
+  - StateGraph with 23 states (15 main + 5 approval + 3 terminal)
+  - AsyncSqliteSaver for checkpointing
+  - Agent Adapter: BaseAgent compatibility (400 LOC, 24/24 tests)
+  - Approval Bridge: Human-in-loop sync (500 LOC, 24/24 tests)
+  - Request Facade: UI compatibility layer (700 LOC)
+  - Pending: Streamlit UI integration
+
   **Error Handling & Approvals:**
   1. Agent fails after 3 retries
   2. Escalate to human review
