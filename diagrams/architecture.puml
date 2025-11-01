@@ -16,11 +16,11 @@ skinparam component {
 
     BackgroundColor<<Orchestrator>> #F9E79F
     BorderColor<<Orchestrator>> #D4AC0D
-    FontColor<<Orchestrator>> #7D6608∂
+    FontColor<<Orchestrator>> #7D6608
 
     BackgroundColor<<Database>> #ABEBC6
     BorderColor<<Database>> #27AE60
-    FontColor<<Database>> #186A3B 
+    FontColor<<Database>> #186A3B
 
     BackgroundColor<<MCP>> #F5B7B1
     BorderColor<<MCP>> #CB4335
@@ -314,7 +314,7 @@ DB -up-> ResearcherUI : "Request Details"
 ' Error Handling & Escalation
 ' ========================================
 
-note top of Orchestrator
+note as N1
   **LangGraph Migration (Sprint 6.5 - 75% Complete):**
   - StateGraph with 23 states (15 main + 5 approval + 3 terminal)
   - AsyncSqliteSaver for checkpointing
