@@ -12,14 +12,31 @@ Features:
 - Real-time status tracking
 """
 
-import streamlit as st
+# CRITICAL: Set up event loop BEFORE any other imports
+# This ensures the database engine (created at import time) uses our loop
 import asyncio
+import nest_asyncio
 import sys
 import os
+
+# ALWAYS create a fresh event loop and set it as THE loop for this thread
+# This ensures database engine Queue objects bind to our loop
+_streamlit_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_streamlit_loop)
+
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply(_streamlit_loop)
+
+# NOW safe to import modules
+import streamlit as st
 import httpx
+import logging
 from datetime import datetime
 from typing import List, Dict, Any
 from dotenv import load_dotenv
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Load environment variables from project root (explicit path)
 # Get project root: /Users/.../FHIR_PROJECT
@@ -40,10 +57,23 @@ else:
 # Add parent directory to path
 sys.path.insert(0, project_root)
 
-from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
+# REMOVED: from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
 from app.services.query_interpreter import QueryInterpreter
 from app.components.approval_tracker import ApprovalTracker
+
+# REMOVED: No longer using LangChainRequirementsAgent - direct SQL routing for speed
+
+
+def run_async(coroutine):
+    """
+    Run async code in Streamlit's persistent event loop.
+
+    Uses the loop set up at module import time to ensure all
+    database operations use the same loop.
+    """
+    return _streamlit_loop.run_until_complete(coroutine)
+
 
 # Page config
 st.set_page_config(
@@ -101,8 +131,7 @@ def initialize_session_state():
     if 'messages' not in st.session_state:
         st.session_state.messages = []
 
-    if 'conversation_manager' not in st.session_state:
-        st.session_state.conversation_manager = ConversationManager()
+    # REMOVED: No longer using conversational agent - direct SQL routing for speed
 
     if 'feasibility_service' not in st.session_state:
         st.session_state.feasibility_service = FeasibilityService()
@@ -113,8 +142,7 @@ def initialize_session_state():
     if 'approval_tracker' not in st.session_state:
         st.session_state.approval_tracker = ApprovalTracker()
 
-    if 'conversation_state' not in st.session_state:
-        st.session_state.conversation_state = ConversationState.INITIAL
+    # REMOVED: conversation_state (agent handles this internally)
 
     if 'pending_feasibility' not in st.session_state:
         st.session_state.pending_feasibility = None
@@ -122,117 +150,161 @@ def initialize_session_state():
     if 'pending_request_id' not in st.session_state:
         st.session_state.pending_request_id = None
 
-    if 'last_query_intent' not in st.session_state:
-        st.session_state.last_query_intent = None
+    # REMOVED: last_query_intent (agent handles intent detection)
+
+    # NEW: Session ID for conversation tracking
+    if 'session_id' not in st.session_state:
+        st.session_state.session_id = f"notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 async def handle_user_input(user_input: str):
     """
-    Handle user input with conversational flow
+    Handle user input with direct SQL execution for data queries
 
-    Workflow:
-    1. Detect intent (greeting/query/confirmation/status)
-    2. Route to appropriate handler
-    3. Update conversation state
+    EXPLORATORY MODE:
+    - Direct routing to SQL execution for data queries
+    - Quick analytics for pre-approved researchers
+    - NO conversational delays
     """
-    # Detect intent
-    intent = st.session_state.conversation_manager.detect_intent(user_input)
+    user_input_lower = user_input.lower()
 
-    # Handle based on intent
-    if intent == UserIntent.GREETING:
-        await handle_greeting()
+    # Detect data query patterns (keywords that indicate SQL execution needed)
+    data_query_keywords = [
+        "count", "how many", "patients", "breakdown", "give me",
+        "show me", "find", "list", "filter", "with diabetes", "with hypertension",
+        "male", "female", "age", "condition", "medication"
+    ]
 
-    elif intent == UserIntent.HELP:
-        await handle_help()
+    # Check if this is a data query
+    is_data_query = any(keyword in user_input_lower for keyword in data_query_keywords)
 
-    elif intent == UserIntent.STATUS_CHECK:
-        await handle_status_check()
-
-    elif intent == UserIntent.CONFIRMATION:
-        await handle_confirmation(user_input)
-
-    elif intent == UserIntent.QUERY:
+    if is_data_query:
+        # Direct route to SQL execution
         await handle_query(user_input)
-
     else:
-        # Unknown intent
-        response = "I'm not sure I understand. Type **'help'** to see what I can do."
+        # Handle non-data queries (greetings, help, etc.)
+        if any(word in user_input_lower for word in ["hello", "hi", "hey"]):
+            response = "Hello! I'm ResearchFlow, your AI research assistant. Ask me about patient data and I'll help you analyze it."
+        elif any(word in user_input_lower for word in ["help", "what can you do"]):
+            response = """I can help you with:
+- Counting patients with specific conditions
+- Filtering patients by demographics (age, gender)
+- Breaking down results by dimensions (gender, age group)
+- Checking data availability
+
+Try asking: "How many patients with diabetes?" or "Count of female patients, breakdown by age group" """
+        else:
+            response = "I can help you query patient data. Try asking about patient counts, conditions, or filtering by demographics."
+
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 
-async def handle_greeting():
-    """Handle greeting intent"""
-    introduction = st.session_state.conversation_manager.get_introduction()
-    st.session_state.messages.append({"role": "assistant", "content": introduction})
-    st.session_state.conversation_state = ConversationState.INITIAL
+# REMOVED: Old keyword-based handler functions (greeting, help, status_check, confirmation)
+# Agent now handles all conversational interactions
 
+def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
+    """
+    Format breakdown query results with total and per-dimension counts
 
-async def handle_help():
-    """Handle help intent"""
-    help_message = st.session_state.conversation_manager.get_help_message()
-    st.session_state.messages.append({"role": "assistant", "content": help_message})
+    Args:
+        feasibility_data: Feasibility data with breakdown_results
 
+    Returns:
+        Formatted markdown string
+    """
+    total_count = feasibility_data['estimated_cohort']
+    breakdown_results = feasibility_data.get('breakdown_results', [])
+    group_by_dimensions = feasibility_data.get('group_by_dimensions', [])
 
-async def handle_status_check():
-    """Handle status check intent"""
-    if st.session_state.pending_request_id:
-        request_id = st.session_state.pending_request_id
+    # Start with header
+    response_parts = [
+        "## Feasibility Analysis (Breakdown)",
+        "",
+        f"**Total Cohort Size**: {total_count} patients",
+        ""
+    ]
 
-        # Get status from API
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                response = await client.get(f"http://localhost:8000/research/{request_id}")
-                response.raise_for_status()
-                status_data = response.json()
+    # Add breakdown by dimensions
+    if breakdown_results:
+        # Format dimension names
+        dimension_label = " and ".join([dim.title().replace("_", " ") for dim in group_by_dimensions])
+        response_parts.append(f"**Breakdown by {dimension_label}**:")
+        response_parts.append("")
 
-                # Format status response
-                status_message = st.session_state.conversation_manager.format_approval_status(
-                    request_id=request_id,
-                    current_state=status_data.get("current_state", "unknown")
-                )
-                st.session_state.messages.append({"role": "assistant", "content": status_message})
+        # Add each dimension result
+        for result in breakdown_results:
+            dimensions = result.get('dimensions', {})
+            count = result.get('count', 0)
+            percentage = result.get('percentage', 0)
 
-            except Exception as e:
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": f"Error retrieving status: {str(e)}"
-                })
+            # Format dimension values
+            dim_values = []
+            for dim_name, dim_value in dimensions.items():
+                if dim_value is not None:
+                    # Capitalize and format dimension value
+                    formatted_value = str(dim_value).title() if isinstance(dim_value, str) else str(dim_value)
+                    dim_values.append(f"{dim_name.replace('_', ' ').title()}: {formatted_value}")
+
+            dim_label = ", ".join(dim_values) if dim_values else "Unknown"
+            response_parts.append(f"- **{dim_label}**: {count} patients ({percentage}%)")
+
+        response_parts.append("")
+
+    # Add status indicator
+    if total_count >= 30:
+        response_parts.append("✅ This appears to be a good cohort size for your study.")
     else:
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": "You don't have any active requests. Ask a research question to get started!"
-        })
+        response_parts.append("⚠️ Small cohort size - consider broadening criteria.")
+
+    response_parts.append("")
+    response_parts.append("Would you like to proceed with data extraction?")
+
+    return "\n".join(response_parts)
 
 
-async def handle_confirmation(user_input: str):
-    """Handle confirmation/rejection"""
-    is_confirmation = st.session_state.conversation_manager.is_confirmation(user_input)
-    is_rejection = st.session_state.conversation_manager.is_rejection(user_input)
+def format_count_distinct_response(feasibility_data: Dict[str, Any]) -> str:
+    """
+    Format count distinct query results
 
-    if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
-        if is_confirmation:
-            # User confirmed - submit to research API
-            await submit_research_request()
-        elif is_rejection:
-            # User rejected - clear pending data
-            st.session_state.pending_feasibility = None
-            st.session_state.last_query_intent = None
-            st.session_state.conversation_state = ConversationState.INITIAL
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Understood. Feel free to refine your criteria and ask again!"
-            })
-        else:
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": "Please answer **'yes'** to proceed or **'no'** to cancel."
-            })
+    Args:
+        feasibility_data: Feasibility data with count_distinct results
+
+    Returns:
+        Formatted markdown string
+    """
+    distinct_count = feasibility_data['estimated_cohort']
+    resource_type = feasibility_data.get('resource_type', 'resources')
+    distinct_column = feasibility_data.get('distinct_column', 'unknown')
+
+    # Start with header
+    response_parts = [
+        "## Count Distinct Results",
+        "",
+        f"**Found {distinct_count} distinct {resource_type}** in the database",
+        ""
+    ]
+
+    # Add technical details
+    response_parts.append(f"*Counted unique values in column: `{distinct_column}`*")
+    response_parts.append("")
+
+    # Add warnings if present
+    warnings = feasibility_data.get('warnings', [])
+    if warnings:
+        response_parts.append("### ⚠️ Notes:")
+        for warning in warnings:
+            response_parts.append(f"- {warning['message']}")
+        response_parts.append("")
+
+    # Add status indicator
+    if distinct_count == 0:
+        response_parts.append("❌ No distinct values found - try broadening your search criteria.")
+    elif distinct_count < 5:
+        response_parts.append("⚠️ Very few distinct values found.")
     else:
-        # Not awaiting confirmation
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": "I'm not waiting for a confirmation. Ask a research question to get started!"
-        })
+        response_parts.append("✅ Results found successfully.")
+
+    return "\n".join(response_parts)
 
 
 async def handle_query(user_input: str):
@@ -251,6 +323,15 @@ async def handle_query(user_input: str):
         st.write(f"✅ Identified criteria and data elements")
 
         # Step 2: Execute feasibility check (SQL-on-FHIR COUNT queries)
+        # IMPORTANT: Close old connection pool before query to avoid event loop conflicts
+        try:
+            await st.session_state.feasibility_service.close()
+        except Exception as e:
+            logger.warning(f"Failed to close old feasibility service: {e}")
+
+        # Create fresh FeasibilityService with new connection pool
+        st.session_state.feasibility_service = FeasibilityService()
+
         st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
         feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
             query_intent.__dict__ if hasattr(query_intent, '__dict__') else query_intent
@@ -262,39 +343,35 @@ async def handle_query(user_input: str):
     # Store for later
     st.session_state.pending_feasibility = feasibility_data
     st.session_state.last_query_intent = query_intent
-    st.session_state.conversation_state = ConversationState.AWAITING_CONFIRMATION
 
-    # Format and show feasibility response
-    feasibility_response = st.session_state.conversation_manager.format_feasibility_response(
-        cohort_size=feasibility_data['estimated_cohort'],
-        feasibility_data=feasibility_data
-    )
+    # Check if this is a count_distinct query
+    is_count_distinct = feasibility_data.get('is_count_distinct_query', False)
+    # Check if this is a breakdown query
+    is_breakdown = feasibility_data.get('is_breakdown_query', False)
+
+    if is_count_distinct:
+        # Format count_distinct response
+        feasibility_response = format_count_distinct_response(feasibility_data)
+    elif is_breakdown:
+        # Format breakdown response
+        feasibility_response = format_breakdown_response(feasibility_data)
+    else:
+        # Format and show feasibility response (simplified - no more conversation_manager)
+        cohort_size = feasibility_data['estimated_cohort']
+        feasibility_response = f"""
+## Feasibility Analysis
+
+**Estimated Cohort Size**: {cohort_size} patients
+
+{"✅ This appears to be a good cohort size for your study." if cohort_size >= 30 else "⚠️ Small cohort size - consider broadening criteria."}
+
+Would you like to proceed with data extraction?
+"""
 
     st.session_state.messages.append({
         "role": "assistant",
         "content": feasibility_response
     })
-
-    # Display SQL visibility (for testing/debugging)
-    if feasibility_data.get('generated_sql'):
-        with st.expander("🔍 View Generated SQL Query", expanded=False):
-            st.code(feasibility_data['generated_sql'], language='sql')
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Execution Time", f"{feasibility_data.get('execution_time_ms', 0):.1f} ms")
-            with col2:
-                st.metric("Query Type", "JOIN" if feasibility_data.get('used_join_query') else "Single View")
-            with col3:
-                st.metric("Result Count", feasibility_data['estimated_cohort'])
-
-            if feasibility_data.get('filter_summary'):
-                st.info(f"**Filters Applied:** {feasibility_data['filter_summary']}")
-
-            # Copy to clipboard button
-            if st.button("📋 Copy SQL", key="copy_sql"):
-                st.code(feasibility_data['generated_sql'], language='sql')
-                st.success("SQL copied to clipboard!")
 
 
 async def submit_research_request():
@@ -347,8 +424,7 @@ async def submit_research_request():
             )
             process_response.raise_for_status()
 
-            # Update conversation state
-            st.session_state.conversation_state = ConversationState.AWAITING_APPROVAL
+            # REMOVED: conversation_state (agent handles this now)
 
             # Show confirmation message
             confirmation_message = f"""### ✅ Research Request Submitted!
@@ -390,18 +466,13 @@ def render_sidebar():
         # Session info
         st.metric("Messages", len(st.session_state.messages))
 
-        # Conversation state
-        state = st.session_state.conversation_state.value
-        st.metric("Conversation State", state.replace('_', ' ').title())
+        # REMOVED: Conversation state display (agent handles this internally)
 
         # Pending request
         if st.session_state.pending_request_id:
             st.metric("Active Request", st.session_state.pending_request_id)
 
-            # Show approval tracking
-            if st.button("🔍 Check Request Status", use_container_width=True):
-                asyncio.run(handle_status_check())
-                st.rerun()
+            # REMOVED: Status check button (function removed, agent handles status conversationally)
 
         # Quick actions
         st.markdown("---")
@@ -409,10 +480,10 @@ def render_sidebar():
 
         if st.button("🗑️ Clear Chat", use_container_width=True):
             st.session_state.messages = []
-            st.session_state.conversation_state = ConversationState.INITIAL
             st.session_state.pending_feasibility = None
             st.session_state.pending_request_id = None
             st.session_state.last_query_intent = None
+            # REMOVED: No agent to clear (using direct SQL routing)
             st.rerun()
 
         # Example queries
@@ -448,7 +519,7 @@ def main():
     render_sidebar()
 
     # Display chat messages
-    for message in st.session_state.messages:
+    for idx, message in enumerate(st.session_state.messages):
         role = message["role"]
         content = message["content"]
 
@@ -465,6 +536,32 @@ def main():
     <strong>🤖 ResearchFlow:</strong><br/>
             """, unsafe_allow_html=True)
             st.markdown(content)
+
+            # Display SQL expander INSIDE the chat bubble if this is the last message and we have feasibility data
+            # IMPORTANT: This shows the ACTUAL SQL executed by the backend (JoinQueryBuilder)
+            # - Uses sqlonfhir schema (e.g., FROM sqlonfhir.patient_demographics)
+            # - Can be copy-pasted and run directly in database tool
+            # - Never shows LLM-generated "friendly" SQL
+            if (idx == len(st.session_state.messages) - 1 and
+                st.session_state.pending_feasibility and
+                st.session_state.pending_feasibility.get('generated_sql')):
+
+                feasibility_data = st.session_state.pending_feasibility
+
+                with st.expander("🔍 View Actual SQL Query (Backend)", expanded=False):
+                    st.code(feasibility_data['generated_sql'], language='sql')
+
+                    col1, col2, col3 = st.columns(3)
+                    with col1:
+                        st.metric("Execution Time", f"{feasibility_data.get('execution_time_ms', 0):.1f} ms")
+                    with col2:
+                        st.metric("Query Type", "JOIN" if feasibility_data.get('used_join_query') else "Single View")
+                    with col3:
+                        st.metric("Result Count", feasibility_data['estimated_cohort'])
+
+                    if feasibility_data.get('filter_summary'):
+                        st.info(f"**Filters Applied:** {feasibility_data['filter_summary']}")
+
             st.markdown("</div>", unsafe_allow_html=True)
 
     # Chat input
@@ -481,7 +578,7 @@ def main():
         st.session_state.messages.append({"role": "user", "content": user_input})
 
         # Handle input
-        asyncio.run(handle_user_input(user_input))
+        run_async(handle_user_input(user_input))
 
         # Rerun to show new messages
         st.rerun()

@@ -61,6 +61,39 @@ class FeasibilityService:
             view_definitions = query_intent.get('view_definitions', [])
             post_filters = query_intent.get('post_filters', [])
             search_params = query_intent.get('search_params', {})
+            group_by = query_intent.get('group_by', [])
+            aggregation_type = query_intent.get('aggregation_type', 'count')
+
+            # NEW: Check if this is a count_distinct query (no group_by, but needs distinct counting)
+            is_count_distinct_query = (
+                aggregation_type == 'count_distinct' and
+                not bool(group_by)
+            )
+
+            if is_count_distinct_query:
+                # COUNT DISTINCT QUERY - Count unique values of a column
+                logger.info(f"Detected count_distinct query: aggregation_type={aggregation_type}")
+                return await self._execute_count_distinct_query(
+                    view_definitions=view_definitions,
+                    search_params=search_params,
+                    post_filters=post_filters,
+                    query_intent=query_intent
+                )
+
+            # NEW: Check if this is a breakdown query (has group_by dimensions)
+            is_breakdown_query = bool(group_by)
+
+            if is_breakdown_query:
+                # BREAKDOWN QUERY - Use GROUP BY
+                logger.info(f"Detected breakdown query: group_by={group_by}, aggregation_type={aggregation_type}")
+                return await self._execute_breakdown_query(
+                    view_definitions=view_definitions,
+                    search_params=search_params,
+                    post_filters=post_filters,
+                    group_by=group_by,
+                    aggregation_type=aggregation_type,
+                    query_intent=query_intent
+                )
 
             # Use JOIN query if:
             # 1. Multiple views specified, OR
@@ -219,6 +252,211 @@ class FeasibilityService:
         except Exception as e:
             logger.error(f"Error executing count query for {view_name}: {e}")
             return 0
+
+    async def _execute_breakdown_query(
+        self,
+        view_definitions: List[str],
+        search_params: Dict[str, Any],
+        post_filters: List[Dict[str, Any]],
+        group_by: List[str],
+        aggregation_type: str,
+        query_intent: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute GROUP BY breakdown query
+
+        Args:
+            view_definitions: List of view names to query
+            search_params: Demographic search params
+            post_filters: Condition/medication/lab filters
+            group_by: Dimensions to group by (e.g., ["gender"], ["gender", "age_group"])
+            aggregation_type: Type of aggregation ("count", "avg", etc.)
+            query_intent: Full query intent dict
+
+        Returns:
+            Dictionary with breakdown results including total and per-dimension counts
+        """
+        try:
+            # Build GROUP BY SQL query
+            logger.info(f"Building GROUP BY query: views={view_definitions}, group_by={group_by}")
+            query_result = self.join_query_builder.build_multi_view_breakdown_query(
+                view_definitions=view_definitions,
+                search_params=search_params,
+                post_filters=post_filters,
+                group_by=group_by,
+                aggregation_type=aggregation_type
+            )
+
+            # Execute GROUP BY query
+            start_time = datetime.now()
+            result_rows = await self.db_client.execute_query(query_result['sql'])
+            execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            logger.info(f"GROUP BY query returned {len(result_rows)} dimension(s) ({execution_time_ms:.1f}ms)")
+
+            # Calculate total count across all dimensions
+            total_count = sum(row.get('count', 0) for row in result_rows)
+
+            # Format breakdown results with percentages
+            breakdown_results = []
+            for row in result_rows:
+                dimension_values = {}
+                count = row.get('count', 0)
+                percentage = (count / total_count * 100) if total_count > 0 else 0
+
+                # Extract dimension values from row
+                for dim in group_by:
+                    if dim in row:
+                        dimension_values[dim] = row[dim]
+                    elif dim == 'age_group' and 'age_group' in row:
+                        dimension_values['age_group'] = row['age_group']
+                    elif dim == 'gender' and 'gender' in row:
+                        dimension_values['gender'] = row['gender']
+
+                breakdown_results.append({
+                    "dimensions": dimension_values,
+                    "count": count,
+                    "percentage": round(percentage, 1)
+                })
+
+            # Calculate data availability (optional, for consistency)
+            data_availability = await self._calculate_data_availability(
+                query_intent.get('data_elements', []),
+                total_count
+            )
+
+            # Generate warnings
+            warnings = self._generate_warnings(
+                total_count,
+                data_availability,
+                query_intent
+            )
+
+            # Generate recommendations
+            recommendations = self._generate_recommendations(
+                total_count,
+                data_availability,
+                query_intent
+            )
+
+            # Calculate feasibility score
+            feasibility_score = self._calculate_feasibility_score(
+                total_count,
+                data_availability
+            )
+
+            return {
+                "estimated_cohort": total_count,
+                "breakdown_results": breakdown_results,
+                "group_by_dimensions": group_by,
+                "data_availability": data_availability,
+                "feasibility_score": feasibility_score,
+                "warnings": warnings,
+                "recommendations": recommendations,
+                "time_period": query_intent.get('time_period', {}),
+                "executed_at": datetime.now().isoformat(),
+                # SQL visibility fields
+                "generated_sql": query_result['sql'],
+                "filter_summary": query_result['filter_summary'],
+                "execution_time_ms": execution_time_ms,
+                "used_join_query": len(view_definitions) > 1,
+                "is_breakdown_query": True
+            }
+
+        except Exception as e:
+            logger.error(f"Breakdown query failed: {e}")
+            logger.debug(f"SQL: {query_result.get('sql', 'N/A')}")
+            raise
+
+    async def _execute_count_distinct_query(
+        self,
+        view_definitions: List[str],
+        search_params: Dict[str, Any],
+        post_filters: List[Dict[str, Any]],
+        query_intent: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Execute COUNT DISTINCT query for unique resource counts
+
+        Args:
+            view_definitions: List of view names to query
+            search_params: Demographic search params
+            post_filters: Condition/medication/lab filters
+            query_intent: Full query intent dict
+
+        Returns:
+            Dictionary with count_distinct results
+
+        Examples:
+            "How many distinct conditions?" → COUNT(DISTINCT code_text)
+            "How many unique medications?" → COUNT(DISTINCT medication_code)
+        """
+        try:
+            # Build COUNT DISTINCT SQL query
+            logger.info(f"Building COUNT DISTINCT query: views={view_definitions}")
+            query_result = self.join_query_builder.build_count_distinct_query(
+                view_definitions=view_definitions,
+                search_params=search_params,
+                post_filters=post_filters
+            )
+
+            # Execute COUNT DISTINCT query
+            start_time = datetime.now()
+            result_rows = await self.db_client.execute_query(query_result['sql'])
+            execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+            logger.info(f"COUNT DISTINCT query returned result ({execution_time_ms:.1f}ms)")
+
+            # Extract distinct count
+            distinct_count = result_rows[0]['count'] if result_rows else 0
+
+            # Determine resource type from view
+            view_name = view_definitions[0] if view_definitions else "unknown"
+            resource_type_map = {
+                "condition_simple": "conditions",
+                "condition_diagnoses": "conditions",
+                "medication_requests": "medications",
+                "observation_labs": "lab observations",
+                "procedure_history": "procedures"
+            }
+            resource_type = resource_type_map.get(view_name, "resources")
+
+            # Generate warnings if needed
+            warnings = []
+            if distinct_count == 0:
+                warnings.append({
+                    "type": "no_distinct_values",
+                    "message": f"No distinct {resource_type} found matching the criteria"
+                })
+            elif distinct_count < 5:
+                warnings.append({
+                    "type": "low_distinct_count",
+                    "message": f"Very few distinct {resource_type} ({distinct_count}), consider broadening criteria"
+                })
+
+            return {
+                "estimated_cohort": distinct_count,
+                "cohort_counts_by_view": {view_name: distinct_count},
+                "data_availability": {},  # Not applicable for distinct counts
+                "feasibility_score": 1.0 if distinct_count > 0 else 0.0,
+                "warnings": warnings,
+                "recommendations": [],
+                "time_period": query_intent.get('time_period', {}),
+                "executed_at": datetime.now().isoformat(),
+                # SQL visibility fields
+                "generated_sql": query_result['sql'],
+                "filter_summary": query_result['filter_summary'],
+                "execution_time_ms": execution_time_ms,
+                "used_join_query": len(view_definitions) > 1,
+                "is_count_distinct_query": True,
+                "distinct_column": query_result.get('distinct_column', 'unknown'),
+                "resource_type": resource_type
+            }
+
+        except Exception as e:
+            logger.error(f"Count distinct query failed: {e}")
+            logger.debug(f"SQL: {query_result.get('sql', 'N/A')}")
+            raise
 
     async def _calculate_data_availability(
         self,

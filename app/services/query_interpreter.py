@@ -27,6 +27,8 @@ class QueryIntent:
     post_filters: List[Dict]  # Additional filtering after results
     aggregations: List[str]  # Summary stats to calculate
     explanation: str  # Human-readable query explanation
+    group_by: List[str]  # NEW: Dimensions to group by (e.g., ["gender"], ["gender", "age_group"])
+    aggregation_type: str  # NEW: Type of aggregation ("count", "avg", "sum", "min", "max")
 
 
 class QueryInterpreter:
@@ -164,7 +166,29 @@ Guidelines:
 4. Determine if it's a count, list, filter, or aggregate query
 5. Calculate age from birthdate (current year - birth year)
 6. For "under age X", use birthdate > (current_year - X)
-7. Be precise and use exact medical terminology"""
+7. Be precise and use exact medical terminology
+8. Detect aggregation patterns and extract group_by dimensions:
+   - "breakdown by X" → group_by: ["X"]
+   - "broken down by X" → group_by: ["X"]
+   - "break down by X" → group_by: ["X"]
+   - "split by X" → group_by: ["X"]
+   - "by X" (at end of query) → group_by: ["X"]
+   - "counts by X" → group_by: ["X"]
+   - "grouped by X" → group_by: ["X"]
+   - "breakdown by X and Y" → group_by: ["X", "Y"]
+   - "broken down by X and Y" → group_by: ["X", "Y"]
+   - Common dimensions: gender, age_group, condition_type, medication_type
+   - If breakdown requested, set aggregation_type to "count" (default)
+
+9. Detect count distinct patterns (counts unique resources, NOT patients):
+   - "How many distinct X" → aggregation_type: "count_distinct", group_by: []
+   - "How many unique X" → aggregation_type: "count_distinct", group_by: []
+   - "Count unique X" → aggregation_type: "count_distinct", group_by: []
+   - "Count distinct X" → aggregation_type: "count_distinct", group_by: []
+   - "Number of different X" → aggregation_type: "count_distinct", group_by: []
+   - "How many different X" → aggregation_type: "count_distinct", group_by: []
+   - Examples: "distinct conditions", "unique medications", "different procedures"
+   - IMPORTANT: count_distinct does NOT use group_by (leave empty)"""
 
     def _build_user_prompt(self, query: str) -> str:
         """Build user prompt"""
@@ -181,12 +205,16 @@ Return JSON with:
 - filters: all extracted filters
 - view_definitions: which ViewDefinitions to execute
 - explanation: what the query will do
+- group_by: list of dimensions to group by (e.g., ["gender"], ["gender", "age_group"]) - extract from patterns like "breakdown by", "broken down by", "break down by", "split by", "grouped by", "by X"
+- aggregation_type: type of aggregation (default: "count")
 
 Focus on:
 1. Demographics (gender, age)
 2. Conditions/diagnoses
 3. Time periods
-4. Data elements requested"""
+4. Data elements requested
+5. Aggregation dimensions (breakdown by gender, split by age group, etc.)
+"""
 
     def _build_query_intent(self, query_data: Dict, original_query: str) -> QueryIntent:
         """Build QueryIntent from parsed data"""
@@ -216,11 +244,32 @@ Focus on:
         post_filters = []
         if "conditions" in filters:
             for condition in filters["conditions"]:
-                post_filters.append({
-                    "field": "snomed_code",
-                    "value": condition.get("snomed"),
-                    "condition_name": condition.get("name")
-                })
+                snomed_code = condition.get("snomed")
+                icd10_code = condition.get("icd10")
+                condition_name = condition.get("name")
+
+                # Check if we have a valid SNOMED or ICD-10 code
+                if snomed_code or icd10_code:
+                    # Standard code lookup (preferred)
+                    post_filters.append({
+                        "field": "snomed_code" if snomed_code else "icd10_code",
+                        "value": snomed_code or icd10_code,
+                        "condition_name": condition_name
+                    })
+                else:
+                    # FALLBACK: Use text search for unmapped conditions
+                    # This handles cases where condition is not in CONDITION_MAPPINGS
+                    logger.warning(
+                        f"Condition '{condition_name}' not mapped to SNOMED/ICD-10 codes. "
+                        f"Using text search fallback. Consider adding to CONDITION_MAPPINGS for accuracy."
+                    )
+                    post_filters.append({
+                        "field": "code_text",
+                        "value": None,  # Special flag indicating text search
+                        "condition_name": condition_name,
+                        "use_text_search": True,
+                        "text_pattern": f"%{condition_name}%"
+                    })
 
         # Aggregations
         aggregations = []
@@ -228,6 +277,60 @@ Focus on:
             aggregations.append("count")
         if query_data.get("query_type") == "aggregate":
             aggregations.extend(["count", "age_stats", "gender_dist"])
+
+        # NEW: Extract group_by and aggregation_type from LLM response
+        group_by = query_data.get("group_by", [])
+        aggregation_type = query_data.get("aggregation_type", "count")
+
+        # DEFENSIVE FALLBACK: If LLM failed to detect breakdown pattern, use regex
+        if not group_by:
+            import re
+            query_lower = original_query.lower()
+
+            # Regex patterns for breakdown detection
+            # Pattern captures: "breakdown by X", "broken down by X and Y", "split by X", etc.
+            breakdown_patterns = [
+                r'break\s*down\s+by\s+([a-z_,\s]+)',
+                r'broken\s+down\s+by\s+([a-z_,\s]+)',
+                r'breakdown\s+by\s+([a-z_,\s]+)',
+                r'split\s+by\s+([a-z_,\s]+)',
+                r'grouped?\s+by\s+([a-z_,\s]+)',
+                r'group\s+by\s+([a-z_,\s]+)',
+            ]
+
+            for pattern in breakdown_patterns:
+                match = re.search(pattern, query_lower)
+                if match:
+                    # Extract dimension string (e.g., "gender", "age and gender", "gender, age")
+                    dimension_str = match.group(1).strip()
+
+                    # Parse multiple dimensions (split by "and" or ",")
+                    dimensions = re.split(r'\s+and\s+|,\s*', dimension_str)
+
+                    # Map common terms to standard dimension names
+                    dimension_mapping = {
+                        "gender": "gender",
+                        "sex": "gender",
+                        "age": "age_group",
+                        "age group": "age_group",
+                        "age groups": "age_group"
+                    }
+
+                    group_by = []
+                    for dim in dimensions:
+                        dim = dim.strip()
+                        if dim in dimension_mapping:
+                            group_by.append(dimension_mapping[dim])
+                        else:
+                            # Keep original if not in mapping
+                            group_by.append(dim)
+
+                    logger.info(f"Regex fallback detected breakdown query: group_by={group_by}")
+                    break
+
+        # Log breakdown detection
+        if group_by:
+            logger.info(f"Detected breakdown query: group_by={group_by}, aggregation_type={aggregation_type}")
 
         return QueryIntent(
             query_type=query_data.get("query_type", "list"),
@@ -237,7 +340,9 @@ Focus on:
             search_params=search_params,
             post_filters=post_filters,
             aggregations=aggregations,
-            explanation=query_data.get("explanation", f"Execute query: {original_query}")
+            explanation=query_data.get("explanation", f"Execute query: {original_query}"),
+            group_by=group_by,
+            aggregation_type=aggregation_type
         )
 
     def _fallback_interpretation(self, query: str) -> QueryIntent:
@@ -284,6 +389,49 @@ Focus on:
                         "use_like": True  # Use LIKE matching for patterns
                     })
 
+        # BREAKDOWN DETECTION - Regex fallback
+        group_by = []
+        aggregation_type = "count"
+
+        # Regex patterns for breakdown detection
+        breakdown_patterns = [
+            r'break\s*down\s+by\s+([a-z_,\s]+)',
+            r'broken\s+down\s+by\s+([a-z_,\s]+)',
+            r'breakdown\s+by\s+([a-z_,\s]+)',
+            r'split\s+by\s+([a-z_,\s]+)',
+            r'grouped?\s+by\s+([a-z_,\s]+)',
+            r'group\s+by\s+([a-z_,\s]+)',
+        ]
+
+        for pattern in breakdown_patterns:
+            match = re.search(pattern, query_lower)
+            if match:
+                # Extract dimension string (e.g., "gender", "age and gender")
+                dimension_str = match.group(1).strip()
+
+                # Parse multiple dimensions (split by "and" or ",")
+                dimensions = re.split(r'\s+and\s+|,\s*', dimension_str)
+
+                # Map common terms to standard dimension names
+                dimension_mapping = {
+                    "gender": "gender",
+                    "sex": "gender",
+                    "age": "age_group",
+                    "age group": "age_group",
+                    "age groups": "age_group"
+                }
+
+                for dim in dimensions:
+                    dim = dim.strip()
+                    if dim in dimension_mapping:
+                        group_by.append(dimension_mapping[dim])
+                    else:
+                        # Keep original if not in mapping
+                        group_by.append(dim)
+
+                logger.info(f"Fallback regex detected breakdown query: group_by={group_by}")
+                break
+
         return QueryIntent(
             query_type=query_type,
             resources=["Patient"],
@@ -292,5 +440,7 @@ Focus on:
             search_params=search_params,
             post_filters=post_filters,
             aggregations=["count"] if query_type == "count" else [],
-            explanation=f"Simple interpretation of: {query}"
+            explanation=f"Simple interpretation of: {query}",
+            group_by=group_by,
+            aggregation_type=aggregation_type
         )
