@@ -13,17 +13,43 @@ ResearchFlow automates clinical research data requests from natural language to 
 
 ---
 
-## The Experiment
+## The Problem
 
-**The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
+Clinical research data requests are **critically slow and resource-intensive**:
 
-As a biomedical informatician supporting clinical research, I observed that ~50% of my work was administrative coordination (scheduling, routing, status tracking) while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality).
+- **2-4 week turnaround time** for typical data requests
+- **~50% administrative overhead** - scheduling, routing, status tracking (automatable but time-consuming)
+- **~50% expert validation required** - SQL queries, phenotype definitions, data quality checks (must be human-validated)
+- **Manual, error-prone processes** - no standardization, frequent communication delays
+- **High cost** - expert time spent on coordination instead of technical work
 
-**The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
-- **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
-- **Humans must validate:** All technical decisions requiring domain expertise (SQL queries, computations, data quality)
+As a biomedical informatician, I observed this pattern repeatedly: half my time was administrative coordination that didn't require expertise, while the other half was critical technical validation that absolutely required domain knowledge.
 
-**The Result:** A multi-agent system demonstrating sustainable AI architecture for regulated technical domains.
+## The Solution
+
+ResearchFlow implements **AI for coordination, humans for expertise**:
+
+### AI Agents Handle Administrative Work
+- **Requirements extraction** - Conversational interface to structured criteria
+- **Meeting scheduling** - Automatic kickoff meeting coordination
+- **Workflow routing** - 6-agent pipeline with 23-state orchestration
+- **Status tracking** - Real-time progress monitoring and notifications
+- **Data packaging** - Automated delivery and documentation
+
+### Humans Validate Technical Decisions
+- **SQL review** - Every query approved by informatician before execution
+- **Phenotype definitions** - Medical accuracy validated by domain experts
+- **Data quality** - QA results reviewed before delivery
+- **Authorization gates** - 5 mandatory approval checkpoints with audit trails
+
+### Lambda Architecture for Performance
+- **Batch layer** - Materialized views (10-100x speedup)
+- **Speed layer** - Redis cache (<1 minute data freshness)
+- **Serving layer** - Smart merge of batch + speed results
+
+### The Meta-Experiment
+
+ResearchFlow itself was built using **agentic AI coding** (Claude Code) to prove the concept: AI building AI that knows where humans are essential. This demonstrates sustainable AI architecture for regulated technical domains where safety and compliance are non-negotiable.
 
 ---
 
@@ -32,6 +58,7 @@ As a biomedical informatician supporting clinical research, I observed that ~50%
 - [Architecture](#architecture)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
+- [Tech Stack](#tech-stack)
 - [Performance](#performance)
 - [Human-in-Loop Safety](#human-in-loop-safety)
 - [Current Status](#current-status)
@@ -241,6 +268,57 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 | **Admin Dashboard** | http://localhost:8503 | Review approvals, monitor system |
 | **API Server** | http://localhost:8000 | REST API endpoints |
 | **API Docs** | http://localhost:8000/docs | Interactive Swagger UI |
+
+---
+
+## Tech Stack
+
+ResearchFlow is built with production-quality frameworks organized by architectural layer:
+
+### Backend
+
+- **FastAPI** - High-performance async API framework
+- **PostgreSQL** - Primary FHIR data store (HAPI FHIR backend)
+- **Redis** - Speed layer cache for Lambda Architecture
+- **asyncpg** - Async PostgreSQL driver for high-throughput queries
+- **SQLAlchemy** - ORM for request tracking and checkpointing
+
+### AI/LLM Layer
+
+- **LangChain** - Agent framework and prompt management
+- **LangGraph** - Workflow orchestration (StateGraph with 23 states)
+- **Claude API** - Primary LLM for critical medical NLP tasks
+- **LangSmith** - Complete observability and workflow tracing
+- **Multi-Provider Support** - OpenAI, Ollama fallback for non-critical tasks
+- **AI Suite** - Intelligent routing based on task criticality
+
+### FHIR Analytics
+
+- **HAPI FHIR** - Full-featured FHIR R4 server
+- **SQL-on-FHIR v2** - Standards-compliant ViewDefinitions
+- **Lambda Architecture** - Batch (materialized views) + Speed (Redis) + Serving (HybridRunner)
+- **PostgreSQL FHIR** - Native FHIR resource storage with SQL queries
+
+### Frontend
+
+- **Streamlit** - Three web interfaces (Researcher Portal, Admin Dashboard, Research Notebook)
+- **Plotly** - Interactive visualizations for cohort exploration
+- **Pandas** - Data manipulation and analysis
+
+### Testing & Quality
+
+- **pytest** - Primary test framework (85%+ coverage)
+- **pytest-asyncio** - Async test support for FastAPI/asyncpg
+- **pytest-cov** - Code coverage reporting
+- **LangSmith Tracing** - Production observability and debugging
+- **Docker Compose** - Isolated E2E test environments
+
+### Development Tools
+
+- **black** - Code formatting
+- **flake8** - Linting
+- **mypy** - Static type checking
+- **pre-commit** - Git hooks for quality gates
 
 ---
 
@@ -758,6 +836,14 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 
 ---
 
-For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
+## Contact
+
+**Questions & Issues:**
+- Use [GitHub Issues](https://github.com/yourusername/researchflow/issues) for bug reports, feature requests, and technical questions
+
+**Collaboration Inquiries:**
+- Email: [your.email@example.com](mailto:your.email@example.com) for research partnerships, institutional deployments, or contributions
+
+---
 
 **ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs. 🤖🏥
