@@ -4,13 +4,26 @@ ResearchFlow Admin Dashboard
 Streamlit interface for administrators to monitor system and review escalations.
 """
 
+# CRITICAL: Set up event loop BEFORE any other imports
+# This ensures the database engine (created at import time) uses our loop
+import asyncio
+import nest_asyncio
+import sys
+import os
+
+# ALWAYS create a fresh event loop and set it as THE loop for this thread
+# This ensures database engine Queue objects bind to our loop
+_streamlit_loop = asyncio.new_event_loop()
+asyncio.set_event_loop(_streamlit_loop)
+
+# Apply nest_asyncio to allow nested event loops
+nest_asyncio.apply(_streamlit_loop)
+
+# NOW safe to import modules that create database connections
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-import asyncio
 import time
-import sys
-import os
 from dotenv import load_dotenv
 from sqlalchemy import select
 
@@ -29,14 +42,27 @@ from app.agents import (
     QualityAssuranceAgent,
     DeliveryAgent
 )
-from app.database import get_db_session
+from app.database import get_db_session, get_engine
 from app.database.models import AgentExecution
 from app.services.approval_service import ApprovalService
+
+
+def run_async(coroutine):
+    """
+    Run async code in Streamlit's persistent event loop.
+
+    Uses the loop set up at module import time to ensure all
+    database operations use the same loop.
+    """
+    return _streamlit_loop.run_until_complete(coroutine)
 
 
 def initialize_orchestrator():
     """Initialize orchestrator with all agents"""
     if 'orchestrator' not in st.session_state:
+        # Ensure database engine is initialized for current event loop
+        # This prevents "Queue is bound to a different event loop" errors
+        get_engine()
         orchestrator = ResearchRequestOrchestrator()
 
         # Get HAPI FHIR database URL from environment
@@ -129,7 +155,7 @@ def show_overview():
     st.header("System Overview")
 
     # Get all active requests
-    requests = asyncio.run(st.session_state.orchestrator.get_all_active_requests())
+    requests = run_async(st.session_state.orchestrator.get_all_active_requests())
 
     # Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -181,6 +207,20 @@ def show_agent_metrics():
     # Query AgentExecution table from database
     async def fetch_agent_metrics():
         async with get_db_session() as session:
+            # Get all registered agents from orchestrator (shows ALL agents, not just executed ones)
+            registered_agents = list(st.session_state.orchestrator.agents.keys())
+
+            # Initialize metrics for ALL registered agents
+            metrics_by_agent = {}
+            for agent_id in registered_agents:
+                metrics_by_agent[agent_id] = {
+                    'total_tasks': 0,
+                    'successful_tasks': 0,
+                    'failed_tasks': 0,
+                    'durations': [],
+                    'state': 'idle'
+                }
+
             # Get all agent executions
             result = await session.execute(
                 select(AgentExecution).order_by(
@@ -189,33 +229,26 @@ def show_agent_metrics():
             )
             all_executions = result.scalars().all()
 
-            # Calculate metrics per agent
-            metrics_by_agent = {}
+            # Populate metrics from execution records
             for execution in all_executions:
                 agent_id = execution.agent_id
-                if agent_id not in metrics_by_agent:
-                    metrics_by_agent[agent_id] = {
-                        'total_tasks': 0,
-                        'successful_tasks': 0,
-                        'failed_tasks': 0,
-                        'durations': [],
-                        'state': 'idle'
-                    }
 
-                metrics_by_agent[agent_id]['total_tasks'] += 1
+                # Only count executions from registered agents
+                if agent_id in metrics_by_agent:
+                    metrics_by_agent[agent_id]['total_tasks'] += 1
 
-                if execution.status == 'success':
-                    metrics_by_agent[agent_id]['successful_tasks'] += 1
-                elif execution.status == 'failed':
-                    metrics_by_agent[agent_id]['failed_tasks'] += 1
+                    if execution.status == 'success':
+                        metrics_by_agent[agent_id]['successful_tasks'] += 1
+                    elif execution.status == 'failed':
+                        metrics_by_agent[agent_id]['failed_tasks'] += 1
 
-                if execution.completed_at and execution.started_at:
-                    duration = (
-                        execution.completed_at - execution.started_at
-                    ).total_seconds()
-                    metrics_by_agent[agent_id]['durations'].append(duration)
+                    if execution.completed_at and execution.started_at:
+                        duration = (
+                            execution.completed_at - execution.started_at
+                        ).total_seconds()
+                        metrics_by_agent[agent_id]['durations'].append(duration)
 
-            # Calculate success rate and avg duration
+            # Calculate success rate and avg duration for all agents
             for agent_id, metrics in metrics_by_agent.items():
                 metrics['success_rate'] = (
                     metrics['successful_tasks'] / metrics['total_tasks']
@@ -228,7 +261,7 @@ def show_agent_metrics():
 
             return metrics_by_agent
 
-    all_metrics = asyncio.run(fetch_agent_metrics())
+    all_metrics = run_async(fetch_agent_metrics())
 
     if not all_metrics:
         st.info("No agent metrics available yet")
@@ -316,7 +349,7 @@ def show_pending_approvals():
                 )
                 return approvals
 
-        approvals_db = asyncio.run(fetch_approvals())
+        approvals_db = run_async(fetch_approvals())
 
         # Convert to dict format for display
         approvals = [
@@ -507,6 +540,63 @@ def display_approval_card(approval, reviewer_email):
 
 def display_sql_approval(data):
     """Display SQL approval details with syntax highlighting"""
+
+    # Display Research Request Context (NEW - shows what researcher requested)
+    st.subheader("📋 Research Request")
+
+    # Display original request text
+    initial_request = data.get('initial_request', '')
+    if initial_request:
+        st.info(f"**Original Request**: {initial_request}")
+    else:
+        st.info("**Original Request**: Not available")
+
+    # Display structured requirements
+    requirements = data.get('structured_requirements', {})
+    if requirements:
+        with st.expander("📊 Structured Requirements", expanded=True):
+            # Display inclusion criteria
+            inclusion = requirements.get('inclusion_criteria', [])
+            if inclusion:
+                st.markdown("**Inclusion Criteria:**")
+                for criterion in inclusion:
+                    # Handle both string and dict formats
+                    if isinstance(criterion, dict):
+                        criterion_text = criterion.get('description', str(criterion))
+                    else:
+                        criterion_text = str(criterion)
+                    st.markdown(f"• {criterion_text}")
+
+            # Display exclusion criteria
+            exclusion = requirements.get('exclusion_criteria', [])
+            if exclusion:
+                st.markdown("**Exclusion Criteria:**")
+                for criterion in exclusion:
+                    if isinstance(criterion, dict):
+                        criterion_text = criterion.get('description', str(criterion))
+                    else:
+                        criterion_text = str(criterion)
+                    st.markdown(f"• {criterion_text}")
+
+            # Display data elements
+            data_elements = requirements.get('data_elements', [])
+            if data_elements:
+                st.markdown(f"**Data Elements**: {', '.join(str(elem) for elem in data_elements)}")
+
+            # Display time period
+            time_period = requirements.get('time_period', {})
+            if time_period and isinstance(time_period, dict):
+                start = time_period.get('start', 'N/A')
+                end = time_period.get('end', 'N/A')
+                st.markdown(f"**Time Period**: {start} to {end}")
+
+            # Display PHI level
+            phi_level = requirements.get('phi_level', 'N/A')
+            st.markdown(f"**PHI Level**: {phi_level}")
+
+    st.divider()
+
+    # SQL Query Review Section
     st.subheader("🔴 CRITICAL: SQL Query Review")
 
     st.warning("""
@@ -537,6 +627,20 @@ def display_sql_approval(data):
     with col3:
         availability = data.get('data_availability', {}).get('overall_availability', 0)
         st.metric("Data Availability", f"{availability:.1%}")
+
+    # Auto-Feasibility Assessment (informational, not decision gate)
+    auto_assessment = data.get('auto_feasibility_assessment', 'unknown')
+    if auto_assessment == 'not_feasible':
+        st.error(
+            "🔴 **Auto-Assessment: Low Cohort Size Detected**\n\n"
+            "The automated feasibility check detected a small cohort size. "
+            "Please review the SQL query carefully and consider:\n"
+            "- Whether broader inclusion criteria would be appropriate\n"
+            "- Whether the SQL query accurately represents the research intent\n"
+            "- Whether this cohort size is acceptable for the study design"
+        )
+    elif auto_assessment == 'feasible':
+        st.success("✅ **Auto-Assessment: Adequate Cohort Size**")
 
     # Warnings
     warnings = data.get('warnings', [])
@@ -684,7 +788,7 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
                 else:
                     raise ValueError(f"Invalid decision: {decision}")
 
-        asyncio.run(process_approval())
+        run_async(process_approval())
 
         if decision == "approve":
             st.success(f"✅ Approval {approval_id} approved! Workflow will continue automatically.")

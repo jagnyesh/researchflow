@@ -57,13 +57,31 @@ class WorkflowEngine:
         Format: (current_agent, current_task) -> {condition, next_agent, next_task}
         """
         return {
-            # Requirements gathering complete -> Requirements Review (NEW APPROVAL GATE)
-            ('requirements_agent', 'gather_requirements'): {
-                'condition': lambda r: r.get('requirements_complete') == True,
-                'next_agent': None,  # Waits for human approval
-                'next_task': None,
-                'next_state': WorkflowState.REQUIREMENTS_REVIEW
-            },
+            # Requirements gathering - multiple outcomes based on completeness and approval needs
+            ('requirements_agent', 'gather_requirements'): [
+                {
+                    # Requirements complete AND needs approval -> Requirements Review (conversational mode)
+                    'condition': lambda r: r.get('requirements_complete') == True and r.get('requires_approval') == True,
+                    'next_agent': None,  # Wait for approval
+                    'next_task': None,
+                    'next_state': WorkflowState.REQUIREMENTS_REVIEW
+                },
+                {
+                    # Requirements complete AND NO approval needed -> Phenotype Agent (form-based mode)
+                    # Skip requirements review, go straight to SQL generation (SQL will be reviewed instead)
+                    'condition': lambda r: r.get('requirements_complete') == True and r.get('requires_approval') == False,
+                    'next_agent': 'phenotype_agent',  # Trigger phenotype agent immediately
+                    'next_task': 'validate_feasibility',
+                    'next_state': WorkflowState.FEASIBILITY_VALIDATION
+                },
+                {
+                    # Requirements incomplete -> Continue gathering (conversational loop)
+                    'condition': lambda r: r.get('requirements_complete') == False,
+                    'next_agent': 'requirements_agent',
+                    'next_task': 'gather_requirements',
+                    'next_state': WorkflowState.REQUIREMENTS_GATHERING
+                }
+            ],
 
             # Requirements approved -> Phenotype validation
             ('approval_service', 'approve_requirements'): {
@@ -81,10 +99,12 @@ class WorkflowEngine:
                 'next_state': WorkflowState.REQUIREMENTS_GATHERING
             },
 
-            # Feasibility validation complete -> Phenotype Review (NEW APPROVAL GATE)
+            # Phenotype validation complete -> ALWAYS go to SQL review
+            # The phenotype agent generates SQL and metrics, but the informatician
+            # decides whether the SQL is appropriate to run (regardless of cohort size)
             ('phenotype_agent', 'validate_feasibility'): {
-                'condition': lambda r: r.get('feasible') == True,
-                'next_agent': None,  # Waits for SQL approval
+                'condition': lambda r: True,  # Always proceed to review
+                'next_agent': None,  # Waits for informatician SQL approval
                 'next_task': None,
                 'next_state': WorkflowState.PHENOTYPE_REVIEW
             },
@@ -103,14 +123,6 @@ class WorkflowEngine:
                 'next_agent': 'phenotype_agent',
                 'next_task': 'validate_feasibility',
                 'next_state': WorkflowState.FEASIBILITY_VALIDATION
-            },
-
-            # Feasibility failed -> Human review
-            ('phenotype_agent', 'validate_feasibility_failed'): {
-                'condition': lambda r: r.get('feasible') == False,
-                'next_agent': None,
-                'next_task': None,
-                'next_state': WorkflowState.NOT_FEASIBLE
             },
 
             # Kickoff meeting scheduled -> Extraction Approval (NEW APPROVAL GATE)
@@ -225,17 +237,25 @@ class WorkflowEngine:
             logger.warning(f"No workflow rule found for {rule_key}")
             return None
 
-        # Check condition
-        if rule['condition'](result):
-            next_step = {
-                'next_agent': rule['next_agent'],
-                'next_task': rule['next_task'],
-                'next_state': rule['next_state']
-            }
-            logger.info(f"Workflow transition: {completed_agent}.{completed_task} -> {next_step['next_agent']}.{next_step['next_task']}")
-            return next_step
+        # Support both single rule (dict) and multiple rules (list of dicts)
+        rules_to_check = rule if isinstance(rule, list) else [rule]
 
-        logger.info(f"Workflow condition not met for {rule_key}")
+        # Check each condition in order
+        for single_rule in rules_to_check:
+            try:
+                if single_rule['condition'](result):
+                    next_step = {
+                        'next_agent': single_rule['next_agent'],
+                        'next_task': single_rule['next_task'],
+                        'next_state': single_rule['next_state']
+                    }
+                    logger.info(f"Workflow transition: {completed_agent}.{completed_task} -> {next_step['next_agent']}.{next_step['next_task']} (state: {next_step['next_state'].value})")
+                    return next_step
+            except Exception as e:
+                logger.error(f"Error evaluating workflow condition for {rule_key}: {e}")
+                continue
+
+        logger.warning(f"No workflow condition matched for {rule_key}. Result keys: {result.keys()}")
         return None
 
     def get_initial_state(self) -> WorkflowState:

@@ -1,0 +1,360 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-8.4.2, pluggy-1.6.0 -- /Users/jagnyesh/Development/FHIR_PROJECT/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/jagnyesh/Development/FHIR_PROJECT
+configfile: pytest.ini
+plugins: asyncio-1.2.0, anyio-4.11.0, langsmith-0.4.38
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/test_phase2_parallel.py::test_phase2_parallel_testing 
+================================================================================
+PHASE 2 PARALLEL TESTING - 50 SCENARIOS
+================================================================================
+
+Total scenarios: 50
+  - Requirements (simple): 10
+  - Requirements (moderate): 10
+  - Requirements (complex): 10
+  - Calendar (standard): 10
+  - Calendar (complex): 10
+
+--------------------------------------------------------------------------------
+[1/2] Running PRODUCTION agents (50 scenarios)...
+--------------------------------------------------------------------------------
+
+  [1/50] req_simple_001 (simple)... ✓ 3.19s
+
+  [2/50] req_simple_002 (simple)... ✓ 3.62s
+
+  [3/50] req_simple_003 (simple)... ✓ 2.85s
+
+  [4/50] req_simple_004 (simple)... ✓ 3.08s
+
+  [5/50] req_simple_005 (simple)... ✓ 2.84s
+
+  [6/50] req_simple_006 (simple)... ✓ 2.82s
+
+  [7/50] req_simple_007 (simple)... ✓ 2.81s
+
+  [8/50] req_simple_008 (simple)... ✓ 3.07s
+
+  [9/50] req_simple_009 (simple)... ✓ 2.97s
+
+  [10/50] req_simple_010 (simple)... ✓ 5.00s
+
+  [11/50] req_moderate_001 (moderate)... ✓ 3.41s
+
+  [12/50] req_moderate_002 (moderate)... ✓ 2.96s
+
+  [13/50] req_moderate_003 (moderate)... ✓ 2.82s
+
+  [14/50] req_moderate_004 (moderate)... ✓ 3.14s
+
+  [15/50] req_moderate_005 (moderate)... ✓ 3.01s
+
+  [16/50] req_moderate_006 (moderate)... ✓ 2.79s
+
+  [17/50] req_moderate_007 (moderate)... ✓ 3.11s
+
+  [18/50] req_moderate_008 (moderate)... ✓ 2.85s
+
+  [19/50] req_moderate_009 (moderate)... ✓ 3.19s
+
+  [20/50] req_moderate_010 (moderate)... ✓ 3.36s
+
+  [21/50] req_complex_001 (complex)... ✓ 2.84s
+
+  [22/50] req_complex_002 (complex)... ✓ 3.37s
+
+  [23/50] req_complex_003 (complex)... ✓ 2.90s
+
+  [24/50] req_complex_004 (complex)... ✓ 2.90s
+
+  [25/50] req_complex_005 (complex)... ✓ 3.31s
+
+  [26/50] req_complex_006 (complex)... ✓ 2.92s
+
+  [27/50] req_complex_007 (complex)... ✓ 3.05s
+
+  [28/50] req_complex_008 (complex)... ✓ 3.09s
+
+  [29/50] req_complex_009 (complex)... ✓ 2.87s
+
+  [30/50] req_complex_010 (complex)... ✓ 3.38s
+
+  [31/50] cal_standard_001 (standard)... ✗ 0.00s
+
+  [32/50] cal_standard_002 (standard)... ✗ 0.00s
+
+  [33/50] cal_standard_003 (standard)... ✗ 0.00s
+
+  [34/50] cal_standard_004 (standard)... ✗ 0.00s
+
+  [35/50] cal_standard_005 (standard)... ✗ 0.00s
+
+  [36/50] cal_standard_006 (standard)... ✗ 0.00s
+
+  [37/50] cal_standard_007 (standard)... ✗ 0.00s
+
+  [38/50] cal_standard_008 (standard)... ✗ 0.00s
+
+  [39/50] cal_standard_009 (standard)... ✗ 0.00s
+
+  [40/50] cal_standard_010 (standard)... ✗ 0.00s
+
+  [41/50] cal_complex_001 (complex)... ✗ 0.00s
+
+  [42/50] cal_complex_002 (complex)... ✗ 0.00s
+
+  [43/50] cal_complex_003 (complex)... ✗ 0.00s
+
+  [44/50] cal_complex_004 (complex)... ✗ 0.00s
+
+  [45/50] cal_complex_005 (complex)... ✗ 0.00s
+
+  [46/50] cal_complex_006 (complex)... ✗ 0.00s
+
+  [47/50] cal_complex_007 (complex)... ✗ 0.00s
+
+  [48/50] cal_complex_008 (complex)... ✗ 0.00s
+
+  [49/50] cal_complex_009 (complex)... ✗ 0.00s
+
+  [50/50] cal_complex_010 (complex)... ✗ 0.00s
+
+  Production total time: 93.51s
+
+--------------------------------------------------------------------------------
+[2/2] Running EXPERIMENTAL LangChain agents (50 scenarios)...
+--------------------------------------------------------------------------------
+
+  [1/50] req_simple_001 (simple)... ✓ 3.54s
+
+  [2/50] req_simple_002 (simple)... ✓ 3.67s
+
+  [3/50] req_simple_003 (simple)... ✓ 3.61s
+
+  [4/50] req_simple_004 (simple)... ✓ 3.43s
+
+  [5/50] req_simple_005 (simple)... ✓ 3.67s
+
+  [6/50] req_simple_006 (simple)... ✓ 3.58s
+
+  [7/50] req_simple_007 (simple)... ✓ 3.66s
+
+  [8/50] req_simple_008 (simple)... ✓ 4.69s
+
+  [9/50] req_simple_009 (simple)... ✓ 3.42s
+
+  [10/50] req_simple_010 (simple)... ✓ 3.85s
+
+  [11/50] req_moderate_001 (moderate)... ✓ 3.73s
+
+  [12/50] req_moderate_002 (moderate)... ✓ 6.32s
+
+  [13/50] req_moderate_003 (moderate)... ✓ 3.81s
+
+  [14/50] req_moderate_004 (moderate)... ✓ 3.73s
+
+  [15/50] req_moderate_005 (moderate)... ✓ 5.11s
+
+  [16/50] req_moderate_006 (moderate)... ✓ 3.58s
+
+  [17/50] req_moderate_007 (moderate)... ✓ 4.54s
+
+  [18/50] req_moderate_008 (moderate)... ✓ 3.83s
+
+  [19/50] req_moderate_009 (moderate)... ✓ 4.92s
+
+  [20/50] req_moderate_010 (moderate)... ✓ 4.48s
+
+  [21/50] req_complex_001 (complex)... ✓ 4.42s
+
+  [22/50] req_complex_002 (complex)... ✓ 5.06s
+
+  [23/50] req_complex_003 (complex)... ✓ 3.73s
+
+  [24/50] req_complex_004 (complex)... ✓ 4.01s
+
+  [25/50] req_complex_005 (complex)... ✓ 4.22s
+
+  [26/50] req_complex_006 (complex)... ✓ 3.63s
+
+  [27/50] req_complex_007 (complex)... ✓ 4.30s
+
+  [28/50] req_complex_008 (complex)... ✓ 3.73s
+
+  [29/50] req_complex_009 (complex)... ✓ 3.90s
+
+  [30/50] req_complex_010 (complex)... ✓ 4.74s
+
+  [31/50] cal_standard_001 (standard)... ✗ 0.00s
+
+  [32/50] cal_standard_002 (standard)... ✗ 0.00s
+
+  [33/50] cal_standard_003 (standard)... ✗ 0.00s
+
+  [34/50] cal_standard_004 (standard)... ✗ 0.00s
+
+  [35/50] cal_standard_005 (standard)... ✗ 0.00s
+
+  [36/50] cal_standard_006 (standard)... ✗ 0.00s
+
+  [37/50] cal_standard_007 (standard)... ✗ 0.00s
+
+  [38/50] cal_standard_008 (standard)... ✗ 0.00s
+
+  [39/50] cal_standard_009 (standard)... ✗ 0.00s
+
+  [40/50] cal_standard_010 (standard)... ✗ 0.00s
+
+  [41/50] cal_complex_001 (complex)... ✗ 0.00s
+
+  [42/50] cal_complex_002 (complex)... ✗ 0.00s
+
+  [43/50] cal_complex_003 (complex)... ✗ 0.00s
+
+  [44/50] cal_complex_004 (complex)... ✗ 0.00s
+
+  [45/50] cal_complex_005 (complex)... ✗ 0.00s
+
+  [46/50] cal_complex_006 (complex)... ✗ 0.00s
+
+  [47/50] cal_complex_007 (complex)... ✗ 0.00s
+
+  [48/50] cal_complex_008 (complex)... ✗ 0.00s
+
+  [49/50] cal_complex_009 (complex)... ✗ 0.00s
+
+  [50/50] cal_complex_010 (complex)... ✗ 0.00s
+
+  Experimental total time: 122.92s
+
+================================================================================
+ANALYZING RESULTS
+================================================================================
+
+## Success Rates
+  Production:   30/50 (60.0%)
+  Experimental: 30/50 (60.0%)
+  Difference:   +0.0 percentage points
+
+## Performance (Successful Runs)
+  Mean Time:
+    Production:   3.12s
+    Experimental: 4.10s
+    Ratio:        1.31x
+
+  Median Time:
+    Production:   3.03s
+    Experimental: 3.82s
+    Ratio:        1.26x
+
+  P95 Latency:
+    Production:   3.62s
+    Experimental: 5.11s
+
+  P99 Latency:
+    Production:   5.00s
+    Experimental: 6.32s
+
+## Error Rates
+  Production:   20/50 (40.0%)
+  Experimental: 20/50 (40.0%)
+
+## Performance by Complexity
+
+  SIMPLE (10 scenarios):
+    Production:   100.0% success, 3.23s avg
+    Experimental: 100.0% success, 3.71s avg
+
+  STANDARD (10 scenarios):
+    Production:   0.0% success, 0.00s avg
+    Experimental: 0.0% success, 0.00s avg
+
+  MODERATE (10 scenarios):
+    Production:   100.0% success, 3.06s avg
+    Experimental: 100.0% success, 4.41s avg
+
+  COMPLEX (20 scenarios):
+    Production:   50.0% success, 3.06s avg
+    Experimental: 50.0% success, 4.17s avg
+
+================================================================================
+PRODUCTION READINESS CRITERIA
+================================================================================
+
+  ❌ FAIL: Success rate ≥ 95%
+    Actual: 60.0
+    Target: ≥ 95%
+
+  ❌ FAIL: Mean time within 30% of production
+    Actual: 1.31x
+    Target: ≤ 1.30x
+
+  ✅ PASS: P99 latency < 30s
+    Actual: 6.32s
+    Target: < 30s
+
+  ❌ FAIL: Error rate < 5%
+    Actual: 40.0%
+    Target: < 5%
+
+================================================================================
+⚠️  RECOMMENDATION: NO-GO - Address issues before Phase 3
+   Failed criteria: Success rate ≥ 95%, Mean time within 30% of production, Error rate < 5%
+================================================================================
+FAILED
+
+=================================== FAILURES ===================================
+_________________________ test_phase2_parallel_testing _________________________
+tests/test_phase2_parallel.py:417: in test_phase2_parallel_testing
+    assert exp["success_rate"] >= 95.0, \
+E   AssertionError: Success rate 60.0% < 95% (failed 20/50 scenarios)
+E   assert 60.0 >= 95.0
+        analysis   = {'comparison': {'mean_time_ratio': 1.3144259258647317, 'median_time_ratio': 1.2633260350338076, 'success_rate_diff': 0...5, 'error': 'Unknown task: schedule_meeting', 'output': None, 'output_keys': [], ...}, ...], 'success_count': 30, ...}}
+        comp       = {'mean_time_ratio': 1.3144259258647317, 'median_time_ratio': 1.2633260350338076, 'success_rate_diff': 0.0}
+        exp        = {'error_count': 20, 'error_rate': 40.0, 'errors': [{'elapsed_time': 0.00109100341796875, 'error': 'Unknown task: sched...94, 'error': 'Unknown task: schedule_meeting', 'output': None, 'output_keys': [], ...}, ...], 'success_count': 30, ...}
+        runner     = <test_phase2_parallel.Phase2TestRunner object at 0x10bf90f10>
+------------------------------ Captured log call -------------------------------
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.d68b9c5e-ff35-492b-a249-acca0d6c9e93: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.07763221-33ba-4e40-9b5c-d0790edb4d1a: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.af8ba3ea-7273-42f0-8bb7-98a7ebe9f9f5: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.f2023878-1413-41b5-9d3a-b1b9bcd3a308: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.7bb6517f-86ef-444c-a313-7d713d5289fc: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.e217cbbe-34fb-414d-a0be-04c659c26b69: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.e2c0ec16-a646-4cd5-ae9c-09e616fc8628: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.00550bad-218c-47c5-b3ea-a0afe1ced159: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.5cb72404-0ed1-4611-9e37-3813a8acc8a3: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.cf0c5130-f2b2-4aad-9153-2613e0cb6745: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.812cea9e-9329-4596-9008-d8b147e8a557: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.a8094615-a6e9-4bf7-8aee-6bea16fa9a96: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.8c12f57b-0636-46d3-b117-8e689ff8bfcf: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.c47147e8-13fb-44dc-9fe7-04439801ba99: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.73d06de5-49be-48aa-a9fa-d9bef784a3d7: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.b91009b6-9c62-468d-9f6c-9e64c5aaee94: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.8a93997d-020c-49f9-95e1-fba514263ce4: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.f9d1a027-9171-49ce-9c27-7a1aa1595c09: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.24bccae0-faed-4c5e-b14f-33c42f7d2eb1: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.ca005889-b2ac-4b3a-8f45-1bd3e173351f: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.817d8a16-9785-4d50-94c9-ce89b35d5a30: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.0ac4f41e-c8ff-416c-81e1-16f2f0413631: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.a7697ca0-289f-4955-898a-91eaadc30219: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.f065816d-be7d-47fd-b38c-9d57857f1eb4: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.bf4476a2-efbf-490a-a277-2a01c713a76d: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.f3f27c2c-b460-4321-808c-6361e321b305: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.0b74e62f-96f3-4717-85c4-d0a4c6f22a84: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.652623c9-3b01-48ce-b4e6-d7447c9dd81d: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.ee6533cd-9221-43fe-9b2f-a52b3ef193cf: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.60af6044-01a5-4773-b6cc-466668629d54: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470
+  /Users/jagnyesh/Development/FHIR_PROJECT/.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470: UserWarning: Unrecognized run_type: agent. Must be one of: {'embedding', 'parser', 'prompt', 'tool', 'chain', 'retriever', 'llm'}. Did you mean @traceable(name='agent')?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_phase2_parallel.py::test_phase2_parallel_testing - Assertio...
+=================== 1 failed, 1 warning in 216.77s (0:03:36) ===================
+Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.89fb7cef-cec7-4a03-ab08-50ce8aa422dd: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')

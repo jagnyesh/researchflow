@@ -48,7 +48,8 @@ class ResearchRequestOrchestrator:
     async def process_new_request(
         self,
         researcher_request: str,
-        researcher_info: Dict[str, Any]
+        researcher_info: Dict[str, Any],
+        from_formal_portal: bool = False
     ) -> str:
         """
         Main entry point for new research data request
@@ -56,6 +57,7 @@ class ResearchRequestOrchestrator:
         Args:
             researcher_request: Natural language request from researcher
             researcher_info: Researcher metadata (name, email, IRB, etc.)
+            from_formal_portal: If True, use form-based validation (skip conversational mode)
 
         Returns:
             request_id: Unique identifier for tracking the request
@@ -99,14 +101,16 @@ class ResearchRequestOrchestrator:
 
         logger.info(f"New request {request_id} from {researcher_info.get('name', 'Unknown')}")
 
-        # Start with Requirements Agent
+        # Start Requirements Agent and await completion to ensure workflow progresses
+        # UI will wait for full workflow (30-60 seconds) but ensures Phenotype Agent triggers
         await self.route_task(
             agent_id='requirements_agent',
             task='gather_requirements',
             context={
                 'request_id': request_id,
                 'initial_request': researcher_request,
-                'researcher_info': researcher_info
+                'researcher_info': researcher_info,
+                'from_formal_portal': from_formal_portal  # Pass form validation flag
             },
             from_agent='orchestrator'
         )
@@ -234,7 +238,7 @@ class ResearchRequestOrchestrator:
 
                 await session.commit()
 
-            # Check if workflow is complete
+            # Determine next action based on workflow state
             if next_step and next_step['next_agent']:
                 # Continue to next agent
                 await self.route_task(
@@ -243,15 +247,29 @@ class ResearchRequestOrchestrator:
                     context={**context, **result.get('additional_context', {})},
                     from_agent=agent_id
                 )
-            else:
-                # Workflow complete or needs human review
+            elif next_step and next_step['next_state']:
+                # State changed but no next agent - check if approval state or terminal state
                 async with get_db_session() as session:
                     result_db = await session.execute(
                         select(ResearchRequest).where(ResearchRequest.id == request_id)
                     )
                     req = result_db.scalar_one_or_none()
                     current_state = WorkflowState(req.current_state)
-                    await self._complete_workflow(request_id, current_state)
+
+                    # Only complete workflow if in terminal state
+                    if self.workflow_engine.is_terminal_state(current_state):
+                        await self._complete_workflow(request_id, current_state)
+                        logger.info(f"[{request_id}] Workflow completed in terminal state: {current_state.value}")
+                    elif self.workflow_engine.is_approval_state(current_state):
+                        # Workflow paused for approval - NOT complete
+                        logger.info(f"[{request_id}] Workflow paused for approval in state: {current_state.value}")
+                    else:
+                        # Workflow paused but not in approval or terminal state
+                        logger.info(f"[{request_id}] Workflow paused in state: {current_state.value}")
+            else:
+                # No next_step found - workflow rule missing, escalate to human review
+                logger.warning(f"[{request_id}] No workflow rule matched for {agent_id}.{task} - escalating to human review")
+                await self._handle_workflow_error(request_id, agent_id, "No workflow rule found for current agent and task")
 
         except Exception as e:
             logger.error(f"[{request_id}] Agent {agent_id} failed: {str(e)}", exc_info=True)

@@ -120,15 +120,19 @@ class FullWorkflow:
     6. Built-in state passing (no manual dict copying)
     """
 
-    def __init__(self, use_real_agents: bool = False):
+    def __init__(self, use_real_agents: bool = False, checkpointer=None):
         """
         Initialize the full workflow graph
 
         Args:
             use_real_agents: If True, invoke real agents instead of stubs.
                             If False (default), use stub values for testing.
+            checkpointer: Optional LangGraph checkpointer for state persistence.
+                         If provided, enables workflow state snapshots and resumption.
+                         Use get_checkpointer() from persistence module.
         """
         self.use_real_agents = use_real_agents
+        self.checkpointer = checkpointer
 
         # Initialize real agents if requested
         if use_real_agents:
@@ -153,8 +157,11 @@ class FullWorkflow:
             self.qa_agent = None
 
         self.graph = self._build_graph()
-        self.compiled_graph = self.graph.compile()
-        logger.info("[FullWorkflow] Initialized with 23 states")
+        # Compile with checkpointer if provided (enables persistence)
+        self.compiled_graph = self.graph.compile(checkpointer=self.checkpointer)
+
+        persistence_mode = "WITH PERSISTENCE" if self.checkpointer else "WITHOUT PERSISTENCE"
+        logger.info(f"[FullWorkflow] Initialized with 23 states ({persistence_mode})")
 
     def _build_graph(self) -> StateGraph:
         """
@@ -390,7 +397,7 @@ class FullWorkflow:
 
         return state
 
-    def _handle_feasibility_validation(self, state: FullWorkflowState) -> FullWorkflowState:
+    async def _handle_feasibility_validation(self, state: FullWorkflowState) -> FullWorkflowState:
         """
         Handle feasibility validation state
 
@@ -418,12 +425,11 @@ class FullWorkflow:
                     "researcher_info": state["researcher_info"]
                 }
 
-                # Execute agent task (synchronous call)
-                import asyncio
-                result = asyncio.run(self.phenotype_agent.execute_task(
+                # Execute agent task (async call - non-blocking)
+                result = await self.phenotype_agent.execute_task(
                     task="validate_feasibility",
                     context=context
-                ))
+                )
 
                 # Update state from agent result
                 state["feasible"] = result.get("feasible", False)
@@ -501,7 +507,7 @@ class FullWorkflow:
 
         return state
 
-    def _handle_data_extraction(self, state: FullWorkflowState) -> FullWorkflowState:
+    async def _handle_data_extraction(self, state: FullWorkflowState) -> FullWorkflowState:
         """
         Handle data extraction state
 
@@ -525,12 +531,11 @@ class FullWorkflow:
                     "phi_level": state["requirements"].get("phi_level", "safe_harbor")
                 }
 
-                # Execute agent task
-                import asyncio
-                result = asyncio.run(self.extraction_agent.execute_task(
+                # Execute agent task (async call - non-blocking)
+                result = await self.extraction_agent.execute_task(
                     task="extract_data",
                     context=context
-                ))
+                )
 
                 # Update state from agent result
                 state["extraction_complete"] = result.get("extraction_complete", False)
@@ -557,7 +562,7 @@ class FullWorkflow:
 
         return state
 
-    def _handle_qa_validation(self, state: FullWorkflowState) -> FullWorkflowState:
+    async def _handle_qa_validation(self, state: FullWorkflowState) -> FullWorkflowState:
         """
         Handle QA validation state
 
@@ -580,12 +585,11 @@ class FullWorkflow:
                     "requirements": state["requirements"]
                 }
 
-                # Execute agent task
-                import asyncio
-                result = asyncio.run(self.qa_agent.execute_task(
+                # Execute agent task (async call - non-blocking)
+                result = await self.qa_agent.execute_task(
                     task="validate_quality",
                     context=context
-                ))
+                )
 
                 # Update state from agent result
                 state["overall_status"] = result.get("overall_status", "unknown")

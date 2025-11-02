@@ -21,6 +21,9 @@ from langsmith import traceable
 # Import production features mixin (Sprint 6.5)
 from .langchain_base_agent import LangChainBaseAgentMixin
 
+# Import data context provider for informational responses
+from app.services.data_context_provider import DataContextProvider
+
 logger = logging.getLogger(__name__)
 
 
@@ -80,10 +83,13 @@ class LangChainRequirementsAgent(LangChainBaseAgentMixin):
         # Conversation messages per request (simpler than ConversationBufferMemory)
         self.conversations: Dict[str, List[Any]] = {}
 
+        # Initialize data context provider for informational responses
+        self.data_context = DataContextProvider()
+
         # Initialize production features mixin (Sprint 6.5)
         self.init_base_agent(orchestrator)
 
-        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
+        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features + conversational AI")
 
     def _get_or_create_conversation(self, request_id: str) -> List[Any]:
         """Get or create conversation message list for request"""
@@ -155,7 +161,7 @@ Return JSON:
         return prompt
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="RequirementsAgent",
         tags=["agent", "requirements", "llm", "claude"],
         metadata={"agent_type": "requirements", "llm": "claude-3-5-sonnet"}
@@ -183,6 +189,11 @@ Return JSON:
             # Wrap with production features: retry, persistence, escalation
             return await self.execute_with_production_features(
                 task, context, self._gather_requirements
+            )
+        elif task == "conversational_chat":
+            # New: Handle conversational/informational questions without SQL
+            return await self.execute_with_production_features(
+                task, context, self._handle_conversational_chat
             )
         else:
             raise ValueError(f"Unknown task: {task}")
@@ -382,6 +393,248 @@ Return JSON:
         """
         return await self._gather_requirements(context)
 
+    @traceable(
+        run_type="chain",
+        name="ConversationalChat",
+        tags=["agent", "conversational", "informational", "llm"],
+        metadata={"agent_type": "requirements", "mode": "conversational"}
+    )
+    async def _handle_conversational_chat(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Handle conversational/informational questions WITHOUT running SQL
+
+        This method enables the agent to:
+        - Answer questions about available data ("what data do you have?")
+        - Respond to greetings ("hi", "hello")
+        - Provide help information ("how does this work?")
+        - Have natural conversation WITHOUT jumping to feasibility checks
+
+        Uses DataContextProvider for informational responses about available data.
+
+        Args:
+            context: Contains user_message, request_id, conversation_history
+
+        Returns:
+            Dict with conversational response, no SQL execution
+        """
+        user_message = context.get('user_message') or context.get('user_response') or context.get('message', '')
+        request_id = context.get('request_id', 'chat')
+        conversation_history = context.get('conversation_history', [])
+        mode = context.get('mode', 'exploratory')  # Default to exploratory mode
+
+        logger.info(f"[{self.agent_id}] Handling conversational chat in {mode} mode: '{user_message}'")
+
+        # Get conversation messages for this request
+        messages = self._get_or_create_conversation(request_id)
+
+        # Build system message with data context
+        data_context = self.data_context.get_detailed_context_for_llm()
+
+        # Use different prompts based on mode
+        if mode == "exploratory":
+            system_message = f"""You are ResearchFlow Research Notebook, an exploratory analytics assistant for PRE-APPROVED researchers with data access.
+
+{data_context}
+
+CRITICAL CONTEXT:
+- This is an EXPLORATORY portal, NOT a formal data request system
+- Users are PRE-APPROVED researchers with data access rights
+- Your job: Help them quickly explore patient populations using SQL-on-FHIR
+- Focus: Fast, rough estimates for research planning
+
+INTERACTION MODES:
+
+1. **Informational Questions** (no SQL):
+   - "What data do you have?" → Describe available data types
+   - "Hi/Hello" → Warm greeting, offer to help explore data
+   - "How does this work?" → Explain exploratory analytics capabilities
+
+2. **Data Exploration Queries** (flag for SQL execution):
+   - "How many patients with diabetes?" → Set requires_sql=True
+   - "Male patients with hypertension under 65" → Set requires_sql=True
+
+   For data queries:
+   - Ask 1-2 MINIMAL clarifying questions ONLY for SQL refinement:
+     * Type of condition (if ambiguous): "Type 1 or Type 2 diabetes?"
+     * Time period (if relevant): "Any specific date range?"
+     * Active vs historical: "Current diagnoses only or historical too?"
+   - Then respond: "Let me check that data for you..."
+   - The backend system will generate and execute the SQL automatically
+
+   **CRITICAL**:
+   - ❌ NEVER generate SQL code in your response
+   - ❌ NEVER show SQL queries to the user
+   - ❌ NEVER describe SQL logic
+   - The backend handles SQL generation - you only help clarify the data request
+
+3. **What NOT to Ask**:
+   - ❌ NO IRB numbers
+   - ❌ NO project titles or justifications
+   - ❌ NO institutional affiliation
+   - ❌ NO research purpose
+   - ❌ NO formal approval workflows
+
+   This is EXPLORATORY, not formal data requests!
+
+RESPONSE STYLE:
+- Concise, helpful, quick
+- Ask 1-2 clarifying questions MAX for data queries
+- For informational questions, answer directly
+- For data queries, just acknowledge and let the system handle SQL
+- NEVER generate or show SQL code
+
+User Message: {user_message}
+"""
+        else:
+            # Formal mode (for Researcher Portal)
+            system_message = f"""You are ResearchFlow, an AI-powered clinical research assistant.
+
+You help researchers explore patient data and submit formal research requests.
+
+{data_context}
+
+IMPORTANT MODES:
+1. **Conversational Mode** (current): Answer questions, provide information, be helpful
+   - Greetings: Respond warmly and introduce yourself
+   - Questions about data: Explain what data is available
+   - Help requests: Guide users on how to use the system
+   - General chat: Be friendly and conversational
+
+2. **Data Request Mode**: When user wants to query actual data, tell them:
+   "I'd be happy to help you find that data. Let me ask a few questions to understand your requirements better..."
+   Then explain they'll transition to the requirements gathering process.
+
+Guidelines:
+- Be conversational, friendly, and helpful
+- Answer questions directly without unnecessary JSON
+- When asked about capabilities, explain what data and queries are supported
+- For greetings, be warm and welcoming
+- If user wants actual data, explain the next steps but DON'T extract requirements yet
+- Keep responses concise but informative
+
+User Message: {user_message}
+"""
+
+        # Add system message if conversation is new
+        if not messages:
+            messages.append(SystemMessage(content=system_message))
+
+        # Add user message
+        messages.append(HumanMessage(content=user_message))
+
+        # Generate conversational response using LLM
+        try:
+            # For exploratory mode, use structured output to detect data queries
+            if mode == "exploratory":
+                # Add instructions for structured response
+                detection_prompt = f"""
+Based on the user message, classify the intent:
+
+1. **Informational** - Questions about what data is available, how the system works, greetings
+   Examples: "What data do you have?", "Hello", "How does this work?"
+
+2. **Data Query** - Requests for patient counts, cohort exploration, data analysis
+   Examples: "How many patients with diabetes?", "Female patients with hypertension", "Give me counts"
+
+User message: "{user_message}"
+
+Respond with:
+- INTENT: [informational OR data_query]
+- RESPONSE: [Your conversational response]
+
+Format:
+INTENT: <intent_type>
+RESPONSE: <your response>
+"""
+
+                # Create detection message
+                detection_messages = messages.copy()
+                detection_messages.append(HumanMessage(content=detection_prompt))
+
+                # Get LLM classification
+                detection_response = await self.llm.ainvoke(detection_messages)
+                response_text = detection_response.content
+
+                # Parse intent
+                requires_sql = False
+                actual_response = response_text
+
+                if "INTENT:" in response_text and "RESPONSE:" in response_text:
+                    parts = response_text.split("RESPONSE:", 1)
+                    intent_line = parts[0].strip()
+                    actual_response = parts[1].strip()
+
+                    # Check if data query
+                    if "data_query" in intent_line.lower():
+                        requires_sql = True
+                        logger.info(f"[{self.agent_id}] Detected DATA QUERY - will trigger SQL execution")
+                    else:
+                        logger.info(f"[{self.agent_id}] Detected INFORMATIONAL question - no SQL needed")
+                else:
+                    # Fallback: simple keyword detection
+                    data_query_keywords = ["how many", "count", "patients with", "give me", "find", "show me", "get"]
+                    if any(keyword in user_message.lower() for keyword in data_query_keywords):
+                        requires_sql = True
+                        actual_response = "Let me check that data for you..."
+                        logger.info(f"[{self.agent_id}] Keyword-based detection: DATA QUERY")
+
+                # CRITICAL: If agent is asking clarifying questions, DON'T execute SQL yet
+                # Wait for user to answer the questions first
+                if actual_response.strip().endswith("?") or "?" in actual_response:
+                    requires_sql = False
+                    logger.info(f"[{self.agent_id}] Agent asking clarifying questions - NOT executing SQL yet")
+
+                # Add AI response to conversation
+                messages.append(AIMessage(content=actual_response))
+
+                # Check if user's question is about data capabilities
+                if any(keyword in user_message.lower() for keyword in ["what data", "what kind", "available data", "what type"]):
+                    data_summary = self.data_context.get_available_data_summary()
+                    actual_response = f"{actual_response}\n\n{data_summary}"
+
+                return {
+                    "response": actual_response,
+                    "conversation_mode": "conversational",
+                    "requires_sql": requires_sql,
+                    "conversation_history": self.get_conversation_history(request_id),
+                    "next_action": None
+                }
+
+            else:
+                # Formal mode - standard conversational response
+                response = await self.llm.ainvoke(messages)
+                messages.append(AIMessage(content=response.content))
+
+                # Check if user's question is about data capabilities
+                if any(keyword in user_message.lower() for keyword in ["what data", "what kind", "available data", "what type"]):
+                    data_summary = self.data_context.get_available_data_summary()
+                    enhanced_response = f"{response.content}\n\n{data_summary}"
+                else:
+                    enhanced_response = response.content
+
+                return {
+                    "response": enhanced_response,
+                    "conversation_mode": "conversational",
+                    "requires_sql": False,
+                    "conversation_history": self.get_conversation_history(request_id),
+                    "next_action": None  # No automatic next step
+                }
+
+        except Exception as e:
+            logger.error(f"[{self.agent_id}] Error in conversational chat: {e}")
+
+            # Fallback to DataContextProvider for common questions
+            fallback_response = self.data_context.answer_capability_question(user_message)
+
+            return {
+                "response": fallback_response,
+                "conversation_mode": "conversational",
+                "requires_sql": False,
+                "conversation_history": conversation_history,
+                "error": str(e),
+                "fallback_used": True
+            }
+
     def get_conversation_history(self, request_id: str) -> List[Dict[str, Any]]:
         """
         Get conversation history for a request
@@ -452,7 +705,7 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
         logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="PhenotypeAgent",
         tags=["agent", "phenotype", "sql", "validation"],
         metadata={"agent_type": "phenotype", "capability": "sql_generation"}
@@ -580,7 +833,7 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
         logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="CalendarAgent",
         tags=["agent", "calendar", "scheduling", "llm"],
         metadata={"agent_type": "calendar", "llm": "claude-3-5-sonnet"}
@@ -695,7 +948,7 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
         logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="ExtractionAgent",
         tags=["agent", "extraction", "data", "fhir"],
         metadata={"agent_type": "extraction", "capability": "data_retrieval"}
@@ -778,7 +1031,7 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
         logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="QAAgent",
         tags=["agent", "qa", "validation", "quality"],
         metadata={"agent_type": "qa", "capability": "data_validation"}
@@ -869,7 +1122,7 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
         logger.info(f"[{self.agent_id}] Initialized with LangChain + production features")
 
     @traceable(
-        run_type="agent",
+        run_type="chain",
         name="DeliveryAgent",
         tags=["agent", "delivery", "packaging", "llm"],
         metadata={"agent_type": "delivery", "llm": "claude-3-5-sonnet"}

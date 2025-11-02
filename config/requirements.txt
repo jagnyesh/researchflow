@@ -11,6 +11,7 @@ pytest-asyncio
 alembic
 anthropic
 streamlit
+nest_asyncio==1.6.0
 python-dotenv==1.0.0
 
 # Multi-provider LLM support

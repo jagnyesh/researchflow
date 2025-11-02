@@ -173,47 +173,51 @@ class PhenotypeValidationAgent(BaseAgent):
         )
 
         # Step 9: Determine next step
-        if feasibility_report['feasible']:
-            # CRITICAL: SQL must be reviewed by informatician before execution (Gap #1)
-            # Transition to PHENOTYPE_REVIEW state for human approval
+        # CRITICAL: ALWAYS request informatician approval for SQL review (Gap #1)
+        # The agent calculates feasibility metrics, but only the informatician decides
+        # whether the SQL is appropriate to run, regardless of cohort size
+        feasible = feasibility_report['feasible']
+
+        if feasible:
             logger.info(
-                f"[{self.agent_id}] Feasibility validated, requesting SQL approval from informatician"
+                f"[{self.agent_id}] SQL generated with adequate cohort (score {feasibility_score:.2f}), "
+                f"requesting informatician approval"
+            )
+        else:
+            logger.warning(
+                f"[{self.agent_id}] SQL generated with low cohort (score {feasibility_score:.2f}), "
+                f"requesting informatician review"
             )
 
-            return {
-                "feasible": True,
+        return {
+            "feasible": feasible,  # Include as informational metric
+            "feasibility_report": feasibility_report,
+            "phenotype_sql": full_phenotype_sql,
+            "estimated_cohort": estimated_count,
+            "estimated_cohort_size": estimated_count,  # For workflow compatibility
+            "feasibility_score": feasibility_score,  # For workflow compatibility
+            "requires_approval": True,  # ALWAYS require informatician approval
+            "approval_type": "phenotype_sql",  # Type of approval needed
+            "next_agent": None,  # Wait for approval - orchestrator will route
+            "next_task": None,
+            "additional_context": {
                 "feasibility_report": feasibility_report,
                 "phenotype_sql": full_phenotype_sql,
                 "estimated_cohort": estimated_count,
-                "estimated_cohort_size": estimated_count,  # For workflow compatibility
-                "feasibility_score": feasibility_score,  # For workflow compatibility
-                "requires_approval": True,  # Flag for orchestrator
-                "approval_type": "phenotype_sql",  # Type of approval needed
-                "next_agent": None,  # Wait for approval - orchestrator will route
-                "next_task": None,
-                "additional_context": {
-                    "feasibility_report": feasibility_report,
-                    "phenotype_sql": full_phenotype_sql,
+                "approval_data": {
+                    "sql_query": full_phenotype_sql,
                     "estimated_cohort": estimated_count,
-                    "approval_data": {
-                        "sql_query": full_phenotype_sql,
-                        "estimated_cohort": estimated_count,
-                        "feasibility_score": feasibility_score,
-                        "data_availability": data_availability,
-                        "warnings": feasibility_report['warnings'],
-                        "recommendations": feasibility_report['recommendations']
-                    }
+                    "feasibility_score": feasibility_score,
+                    "data_availability": data_availability,
+                    "warnings": feasibility_report['warnings'],
+                    "recommendations": feasibility_report['recommendations'],
+                    "auto_feasibility_assessment": "feasible" if feasible else "not_feasible",
+                    # Include research request context for informatician review
+                    "initial_request": context.get('initial_request', ''),
+                    "structured_requirements": requirements
                 }
             }
-        else:
-            # Not feasible - needs human review
-            logger.warning(f"[{self.agent_id}] Request not feasible: score {feasibility_score:.2f}")
-            return {
-                "feasible": False,
-                "feasibility_report": feasibility_report,
-                "next_agent": None,
-                "next_task": None
-            }
+        }
 
     async def _estimate_cohort_size(self, count_sql: str, requirements: Dict[str, Any] = None) -> int:
         """

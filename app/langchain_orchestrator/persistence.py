@@ -1,20 +1,33 @@
 """
-LangGraph Workflow Persistence (Sprint 3)
+LangGraph Workflow Persistence (Sprint 3 + Sprint 6.5)
 
-This module handles bidirectional conversion between:
-- LangGraph workflow state (TypedDict in-memory)
-- Database models (SQLAlchemy persistent storage)
+This module provides two complementary persistence mechanisms:
 
-Purpose: Enable workflow state persistence and resumption
-Status: Sprint 3 - Production Implementation
+1. **LangGraph Native Checkpointing** (Sprint 6.5 - NEW)
+   - Uses AsyncSqliteSaver for workflow state snapshots
+   - Enables automatic state recovery and resumption
+   - Stores state in data/langgraph_checkpoints.db
+
+2. **Database Model Conversion** (Sprint 3 - EXISTING)
+   - Bidirectional conversion between LangGraph state and SQLAlchemy models
+   - Enables integration with existing ResearchRequest schema
+   - Stores state in main application database
+
+Purpose: Enable workflow state persistence, resumption, and database integration
+Status: Sprint 6.5 - Migration to LangGraph orchestration
 """
 
 import logging
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime
+from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
+
+# LangGraph checkpointing imports
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from ..database.models import (
     ResearchRequest,
@@ -27,6 +40,90 @@ from ..database.models import (
 from .langgraph_workflow import FullWorkflowState
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# LangGraph Native Checkpointing (Sprint 6.5 - NEW)
+# ============================================================================
+
+DEFAULT_CHECKPOINT_DB = "data/langgraph_checkpoints.db"
+CHECKPOINT_DB_PATH = os.getenv("LANGGRAPH_CHECKPOINT_DB", DEFAULT_CHECKPOINT_DB)
+
+
+async def get_checkpointer() -> AsyncSqliteSaver:
+    """
+    Get LangGraph checkpointer for state persistence.
+
+    Creates SQLite database at data/langgraph_checkpoints.db with schema:
+    - checkpoints table (thread_id, checkpoint_id, state BLOB)
+    - writes table (checkpoint_id, task_id, channel, value)
+
+    This enables:
+    - Automatic state snapshots after each node execution
+    - Workflow resumption from last checkpoint on failure
+    - State isolation per thread_id (request_id)
+
+    Returns:
+        AsyncSqliteSaver: Configured checkpointer instance
+
+    Example:
+        ```python
+        # Initialize workflow with checkpointing
+        checkpointer = await get_checkpointer()
+        workflow = FullWorkflow(use_real_agents=True, checkpointer=checkpointer)
+
+        # Run with thread_id for state isolation
+        config = {"configurable": {"thread_id": "REQ-20251030-ABC123"}}
+        final_state = await workflow.run(initial_state, config=config)
+
+        # After restart/failure, resume from last checkpoint
+        resumed_state = await workflow.run({}, config=config)
+        ```
+    """
+    db_path = Path(CHECKPOINT_DB_PATH)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # AsyncSqliteSaver.from_conn_string returns a context manager
+    # We need to enter the context and return the checkpointer
+    checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(db_path))
+    checkpointer = await checkpointer_cm.__aenter__()
+
+    logger.info(f"[LangGraph Checkpointer] Initialized at {db_path}")
+    return checkpointer
+
+
+def create_thread_config(request_id: str) -> Dict[str, Any]:
+    """
+    Create LangGraph config dict for a specific request.
+
+    Thread ID is set to request_id to enable state isolation per request.
+    Each research request runs in its own thread with independent checkpoints.
+
+    Args:
+        request_id: Research request identifier (e.g., "REQ-20251030-ABC123")
+
+    Returns:
+        Config dict suitable for workflow.ainvoke(state, config=...)
+
+    Example:
+        ```python
+        config = create_thread_config("REQ-12345")
+        result = await workflow.run(initial_state, config=config)
+        ```
+    """
+    return {
+        "configurable": {
+            "thread_id": request_id,
+            # Future enhancements:
+            # "user_id": researcher_id,
+            # "session_id": session_id,
+        }
+    }
+
+
+# ============================================================================
+# Database Model Conversion (Sprint 3 - EXISTING)
+# ============================================================================
 
 
 class WorkflowPersistence:

@@ -64,6 +64,7 @@ class RequirementsAgent(BaseAgent):
         # Check if pre-structured requirements are provided (from Research Notebook)
         pre_structured_requirements = context.get('structured_requirements')
         skip_conversation = context.get('skip_conversation', False)
+        from_formal_portal = context.get('from_formal_portal', False)  # NEW: Form-based submission
 
         # If we have pre-structured requirements and should skip conversation, complete immediately
         if pre_structured_requirements and skip_conversation:
@@ -101,6 +102,69 @@ class RequirementsAgent(BaseAgent):
                         "exclusion_criteria": final_requirements.get('exclusion_criteria', []),
                         "data_elements": final_requirements.get('data_elements', [])
                     }
+                }
+            }
+
+        # NEW: Handle form-based submissions from Formal Request Portal
+        if from_formal_portal:
+            logger.info(f"[{self.agent_id}] Processing form-based submission from Formal Portal")
+
+            # Extract researcher info from context (already validated in UI)
+            researcher_info = context.get('researcher_info', {})
+
+            # Get structured requirements from form (if provided, else use defaults)
+            structured_reqs = researcher_info.get('structured_requirements', {})
+
+            # Build requirements from form data and initial_request
+            # Merge form fields with defaults
+            form_requirements = {
+                "study_title": initial_request[:100] if len(initial_request) > 100 else initial_request,
+                "principal_investigator": researcher_info.get('name'),
+                "irb_number": researcher_info.get('irb_number'),
+                "inclusion_criteria": structured_reqs.get('inclusion_criteria', [initial_request]),
+                "exclusion_criteria": structured_reqs.get('exclusion_criteria', []),
+                "data_elements": structured_reqs.get('data_elements', ["demographics", "clinical_data"]),
+                "time_period": structured_reqs.get('time_period', {"start": "2022-01-01", "end": "2024-12-31"}),
+                "phi_level": structured_reqs.get('phi_level', "limited_dataset")
+            }
+
+            # Use LLM for light validation (hybrid approach - validate + light LLM check)
+            try:
+                analysis = await self.llm_client.extract_requirements(
+                    conversation_history=[{"role": "user", "content": initial_request}],
+                    current_requirements=form_requirements
+                )
+
+                # Update with LLM-extracted details
+                form_requirements.update(analysis.get('extracted_requirements', {}))
+
+                # Log any warnings but proceed anyway
+                if analysis.get('completeness_score', 1.0) < 0.5:
+                    logger.warning(
+                        f"[{self.agent_id}] Low completeness score ({analysis.get('completeness_score')}) "
+                        f"but proceeding with form submission"
+                    )
+            except Exception as e:
+                logger.warning(f"[{self.agent_id}] LLM validation failed, using form data as-is: {e}")
+
+            # Validate and structure
+            final_requirements = await self._validate_and_structure_requirements(form_requirements)
+
+            # Save to database
+            await self._save_requirements(request_id, final_requirements)
+
+            logger.info(f"[{self.agent_id}] Form-based requirements complete for {request_id}")
+
+            # Return complete - skip requirements approval, go straight to phenotype SQL generation
+            # NOTE: Do NOT return next_agent/next_task - let workflow engine determine routing
+            return {
+                "requirements_complete": True,
+                "structured_requirements": final_requirements,
+                "conversation_history": [{"role": "user", "content": initial_request}],
+                "completeness_score": 1.0,  # Form submission = complete
+                "requires_approval": False,  # Skip requirements approval, SQL will be reviewed instead
+                "additional_context": {
+                    "requirements": final_requirements
                 }
             }
 

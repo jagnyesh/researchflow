@@ -1,0 +1,641 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.11.12, pytest-8.4.2, pluggy-1.6.0 -- /Users/jagnyesh/Development/FHIR_PROJECT/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/jagnyesh/Development/FHIR_PROJECT
+configfile: pytest.ini
+plugins: asyncio-1.2.0, anyio-4.11.0, langsmith-0.4.38
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 1 item
+
+tests/test_phase2_parallel.py::test_phase2_parallel_testing FAILED       [100%]
+
+=================================== FAILURES ===================================
+_________________________ test_phase2_parallel_testing _________________________
+tests/test_phase2_parallel.py:417: in test_phase2_parallel_testing
+    assert exp["success_rate"] >= 95.0, \
+E   AssertionError: Success rate 60.0% < 95% (failed 20/50 scenarios)
+E   assert 60.0 >= 95.0
+        analysis   = {'comparison': {'mean_time_ratio': 1.1481530687117094, 'median_time_ratio': 1.2467409270411223, 'success_rate_diff': 0...: "'NoneType' object has no attribute 'get'", 'output': None, 'output_keys': [], ...}, ...], 'success_count': 30, ...}}
+        comp       = {'mean_time_ratio': 1.1481530687117094, 'median_time_ratio': 1.2467409270411223, 'success_rate_diff': 0.0}
+        exp        = {'error_count': 20, 'error_rate': 40.0, 'errors': [{'elapsed_time': 0.0048258304595947266, 'error': "'NoneType' object...': "'NoneType' object has no attribute 'get'", 'output': None, 'output_keys': [], ...}, ...], 'success_count': 30, ...}
+        runner     = <test_phase2_parallel.Phase2TestRunner object at 0x1053be6d0>
+----------------------------- Captured stdout call -----------------------------
+
+================================================================================
+PHASE 2 PARALLEL TESTING - 50 SCENARIOS
+================================================================================
+
+Total scenarios: 50
+  - Requirements (simple): 10
+  - Requirements (moderate): 10
+  - Requirements (complex): 10
+  - Calendar (standard): 10
+  - Calendar (complex): 10
+
+--------------------------------------------------------------------------------
+[1/2] Running PRODUCTION agents (50 scenarios)...
+--------------------------------------------------------------------------------
+
+  [1/50] req_simple_001 (simple)... ✓ 4.26s
+
+  [2/50] req_simple_002 (simple)... ✓ 2.92s
+
+  [3/50] req_simple_003 (simple)... ✓ 3.10s
+
+  [4/50] req_simple_004 (simple)... ✓ 3.00s
+
+  [5/50] req_simple_005 (simple)... ✓ 3.75s
+
+  [6/50] req_simple_006 (simple)... ✓ 3.12s
+
+  [7/50] req_simple_007 (simple)... ✓ 2.84s
+
+  [8/50] req_simple_008 (simple)... ✓ 5.62s
+
+  [9/50] req_simple_009 (simple)... ✓ 4.19s
+
+  [10/50] req_simple_010 (simple)... ✓ 3.05s
+
+  [11/50] req_moderate_001 (moderate)... ✓ 2.92s
+
+  [12/50] req_moderate_002 (moderate)... ✓ 10.84s
+
+  [13/50] req_moderate_003 (moderate)... ✓ 2.83s
+
+  [14/50] req_moderate_004 (moderate)... ✓ 2.98s
+
+  [15/50] req_moderate_005 (moderate)... ✓ 3.48s
+
+  [16/50] req_moderate_006 (moderate)... ✓ 3.26s
+
+  [17/50] req_moderate_007 (moderate)... ✓ 3.15s
+
+  [18/50] req_moderate_008 (moderate)... ✓ 2.93s
+
+  [19/50] req_moderate_009 (moderate)... ✓ 3.69s
+
+  [20/50] req_moderate_010 (moderate)... ✓ 3.25s
+
+  [21/50] req_complex_001 (complex)... ✓ 3.14s
+
+  [22/50] req_complex_002 (complex)... ✓ 6.08s
+
+  [23/50] req_complex_003 (complex)... ✓ 3.24s
+
+  [24/50] req_complex_004 (complex)... ✓ 3.18s
+
+  [25/50] req_complex_005 (complex)... ✓ 3.06s
+
+  [26/50] req_complex_006 (complex)... ✓ 3.49s
+
+  [27/50] req_complex_007 (complex)... ✓ 3.69s
+
+  [28/50] req_complex_008 (complex)... ✓ 3.42s
+
+  [29/50] req_complex_009 (complex)... ✓ 4.35s
+
+  [30/50] req_complex_010 (complex)... ✓ 2.92s
+
+  [31/50] cal_standard_001 (standard)... ✗ 0.01s
+
+  [32/50] cal_standard_002 (standard)... ✗ 0.00s
+
+  [33/50] cal_standard_003 (standard)... ✗ 0.00s
+
+  [34/50] cal_standard_004 (standard)... ✗ 0.00s
+
+  [35/50] cal_standard_005 (standard)... ✗ 0.00s
+
+  [36/50] cal_standard_006 (standard)... ✗ 0.00s
+
+  [37/50] cal_standard_007 (standard)... ✗ 0.00s
+
+  [38/50] cal_standard_008 (standard)... ✗ 0.00s
+
+  [39/50] cal_standard_009 (standard)... ✗ 0.00s
+
+  [40/50] cal_standard_010 (standard)... ✗ 0.00s
+
+  [41/50] cal_complex_001 (complex)... ✗ 0.00s
+
+  [42/50] cal_complex_002 (complex)... ✗ 0.00s
+
+  [43/50] cal_complex_003 (complex)... ✗ 0.00s
+
+  [44/50] cal_complex_004 (complex)... ✗ 0.00s
+
+  [45/50] cal_complex_005 (complex)... ✗ 0.00s
+
+  [46/50] cal_complex_006 (complex)... ✗ 0.00s
+
+  [47/50] cal_complex_007 (complex)... ✗ 0.00s
+
+  [48/50] cal_complex_008 (complex)... ✗ 0.00s
+
+  [49/50] cal_complex_009 (complex)... ✗ 0.00s
+
+  [50/50] cal_complex_010 (complex)... ✗ 0.00s
+
+  Production total time: 111.75s
+
+--------------------------------------------------------------------------------
+[2/2] Running EXPERIMENTAL LangChain agents (50 scenarios)...
+--------------------------------------------------------------------------------
+
+  [1/50] req_simple_001 (simple)... ✓ 3.84s
+
+  [2/50] req_simple_002 (simple)... ✓ 4.06s
+
+  [3/50] req_simple_003 (simple)... ✓ 3.79s
+
+  [4/50] req_simple_004 (simple)... ✓ 5.98s
+
+  [5/50] req_simple_005 (simple)... ✓ 4.04s
+
+  [6/50] req_simple_006 (simple)... ✓ 3.87s
+
+  [7/50] req_simple_007 (simple)... ✓ 4.24s
+
+  [8/50] req_simple_008 (simple)... ✓ 3.68s
+
+  [9/50] req_simple_009 (simple)... ✓ 4.05s
+
+  [10/50] req_simple_010 (simple)... ✓ 5.58s
+
+  [11/50] req_moderate_001 (moderate)... ✓ 3.72s
+
+  [12/50] req_moderate_002 (moderate)... ✓ 3.94s
+
+  [13/50] req_moderate_003 (moderate)... ✓ 4.63s
+
+  [14/50] req_moderate_004 (moderate)... ✓ 4.27s
+
+  [15/50] req_moderate_005 (moderate)... ✓ 3.79s
+
+  [16/50] req_moderate_006 (moderate)... ✓ 3.89s
+
+  [17/50] req_moderate_007 (moderate)... ✓ 3.67s
+
+  [18/50] req_moderate_008 (moderate)... ✓ 5.14s
+
+  [19/50] req_moderate_009 (moderate)... ✓ 3.78s
+
+  [20/50] req_moderate_010 (moderate)... ✓ 3.64s
+
+  [21/50] req_complex_001 (complex)... ✓ 5.67s
+
+  [22/50] req_complex_002 (complex)... ✓ 4.92s
+
+  [23/50] req_complex_003 (complex)... ✓ 5.10s
+
+  [24/50] req_complex_004 (complex)... ✓ 3.61s
+
+  [25/50] req_complex_005 (complex)... ✓ 3.71s
+
+  [26/50] req_complex_006 (complex)... ✓ 3.96s
+
+  [27/50] req_complex_007 (complex)... ✓ 3.77s
+
+  [28/50] req_complex_008 (complex)... ✓ 4.12s
+
+  [29/50] req_complex_009 (complex)... ✓ 5.32s
+
+  [30/50] req_complex_010 (complex)... ✓ 4.50s
+
+  [31/50] cal_standard_001 (standard)... ✗ 0.00s
+
+  [32/50] cal_standard_002 (standard)... ✗ 0.00s
+
+  [33/50] cal_standard_003 (standard)... ✗ 0.00s
+
+  [34/50] cal_standard_004 (standard)... ✗ 0.00s
+
+  [35/50] cal_standard_005 (standard)... ✗ 0.00s
+
+  [36/50] cal_standard_006 (standard)... ✗ 0.00s
+
+  [37/50] cal_standard_007 (standard)... ✗ 0.00s
+
+  [38/50] cal_standard_008 (standard)... ✗ 0.00s
+
+  [39/50] cal_standard_009 (standard)... ✗ 0.00s
+
+  [40/50] cal_standard_010 (standard)... ✗ 0.00s
+
+  [41/50] cal_complex_001 (complex)... ✗ 0.00s
+
+  [42/50] cal_complex_002 (complex)... ✗ 0.00s
+
+  [43/50] cal_complex_003 (complex)... ✗ 0.00s
+
+  [44/50] cal_complex_004 (complex)... ✗ 0.00s
+
+  [45/50] cal_complex_005 (complex)... ✗ 0.00s
+
+  [46/50] cal_complex_006 (complex)... ✗ 0.00s
+
+  [47/50] cal_complex_007 (complex)... ✗ 0.00s
+
+  [48/50] cal_complex_008 (complex)... ✗ 0.00s
+
+  [49/50] cal_complex_009 (complex)... ✗ 0.00s
+
+  [50/50] cal_complex_010 (complex)... ✗ 0.00s
+
+  Experimental total time: 128.33s
+
+================================================================================
+ANALYZING RESULTS
+================================================================================
+
+## Success Rates
+  Production:   30/50 (60.0%)
+  Experimental: 30/50 (60.0%)
+  Difference:   +0.0 percentage points
+
+## Performance (Successful Runs)
+  Mean Time:
+    Production:   3.72s
+    Experimental: 4.28s
+    Ratio:        1.15x
+
+  Median Time:
+    Production:   3.21s
+    Experimental: 4.00s
+    Ratio:        1.25x
+
+  P95 Latency:
+    Production:   6.08s
+    Experimental: 5.67s
+
+  P99 Latency:
+    Production:   10.84s
+    Experimental: 5.98s
+
+## Error Rates
+  Production:   20/50 (40.0%)
+  Experimental: 20/50 (40.0%)
+
+## Performance by Complexity
+
+  SIMPLE (10 scenarios):
+    Production:   100.0% success, 3.58s avg
+    Experimental: 100.0% success, 4.31s avg
+
+  STANDARD (10 scenarios):
+    Production:   0.0% success, 0.00s avg
+    Experimental: 0.0% success, 0.00s avg
+
+  MODERATE (10 scenarios):
+    Production:   100.0% success, 3.93s avg
+    Experimental: 100.0% success, 4.05s avg
+
+  COMPLEX (20 scenarios):
+    Production:   50.0% success, 3.66s avg
+    Experimental: 50.0% success, 4.47s avg
+
+================================================================================
+PRODUCTION READINESS CRITERIA
+================================================================================
+
+  ❌ FAIL: Success rate ≥ 95%
+    Actual: 60.0
+    Target: ≥ 95%
+
+  ✅ PASS: Mean time within 30% of production
+    Actual: 1.15x
+    Target: ≤ 1.30x
+
+  ✅ PASS: P99 latency < 30s
+    Actual: 5.98s
+    Target: < 30s
+
+  ❌ FAIL: Error rate < 5%
+    Actual: 40.0%
+    Target: < 5%
+
+================================================================================
+⚠️  RECOMMENDATION: NO-GO - Address issues before Phase 3
+   Failed criteria: Success rate ≥ 95%, Error rate < 5%
+================================================================================
+------------------------------ Captured log call -------------------------------
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.549c5a0d-07b9-478a-8ead-1aa8ff04440a: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.289f6387-c32f-4f91-9f72-b79f6cfe208d: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.e3dd785e-49f4-4587-adba-d1b1d3f7fd17: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.9b5f0b69-4391-4149-ab0f-d84e23fdfc2a: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.d9acc3b9-308c-4e84-9272-dc8696516bab: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.e5f62379-7ad1-4f5f-9ded-75f7dc53074a: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.cb4f6546-cd10-412c-b110-9903c0f8b7e7: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.16c066bd-4169-4413-b883-33cdbd6c7f42: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.088a4b0e-b460-46e3-9193-fe8bd5dfa186: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.c508af4b-fbcb-4ca3-9e6f-952e2c962c72: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.fc4f7033-8087-4fa7-af5e-cf17f8e0cf94: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.7147a906-9099-44ab-9b77-f7949b497074: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.5222d1d3-88fb-48d1-8c54-9f2eec4341a9: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.dc04cf31-3082-4710-8670-19342b6c846c: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.968b8ebe-05cb-43df-9b32-3169e579e7af: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.a6e3fe29-b8a4-49c0-966f-4522a62a86b8: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.b75f3df7-0e23-40bc-a050-ee19eff675cf: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.96006118-8fa3-41f9-8752-fac382c2a0c2: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.e3c40428-9871-430b-87b4-65c659258e70: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.66ad9536-dd6f-43d9-b89b-67139333eee4: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.6744e964-540f-4f38-ba2f-3bf9b9cc4993: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.a8356ef6-91cc-4d7b-bb90-d8cd336ae8b0: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.5afbaa59-5c79-4baa-b476-3c54bcc7eadf: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.c547ed8d-d085-42da-a870-797175ab207e: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.06a33742-7c0e-4b6b-b8a3-54a5fb66f2e2: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.eb668582-6b4f-4bdd-9eb8-90cdac9fc1bf: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.35c7b600-af23-4088-9280-c31210aa2705: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.6c530b0e-c21e-4d6e-985d-92ab1906ed98: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.fb1dc9f2-35a3-456a-aad8-7c698d8cd834: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+WARNING  langsmith.client:client.py:2352 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.3b7c8888-cbfe-4391-9863-8f5a8d28a97f: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:114 [langchain_calendar_agent] Task failed: schedule_kickoff_meeting - 'NoneType' object has no attribute 'get'
+Traceback (most recent call last):
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_base_agent.py", line 96, in execute_with_production_features
+    result = await task_impl_func(context)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 614, in _schedule_kickoff_meeting
+    agenda = await self._generate_meeting_agenda(requirements, feasibility_report)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/jagnyesh/Development/FHIR_PROJECT/app/langchain_orchestrator/langchain_agents.py", line 653, in _generate_meeting_agenda
+    Study: {requirements.get('study_title', 'Research Study')}
+            ^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'get'
+WARNING  app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:213 [langchain_calendar_agent] Escalating to human review: 'NoneType' object has no attribute 'get'
+ERROR    app.langchain_orchestrator.langchain_base_agent:langchain_base_agent.py:271 [langchain_calendar_agent] Failed to save escalation: 'agent_id' is an invalid keyword argument for Escalation
+=============================== warnings summary ===============================
+.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470
+  /Users/jagnyesh/Development/FHIR_PROJECT/.venv/lib/python3.11/site-packages/langsmith/run_helpers.py:470: UserWarning: Unrecognized run_type: agent. Must be one of: {'embedding', 'retriever', 'llm', 'parser', 'prompt', 'chain', 'tool'}. Did you mean @traceable(name='agent')?
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_phase2_parallel.py::test_phase2_parallel_testing - Assertio...
+=================== 1 failed, 1 warning in 240.41s (0:04:00) ===================
+Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.c00b1734-8ffe-4b53-982f-30f49354b489: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')

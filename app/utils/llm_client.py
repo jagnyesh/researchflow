@@ -2,14 +2,16 @@
 LLM Client for ResearchFlow
 
 Wrapper for Anthropic Claude API with structured output parsing.
+Now uses LangChain's ChatAnthropic for automatic LangSmith tracing.
 """
 
 import os
 import json
 import logging
 from typing import Dict, Any, Optional
-import anthropic
 from dotenv import load_dotenv
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # Load .env file from project root when this module is imported
 # This ensures ANTHROPIC_API_KEY is available before LLMClient is initialized
@@ -22,34 +24,49 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     """
-    Client for interacting with Claude API
+    Client for interacting with Claude API via LangChain
 
+    Uses ChatAnthropic for automatic LangSmith tracing when LANGCHAIN_TRACING_V2=true.
     Provides methods for structured requirement extraction, SQL generation,
     and medical terminology mapping.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-7-sonnet-20250219"):
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+        self.model = model
+
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not set - LLM features will be limited")
             self.client = None
         else:
-            self.client = anthropic.Anthropic(api_key=self.api_key)
+            # LangChain ChatAnthropic automatically traces to LangSmith when:
+            # - LANGCHAIN_TRACING_V2=true
+            # - LANGCHAIN_API_KEY is set
+            # - LANGCHAIN_PROJECT is set
+            self.client = ChatAnthropic(
+                model=self.model,
+                anthropic_api_key=self.api_key,
+                temperature=0.7,
+                max_tokens=4096
+            )
+            logger.info(f"LLM client initialized with model={self.model} (LangSmith tracing enabled)")
 
     async def complete(
         self,
         prompt: str,
-        model: str = "claude-3-7-sonnet-20250219",
+        model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
         system: Optional[str] = None
     ) -> str:
         """
-        Get completion from Claude API
+        Get completion from Claude API via LangChain
+
+        All calls are automatically traced to LangSmith when tracing is enabled.
 
         Args:
             prompt: User prompt
-            model: Model identifier
+            model: Model identifier (optional, uses instance default)
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature
             system: System prompt
@@ -62,17 +79,36 @@ class LLMClient:
             return self._dummy_response(prompt)
 
         try:
-            message = self.client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system if system else "You are a helpful clinical research data specialist.",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
+            # Create a new client instance if model/params differ from default
+            if model and model != self.model:
+                client = ChatAnthropic(
+                    model=model,
+                    anthropic_api_key=self.api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
+            else:
+                # Update params on existing client
+                client = ChatAnthropic(
+                    model=self.model,
+                    anthropic_api_key=self.api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens
+                )
 
-            response_text = message.content[0].text
+            # Build messages in LangChain format
+            messages = []
+            if system:
+                messages.append(SystemMessage(content=system))
+            else:
+                messages.append(SystemMessage(content="You are a helpful clinical research data specialist."))
+
+            messages.append(HumanMessage(content=prompt))
+
+            # Invoke with async - automatically traced to LangSmith!
+            response = await client.ainvoke(messages)
+
+            response_text = response.content
             logger.debug(f"LLM response ({len(response_text)} chars)")
             return response_text
 
@@ -84,7 +120,7 @@ class LLMClient:
         self,
         prompt: str,
         schema_description: str,
-        model: str = "claude-3-7-sonnet-20250219",
+        model: Optional[str] = None,
         system: Optional[str] = None
     ) -> Dict[str, Any]:
         """
@@ -93,7 +129,7 @@ class LLMClient:
         Args:
             prompt: Input text to parse
             schema_description: Description of expected JSON schema
-            model: Model to use
+            model: Model to use (optional)
             system: Optional system prompt
 
         Returns:
@@ -105,7 +141,12 @@ class LLMClient:
 
 Return ONLY valid JSON, no other text."""
 
-        response = await self.complete(full_prompt, model=model, temperature=0.3, system=system)
+        response = await self.complete(
+            full_prompt,
+            model=model or self.model,
+            temperature=0.3,
+            system=system
+        )
 
         # Extract JSON from response (handle markdown code blocks)
         response = response.strip()

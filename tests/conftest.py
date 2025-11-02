@@ -14,7 +14,7 @@ sys.path.insert(0, project_root)
 # Set test database before importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 
-from app.database import init_db, get_db_session, engine
+from app.database import init_db, get_db_session, get_engine
 from app.database.models import Base
 
 
