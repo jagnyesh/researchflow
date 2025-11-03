@@ -48,64 +48,59 @@ class DeliveryAgent(BaseAgent):
         Returns:
             Dict with delivery confirmation
         """
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        data_package = context.get('data_package')
-        qa_report = context.get('qa_report')
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        data_package = context.get("data_package")
+        qa_report = context.get("qa_report")
 
         logger.info(f"[{self.agent_id}] Preparing delivery for {request_id}")
 
         # Step 1: Create comprehensive data package with metadata
         final_package = {
-            "data": data_package.get('formatted_data'),
+            "data": data_package.get("formatted_data"),
             "metadata": {
                 "request_id": request_id,
                 "extraction_date": datetime.now().isoformat(),
-                "cohort_size": len(data_package.get('cohort', [])),
-                "data_elements": list(data_package.get('data_elements', {}).keys()),
-                "phi_level": requirements.get('phi_level'),
-                "delivery_format": requirements.get('delivery_format'),
-                "qa_status": qa_report.get('overall_status')
+                "cohort_size": len(data_package.get("cohort", [])),
+                "data_elements": list(data_package.get("data_elements", {}).keys()),
+                "phi_level": requirements.get("phi_level"),
+                "delivery_format": requirements.get("delivery_format"),
+                "qa_status": qa_report.get("overall_status"),
             },
             "documentation": {
                 "data_dictionary": await self._generate_data_dictionary(data_package),
                 "extraction_methods": await self._document_extraction_methods(requirements),
                 "citation_info": await self._generate_citation_info(requirements),
-                "qa_summary": self._summarize_qa_report(qa_report)
-            }
+                "qa_summary": self._summarize_qa_report(qa_report),
+            },
         }
 
         # Step 2: Upload to secure location
-        delivery_location = await self._upload_to_secure_storage(
-            final_package,
-            request_id
-        )
+        delivery_location = await self._upload_to_secure_storage(final_package, request_id)
 
         # Step 3: Notify researcher
         await self._send_notification(
-            recipient=requirements.get('principal_investigator'),
-            email=context.get('researcher_info', {}).get('email'),
+            recipient=requirements.get("principal_investigator"),
+            email=context.get("researcher_info", {}).get("email"),
             delivery_info={
                 "request_id": request_id,
                 "location": delivery_location,
-                "cohort_size": final_package['metadata']['cohort_size'],
-                "data_elements": final_package['metadata']['data_elements']
-            }
+                "cohort_size": final_package["metadata"]["cohort_size"],
+                "data_elements": final_package["metadata"]["data_elements"],
+            },
         )
 
         # Step 4: Log delivery for audit trail
         await self._log_delivery(request_id, delivery_location, final_package)
 
-        logger.info(
-            f"[{self.agent_id}] Delivery complete: {request_id} -> {delivery_location}"
-        )
+        logger.info(f"[{self.agent_id}] Delivery complete: {request_id} -> {delivery_location}")
 
         return {
             "delivered": True,
             "delivery_location": delivery_location,
             "delivery_package": final_package,
             "next_agent": None,  # Workflow complete
-            "next_task": None
+            "next_task": None,
         }
 
     async def _generate_data_dictionary(self, data_package: Dict) -> Dict:
@@ -116,7 +111,7 @@ class DeliveryAgent(BaseAgent):
             Dict mapping data element -> field descriptions
         """
         data_dictionary = {}
-        data_elements = data_package.get('data_elements', {})
+        data_elements = data_package.get("data_elements", {})
 
         for element_name, records in data_elements.items():
             if not records:
@@ -130,13 +125,13 @@ class DeliveryAgent(BaseAgent):
                 field_descriptions[field_name] = {
                     "description": self._get_field_description(element_name, field_name),
                     "type": type(sample_record[field_name]).__name__,
-                    "required": False  # Could analyze to determine
+                    "required": False,  # Could analyze to determine
                 }
 
             data_dictionary[element_name] = {
                 "description": self._get_element_description(element_name),
                 "record_count": len(records),
-                "fields": field_descriptions
+                "fields": field_descriptions,
             }
 
         return data_dictionary
@@ -155,7 +150,7 @@ class DeliveryAgent(BaseAgent):
             "code_display": "Human-readable code description",
             "value": "Observation or measurement value",
             "unit": "Unit of measurement",
-            "effectiveDateTime": "Date/time of observation"
+            "effectiveDateTime": "Date/time of observation",
         }
         return descriptions.get(field_name, f"{field_name} (no description available)")
 
@@ -166,7 +161,7 @@ class DeliveryAgent(BaseAgent):
             "lab_results": "Laboratory test results and measurements",
             "medications": "Medication orders and prescriptions",
             "diagnoses": "Diagnosis codes and conditions",
-            "procedures": "Procedures and interventions performed"
+            "procedures": "Procedures and interventions performed",
         }
         return descriptions.get(element_name, f"{element_name} data")
 
@@ -174,15 +169,13 @@ class DeliveryAgent(BaseAgent):
         """Document how data was extracted"""
         return {
             "cohort_definition": {
-                "inclusion_criteria": requirements.get('inclusion_criteria', []),
-                "exclusion_criteria": requirements.get('exclusion_criteria', []),
-                "time_period": requirements.get('time_period')
+                "inclusion_criteria": requirements.get("inclusion_criteria", []),
+                "exclusion_criteria": requirements.get("exclusion_criteria", []),
+                "time_period": requirements.get("time_period"),
             },
-            "data_sources": [
-                "Clinical Data Warehouse (SQL-on-FHIR)"
-            ],
+            "data_sources": ["Clinical Data Warehouse (SQL-on-FHIR)"],
             "extraction_date": datetime.now().isoformat(),
-            "deidentification_method": requirements.get('phi_level')
+            "deidentification_method": requirements.get("phi_level"),
         }
 
     async def _generate_citation_info(self, requirements: Dict) -> str:
@@ -208,7 +201,9 @@ Create a professional citation block that includes:
 
 Keep it concise and professional."""
 
-        system_prompt = "You are a research librarian creating citation information for clinical data extracts."
+        system_prompt = (
+            "You are a research librarian creating citation information for clinical data extracts."
+        )
 
         try:
             # Use secondary provider for this non-critical task
@@ -216,11 +211,13 @@ Keep it concise and professional."""
                 prompt=prompt,
                 task_type="delivery",  # Non-critical task
                 temperature=0.5,
-                system=system_prompt
+                system=system_prompt,
             )
             return citation.strip()
         except Exception as e:
-            logger.warning(f"[{self.agent_id}] Failed to generate LLM citation: {str(e)}, using template")
+            logger.warning(
+                f"[{self.agent_id}] Failed to generate LLM citation: {str(e)}, using template"
+            )
             # Fallback to template
             citation = f"""
 Data extracted from Clinical Data Warehouse on {datetime.now().strftime('%Y-%m-%d')}
@@ -236,21 +233,17 @@ Please cite as:
     def _summarize_qa_report(self, qa_report: Dict) -> Dict:
         """Summarize QA report for researcher"""
         return {
-            "status": qa_report.get('overall_status'),
-            "checks_performed": len(qa_report.get('checks', [])),
-            "checks_passed": len([c for c in qa_report.get('checks', []) if c.get('passed')]),
+            "status": qa_report.get("overall_status"),
+            "checks_performed": len(qa_report.get("checks", [])),
+            "checks_passed": len([c for c in qa_report.get("checks", []) if c.get("passed")]),
             "warnings": [
-                check['message']
-                for check in qa_report.get('checks', [])
-                if check.get('severity') == 'warning' and not check.get('passed')
-            ]
+                check["message"]
+                for check in qa_report.get("checks", [])
+                if check.get("severity") == "warning" and not check.get("passed")
+            ],
         }
 
-    async def _upload_to_secure_storage(
-        self,
-        package: Dict,
-        request_id: str
-    ) -> str:
+    async def _upload_to_secure_storage(self, package: Dict, request_id: str) -> str:
         """
         Upload data package to secure storage
 
@@ -268,12 +261,7 @@ Please cite as:
 
         return location
 
-    async def _send_notification(
-        self,
-        recipient: str,
-        email: str,
-        delivery_info: Dict
-    ):
+    async def _send_notification(self, recipient: str, email: str, delivery_info: Dict):
         """
         Send notification email to researcher
 
@@ -310,10 +298,12 @@ Keep it concise and professional."""
                 prompt=prompt,
                 task_type="delivery",  # Non-critical task
                 temperature=0.7,
-                system=system_prompt
+                system=system_prompt,
             )
         except Exception as e:
-            logger.warning(f"[{self.agent_id}] Failed to generate LLM notification: {str(e)}, using template")
+            logger.warning(
+                f"[{self.agent_id}] Failed to generate LLM notification: {str(e)}, using template"
+            )
             # Fallback to template
             message = f"""
 Dear {recipient},
@@ -336,22 +326,14 @@ Research Data Services
         # await email_server.send_email(...)
 
         logger.info(
-            f"[{self.agent_id}] Notification sent to {email}: "
-            f"{delivery_info['request_id']}"
+            f"[{self.agent_id}] Notification sent to {email}: " f"{delivery_info['request_id']}"
         )
         logger.debug(f"Email content:\n{message}")
 
-    async def _log_delivery(
-        self,
-        request_id: str,
-        location: str,
-        package: Dict
-    ):
+    async def _log_delivery(self, request_id: str, location: str, package: Dict):
         """Log delivery for audit trail"""
         # TODO: Implement database logging using DataDelivery model
-        logger.info(
-            f"[{self.agent_id}] Delivery logged: {request_id} -> {location}"
-        )
+        logger.info(f"[{self.agent_id}] Delivery logged: {request_id} -> {location}")
         logger.debug(
             f"Delivered {package['metadata']['cohort_size']} patients, "
             f"{len(package['metadata']['data_elements'])} data elements"

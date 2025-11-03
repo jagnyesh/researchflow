@@ -34,11 +34,7 @@ async def health() -> Dict[str, Any]:
     Returns:
         Health status with component checks
     """
-    health_status = {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "components": {}
-    }
+    health_status = {"status": "healthy", "timestamp": datetime.now().isoformat(), "components": {}}
 
     overall_healthy = True
 
@@ -51,23 +47,18 @@ async def health() -> Dict[str, Any]:
 
             # Count active requests
             active_result = await session.execute(
-                select(func.count(ResearchRequest.id)).where(
-                    ResearchRequest.completed_at.is_(None)
-                )
+                select(func.count(ResearchRequest.id)).where(ResearchRequest.completed_at.is_(None))
             )
             active_requests = active_result.scalar()
 
             health_status["components"]["database"] = {
                 "status": "healthy",
                 "total_requests": total_requests,
-                "active_requests": active_requests
+                "active_requests": active_requests,
             }
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
-        health_status["components"]["database"] = {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        health_status["components"]["database"] = {"status": "unhealthy", "error": str(e)}
         overall_healthy = False
 
     # Check FHIR server connectivity
@@ -80,7 +71,7 @@ async def health() -> Dict[str, Any]:
         health_status["components"]["fhir_server"] = {
             "status": "healthy",
             "url": FHIR_BASE_URL,
-            "version": metadata.get("fhirVersion", "unknown") if metadata else "unknown"
+            "version": metadata.get("fhirVersion", "unknown") if metadata else "unknown",
         }
 
         await fhir_client.close()
@@ -89,7 +80,7 @@ async def health() -> Dict[str, Any]:
         health_status["components"]["fhir_server"] = {
             "status": "unhealthy",
             "url": FHIR_BASE_URL,
-            "error": str(e)
+            "error": str(e),
         }
         overall_healthy = False
 
@@ -102,22 +93,18 @@ async def health() -> Dict[str, Any]:
         # Note: This creates a new instance, so stats won't be accurate
         # In production, you'd want to inject a shared runner instance
         temp_runner = InMemoryRunner(
-            fhir_client=FHIRClient(base_url=FHIR_BASE_URL),
-            enable_cache=True
+            fhir_client=FHIRClient(base_url=FHIR_BASE_URL), enable_cache=True
         )
         cache_stats = temp_runner.get_cache_stats()
 
-        health_status["components"]["cache"] = {
-            "status": "healthy",
-            **cache_stats
-        }
+        health_status["components"]["cache"] = {"status": "healthy", **cache_stats}
 
         await temp_runner.fhir_client.close()
     except Exception as e:
         logger.warning(f"Cache health check failed: {e}")
         health_status["components"]["cache"] = {
             "status": "unavailable",
-            "message": "Cache statistics not available"
+            "message": "Cache statistics not available",
         }
 
     # Set overall status
@@ -137,10 +124,7 @@ async def liveness() -> Dict[str, str]:
     Returns:
         Simple status message
     """
-    return {
-        "status": "alive",
-        "timestamp": datetime.now().isoformat()
-    }
+    return {"status": "alive", "timestamp": datetime.now().isoformat()}
 
 
 @router.get("/health/ready")
@@ -179,5 +163,5 @@ async def readiness() -> Dict[str, Any]:
     return {
         "status": "ready" if ready else "not ready",
         "timestamp": datetime.now().isoformat(),
-        "components": components
+        "components": components,
     }

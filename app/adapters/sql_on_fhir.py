@@ -11,9 +11,7 @@ class SQLonFHIRAdapter:
     def __init__(self, database_url: str | None = None):
         self.database_url = database_url or DATABASE_URL
         self.engine = create_async_engine(self.database_url, echo=False)
-        self.async_session = sessionmaker(
-            self.engine, expire_on_commit=False, class_=AsyncSession
-        )
+        self.async_session = sessionmaker(self.engine, expire_on_commit=False, class_=AsyncSession)
 
     async def execute_sql(self, sql: str):
         # VERY simple sandbox: only allow SELECT

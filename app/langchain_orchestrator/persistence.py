@@ -35,7 +35,7 @@ from ..database.models import (
     FeasibilityReport,
     AgentExecution,
     Approval,
-    DataDelivery
+    DataDelivery,
 )
 from .langgraph_workflow import FullWorkflowState
 
@@ -155,9 +155,7 @@ class WorkflowPersistence:
         logger.info(f"[WorkflowPersistence] Initialized with {database_url}")
 
     async def save_workflow_state(
-        self,
-        state: FullWorkflowState,
-        session: Optional[AsyncSession] = None
+        self, state: FullWorkflowState, session: Optional[AsyncSession] = None
     ) -> None:
         """
         Save workflow state to database
@@ -166,7 +164,7 @@ class WorkflowPersistence:
             state: LangGraph workflow state
             session: Optional database session (creates new if None)
         """
-        request_id = state['request_id']
+        request_id = state["request_id"]
         logger.info(f"[WorkflowPersistence] Saving state for {request_id}")
 
         if session is None:
@@ -176,13 +174,9 @@ class WorkflowPersistence:
         else:
             await self._save_state_internal(state, session)
 
-    async def _save_state_internal(
-        self,
-        state: FullWorkflowState,
-        session: AsyncSession
-    ) -> None:
+    async def _save_state_internal(self, state: FullWorkflowState, session: AsyncSession) -> None:
         """Internal method to save state (used with or without transaction)"""
-        request_id = state['request_id']
+        request_id = state["request_id"]
 
         # ===== Update or Create ResearchRequest =====
         result = await session.execute(
@@ -194,30 +188,30 @@ class WorkflowPersistence:
             # Create new request
             request = ResearchRequest(
                 id=request_id,
-                created_at=datetime.fromisoformat(state['created_at']),
-                updated_at=datetime.fromisoformat(state['updated_at']),
-                researcher_name=state['researcher_info'].get('name', 'Unknown'),
-                researcher_email=state['researcher_info'].get('email', 'unknown@example.com'),
-                researcher_department=state['researcher_info'].get('department'),
-                initial_request=state['researcher_request'],
-                current_state=state['current_state'],
-                error_message=state.get('error')
+                created_at=datetime.fromisoformat(state["created_at"]),
+                updated_at=datetime.fromisoformat(state["updated_at"]),
+                researcher_name=state["researcher_info"].get("name", "Unknown"),
+                researcher_email=state["researcher_info"].get("email", "unknown@example.com"),
+                researcher_department=state["researcher_info"].get("department"),
+                initial_request=state["researcher_request"],
+                current_state=state["current_state"],
+                error_message=state.get("error"),
             )
             session.add(request)
         else:
             # Update existing request
-            request.updated_at = datetime.fromisoformat(state['updated_at'])
-            request.current_state = state['current_state']
-            request.error_message = state.get('error')
+            request.updated_at = datetime.fromisoformat(state["updated_at"])
+            request.current_state = state["current_state"]
+            request.error_message = state.get("error")
 
             # Update final state if terminal
-            if state['current_state'] in ['complete', 'not_feasible', 'qa_failed', 'human_review']:
-                request.final_state = state['current_state']
-                request.completed_at = datetime.fromisoformat(state['updated_at'])
+            if state["current_state"] in ["complete", "not_feasible", "qa_failed", "human_review"]:
+                request.final_state = state["current_state"]
+                request.completed_at = datetime.fromisoformat(state["updated_at"])
 
         # ===== Update or Create RequirementsData =====
-        if state.get('requirements_complete', False):
-            requirements = state.get('requirements', {})
+        if state.get("requirements_complete", False):
+            requirements = state.get("requirements", {})
 
             result = await session.execute(
                 select(RequirementsData).where(RequirementsData.request_id == request_id)
@@ -227,32 +221,32 @@ class WorkflowPersistence:
             if not req_data:
                 req_data = RequirementsData(
                     request_id=request_id,
-                    study_title=requirements.get('study_title'),
-                    principal_investigator=requirements.get('principal_investigator'),
-                    irb_number=requirements.get('irb_number'),
-                    inclusion_criteria=requirements.get('inclusion_criteria', []),
-                    exclusion_criteria=requirements.get('exclusion_criteria', []),
-                    data_elements=requirements.get('data_elements', []),
-                    delivery_format=requirements.get('delivery_format'),
-                    phi_level=requirements.get('phi_level'),
-                    completeness_score=state.get('completeness_score', 0.0),
-                    is_complete=state.get('requirements_complete', False)
+                    study_title=requirements.get("study_title"),
+                    principal_investigator=requirements.get("principal_investigator"),
+                    irb_number=requirements.get("irb_number"),
+                    inclusion_criteria=requirements.get("inclusion_criteria", []),
+                    exclusion_criteria=requirements.get("exclusion_criteria", []),
+                    data_elements=requirements.get("data_elements", []),
+                    delivery_format=requirements.get("delivery_format"),
+                    phi_level=requirements.get("phi_level"),
+                    completeness_score=state.get("completeness_score", 0.0),
+                    is_complete=state.get("requirements_complete", False),
                 )
                 session.add(req_data)
             else:
-                req_data.study_title = requirements.get('study_title')
-                req_data.principal_investigator = requirements.get('principal_investigator')
-                req_data.irb_number = requirements.get('irb_number')
-                req_data.inclusion_criteria = requirements.get('inclusion_criteria', [])
-                req_data.exclusion_criteria = requirements.get('exclusion_criteria', [])
-                req_data.data_elements = requirements.get('data_elements', [])
-                req_data.delivery_format = requirements.get('delivery_format')
-                req_data.phi_level = requirements.get('phi_level')
-                req_data.completeness_score = state.get('completeness_score', 0.0)
-                req_data.is_complete = state.get('requirements_complete', False)
+                req_data.study_title = requirements.get("study_title")
+                req_data.principal_investigator = requirements.get("principal_investigator")
+                req_data.irb_number = requirements.get("irb_number")
+                req_data.inclusion_criteria = requirements.get("inclusion_criteria", [])
+                req_data.exclusion_criteria = requirements.get("exclusion_criteria", [])
+                req_data.data_elements = requirements.get("data_elements", [])
+                req_data.delivery_format = requirements.get("delivery_format")
+                req_data.phi_level = requirements.get("phi_level")
+                req_data.completeness_score = state.get("completeness_score", 0.0)
+                req_data.is_complete = state.get("requirements_complete", False)
 
         # ===== Update or Create FeasibilityReport =====
-        if state.get('feasible') is not None:
+        if state.get("feasible") is not None:
             result = await session.execute(
                 select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
             )
@@ -261,50 +255,52 @@ class WorkflowPersistence:
             if not feas_report:
                 feas_report = FeasibilityReport(
                     request_id=request_id,
-                    is_feasible=state.get('feasible', False),
-                    feasibility_score=state.get('feasibility_score', 0.0),
-                    estimated_cohort_size=state.get('estimated_cohort_size'),
-                    phenotype_sql=state.get('phenotype_sql')
+                    is_feasible=state.get("feasible", False),
+                    feasibility_score=state.get("feasibility_score", 0.0),
+                    estimated_cohort_size=state.get("estimated_cohort_size"),
+                    phenotype_sql=state.get("phenotype_sql"),
                 )
                 session.add(feas_report)
             else:
-                feas_report.is_feasible = state.get('feasible', False)
-                feas_report.feasibility_score = state.get('feasibility_score', 0.0)
-                feas_report.estimated_cohort_size = state.get('estimated_cohort_size')
-                feas_report.phenotype_sql = state.get('phenotype_sql')
+                feas_report.is_feasible = state.get("feasible", False)
+                feas_report.feasibility_score = state.get("feasibility_score", 0.0)
+                feas_report.estimated_cohort_size = state.get("estimated_cohort_size")
+                feas_report.phenotype_sql = state.get("phenotype_sql")
 
         # ===== Update or Create DataDelivery =====
-        if state.get('delivered', False):
+        if state.get("delivered", False):
             result = await session.execute(
                 select(DataDelivery).where(DataDelivery.request_id == request_id)
             )
             delivery = result.scalar_one_or_none()
 
-            delivery_info = state.get('delivery_info', {})
+            delivery_info = state.get("delivery_info", {})
 
             if not delivery:
                 delivery = DataDelivery(
                     request_id=request_id,
-                    delivered_at=datetime.fromisoformat(delivery_info.get('delivered_at', datetime.now().isoformat())),
-                    delivery_location=delivery_info.get('location'),
-                    delivery_format=delivery_info.get('format'),
+                    delivered_at=datetime.fromisoformat(
+                        delivery_info.get("delivered_at", datetime.now().isoformat())
+                    ),
+                    delivery_location=delivery_info.get("location"),
+                    delivery_format=delivery_info.get("format"),
                     file_size_bytes=0,  # Would be set in production
                     file_count=1,
-                    citation=delivery_info.get('documentation', {}).get('citation')
+                    citation=delivery_info.get("documentation", {}).get("citation"),
                 )
                 session.add(delivery)
             else:
-                delivery.delivered_at = datetime.fromisoformat(delivery_info.get('delivered_at', datetime.now().isoformat()))
-                delivery.delivery_location = delivery_info.get('location')
-                delivery.delivery_format = delivery_info.get('format')
-                delivery.citation = delivery_info.get('documentation', {}).get('citation')
+                delivery.delivered_at = datetime.fromisoformat(
+                    delivery_info.get("delivered_at", datetime.now().isoformat())
+                )
+                delivery.delivery_location = delivery_info.get("location")
+                delivery.delivery_format = delivery_info.get("format")
+                delivery.citation = delivery_info.get("documentation", {}).get("citation")
 
         logger.info(f"[WorkflowPersistence] Saved state: {request_id} → {state['current_state']}")
 
     async def load_workflow_state(
-        self,
-        request_id: str,
-        session: Optional[AsyncSession] = None
+        self, request_id: str, session: Optional[AsyncSession] = None
     ) -> Optional[FullWorkflowState]:
         """
         Load workflow state from database
@@ -325,9 +321,7 @@ class WorkflowPersistence:
             return await self._load_state_internal(request_id, session)
 
     async def _load_state_internal(
-        self,
-        request_id: str,
-        session: AsyncSession
+        self, request_id: str, session: AsyncSession
     ) -> Optional[FullWorkflowState]:
         """Internal method to load state"""
 
@@ -366,15 +360,13 @@ class WorkflowPersistence:
             "current_state": request.current_state,
             "created_at": request.created_at.isoformat(),
             "updated_at": request.updated_at.isoformat(),
-
             # Researcher info
             "researcher_request": request.initial_request,
             "researcher_info": {
                 "name": request.researcher_name,
                 "email": request.researcher_email,
-                "department": request.researcher_department
+                "department": request.researcher_department,
             },
-
             # Requirements phase
             "requirements": {},
             "conversation_history": [],
@@ -382,7 +374,6 @@ class WorkflowPersistence:
             "requirements_complete": False,
             "requirements_approved": None,
             "requirements_rejection_reason": None,
-
             # Feasibility phase
             "phenotype_sql": None,
             "feasibility_score": 0.0,
@@ -390,34 +381,28 @@ class WorkflowPersistence:
             "feasible": False,
             "phenotype_approved": None,
             "phenotype_rejection_reason": None,
-
             # Kickoff phase
             "meeting_scheduled": False,
             "meeting_details": None,
-
             # Extraction phase
             "extraction_approved": None,
             "extraction_rejection_reason": None,
             "extraction_complete": False,
             "extracted_data_summary": None,
-
             # QA phase
             "overall_status": None,
             "qa_report": None,
             "qa_approved": None,
             "qa_rejection_reason": None,
-
             # Delivery phase
             "delivered": False,
             "delivery_info": None,
-
             # Error handling
             "error": request.error_message,
             "escalation_reason": None,
-
             # Scope change
             "scope_change_requested": False,
-            "scope_approved": None
+            "scope_approved": None,
         }
 
         # Populate RequirementsData if exists
@@ -430,7 +415,7 @@ class WorkflowPersistence:
                 "exclusion_criteria": requirements_data.exclusion_criteria or [],
                 "data_elements": requirements_data.data_elements or [],
                 "delivery_format": requirements_data.delivery_format,
-                "phi_level": requirements_data.phi_level
+                "phi_level": requirements_data.phi_level,
             }
             state["completeness_score"] = requirements_data.completeness_score or 0.0
             state["requirements_complete"] = requirements_data.is_complete or False
@@ -449,21 +434,20 @@ class WorkflowPersistence:
                 "delivery_id": f"DEL-{request_id}",
                 "location": delivery.delivery_location,
                 "format": delivery.delivery_format,
-                "delivered_at": delivery.delivered_at.isoformat() if delivery.delivered_at else None,
-                "documentation": {
-                    "citation": delivery.citation
-                }
+                "delivered_at": (
+                    delivery.delivered_at.isoformat() if delivery.delivered_at else None
+                ),
+                "documentation": {"citation": delivery.citation},
             }
 
-        logger.info(f"[WorkflowPersistence] Loaded state: {request_id} (state: {state['current_state']})")
+        logger.info(
+            f"[WorkflowPersistence] Loaded state: {request_id} (state: {state['current_state']})"
+        )
 
         return state
 
     async def create_initial_state(
-        self,
-        request_id: str,
-        researcher_request: str,
-        researcher_info: Dict[str, Any]
+        self, request_id: str, researcher_request: str, researcher_info: Dict[str, Any]
     ) -> FullWorkflowState:
         """
         Create initial workflow state for a new request
@@ -486,11 +470,9 @@ class WorkflowPersistence:
             "current_state": "new_request",
             "created_at": now,
             "updated_at": now,
-
             # Researcher info
             "researcher_request": researcher_request,
             "researcher_info": researcher_info,
-
             # Requirements phase
             "requirements": {},
             "conversation_history": [],
@@ -498,7 +480,6 @@ class WorkflowPersistence:
             "requirements_complete": False,
             "requirements_approved": None,
             "requirements_rejection_reason": None,
-
             # Feasibility phase
             "phenotype_sql": None,
             "feasibility_score": 0.0,
@@ -506,34 +487,28 @@ class WorkflowPersistence:
             "feasible": False,
             "phenotype_approved": None,
             "phenotype_rejection_reason": None,
-
             # Kickoff phase
             "meeting_scheduled": False,
             "meeting_details": None,
-
             # Extraction phase
             "extraction_approved": None,
             "extraction_rejection_reason": None,
             "extraction_complete": False,
             "extracted_data_summary": None,
-
             # QA phase
             "overall_status": None,
             "qa_report": None,
             "qa_approved": None,
             "qa_rejection_reason": None,
-
             # Delivery phase
             "delivered": False,
             "delivery_info": None,
-
             # Error handling
             "error": None,
             "escalation_reason": None,
-
             # Scope change
             "scope_change_requested": False,
-            "scope_approved": None
+            "scope_approved": None,
         }
 
         # Save to database

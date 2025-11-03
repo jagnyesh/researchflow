@@ -13,10 +13,7 @@ import json
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
-from app.sql_on_fhir.transpiler import (
-    create_fhirpath_transpiler,
-    create_column_extractor
-)
+from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column_extractor
 from app.sql_on_fhir.query_builder import create_sql_query_builder
 from dotenv import load_dotenv
 
@@ -27,10 +24,12 @@ def load_view_definition(name: str) -> dict:
     """Load ViewDefinition from JSON file"""
     path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
-        'app', 'sql_on_fhir', 'view_definitions',
-        f'{name}.json'
+        "app",
+        "sql_on_fhir",
+        "view_definitions",
+        f"{name}.json",
     )
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         return json.load(f)
 
 
@@ -52,7 +51,7 @@ async def main():
         print("\n2. Building patient_demographics query...")
         print("-" * 80)
 
-        view_def = load_view_definition('patient_demographics')
+        view_def = load_view_definition("patient_demographics")
 
         # Build query
         query = builder.build_query(view_def, limit=5)
@@ -87,13 +86,14 @@ async def main():
         except Exception as e:
             print(f"✗ Query execution failed: {e}")
             import traceback
+
             traceback.print_exc()
 
         # Test 2: Build and execute with search parameters
         print("\n\n3. Building query with search parameters...")
         print("-" * 80)
 
-        search_params = {'gender': 'male'}
+        search_params = {"gender": "male"}
         query_with_params = builder.build_query(view_def, search_params=search_params, limit=3)
 
         print(f"Search params: {search_params}")
@@ -111,9 +111,11 @@ async def main():
             if rows:
                 print(f"\n  Results:")
                 for i, row in enumerate(rows, 1):
-                    print(f"    {i}. {row.get('full_name', 'Unknown')} - "
-                          f"Gender: {row.get('gender')}, "
-                          f"Birth Date: {row.get('birth_date')}")
+                    print(
+                        f"    {i}. {row.get('full_name', 'Unknown')} - "
+                        f"Gender: {row.get('gender')}, "
+                        f"Birth Date: {row.get('birth_date')}"
+                    )
 
         except Exception as e:
             print(f"✗ Query execution failed: {e}")
@@ -122,7 +124,7 @@ async def main():
         print("\n\n4. Building COUNT query for feasibility check...")
         print("-" * 80)
 
-        count_sql = builder.build_count_query(view_def, search_params={'gender': 'female'})
+        count_sql = builder.build_count_query(view_def, search_params={"gender": "female"})
 
         print("COUNT SQL:")
         print("-" * 80)
@@ -132,7 +134,7 @@ async def main():
         print("\n\nExecuting count query...")
         try:
             count_rows = await client.execute_query(count_sql)
-            count = count_rows[0]['count']
+            count = count_rows[0]["count"]
             print(f"✓ Count query executed successfully!")
             print(f"  Female patients in database: {count}")
 
@@ -143,14 +145,14 @@ async def main():
         print("\n\n5. Building condition_diagnoses query...")
         print("-" * 80)
 
-        condition_view = load_view_definition('condition_diagnoses')
+        condition_view = load_view_definition("condition_diagnoses")
         condition_query = builder.build_query(condition_view, limit=5)
 
         print(f"Columns: {condition_query.column_count}")
         print(f"\nGenerated SQL (excerpt):")
         print("-" * 80)
-        sql_lines = condition_query.sql.split('\n')
-        print('\n'.join(sql_lines[:20]))  # Show first 20 lines
+        sql_lines = condition_query.sql.split("\n")
+        print("\n".join(sql_lines[:20]))  # Show first 20 lines
         if len(sql_lines) > 20:
             print(f"... ({len(sql_lines) - 20} more lines)")
 
@@ -169,6 +171,7 @@ async def main():
         except Exception as e:
             print(f"✗ Query execution failed: {e}")
             import traceback
+
             traceback.print_exc()
 
         # Summary
@@ -186,6 +189,7 @@ async def main():
     except Exception as e:
         print(f"\n✗ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

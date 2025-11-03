@@ -20,8 +20,10 @@ from app.database.models import ResearchRequest, RequirementsData, FeasibilityRe
 # Configuration
 # ============================================================================
 
+
 class E2EConfig:
     """End-to-end test configuration"""
+
     API_BASE_URL = "http://localhost:8000"
     API_TIMEOUT = 30.0
     POLL_INTERVAL = 0.5  # seconds
@@ -32,6 +34,7 @@ class E2EConfig:
 # ============================================================================
 # HTTP Client Utilities
 # ============================================================================
+
 
 class APIClient:
     """HTTP client for FastAPI endpoints"""
@@ -52,10 +55,7 @@ class APIClient:
 
         POST /api/requests
         """
-        payload = {
-            "researcher_info": researcher_info,
-            "initial_request": initial_request
-        }
+        payload = {"researcher_info": researcher_info, "initial_request": initial_request}
 
         response = self.client.post("/api/requests", json=payload)
         response.raise_for_status()
@@ -72,9 +72,7 @@ class APIClient:
         return response.json()
 
     def submit_requirements(
-        self,
-        request_id: str,
-        structured_requirements: Dict[str, Any]
+        self, request_id: str, structured_requirements: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Submit structured requirements (shortcut for E2E testing)
@@ -83,7 +81,7 @@ class APIClient:
         """
         response = self.client.post(
             f"/api/requests/{request_id}/requirements",
-            json={"structured_requirements": structured_requirements}
+            json={"structured_requirements": structured_requirements},
         )
         response.raise_for_status()
         return response.json()
@@ -96,7 +94,7 @@ class APIClient:
         """
         response = self.client.post(
             f"/api/approvals/{request_id}/requirements",
-            json={"approved": approved, "reviewer": "e2e_test"}
+            json={"approved": approved, "reviewer": "e2e_test"},
         )
         response.raise_for_status()
         return response.json()
@@ -109,7 +107,7 @@ class APIClient:
         """
         response = self.client.post(
             f"/api/approvals/{request_id}/phenotype",
-            json={"approved": approved, "reviewer": "e2e_test"}
+            json={"approved": approved, "reviewer": "e2e_test"},
         )
         response.raise_for_status()
         return response.json()
@@ -122,7 +120,7 @@ class APIClient:
         """
         response = self.client.post(
             f"/api/approvals/{request_id}/extraction",
-            json={"approved": approved, "reviewer": "e2e_test"}
+            json={"approved": approved, "reviewer": "e2e_test"},
         )
         response.raise_for_status()
         return response.json()
@@ -134,8 +132,7 @@ class APIClient:
         POST /api/approvals/{request_id}/qa
         """
         response = self.client.post(
-            f"/api/approvals/{request_id}/qa",
-            json={"approved": approved, "reviewer": "e2e_test"}
+            f"/api/approvals/{request_id}/qa", json={"approved": approved, "reviewer": "e2e_test"}
         )
         response.raise_for_status()
         return response.json()
@@ -144,6 +141,7 @@ class APIClient:
 # ============================================================================
 # Database Utilities
 # ============================================================================
+
 
 class DatabaseHelper:
     """Database utilities for E2E testing"""
@@ -183,11 +181,7 @@ class DatabaseHelper:
             )
             return result.scalar_one_or_none()
 
-    def verify_workflow_state(
-        self,
-        request_id: str,
-        expected_state: str
-    ) -> bool:
+    def verify_workflow_state(self, request_id: str, expected_state: str) -> bool:
         """Verify request is in expected workflow state"""
         request = self.get_request(request_id)
         return request and request.current_state == expected_state
@@ -197,10 +191,11 @@ class DatabaseHelper:
 # Test Data Generators
 # ============================================================================
 
+
 def load_test_fixture(fixture_name: str) -> Dict[str, Any]:
     """Load test fixture from JSON file"""
     fixture_path = Path(__file__).parent / "fixtures" / f"{fixture_name}.json"
-    with open(fixture_path, 'r') as f:
+    with open(fixture_path, "r") as f:
         return json.load(f)
 
 
@@ -213,11 +208,12 @@ def create_test_request_data() -> Dict[str, Any]:
 # Polling Utilities
 # ============================================================================
 
+
 def wait_for_state(
     api_client: APIClient,
     request_id: str,
     target_state: str,
-    timeout: float = E2EConfig.MAX_WAIT_TIME
+    timeout: float = E2EConfig.MAX_WAIT_TIME,
 ) -> bool:
     """
     Poll request status until it reaches target state or timeout
@@ -229,7 +225,7 @@ def wait_for_state(
 
     while (time.time() - start_time) < timeout:
         status = api_client.get_request_status(request_id)
-        current_state = status.get('current_state')
+        current_state = status.get("current_state")
 
         if current_state == target_state:
             return True
@@ -243,7 +239,7 @@ def wait_for_approval_gate(
     api_client: APIClient,
     request_id: str,
     approval_state: str,
-    timeout: float = E2EConfig.MAX_WAIT_TIME
+    timeout: float = E2EConfig.MAX_WAIT_TIME,
 ) -> bool:
     """
     Wait for workflow to reach an approval gate
@@ -260,16 +256,18 @@ def wait_for_approval_gate(
 # Assertion Utilities
 # ============================================================================
 
-def assert_workflow_complete(
-    db_helper: DatabaseHelper,
-    request_id: str
-):
+
+def assert_workflow_complete(db_helper: DatabaseHelper, request_id: str):
     """Assert that workflow completed successfully"""
     request = db_helper.get_request(request_id)
 
     assert request is not None, f"Request {request_id} not found in database"
-    assert request.current_state == "complete", f"Expected state 'complete', got '{request.current_state}'"
-    assert request.final_state == "complete", f"Expected final_state 'complete', got '{request.final_state}'"
+    assert (
+        request.current_state == "complete"
+    ), f"Expected state 'complete', got '{request.current_state}'"
+    assert (
+        request.final_state == "complete"
+    ), f"Expected final_state 'complete', got '{request.final_state}'"
 
     # Verify all required data exists
     requirements = db_helper.get_requirements(request_id)
@@ -285,11 +283,7 @@ def assert_workflow_complete(
     assert delivery.delivered_at is not None, "Delivery timestamp not set"
 
 
-def assert_agents_executed(
-    db_helper: DatabaseHelper,
-    request_id: str,
-    expected_agents: list
-):
+def assert_agents_executed(db_helper: DatabaseHelper, request_id: str, expected_agents: list):
     """Assert that all expected agents executed"""
     request = db_helper.get_request(request_id)
 
@@ -299,14 +293,11 @@ def assert_agents_executed(
 
     for agent_id in expected_agents:
         assert any(
-            execution.get('agent_id') == agent_id for execution in agents_involved
+            execution.get("agent_id") == agent_id for execution in agents_involved
         ), f"Agent '{agent_id}' did not execute"
 
 
-def assert_sql_generated(
-    db_helper: DatabaseHelper,
-    request_id: str
-):
+def assert_sql_generated(db_helper: DatabaseHelper, request_id: str):
     """Assert that phenotype SQL was generated"""
     feasibility = db_helper.get_feasibility_report(request_id)
 

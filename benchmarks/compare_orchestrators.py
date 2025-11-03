@@ -29,7 +29,7 @@ from app.langchain_orchestrator.langchain_agents import (
     LangChainCalendarAgent,
     LangChainExtractionAgent,
     LangChainQAAgent,
-    LangChainDeliveryAgent
+    LangChainDeliveryAgent,
 )
 
 # Custom implementation (for comparison)
@@ -42,8 +42,10 @@ logging.basicConfig(level=logging.WARNING)  # Reduce noise during benchmarks
 # Benchmark Configuration
 # ============================================================================
 
+
 class BenchmarkConfig:
     """Benchmark configuration"""
+
     ITERATIONS = 10  # Number of iterations per benchmark
     WARMUP_ITERATIONS = 2  # Warmup iterations (not counted)
     SCENARIOS = [
@@ -51,13 +53,14 @@ class BenchmarkConfig:
         "approval_gate_flow",
         "error_path_not_feasible",
         "state_persistence",
-        "concurrent_requests"
+        "concurrent_requests",
     ]
 
 
 # ============================================================================
 # Test Data Generators
 # ============================================================================
+
 
 def create_sample_state(request_id: str = "BENCH-001") -> FullWorkflowState:
     """Create sample workflow state for benchmarking"""
@@ -72,7 +75,7 @@ def create_sample_state(request_id: str = "BENCH-001") -> FullWorkflowState:
         "researcher_info": {
             "name": "Dr. Benchmark",
             "email": "benchmark@example.com",
-            "department": "Endocrinology"
+            "department": "Endocrinology",
         },
         "requirements": {},
         "conversation_history": [],
@@ -101,7 +104,7 @@ def create_sample_state(request_id: str = "BENCH-001") -> FullWorkflowState:
         "error": None,
         "escalation_reason": None,
         "scope_change_requested": False,
-        "scope_approved": None
+        "scope_approved": None,
     }
 
 
@@ -116,7 +119,7 @@ def create_happy_path_state(request_id: str = "BENCH-HAPPY-001") -> FullWorkflow
         "study_title": "Diabetes HbA1c Study",
         "principal_investigator": "Dr. Benchmark",
         "inclusion_criteria": [{"description": "diabetes", "type": "condition"}],
-        "data_elements": ["demographics", "lab_results"]
+        "data_elements": ["demographics", "lab_results"],
     }
     state["requirements_approved"] = True
 
@@ -164,9 +167,9 @@ def create_not_feasible_state(request_id: str = "BENCH-NOTFEAS-001") -> FullWork
 # Benchmark Functions
 # ============================================================================
 
+
 async def benchmark_langgraph_workflow(
-    state: FullWorkflowState,
-    scenario_name: str
+    state: FullWorkflowState, scenario_name: str
 ) -> Tuple[float, int, int]:
     """
     Benchmark LangGraph workflow execution
@@ -177,7 +180,7 @@ async def benchmark_langgraph_workflow(
     # Start memory tracking
     tracemalloc.start()
     snapshot_before = tracemalloc.take_snapshot()
-    memory_before = sum(stat.size for stat in snapshot_before.statistics('lineno')) // 1024  # KB
+    memory_before = sum(stat.size for stat in snapshot_before.statistics("lineno")) // 1024  # KB
 
     # Create workflow
     workflow = FullWorkflow()
@@ -192,15 +195,14 @@ async def benchmark_langgraph_workflow(
 
     # End memory tracking
     snapshot_after = tracemalloc.take_snapshot()
-    memory_after = sum(stat.size for stat in snapshot_after.statistics('lineno')) // 1024  # KB
+    memory_after = sum(stat.size for stat in snapshot_after.statistics("lineno")) // 1024  # KB
     tracemalloc.stop()
 
     return (execution_time_ms, memory_before, memory_after)
 
 
 async def benchmark_scenario(
-    scenario_name: str,
-    iterations: int = BenchmarkConfig.ITERATIONS
+    scenario_name: str, iterations: int = BenchmarkConfig.ITERATIONS
 ) -> Dict[str, Any]:
     """
     Benchmark a specific scenario
@@ -258,20 +260,22 @@ async def benchmark_scenario(
             "min_ms": min(execution_times),
             "max_ms": max(execution_times),
             "stdev_ms": statistics.stdev(execution_times) if len(execution_times) > 1 else 0,
-            "raw_values": execution_times
+            "raw_values": execution_times,
         },
         "memory_usage": {
             "mean_kb": statistics.mean(memory_usages),
             "median_kb": statistics.median(memory_usages),
             "min_kb": min(memory_usages),
             "max_kb": max(memory_usages),
-            "raw_values": memory_usages
-        }
+            "raw_values": memory_usages,
+        },
     }
 
     # Print summary
-    print(f"   ⏱️  Execution Time: {results['execution_time']['mean_ms']:.2f}ms "
-          f"(± {results['execution_time']['stdev_ms']:.2f}ms)")
+    print(
+        f"   ⏱️  Execution Time: {results['execution_time']['mean_ms']:.2f}ms "
+        f"(± {results['execution_time']['stdev_ms']:.2f}ms)"
+    )
     print(f"   💾 Memory Usage: {results['memory_usage']['mean_kb']:.0f} KB")
 
     return results
@@ -310,13 +314,14 @@ async def benchmark_throughput(duration_seconds: int = 5) -> Dict[str, Any]:
     return {
         "completed_requests": completed_requests,
         "duration_seconds": actual_duration,
-        "throughput_rps": throughput
+        "throughput_rps": throughput,
     }
 
 
 # ============================================================================
 # Main Benchmark Suite
 # ============================================================================
+
 
 async def run_benchmark_suite():
     """Run complete benchmark suite"""
@@ -332,10 +337,10 @@ async def run_benchmark_suite():
         "config": {
             "iterations": BenchmarkConfig.ITERATIONS,
             "warmup_iterations": BenchmarkConfig.WARMUP_ITERATIONS,
-            "scenarios": BenchmarkConfig.SCENARIOS
+            "scenarios": BenchmarkConfig.SCENARIOS,
         },
         "scenarios": {},
-        "throughput": {}
+        "throughput": {},
     }
 
     # Benchmark each scenario
@@ -348,8 +353,10 @@ async def run_benchmark_suite():
     all_results["throughput"] = throughput_results
 
     # Save results
-    output_file = f"benchmarks/results/langgraph_benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(output_file, 'w') as f:
+    output_file = (
+        f"benchmarks/results/langgraph_benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    )
+    with open(output_file, "w") as f:
         json.dump(all_results, f, indent=2)
 
     print("\n" + "=" * 80)
@@ -361,8 +368,10 @@ async def run_benchmark_suite():
     print("\n📈 SUMMARY")
     print("-" * 80)
     for scenario, results in all_results["scenarios"].items():
-        print(f"{scenario:40s} {results['execution_time']['mean_ms']:8.2f}ms  "
-              f"{results['memory_usage']['mean_kb']:6.0f} KB")
+        print(
+            f"{scenario:40s} {results['execution_time']['mean_ms']:8.2f}ms  "
+            f"{results['memory_usage']['mean_kb']:6.0f} KB"
+        )
     print(f"{'Throughput':40s} {throughput_results['throughput_rps']:8.2f} req/s")
     print("-" * 80)
 
@@ -372,6 +381,7 @@ async def run_benchmark_suite():
 # ============================================================================
 # Comparison Analysis
 # ============================================================================
+
 
 def compare_with_baseline(langgraph_results: Dict[str, Any]):
     """
@@ -388,7 +398,7 @@ def compare_with_baseline(langgraph_results: Dict[str, Any]):
     baseline = {
         "happy_path_to_complete": {"execution_time_ms": 50, "memory_kb": 100},
         "error_path_not_feasible": {"execution_time_ms": 30, "memory_kb": 80},
-        "throughput_rps": 20
+        "throughput_rps": 20,
     }
 
     print("\n| Scenario                      | Baseline    | LangGraph   | Overhead   |")
@@ -399,18 +409,27 @@ def compare_with_baseline(langgraph_results: Dict[str, Any]):
             langgraph_value = langgraph_results["throughput"]["throughput_rps"]
             baseline_value = baseline_perf
             overhead_pct = ((baseline_value - langgraph_value) / baseline_value) * 100
-            print(f"| Throughput (req/s)            | {baseline_value:8.2f}    | "
-                  f"{langgraph_value:8.2f}    | {overhead_pct:+7.1f}%  |")
+            print(
+                f"| Throughput (req/s)            | {baseline_value:8.2f}    | "
+                f"{langgraph_value:8.2f}    | {overhead_pct:+7.1f}%  |"
+            )
         else:
             if scenario in langgraph_results["scenarios"]:
                 lg_time = langgraph_results["scenarios"][scenario]["execution_time"]["mean_ms"]
                 lg_mem = langgraph_results["scenarios"][scenario]["memory_usage"]["mean_kb"]
 
-                time_overhead = ((lg_time - baseline_perf["execution_time_ms"]) / baseline_perf["execution_time_ms"]) * 100
-                mem_overhead = ((lg_mem - baseline_perf["memory_kb"]) / baseline_perf["memory_kb"]) * 100
+                time_overhead = (
+                    (lg_time - baseline_perf["execution_time_ms"])
+                    / baseline_perf["execution_time_ms"]
+                ) * 100
+                mem_overhead = (
+                    (lg_mem - baseline_perf["memory_kb"]) / baseline_perf["memory_kb"]
+                ) * 100
 
-                print(f"| {scenario:29s} | {baseline_perf['execution_time_ms']:6.0f} ms   | "
-                      f"{lg_time:8.2f} ms | {time_overhead:+7.1f}%  |")
+                print(
+                    f"| {scenario:29s} | {baseline_perf['execution_time_ms']:6.0f} ms   | "
+                    f"{lg_time:8.2f} ms | {time_overhead:+7.1f}%  |"
+                )
 
     print("=" * 80)
 
@@ -420,7 +439,10 @@ def compare_with_baseline(langgraph_results: Dict[str, Any]):
     for scenario in langgraph_results["scenarios"]:
         if scenario in baseline:
             lg_time = langgraph_results["scenarios"][scenario]["execution_time"]["mean_ms"]
-            overhead = ((lg_time - baseline[scenario]["execution_time_ms"]) / baseline[scenario]["execution_time_ms"]) * 100
+            overhead = (
+                (lg_time - baseline[scenario]["execution_time_ms"])
+                / baseline[scenario]["execution_time_ms"]
+            ) * 100
             avg_overhead += overhead
             count += 1
 
@@ -446,10 +468,12 @@ def compare_with_baseline(langgraph_results: Dict[str, Any]):
 # Main Entry Point
 # ============================================================================
 
+
 async def main():
     """Main entry point"""
     # Create results directory
     import os
+
     os.makedirs("benchmarks/results", exist_ok=True)
 
     # Run benchmark suite

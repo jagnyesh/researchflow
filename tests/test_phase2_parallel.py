@@ -27,7 +27,7 @@ from app.agents.requirements_agent import RequirementsAgent
 from app.agents.calendar_agent import CalendarAgent
 from app.langchain_orchestrator.langchain_agents import (
     LangChainRequirementsAgent,
-    LangChainCalendarAgent
+    LangChainCalendarAgent,
 )
 
 
@@ -37,14 +37,11 @@ class Phase2TestRunner:
     def __init__(self):
         self.scenarios_path = Path(__file__).parent / "fixtures" / "phase2_scenarios.json"
         self.scenarios = self.load_scenarios()
-        self.results = {
-            "production": [],
-            "experimental": []
-        }
+        self.results = {"production": [], "experimental": []}
 
     def load_scenarios(self) -> List[Dict]:
         """Load all 50 test scenarios from JSON"""
-        with open(self.scenarios_path, 'r') as f:
+        with open(self.scenarios_path, "r") as f:
             data = json.load(f)
 
         # Flatten all scenario categories
@@ -69,15 +66,12 @@ class Phase2TestRunner:
                 context = {
                     "user_message": scenario["input"],
                     "conversation_history": [],
-                    "current_requirements": {}
+                    "current_requirements": {},
                 }
                 result = await agent.execute_task("gather_requirements", context)
             elif agent_type == "calendar":
                 agent = CalendarAgent()
-                context = {
-                    "message": scenario["input"],
-                    "request_id": f"TEST-{scenario_id}"
-                }
+                context = {"message": scenario["input"], "request_id": f"TEST-{scenario_id}"}
                 result = await agent.execute_task("schedule_kickoff_meeting", context)
             else:
                 raise ValueError(f"Unknown agent type: {agent_type}")
@@ -90,7 +84,7 @@ class Phase2TestRunner:
                 "elapsed_time": elapsed,
                 "output": result,
                 "output_keys": list(result.keys()) if isinstance(result, dict) else [],
-                "error": None
+                "error": None,
             }
 
         except Exception as e:
@@ -101,7 +95,7 @@ class Phase2TestRunner:
                 "elapsed_time": elapsed,
                 "output": None,
                 "output_keys": [],
-                "error": str(e)
+                "error": str(e),
             }
 
     async def run_experimental_agent(self, scenario: Dict) -> Dict[str, Any]:
@@ -116,15 +110,12 @@ class Phase2TestRunner:
                 context = {
                     "user_message": scenario["input"],
                     "conversation_history": [],
-                    "current_requirements": {}
+                    "current_requirements": {},
                 }
                 result = await agent.execute_task("gather_requirements", context)
             elif agent_type == "calendar":
                 agent = LangChainCalendarAgent()
-                context = {
-                    "message": scenario["input"],
-                    "request_id": f"TEST-{scenario_id}"
-                }
+                context = {"message": scenario["input"], "request_id": f"TEST-{scenario_id}"}
                 result = await agent.execute_task("schedule_kickoff_meeting", context)
             else:
                 raise ValueError(f"Unknown agent type: {agent_type}")
@@ -137,7 +128,7 @@ class Phase2TestRunner:
                 "elapsed_time": elapsed,
                 "output": result,
                 "output_keys": list(result.keys()) if isinstance(result, dict) else [],
-                "error": None
+                "error": None,
             }
 
         except Exception as e:
@@ -148,14 +139,14 @@ class Phase2TestRunner:
                 "elapsed_time": elapsed,
                 "output": None,
                 "output_keys": [],
-                "error": str(e)
+                "error": str(e),
             }
 
     async def run_all_tests(self) -> Dict[str, Any]:
         """Run all scenarios through both agent systems"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("PHASE 2 PARALLEL TESTING - 50 SCENARIOS")
-        print("="*80)
+        print("=" * 80)
         print(f"\nTotal scenarios: {len(self.scenarios)}")
         print(f"  - Requirements (simple): 10")
         print(f"  - Requirements (moderate): 10")
@@ -164,13 +155,15 @@ class Phase2TestRunner:
         print(f"  - Calendar (complex): 10")
 
         # Run production agents
-        print("\n" + "-"*80)
+        print("\n" + "-" * 80)
         print("[1/2] Running PRODUCTION agents (50 scenarios)...")
-        print("-"*80)
+        print("-" * 80)
         prod_start = time.time()
 
         for i, scenario in enumerate(self.scenarios, 1):
-            print(f"\n  [{i}/50] {scenario['id']} ({scenario['complexity']})... ", end='', flush=True)
+            print(
+                f"\n  [{i}/50] {scenario['id']} ({scenario['complexity']})... ", end="", flush=True
+            )
             result = await self.run_production_agent(scenario)
             self.results["production"].append(result)
             status_symbol = "✓" if result["status"] == "success" else "✗"
@@ -180,13 +173,15 @@ class Phase2TestRunner:
         print(f"\n  Production total time: {prod_elapsed:.2f}s")
 
         # Run experimental agents
-        print("\n" + "-"*80)
+        print("\n" + "-" * 80)
         print("[2/2] Running EXPERIMENTAL LangChain agents (50 scenarios)...")
-        print("-"*80)
+        print("-" * 80)
         exp_start = time.time()
 
         for i, scenario in enumerate(self.scenarios, 1):
-            print(f"\n  [{i}/50] {scenario['id']} ({scenario['complexity']})... ", end='', flush=True)
+            print(
+                f"\n  [{i}/50] {scenario['id']} ({scenario['complexity']})... ", end="", flush=True
+            )
             result = await self.run_experimental_agent(scenario)
             self.results["experimental"].append(result)
             status_symbol = "✓" if result["status"] == "success" else "✗"
@@ -196,9 +191,9 @@ class Phase2TestRunner:
         print(f"\n  Experimental total time: {exp_elapsed:.2f}s")
 
         # Analyze results
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("ANALYZING RESULTS")
-        print("="*80)
+        print("=" * 80)
         analysis = self.analyze_results()
         self.print_analysis(analysis)
 
@@ -240,9 +235,9 @@ class Phase2TestRunner:
                     "max": max(prod_times) if prod_times else 0,
                     "stdev": statistics.stdev(prod_times) if len(prod_times) > 1 else 0,
                     "p95": sorted(prod_times)[int(len(prod_times) * 0.95)] if prod_times else 0,
-                    "p99": sorted(prod_times)[int(len(prod_times) * 0.99)] if prod_times else 0
+                    "p99": sorted(prod_times)[int(len(prod_times) * 0.99)] if prod_times else 0,
                 },
-                "errors": prod_errors
+                "errors": prod_errors,
             },
             "experimental": {
                 "total": len(exp_results),
@@ -257,16 +252,20 @@ class Phase2TestRunner:
                     "max": max(exp_times) if exp_times else 0,
                     "stdev": statistics.stdev(exp_times) if len(exp_times) > 1 else 0,
                     "p95": sorted(exp_times)[int(len(exp_times) * 0.95)] if exp_times else 0,
-                    "p99": sorted(exp_times)[int(len(exp_times) * 0.99)] if exp_times else 0
+                    "p99": sorted(exp_times)[int(len(exp_times) * 0.99)] if exp_times else 0,
                 },
-                "errors": exp_errors
+                "errors": exp_errors,
             },
             "complexity_analysis": complexity_analysis,
             "comparison": {
                 "success_rate_diff": exp_success_rate - prod_success_rate,
-                "mean_time_ratio": (exp_times and prod_times) and (statistics.mean(exp_times) / statistics.mean(prod_times)) or 0,
-                "median_time_ratio": (exp_times and prod_times) and (statistics.median(exp_times) / statistics.median(prod_times)) or 0
-            }
+                "mean_time_ratio": (exp_times and prod_times)
+                and (statistics.mean(exp_times) / statistics.mean(prod_times))
+                or 0,
+                "median_time_ratio": (exp_times and prod_times)
+                and (statistics.median(exp_times) / statistics.median(prod_times))
+                or 0,
+            },
         }
 
         return analysis
@@ -285,8 +284,12 @@ class Phase2TestRunner:
             scenario_ids = [s["id"] for s in complexity_scenarios]
 
             # Get results for these scenarios
-            prod_results = [r for r in self.results["production"] if r["scenario_id"] in scenario_ids]
-            exp_results = [r for r in self.results["experimental"] if r["scenario_id"] in scenario_ids]
+            prod_results = [
+                r for r in self.results["production"] if r["scenario_id"] in scenario_ids
+            ]
+            exp_results = [
+                r for r in self.results["experimental"] if r["scenario_id"] in scenario_ids
+            ]
 
             # Calculate metrics
             prod_success = sum(1 for r in prod_results if r["status"] == "success")
@@ -299,12 +302,12 @@ class Phase2TestRunner:
                 "count": len(complexity_scenarios),
                 "production": {
                     "success_rate": (prod_success / len(prod_results) * 100) if prod_results else 0,
-                    "mean_time": statistics.mean(prod_times) if prod_times else 0
+                    "mean_time": statistics.mean(prod_times) if prod_times else 0,
                 },
                 "experimental": {
                     "success_rate": (exp_success / len(exp_results) * 100) if exp_results else 0,
-                    "mean_time": statistics.mean(exp_times) if exp_times else 0
-                }
+                    "mean_time": statistics.mean(exp_times) if exp_times else 0,
+                },
             }
 
         return analysis
@@ -316,7 +319,9 @@ class Phase2TestRunner:
         comp = analysis["comparison"]
 
         print("\n## Success Rates")
-        print(f"  Production:   {prod['success_count']}/{prod['total']} ({prod['success_rate']:.1f}%)")
+        print(
+            f"  Production:   {prod['success_count']}/{prod['total']} ({prod['success_rate']:.1f}%)"
+        )
         print(f"  Experimental: {exp['success_count']}/{exp['total']} ({exp['success_rate']:.1f}%)")
         print(f"  Difference:   {comp['success_rate_diff']:+.1f} percentage points")
 
@@ -347,32 +352,42 @@ class Phase2TestRunner:
         print("\n## Performance by Complexity")
         for complexity, data in analysis["complexity_analysis"].items():
             print(f"\n  {complexity.upper()} ({data['count']} scenarios):")
-            print(f"    Production:   {data['production']['success_rate']:.1f}% success, {data['production']['mean_time']:.2f}s avg")
-            print(f"    Experimental: {data['experimental']['success_rate']:.1f}% success, {data['experimental']['mean_time']:.2f}s avg")
+            print(
+                f"    Production:   {data['production']['success_rate']:.1f}% success, {data['production']['mean_time']:.2f}s avg"
+            )
+            print(
+                f"    Experimental: {data['experimental']['success_rate']:.1f}% success, {data['experimental']['mean_time']:.2f}s avg"
+            )
 
         # Production readiness criteria
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("PRODUCTION READINESS CRITERIA")
-        print("="*80)
+        print("=" * 80)
 
         criteria_results = []
 
         # Criterion 1: Success rate ≥ 95%
-        success_pass = exp['success_rate'] >= 95.0
-        criteria_results.append(("Success rate ≥ 95%", exp['success_rate'], "≥ 95%", success_pass))
+        success_pass = exp["success_rate"] >= 95.0
+        criteria_results.append(("Success rate ≥ 95%", exp["success_rate"], "≥ 95%", success_pass))
 
         # Criterion 2: Mean execution time within 30% of production
-        mean_ratio = comp['mean_time_ratio']
+        mean_ratio = comp["mean_time_ratio"]
         perf_pass = mean_ratio <= 1.30
-        criteria_results.append(("Mean time within 30% of production", f"{mean_ratio:.2f}x", "≤ 1.30x", perf_pass))
+        criteria_results.append(
+            ("Mean time within 30% of production", f"{mean_ratio:.2f}x", "≤ 1.30x", perf_pass)
+        )
 
         # Criterion 3: P99 latency < 30 seconds
-        p99_pass = exp['timing']['p99'] < 30.0
-        criteria_results.append(("P99 latency < 30s", f"{exp['timing']['p99']:.2f}s", "< 30s", p99_pass))
+        p99_pass = exp["timing"]["p99"] < 30.0
+        criteria_results.append(
+            ("P99 latency < 30s", f"{exp['timing']['p99']:.2f}s", "< 30s", p99_pass)
+        )
 
         # Criterion 4: Error rate < 5%
-        error_pass = exp['error_rate'] < 5.0
-        criteria_results.append(("Error rate < 5%", f"{exp['error_rate']:.1f}%", "< 5%", error_pass))
+        error_pass = exp["error_rate"] < 5.0
+        criteria_results.append(
+            ("Error rate < 5%", f"{exp['error_rate']:.1f}%", "< 5%", error_pass)
+        )
 
         for criterion, actual, target, passed in criteria_results:
             status = "✅ PASS" if passed else "❌ FAIL"
@@ -382,7 +397,7 @@ class Phase2TestRunner:
 
         # Final recommendation
         all_pass = all(r[3] for r in criteria_results)
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         if all_pass:
             print("✅ RECOMMENDATION: GO - Proceed to Phase 3 (shadow mode deployment)")
             print("   All production readiness criteria met.")
@@ -390,12 +405,13 @@ class Phase2TestRunner:
             print("⚠️  RECOMMENDATION: NO-GO - Address issues before Phase 3")
             failed_criteria = [r[0] for r in criteria_results if not r[3]]
             print(f"   Failed criteria: {', '.join(failed_criteria)}")
-        print("="*80)
+        print("=" * 80)
 
 
 # ============================================================================
 # PYTEST TEST FUNCTION
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.slow  # Mark as slow test (15-30 min runtime)
@@ -414,17 +430,19 @@ async def test_phase2_parallel_testing():
     comp = analysis["comparison"]
 
     # These assertions validate production readiness
-    assert exp["success_rate"] >= 95.0, \
-        f"Success rate {exp['success_rate']:.1f}% < 95% (failed {exp['error_count']}/{exp['total']} scenarios)"
+    assert (
+        exp["success_rate"] >= 95.0
+    ), f"Success rate {exp['success_rate']:.1f}% < 95% (failed {exp['error_count']}/{exp['total']} scenarios)"
 
-    assert comp["mean_time_ratio"] <= 1.30, \
-        f"Mean time ratio {comp['mean_time_ratio']:.2f}x > 1.30x (experimental too slow)"
+    assert (
+        comp["mean_time_ratio"] <= 1.30
+    ), f"Mean time ratio {comp['mean_time_ratio']:.2f}x > 1.30x (experimental too slow)"
 
-    assert exp["timing"]["p99"] < 30.0, \
-        f"P99 latency {exp['timing']['p99']:.2f}s >= 30s (too slow for production)"
+    assert (
+        exp["timing"]["p99"] < 30.0
+    ), f"P99 latency {exp['timing']['p99']:.2f}s >= 30s (too slow for production)"
 
-    assert exp["error_rate"] < 5.0, \
-        f"Error rate {exp['error_rate']:.1f}% >= 5% (too many failures)"
+    assert exp["error_rate"] < 5.0, f"Error rate {exp['error_rate']:.1f}% >= 5% (too many failures)"
 
     print("\n✅ All production readiness criteria met - Ready for Phase 3!")
 

@@ -22,6 +22,7 @@ from app.agents.calendar_agent import CalendarAgent
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def calendar_agent():
     """Create CalendarAgent with mock dependencies"""
@@ -38,19 +39,20 @@ def sample_context():
             "study_title": "Diabetes Management Study",
             "principal_investigator": "Dr. Sarah Johnson",
             "estimated_cohort_size": 347,
-            "data_elements": ["Demographics", "Lab results", "Medications"]
+            "data_elements": ["Demographics", "Lab results", "Medications"],
         },
         "feasibility_report": {
             "feasible": True,
             "feasibility_score": 0.87,
-            "estimated_cohort": 347
-        }
+            "estimated_cohort": 347,
+        },
     }
 
 
 # ============================================================================
 # Test: Meeting Scheduling
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -59,8 +61,9 @@ async def test_schedule_kickoff_meeting(calendar_agent, sample_context):
     """Test scheduling kickoff meeting with stakeholders"""
 
     # Mock MultiLLMClient agenda generation
-    with patch.object(calendar_agent, 'llm_client') as mock_llm:
-        mock_llm.complete = AsyncMock(return_value="""
+    with patch.object(calendar_agent, "llm_client") as mock_llm:
+        mock_llm.complete = AsyncMock(
+            return_value="""
 ### Kickoff Meeting Agenda
 
 **Study:** Diabetes Management Study
@@ -81,20 +84,20 @@ async def test_schedule_kickoff_meeting(calendar_agent, sample_context):
 
 **Duration:** 60 minutes
 **Recommended Date:** Within 3-5 business days
-""")
+"""
+        )
 
         # Execute
         result = await calendar_agent.execute_task(
-            task='schedule_kickoff_meeting',
-            context=sample_context
+            task="schedule_kickoff_meeting", context=sample_context
         )
 
         # Verify
-        assert result['meeting_scheduled'] is True
-        assert 'meeting' in result
-        assert 'agenda' in result['meeting']
-        assert 'Dr. Sarah Johnson' in result['meeting']['agenda']
-        assert 'Informatician' in result['meeting']['agenda']
+        assert result["meeting_scheduled"] is True
+        assert "meeting" in result
+        assert "agenda" in result["meeting"]
+        assert "Dr. Sarah Johnson" in result["meeting"]["agenda"]
+        assert "Informatician" in result["meeting"]["agenda"]
 
         # Verify LLM called for agenda generation
         mock_llm.complete.assert_called_once()
@@ -108,28 +111,30 @@ async def test_schedule_kickoff_meeting(calendar_agent, sample_context):
 async def test_stakeholder_identification(calendar_agent, sample_context):
     """Test identification of required stakeholders"""
 
-    requirements = sample_context['requirements']
-    feasibility_report = sample_context['feasibility_report']
+    requirements = sample_context["requirements"]
+    feasibility_report = sample_context["feasibility_report"]
 
     # Call the actual stakeholder identification method
     attendees = await calendar_agent._identify_stakeholders(requirements, feasibility_report)
 
     # Verify structure
-    assert 'required' in attendees
-    assert 'optional' in attendees
-    assert isinstance(attendees['required'], list)
-    assert isinstance(attendees['optional'], list)
+    assert "required" in attendees
+    assert "optional" in attendees
+    assert isinstance(attendees["required"], list)
+    assert isinstance(attendees["optional"], list)
 
     # Verify at least 2 required attendees (PI + Informaticist)
-    assert len(attendees['required']) >= 2
+    assert len(attendees["required"]) >= 2
 
     # Verify PI is included
-    pi_found = any('Principal Investigator' in att['role'] for att in attendees['required'])
+    pi_found = any("Principal Investigator" in att["role"] for att in attendees["required"])
     assert pi_found, "Principal Investigator should be in required attendees"
 
     # Verify informaticist is included
-    informaticist_found = any('Data Specialist' in att['role'] or 'Informaticist' in att['name']
-                             for att in attendees['required'])
+    informaticist_found = any(
+        "Data Specialist" in att["role"] or "Informaticist" in att["name"]
+        for att in attendees["required"]
+    )
     assert informaticist_found, "Informaticist should be in required attendees"
 
     print("✅ Stakeholder identification validated")
@@ -139,6 +144,7 @@ async def test_stakeholder_identification(calendar_agent, sample_context):
 # Test: Agenda Generation
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
@@ -146,7 +152,7 @@ async def test_agenda_generation_using_multi_llm(calendar_agent, sample_context)
     """Test agenda generation uses MultiLLMClient (non-critical task)"""
 
     # Mock MultiLLMClient
-    with patch('app.agents.calendar_agent.MultiLLMClient') as MockMultiLLM:
+    with patch("app.agents.calendar_agent.MultiLLMClient") as MockMultiLLM:
         mock_client = AsyncMock()
         mock_client.complete = AsyncMock(return_value="Meeting agenda content")
         MockMultiLLM.return_value = mock_client
@@ -156,7 +162,7 @@ async def test_agenda_generation_using_multi_llm(calendar_agent, sample_context)
 
         # Verify MultiLLMClient was used (not Claude directly)
         # This is a non-critical task, so it should route to secondary provider
-        assert hasattr(agent, 'llm_client')
+        assert hasattr(agent, "llm_client")
 
         print("✅ MultiLLMClient usage validated for agenda generation")
 
@@ -168,7 +174,9 @@ async def test_agenda_includes_key_topics(calendar_agent):
     """Test agenda includes all key discussion topics"""
 
     # Mock agenda generation
-    with patch.object(calendar_agent.llm_client, 'complete', new_callable=AsyncMock) as mock_complete:
+    with patch.object(
+        calendar_agent.llm_client, "complete", new_callable=AsyncMock
+    ) as mock_complete:
         mock_complete.return_value = """
 **Agenda:**
 1. Study overview and objectives
@@ -194,6 +202,7 @@ async def test_agenda_includes_key_topics(calendar_agent):
 # ============================================================================
 # Test: Calendar Integration
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -238,6 +247,7 @@ async def test_meeting_time_suggestion(calendar_agent):
 # Test: Error Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
@@ -245,18 +255,19 @@ async def test_llm_error_fallback(calendar_agent, sample_context):
     """Test fallback when LLM agenda generation fails"""
 
     # Mock LLM failure
-    with patch.object(calendar_agent.llm_client, 'complete', new_callable=AsyncMock) as mock_complete:
+    with patch.object(
+        calendar_agent.llm_client, "complete", new_callable=AsyncMock
+    ) as mock_complete:
         mock_complete.side_effect = Exception("LLM API timeout")
 
         # Execute with error handling
         try:
             result = await calendar_agent.execute_task(
-                task='schedule_kickoff_meeting',
-                context=sample_context
+                task="schedule_kickoff_meeting", context=sample_context
             )
 
             # If fallback worked, should still have basic meeting info
-            assert 'meeting' in result or 'error' in result
+            assert "meeting" in result or "error" in result
 
         except Exception as e:
             # Error should be caught and logged
@@ -279,16 +290,19 @@ async def test_missing_context_handling(calendar_agent):
     # Execute with incomplete context
     try:
         result = await calendar_agent.execute_task(
-            task='schedule_kickoff_meeting',
-            context=incomplete_context
+            task="schedule_kickoff_meeting", context=incomplete_context
         )
 
         # Should handle gracefully or return error
-        assert 'error' in result or 'meeting_scheduled' in result
+        assert "error" in result or "meeting_scheduled" in result
 
     except Exception as e:
         # Expected error for missing context (NoneType when requirements is None)
-        assert "nonetype" in str(e).lower() or "requirements" in str(e).lower() or "context" in str(e).lower()
+        assert (
+            "nonetype" in str(e).lower()
+            or "requirements" in str(e).lower()
+            or "context" in str(e).lower()
+        )
 
     print("✅ Missing context handling validated")
 
@@ -296,6 +310,7 @@ async def test_missing_context_handling(calendar_agent):
 # ============================================================================
 # Test: Execute Task Variations
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -305,10 +320,7 @@ async def test_execute_task_unknown_task(calendar_agent, sample_context):
 
     # Execute unknown task
     with pytest.raises(ValueError) as exc_info:
-        await calendar_agent.execute_task(
-            task='unknown_task',
-            context=sample_context
-        )
+        await calendar_agent.execute_task(task="unknown_task", context=sample_context)
 
     assert "Unknown task" in str(exc_info.value) or "unknown_task" in str(exc_info.value)
 
@@ -318,6 +330,7 @@ async def test_execute_task_unknown_task(calendar_agent, sample_context):
 # ============================================================================
 # Summary
 # ============================================================================
+
 
 def test_calendar_agent_coverage_summary():
     """
@@ -338,11 +351,11 @@ def test_calendar_agent_coverage_summary():
 
     Note: Calendar API integration test skipped (requires external setup)
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PRIORITY 0: Calendar Agent Unit Tests")
-    print("="*80)
+    print("=" * 80)
     print("✅ 8 test functions created")
     print("✅ Coverage: ~70% of critical paths")
     print("✅ Addresses Gap #2 (Agent Unit Tests) from TEST_SUITE_ORGANIZATION.md")
-    print("="*80)
+    print("=" * 80)
     assert True

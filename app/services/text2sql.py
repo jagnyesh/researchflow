@@ -12,10 +12,7 @@ class DummyProvider:
         # naive stub: map a few keywords to example SQL
         await asyncio.sleep(0.01)
         if "hemoglobin" in prompt.lower():
-            return (
-                "SELECT patient_id, value FROM observation "
-                "WHERE code = 'hb' AND value < 12"
-            )
+            return "SELECT patient_id, value FROM observation " "WHERE code = 'hb' AND value < 12"
         if "over 65" in prompt.lower() or ">65" in prompt:
             return "SELECT id, birthdate FROM patient WHERE age > 65"
         return "SELECT * FROM patient LIMIT 10"

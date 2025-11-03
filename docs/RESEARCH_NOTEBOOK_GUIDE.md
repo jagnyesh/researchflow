@@ -406,43 +406,43 @@ User Query → Query Interpreter (Claude AI) → Analytics Client (SQL-on-FHIR)
 ### **Old Form-Based UI** (researcher_portal.py)
 ```
 
- Fill in form fields: 
- Name: ___________ 
- Email: ___________ 
- IRB: ___________ 
+ Fill in form fields:
+ Name: ___________
+ Email: ___________
+ IRB: ___________
 
- Data Request: 
+ Data Request:
 
- I need heart failure... 
+ I need heart failure...
 
- [Submit Request] 
+ [Submit Request]
 
 ```
 
 ### **New Notebook UI** (research_notebook.py)
 ```
 
- Chat Interface 
+ Chat Interface
 
- You: male patients under 30 with 
- type 2 diabetes 
+ You: male patients under 30 with
+ type 2 diabetes
 
- Assistant: [x] Found 3 patients 
+ Assistant: [x] Found 3 patients
 
- Query Cell [1] 
- ViewDefs: patient_demographics, 
- condition_diagnoses 
- Filters: gender=male, age<30, T2D 
+ Query Cell [1]
+ ViewDefs: patient_demographics,
+ condition_diagnoses
+ Filters: gender=male, age<30, T2D
 
- Results Cell [1] 
- Summary: 3 patients, male, age 22-28 
+ Results Cell [1]
+ Summary: 3 patients, male, age 22-28
 
- ID | Name | Age | Condition 
- p1 | John | 28 | Type 2 diabetes 
- p5 | Mike | 22 | Type 2 diabetes 
- p8 | Tom | 26 | Type 2 diabetes 
+ ID | Name | Age | Condition
+ p1 | John | 28 | Type 2 diabetes
+ p5 | Mike | 22 | Type 2 diabetes
+ p8 | Tom | 26 | Type 2 diabetes
 
- [ CSV] [ JSON] [ Charts] 
+ [ CSV] [ JSON] [ Charts]
 
 ```
 
@@ -475,4 +475,4 @@ You now have a **state-of-the-art interactive research notebook** that:
 Give me all male patients under the age of 30 with type 2 diabetes
 ```
 
-Enjoy exploring your FHIR data! 
+Enjoy exploring your FHIR data!

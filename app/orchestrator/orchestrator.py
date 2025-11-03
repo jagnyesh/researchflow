@@ -14,12 +14,7 @@ import logging
 from sqlalchemy import select
 
 from .workflow_engine import WorkflowEngine, WorkflowState
-from app.database import (
-    get_db_session,
-    ResearchRequest,
-    AuditLog,
-    Approval
-)
+from app.database import get_db_session, ResearchRequest, AuditLog, Approval
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +44,7 @@ class ResearchRequestOrchestrator:
         self,
         researcher_request: str,
         researcher_info: Dict[str, Any],
-        from_formal_portal: bool = False
+        from_formal_portal: bool = False,
     ) -> str:
         """
         Main entry point for new research data request
@@ -69,18 +64,20 @@ class ResearchRequestOrchestrator:
         async with get_db_session() as session:
             research_request = ResearchRequest(
                 id=request_id,
-                researcher_name=researcher_info.get('name', 'Unknown'),
-                researcher_email=researcher_info.get('email', ''),
-                researcher_department=researcher_info.get('department'),
-                irb_number=researcher_info.get('irb_number'),
+                researcher_name=researcher_info.get("name", "Unknown"),
+                researcher_email=researcher_info.get("email", ""),
+                researcher_department=researcher_info.get("department"),
+                irb_number=researcher_info.get("irb_number"),
                 initial_request=researcher_request,
                 current_state=WorkflowState.NEW_REQUEST.value,
                 current_agent=None,
                 agents_involved=[],
-                state_history=[{
-                    'state': WorkflowState.NEW_REQUEST.value,
-                    'timestamp': datetime.now().isoformat()
-                }]
+                state_history=[
+                    {
+                        "state": WorkflowState.NEW_REQUEST.value,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                ],
             )
             session.add(research_request)
             await session.flush()
@@ -90,11 +87,11 @@ class ResearchRequestOrchestrator:
                 request_id=request_id,
                 event_type="request_created",
                 event_data={
-                    'researcher_name': researcher_info.get('name'),
-                    'initial_request': researcher_request
+                    "researcher_name": researcher_info.get("name"),
+                    "initial_request": researcher_request,
                 },
-                triggered_by='orchestrator',
-                severity='info'
+                triggered_by="orchestrator",
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
@@ -104,25 +101,21 @@ class ResearchRequestOrchestrator:
         # Start Requirements Agent and await completion to ensure workflow progresses
         # UI will wait for full workflow (30-60 seconds) but ensures Phenotype Agent triggers
         await self.route_task(
-            agent_id='requirements_agent',
-            task='gather_requirements',
+            agent_id="requirements_agent",
+            task="gather_requirements",
             context={
-                'request_id': request_id,
-                'initial_request': researcher_request,
-                'researcher_info': researcher_info,
-                'from_formal_portal': from_formal_portal  # Pass form validation flag
+                "request_id": request_id,
+                "initial_request": researcher_request,
+                "researcher_info": researcher_info,
+                "from_formal_portal": from_formal_portal,  # Pass form validation flag
             },
-            from_agent='orchestrator'
+            from_agent="orchestrator",
         )
 
         return request_id
 
     async def route_task(
-        self,
-        agent_id: str,
-        task: str,
-        context: Dict[str, Any],
-        from_agent: str = None
+        self, agent_id: str, task: str, context: Dict[str, Any], from_agent: str = None
     ):
         """
         Route work to specific agent (A2A communication)
@@ -133,7 +126,7 @@ class ResearchRequestOrchestrator:
             context: Task context and data
             from_agent: Source agent (for logging)
         """
-        request_id = context.get('request_id')
+        request_id = context.get("request_id")
 
         # Load request from database
         async with get_db_session() as session:
@@ -151,12 +144,14 @@ class ResearchRequestOrchestrator:
 
             # Append to agents_involved list
             agents_involved = research_request.agents_involved or []
-            agents_involved.append({
-                'agent': agent_id,
-                'task': task,
-                'timestamp': datetime.now().isoformat(),
-                'from_agent': from_agent
-            })
+            agents_involved.append(
+                {
+                    "agent": agent_id,
+                    "task": task,
+                    "timestamp": datetime.now().isoformat(),
+                    "from_agent": from_agent,
+                }
+            )
             research_request.agents_involved = agents_involved
 
             # Log state transition to audit trail
@@ -164,12 +159,9 @@ class ResearchRequestOrchestrator:
                 request_id=request_id,
                 event_type="agent_started",
                 agent_id=agent_id,
-                event_data={
-                    'task': task,
-                    'from_agent': from_agent
-                },
-                triggered_by=from_agent or 'orchestrator',
-                severity='info'
+                event_data={"task": task, "from_agent": from_agent},
+                triggered_by=from_agent or "orchestrator",
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
@@ -188,20 +180,15 @@ class ResearchRequestOrchestrator:
             result = await agent.handle_task(task, context)
 
             # HUMAN-IN-LOOP: Check if approval is required
-            if result.get('requires_approval'):
+            if result.get("requires_approval"):
                 await self._handle_approval_request(
-                    request_id=request_id,
-                    agent_id=agent_id,
-                    result=result,
-                    context=context
+                    request_id=request_id, agent_id=agent_id, result=result, context=context
                 )
                 return  # Wait for approval - don't continue workflow
 
             # Determine next step based on workflow rules
             next_step = self.workflow_engine.determine_next_step(
-                completed_agent=agent_id,
-                completed_task=task,
-                result=result
+                completed_agent=agent_id, completed_task=task, result=result
             )
 
             # Update workflow state in database
@@ -211,15 +198,17 @@ class ResearchRequestOrchestrator:
                 )
                 research_request = result_db.scalar_one_or_none()
 
-                if next_step and next_step['next_state']:
-                    research_request.current_state = next_step['next_state'].value
+                if next_step and next_step["next_state"]:
+                    research_request.current_state = next_step["next_state"].value
 
                     # Append to state history
                     state_history = research_request.state_history or []
-                    state_history.append({
-                        'state': next_step['next_state'].value,
-                        'timestamp': datetime.now().isoformat()
-                    })
+                    state_history.append(
+                        {
+                            "state": next_step["next_state"].value,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
                     research_request.state_history = state_history
 
                     # Log state change to audit
@@ -228,26 +217,26 @@ class ResearchRequestOrchestrator:
                         event_type="state_changed",
                         agent_id=agent_id,
                         event_data={
-                            'new_state': next_step['next_state'].value,
-                            'completed_task': task
+                            "new_state": next_step["next_state"].value,
+                            "completed_task": task,
                         },
                         triggered_by=agent_id,
-                        severity='info'
+                        severity="info",
                     )
                     session.add(audit_entry)
 
                 await session.commit()
 
             # Determine next action based on workflow state
-            if next_step and next_step['next_agent']:
+            if next_step and next_step["next_agent"]:
                 # Continue to next agent
                 await self.route_task(
-                    agent_id=next_step['next_agent'],
-                    task=next_step['next_task'],
-                    context={**context, **result.get('additional_context', {})},
-                    from_agent=agent_id
+                    agent_id=next_step["next_agent"],
+                    task=next_step["next_task"],
+                    context={**context, **result.get("additional_context", {})},
+                    from_agent=agent_id,
                 )
-            elif next_step and next_step['next_state']:
+            elif next_step and next_step["next_state"]:
                 # State changed but no next agent - check if approval state or terminal state
                 async with get_db_session() as session:
                     result_db = await session.execute(
@@ -259,40 +248,44 @@ class ResearchRequestOrchestrator:
                     # Only complete workflow if in terminal state
                     if self.workflow_engine.is_terminal_state(current_state):
                         await self._complete_workflow(request_id, current_state)
-                        logger.info(f"[{request_id}] Workflow completed in terminal state: {current_state.value}")
+                        logger.info(
+                            f"[{request_id}] Workflow completed in terminal state: {current_state.value}"
+                        )
                     elif self.workflow_engine.is_approval_state(current_state):
                         # Workflow paused for approval - NOT complete
-                        logger.info(f"[{request_id}] Workflow paused for approval in state: {current_state.value}")
+                        logger.info(
+                            f"[{request_id}] Workflow paused for approval in state: {current_state.value}"
+                        )
                     else:
                         # Workflow paused but not in approval or terminal state
-                        logger.info(f"[{request_id}] Workflow paused in state: {current_state.value}")
+                        logger.info(
+                            f"[{request_id}] Workflow paused in state: {current_state.value}"
+                        )
             else:
                 # No next_step found - workflow rule missing, escalate to human review
-                logger.warning(f"[{request_id}] No workflow rule matched for {agent_id}.{task} - escalating to human review")
-                await self._handle_workflow_error(request_id, agent_id, "No workflow rule found for current agent and task")
+                logger.warning(
+                    f"[{request_id}] No workflow rule matched for {agent_id}.{task} - escalating to human review"
+                )
+                await self._handle_workflow_error(
+                    request_id, agent_id, "No workflow rule found for current agent and task"
+                )
 
         except Exception as e:
             logger.error(f"[{request_id}] Agent {agent_id} failed: {str(e)}", exc_info=True)
             await self._handle_workflow_error(request_id, agent_id, str(e))
 
     async def _handle_approval_request(
-        self,
-        request_id: str,
-        agent_id: str,
-        result: Dict[str, Any],
-        context: Dict[str, Any]
+        self, request_id: str, agent_id: str, result: Dict[str, Any], context: Dict[str, Any]
     ):
         """
         Handle agent request for human approval
 
         Creates approval record, updates state, and notifies coordinator agent
         """
-        approval_type = result.get('approval_type')
-        approval_data = result.get('additional_context', {}).get('approval_data', {})
+        approval_type = result.get("approval_type")
+        approval_data = result.get("additional_context", {}).get("approval_data", {})
 
-        logger.info(
-            f"[{request_id}] {agent_id} requesting {approval_type} approval"
-        )
+        logger.info(f"[{request_id}] {agent_id} requesting {approval_type} approval")
 
         async with get_db_session() as session:
             # Import here to avoid circular dependency
@@ -306,7 +299,7 @@ class ResearchRequestOrchestrator:
                 request_id=request_id,
                 approval_type=approval_type,
                 submitted_by=agent_id,
-                approval_data=approval_data
+                approval_data=approval_data,
             )
 
             # Update workflow state to approval state
@@ -321,7 +314,7 @@ class ResearchRequestOrchestrator:
                 "phenotype_sql": WorkflowState.PHENOTYPE_REVIEW,
                 "extraction": WorkflowState.EXTRACTION_APPROVAL,
                 "qa": WorkflowState.QA_REVIEW,
-                "scope_change": WorkflowState.SCOPE_CHANGE
+                "scope_change": WorkflowState.SCOPE_CHANGE,
             }
 
             new_state = approval_state_map.get(approval_type, WorkflowState.HUMAN_REVIEW)
@@ -329,11 +322,13 @@ class ResearchRequestOrchestrator:
 
             # Append to state history
             state_history = research_request.state_history or []
-            state_history.append({
-                'state': new_state.value,
-                'timestamp': datetime.now().isoformat(),
-                'approval_id': approval.id
-            })
+            state_history.append(
+                {
+                    "state": new_state.value,
+                    "timestamp": datetime.now().isoformat(),
+                    "approval_id": approval.id,
+                }
+            )
             research_request.state_history = state_history
 
             # Log approval request to audit
@@ -342,12 +337,12 @@ class ResearchRequestOrchestrator:
                 event_type="approval_requested",
                 agent_id=agent_id,
                 event_data={
-                    'approval_type': approval_type,
-                    'approval_id': approval.id,
-                    'new_state': new_state.value
+                    "approval_type": approval_type,
+                    "approval_id": approval.id,
+                    "new_state": new_state.value,
                 },
                 triggered_by=agent_id,
-                severity='info'
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
@@ -358,18 +353,18 @@ class ResearchRequestOrchestrator:
             )
 
         # Notify coordinator agent to send email
-        coordinator = self.agents.get('coordinator_agent')
+        coordinator = self.agents.get("coordinator_agent")
         if coordinator:
             try:
                 await coordinator.handle_task(
-                    task='coordinate_approval',
+                    task="coordinate_approval",
                     context={
-                        'request_id': request_id,
-                        'approval_type': approval_type,
-                        'approval_id': approval.id,
+                        "request_id": request_id,
+                        "approval_type": approval_type,
+                        "approval_id": approval.id,
                         **context,
-                        **result.get('additional_context', {})
-                    }
+                        **result.get("additional_context", {}),
+                    },
                 )
                 logger.info(f"[{request_id}] Coordinator notified for {approval_type} approval")
             except Exception as e:
@@ -381,7 +376,7 @@ class ResearchRequestOrchestrator:
         reviewer: str,
         decision: str,
         notes: Optional[str] = None,
-        modifications: Optional[Dict[str, Any]] = None
+        modifications: Optional[Dict[str, Any]] = None,
     ):
         """
         Process approval response (approve/reject/modify) and continue workflow
@@ -413,11 +408,11 @@ class ResearchRequestOrchestrator:
             )
 
             # Update approval status
-            if decision == 'approve':
+            if decision == "approve":
                 await approval_service.approve(approval_id, reviewer, notes, modifications)
-            elif decision == 'reject':
+            elif decision == "reject":
                 await approval_service.reject(approval_id, reviewer, notes or "Rejected")
-            elif decision == 'modify':
+            elif decision == "modify":
                 await approval_service.modify(approval_id, reviewer, modifications, notes)
             else:
                 raise ValueError(f"Invalid decision: {decision}")
@@ -428,29 +423,26 @@ class ResearchRequestOrchestrator:
                 event_type="approval_processed",
                 agent_id="approval_service",
                 event_data={
-                    'approval_id': approval_id,
-                    'approval_type': approval_type,
-                    'decision': decision,
-                    'reviewer': reviewer
+                    "approval_id": approval_id,
+                    "approval_type": approval_type,
+                    "decision": decision,
+                    "reviewer": reviewer,
                 },
                 triggered_by=reviewer,
-                severity='info'
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
 
         # Route to next agent based on decision and approval type
-        if decision in ['approve', 'modify']:
+        if decision in ["approve", "modify"]:
             await self._continue_workflow_after_approval(approval_id, decision, modifications)
         else:
             # Rejected - route back to originating agent
             await self._handle_approval_rejection(approval_id)
 
     async def _continue_workflow_after_approval(
-        self,
-        approval_id: int,
-        decision: str,
-        modifications: Optional[Dict[str, Any]] = None
+        self, approval_id: int, decision: str, modifications: Optional[Dict[str, Any]] = None
     ):
         """Continue workflow after approval is granted"""
         async with get_db_session() as session:
@@ -472,20 +464,20 @@ class ResearchRequestOrchestrator:
                 "phenotype_sql": ("calendar_agent", "schedule_kickoff_meeting"),
                 "extraction": ("extraction_agent", "extract_data"),
                 "qa": ("delivery_agent", "deliver_data"),
-                "scope_change": ("requirements_agent", "gather_requirements")  # Restart from requirements
+                "scope_change": (
+                    "requirements_agent",
+                    "gather_requirements",
+                ),  # Restart from requirements
             }
 
-            next_agent, next_task = next_agent_map.get(
-                approval_type,
-                (None, None)
-            )
+            next_agent, next_task = next_agent_map.get(approval_type, (None, None))
 
             if next_agent:
                 # Build context with approved data
                 context = {
-                    'request_id': request_id,
-                    'approval_id': approval_id,
-                    'approved_by': approval.reviewed_by
+                    "request_id": request_id,
+                    "approval_id": approval_id,
+                    "approved_by": approval.reviewed_by,
                 }
 
                 # Add approval data to context
@@ -494,7 +486,7 @@ class ResearchRequestOrchestrator:
 
                 # Add modifications if provided
                 if modifications:
-                    context['modifications'] = modifications
+                    context["modifications"] = modifications
 
                 logger.info(
                     f"[{request_id}] Routing to {next_agent}.{next_task} after {approval_type} approval"
@@ -504,7 +496,7 @@ class ResearchRequestOrchestrator:
                     agent_id=next_agent,
                     task=next_task,
                     context=context,
-                    from_agent='approval_service'
+                    from_agent="approval_service",
                 )
 
     async def _handle_approval_rejection(self, approval_id: int):
@@ -528,13 +520,13 @@ class ResearchRequestOrchestrator:
                 "phenotype_sql": ("phenotype_agent", "validate_feasibility"),
                 "extraction": ("calendar_agent", "schedule_kickoff_meeting"),  # Re-schedule
                 "qa": ("extraction_agent", "extract_data"),  # Re-extract
-                "scope_change": (None, None)  # Scope change rejected - continue with current workflow
+                "scope_change": (
+                    None,
+                    None,
+                ),  # Scope change rejected - continue with current workflow
             }
 
-            return_agent, return_task = return_agent_map.get(
-                approval_type,
-                (None, None)
-            )
+            return_agent, return_task = return_agent_map.get(approval_type, (None, None))
 
             if return_agent:
                 logger.info(
@@ -542,16 +534,16 @@ class ResearchRequestOrchestrator:
                 )
 
                 context = {
-                    'request_id': request_id,
-                    'rejection_reason': approval.review_notes,
-                    'previous_attempt': approval.approval_data
+                    "request_id": request_id,
+                    "rejection_reason": approval.review_notes,
+                    "previous_attempt": approval.approval_data,
                 }
 
                 await self.route_task(
                     agent_id=return_agent,
                     task=return_task,
                     context=context,
-                    from_agent='approval_service'
+                    from_agent="approval_service",
                 )
 
     async def _complete_workflow(self, request_id: str, final_state: WorkflowState):
@@ -575,12 +567,9 @@ class ResearchRequestOrchestrator:
             audit_entry = AuditLog(
                 request_id=request_id,
                 event_type="workflow_completed",
-                event_data={
-                    'final_state': final_state.value,
-                    'duration_seconds': duration
-                },
-                triggered_by='orchestrator',
-                severity='info'
+                event_data={"final_state": final_state.value, "duration_seconds": duration},
+                triggered_by="orchestrator",
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
@@ -610,9 +599,9 @@ class ResearchRequestOrchestrator:
                 audit_entry = AuditLog(
                     request_id=request_id,
                     event_type="routing_error",
-                    event_data={'error': error},
-                    triggered_by='orchestrator',
-                    severity='error'
+                    event_data={"error": error},
+                    triggered_by="orchestrator",
+                    severity="error",
                 )
                 session.add(audit_entry)
                 await session.commit()
@@ -639,9 +628,9 @@ class ResearchRequestOrchestrator:
                     request_id=request_id,
                     event_type="workflow_error",
                     agent_id=agent_id,
-                    event_data={'error': error},
+                    event_data={"error": error},
                     triggered_by=agent_id,
-                    severity='error'
+                    severity="error",
                 )
                 session.add(audit_entry)
                 await session.commit()
@@ -660,19 +649,23 @@ class ResearchRequestOrchestrator:
                 return None
 
             return {
-                'request_id': request_id,
-                'current_state': research_request.current_state,
-                'current_agent': research_request.current_agent,
-                'started_at': research_request.created_at.isoformat(),
-                'completed_at': research_request.completed_at.isoformat() if research_request.completed_at else None,
-                'agents_involved': research_request.agents_involved,
-                'state_history': research_request.state_history,
-                'researcher_info': {
-                    'name': research_request.researcher_name,
-                    'email': research_request.researcher_email,
-                    'department': research_request.researcher_department,
-                    'irb_number': research_request.irb_number
-                }
+                "request_id": request_id,
+                "current_state": research_request.current_state,
+                "current_agent": research_request.current_agent,
+                "started_at": research_request.created_at.isoformat(),
+                "completed_at": (
+                    research_request.completed_at.isoformat()
+                    if research_request.completed_at
+                    else None
+                ),
+                "agents_involved": research_request.agents_involved,
+                "state_history": research_request.state_history,
+                "researcher_info": {
+                    "name": research_request.researcher_name,
+                    "email": research_request.researcher_email,
+                    "department": research_request.researcher_department,
+                    "irb_number": research_request.irb_number,
+                },
             }
 
     async def get_all_active_requests(self) -> list:
@@ -686,15 +679,15 @@ class ResearchRequestOrchestrator:
             active_requests = result.scalars().all()
 
             # Use asyncio.gather to properly await all status requests
-            statuses = await asyncio.gather(*[
-                self.get_request_status(req.id)
-                for req in active_requests
-            ])
+            statuses = await asyncio.gather(
+                *[self.get_request_status(req.id) for req in active_requests]
+            )
             return statuses
 
     def _generate_request_id(self) -> str:
         """Generate unique request ID"""
         import uuid
+
         return f"REQ-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
 
     def get_agent_metrics(self, agent_id: str = None) -> Dict[str, Any]:
@@ -703,7 +696,4 @@ class ResearchRequestOrchestrator:
             agent = self.agents.get(agent_id)
             return agent.get_metrics() if agent else {}
 
-        return {
-            agent_id: agent.get_metrics()
-            for agent_id, agent in self.agents.items()
-        }
+        return {agent_id: agent.get_metrics() for agent_id, agent in self.agents.items()}

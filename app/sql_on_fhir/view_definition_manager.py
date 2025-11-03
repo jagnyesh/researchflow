@@ -47,7 +47,9 @@ class ViewDefinitionManager:
         # In-memory cache of loaded ViewDefinitions
         self._cache: Dict[str, Dict[str, Any]] = {}
 
-        logger.info(f"Initialized ViewDefinitionManager with directory: {self.view_definitions_dir}")
+        logger.info(
+            f"Initialized ViewDefinitionManager with directory: {self.view_definitions_dir}"
+        )
 
     def load(self, name: str) -> Dict[str, Any]:
         """
@@ -77,7 +79,7 @@ class ViewDefinitionManager:
         logger.debug(f"Loading ViewDefinition from file: {file_path}")
 
         try:
-            with open(file_path, 'r') as f:
+            with open(file_path, "r") as f:
                 view_def = json.load(f)
 
             # Validate
@@ -86,7 +88,9 @@ class ViewDefinitionManager:
             # Cache
             self._cache[name] = view_def
 
-            logger.info(f"Loaded ViewDefinition '{name}' for resource type '{view_def.get('resource')}'")
+            logger.info(
+                f"Loaded ViewDefinition '{name}' for resource type '{view_def.get('resource')}'"
+            )
             return view_def
 
         except json.JSONDecodeError as e:
@@ -111,7 +115,7 @@ class ViewDefinitionManager:
 
         # Determine name
         if name is None:
-            name = view_definition.get('name')
+            name = view_definition.get("name")
             if not name:
                 raise ValueError("ViewDefinition must have 'name' field or name must be provided")
 
@@ -120,7 +124,7 @@ class ViewDefinitionManager:
         logger.debug(f"Saving ViewDefinition to: {file_path}")
 
         try:
-            with open(file_path, 'w') as f:
+            with open(file_path, "w") as f:
                 json.dump(view_definition, f, indent=2)
 
             # Update cache
@@ -208,28 +212,30 @@ class ViewDefinitionManager:
             ValueError: If ViewDefinition is invalid
         """
         # Check required fields
-        if view_definition.get('resourceType') != 'ViewDefinition':
+        if view_definition.get("resourceType") != "ViewDefinition":
             raise ValueError("resourceType must be 'ViewDefinition'")
 
-        if 'resource' not in view_definition:
+        if "resource" not in view_definition:
             raise ValueError("ViewDefinition must have 'resource' field")
 
-        if 'name' not in view_definition:
+        if "name" not in view_definition:
             raise ValueError("ViewDefinition must have 'name' field")
 
         # Validate name format (must be database-friendly)
-        name = view_definition['name']
+        name = view_definition["name"]
         if not name[0].isalpha():
             raise ValueError("ViewDefinition name must start with a letter")
 
-        if not all(c.isalnum() or c == '_' for c in name):
-            raise ValueError("ViewDefinition name must contain only letters, numbers, and underscores")
+        if not all(c.isalnum() or c == "_" for c in name):
+            raise ValueError(
+                "ViewDefinition name must contain only letters, numbers, and underscores"
+            )
 
         # Check select structure
-        if 'select' not in view_definition:
+        if "select" not in view_definition:
             raise ValueError("ViewDefinition must have 'select' field")
 
-        select = view_definition['select']
+        select = view_definition["select"]
         if not isinstance(select, list) or len(select) == 0:
             raise ValueError("ViewDefinition 'select' must be a non-empty array")
 
@@ -252,12 +258,16 @@ class ViewDefinitionManager:
             ValueError: If select element is invalid
         """
         # Must have either 'column', 'select', or 'unionAll'
-        if 'column' not in select_elem and 'select' not in select_elem and 'unionAll' not in select_elem:
+        if (
+            "column" not in select_elem
+            and "select" not in select_elem
+            and "unionAll" not in select_elem
+        ):
             raise ValueError(f"Select element {index} must have 'column', 'select', or 'unionAll'")
 
         # Validate columns if present
-        if 'column' in select_elem:
-            columns = select_elem['column']
+        if "column" in select_elem:
+            columns = select_elem["column"]
             if not isinstance(columns, list):
                 raise ValueError(f"Select element {index} 'column' must be an array")
 
@@ -265,22 +275,24 @@ class ViewDefinitionManager:
                 self._validate_column(column, index, col_idx)
 
         # Validate forEach if present
-        if 'forEach' in select_elem:
-            if not isinstance(select_elem['forEach'], str):
+        if "forEach" in select_elem:
+            if not isinstance(select_elem["forEach"], str):
                 raise ValueError(f"Select element {index} 'forEach' must be a string")
 
             # forEach requires column
-            if 'column' not in select_elem:
+            if "column" not in select_elem:
                 raise ValueError(f"Select element {index} with 'forEach' must have 'column'")
 
         # Validate forEachOrNull if present
-        if 'forEachOrNull' in select_elem:
-            if not isinstance(select_elem['forEachOrNull'], str):
+        if "forEachOrNull" in select_elem:
+            if not isinstance(select_elem["forEachOrNull"], str):
                 raise ValueError(f"Select element {index} 'forEachOrNull' must be a string")
 
             # Can't have both forEach and forEachOrNull
-            if 'forEach' in select_elem:
-                raise ValueError(f"Select element {index} cannot have both 'forEach' and 'forEachOrNull'")
+            if "forEach" in select_elem:
+                raise ValueError(
+                    f"Select element {index} cannot have both 'forEach' and 'forEachOrNull'"
+                )
 
     def _validate_column(self, column: Dict[str, Any], select_idx: int, col_idx: int):
         """
@@ -295,22 +307,24 @@ class ViewDefinitionManager:
             ValueError: If column is invalid
         """
         # Must have 'name' and 'path'
-        if 'name' not in column:
+        if "name" not in column:
             raise ValueError(f"Column {col_idx} in select {select_idx} must have 'name'")
 
-        if 'path' not in column:
+        if "path" not in column:
             raise ValueError(f"Column {col_idx} in select {select_idx} must have 'path'")
 
         # Validate column name
-        name = column['name']
+        name = column["name"]
         if not name[0].isalpha():
             raise ValueError(f"Column name '{name}' must start with a letter")
 
-        if not all(c.isalnum() or c == '_' for c in name):
-            raise ValueError(f"Column name '{name}' must contain only letters, numbers, and underscores")
+        if not all(c.isalnum() or c == "_" for c in name):
+            raise ValueError(
+                f"Column name '{name}' must contain only letters, numbers, and underscores"
+            )
 
         # Path must be string
-        if not isinstance(column['path'], str):
+        if not isinstance(column["path"], str):
             raise ValueError(f"Column '{name}' path must be a string")
 
     def get_resource_type(self, name: str) -> str:
@@ -324,14 +338,14 @@ class ViewDefinitionManager:
             FHIR resource type (e.g., "Patient", "Observation")
         """
         view_def = self.load(name)
-        return view_def.get('resource')
+        return view_def.get("resource")
 
     def create_from_template(
         self,
         resource_type: str,
         name: str,
         columns: List[Dict[str, str]],
-        where: Optional[List[str]] = None
+        where: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Create a ViewDefinition from a simple template
@@ -360,11 +374,7 @@ class ViewDefinitionManager:
             "resourceType": "ViewDefinition",
             "resource": resource_type,
             "name": name,
-            "select": [
-                {
-                    "column": columns
-                }
-            ]
+            "select": [{"column": columns}],
         }
 
         if where:

@@ -42,7 +42,7 @@ class JoinQueryBuilder:
         "condition_simple": "c",
         "observation_labs": "o",
         "medication_requests": "m",
-        "procedure_history": "pr"
+        "procedure_history": "pr",
     }
 
     # Demographic views (don't need JOIN)
@@ -56,7 +56,7 @@ class JoinQueryBuilder:
         self,
         view_definitions: List[str],
         search_params: Dict[str, Any],
-        post_filters: List[Dict[str, Any]] = None
+        post_filters: List[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Build COUNT query that JOINs multiple views
@@ -79,17 +79,10 @@ class JoinQueryBuilder:
         # Determine if this is a single-view or multi-view query
         if len(view_definitions) == 1:
             # Single view - no JOIN needed
-            return self._build_single_view_query(
-                view_definitions[0],
-                search_params
-            )
+            return self._build_single_view_query(view_definitions[0], search_params)
 
         # Multi-view query - build JOIN
-        return self._build_join_query(
-            view_definitions,
-            search_params,
-            post_filters or []
-        )
+        return self._build_join_query(view_definitions, search_params, post_filters or [])
 
     def build_multi_view_breakdown_query(
         self,
@@ -97,7 +90,7 @@ class JoinQueryBuilder:
         search_params: Dict[str, Any],
         post_filters: List[Dict[str, Any]] = None,
         group_by: List[str] = None,
-        aggregation_type: str = "count"
+        aggregation_type: str = "count",
     ) -> Dict[str, Any]:
         """
         Build GROUP BY query that JOINs multiple views with breakdown dimensions
@@ -128,26 +121,19 @@ class JoinQueryBuilder:
         if len(view_definitions) == 1:
             # Single view - no JOIN needed
             return self._build_single_view_breakdown_query(
-                view_definitions[0],
-                search_params,
-                group_by,
-                aggregation_type
+                view_definitions[0], search_params, group_by, aggregation_type
             )
 
         # Multi-view query - build JOIN with GROUP BY
         return self._build_join_breakdown_query(
-            view_definitions,
-            search_params,
-            post_filters or [],
-            group_by,
-            aggregation_type
+            view_definitions, search_params, post_filters or [], group_by, aggregation_type
         )
 
     def build_count_distinct_query(
         self,
         view_definitions: List[str],
         search_params: Dict[str, Any],
-        post_filters: List[Dict[str, Any]] = None
+        post_filters: List[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Build COUNT DISTINCT query for unique resource counts
@@ -176,7 +162,7 @@ class JoinQueryBuilder:
             "condition_diagnoses": "code",
             "medication_requests": "medication_code",
             "observation_labs": "code",
-            "procedure_history": "cpt_code"
+            "procedure_history": "cpt_code",
         }
 
         distinct_column = distinct_column_map.get(view_name, "patient_id")
@@ -198,13 +184,11 @@ class JoinQueryBuilder:
             "primary_view": view_name,
             "joined_views": [],
             "filter_summary": self._summarize_filters(search_params, post_filters or []),
-            "distinct_column": distinct_column
+            "distinct_column": distinct_column,
         }
 
     def _build_single_view_query(
-        self,
-        view_name: str,
-        search_params: Dict[str, Any]
+        self, view_name: str, search_params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Build simple COUNT query for single view"""
         alias = self.VIEW_ALIASES.get(view_name, "v")
@@ -223,14 +207,14 @@ class JoinQueryBuilder:
             "parameters": {},
             "primary_view": view_name,
             "joined_views": [],
-            "filter_summary": self._summarize_filters(search_params, [])
+            "filter_summary": self._summarize_filters(search_params, []),
         }
 
     def _build_join_query(
         self,
         view_definitions: List[str],
         search_params: Dict[str, Any],
-        post_filters: List[Dict[str, Any]]
+        post_filters: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         """Build JOIN query across multiple views"""
 
@@ -262,19 +246,13 @@ class JoinQueryBuilder:
             sql += f"\n    ON {primary_alias}.patient_id = {alias}.patient_id"
 
         # Build WHERE clauses
-        where_clauses = self._build_where_clauses(
-            primary_alias,
-            search_params,
-            post_filters
-        )
+        where_clauses = self._build_where_clauses(primary_alias, search_params, post_filters)
 
         # Add WHERE clauses for joined views
         for view_name in joined_views:
             alias = self.VIEW_ALIASES.get(view_name, view_name[0])
             for post_filter in post_filters:
-                where_clauses.extend(
-                    self._build_post_filter_clauses(alias, post_filter)
-                )
+                where_clauses.extend(self._build_post_filter_clauses(alias, post_filter))
 
         if where_clauses:
             sql += "\n WHERE " + "\n   AND ".join(where_clauses)
@@ -284,7 +262,7 @@ class JoinQueryBuilder:
             "parameters": {},
             "primary_view": primary_view,
             "joined_views": joined_views,
-            "filter_summary": self._summarize_filters(search_params, post_filters)
+            "filter_summary": self._summarize_filters(search_params, post_filters),
         }
 
     def _build_single_view_breakdown_query(
@@ -292,7 +270,7 @@ class JoinQueryBuilder:
         view_name: str,
         search_params: Dict[str, Any],
         group_by: List[str],
-        aggregation_type: str
+        aggregation_type: str,
     ) -> Dict[str, Any]:
         """Build GROUP BY query for single view"""
         alias = self.VIEW_ALIASES.get(view_name, "v")
@@ -355,7 +333,7 @@ class JoinQueryBuilder:
             "primary_view": view_name,
             "joined_views": [],
             "filter_summary": self._summarize_filters(search_params, []),
-            "group_by_dimensions": group_by
+            "group_by_dimensions": group_by,
         }
 
     def _build_join_breakdown_query(
@@ -364,7 +342,7 @@ class JoinQueryBuilder:
         search_params: Dict[str, Any],
         post_filters: List[Dict[str, Any]],
         group_by: List[str],
-        aggregation_type: str
+        aggregation_type: str,
     ) -> Dict[str, Any]:
         """Build JOIN query with GROUP BY across multiple views"""
 
@@ -433,19 +411,13 @@ class JoinQueryBuilder:
             sql += f"\n    ON {primary_alias}.patient_id = {alias}.patient_id"
 
         # Build WHERE clauses
-        where_clauses = self._build_where_clauses(
-            primary_alias,
-            search_params,
-            post_filters
-        )
+        where_clauses = self._build_where_clauses(primary_alias, search_params, post_filters)
 
         # Add WHERE clauses for joined views
         for view_name in joined_views:
             alias = self.VIEW_ALIASES.get(view_name, view_name[0])
             for post_filter in post_filters:
-                where_clauses.extend(
-                    self._build_post_filter_clauses(alias, post_filter)
-                )
+                where_clauses.extend(self._build_post_filter_clauses(alias, post_filter))
 
         if where_clauses:
             sql += "\n WHERE " + "\n   AND ".join(where_clauses)
@@ -462,14 +434,11 @@ class JoinQueryBuilder:
             "primary_view": primary_view,
             "joined_views": joined_views,
             "filter_summary": self._summarize_filters(search_params, post_filters),
-            "group_by_dimensions": group_by
+            "group_by_dimensions": group_by,
         }
 
     def _build_where_clauses(
-        self,
-        alias: str,
-        search_params: Dict[str, Any],
-        post_filters: List[Dict[str, Any]]
+        self, alias: str, search_params: Dict[str, Any], post_filters: List[Dict[str, Any]]
     ) -> List[str]:
         """Build WHERE clause conditions for demographic filters"""
         clauses = []
@@ -492,11 +461,7 @@ class JoinQueryBuilder:
 
         return clauses
 
-    def _build_post_filter_clauses(
-        self,
-        alias: str,
-        post_filter: Dict[str, Any]
-    ) -> List[str]:
+    def _build_post_filter_clauses(self, alias: str, post_filter: Dict[str, Any]) -> List[str]:
         """
         Build WHERE clauses for post-filters (conditions, meds, labs)
 
@@ -519,7 +484,9 @@ class JoinQueryBuilder:
         if use_text_search:
             # Text search fallback for conditions without SNOMED/ICD-10 codes
             text_pattern = post_filter.get("text_pattern", f"%{condition_name}%")
-            logger.info(f"Using text search fallback for '{condition_name}': {alias}.{field} ILIKE '{text_pattern}'")
+            logger.info(
+                f"Using text search fallback for '{condition_name}': {alias}.{field} ILIKE '{text_pattern}'"
+            )
             clauses.append(f"{alias}.{field} ILIKE '{text_pattern}'")
             return clauses
 
@@ -534,7 +501,7 @@ class JoinQueryBuilder:
 
         # For condition filters, add fallback to code_text for robustness
         # This handles real-world FHIR data with incomplete ICD-10/SNOMED coding
-        if field in ['icd10_code', 'snomed_code'] and condition_name:
+        if field in ["icd10_code", "snomed_code"] and condition_name:
             # Extract core medical term for broader matching
             # E.g., "Diabetes mellitus (all types)" → "diabetes"
             # E.g., "Type 2 diabetes mellitus" → "diabetes"
@@ -543,7 +510,7 @@ class JoinQueryBuilder:
             # Try multiple search strategies with OR clause
             fallback_clauses = [
                 primary_clause,  # Try coded value first (e.g., SNOMED/ICD-10)
-                f"{alias}.code_text ILIKE '%{core_term}%'"  # Then core term (broader)
+                f"{alias}.code_text ILIKE '%{core_term}%'",  # Then core term (broader)
             ]
 
             # If core term is different from full name, also try full name
@@ -577,7 +544,7 @@ class JoinQueryBuilder:
         import re
 
         # Remove parenthetical qualifiers: "(all types)", "(disorder)", etc.
-        term = re.sub(r'\([^)]*\)', '', condition_name).strip()
+        term = re.sub(r"\([^)]*\)", "", condition_name).strip()
 
         # Extract first significant medical keyword (usually the condition name)
         # Common pattern: "[Type qualifier] [CONDITION] mellitus/disorder"
@@ -585,19 +552,37 @@ class JoinQueryBuilder:
 
         # Filter out common qualifiers and connecting words
         stop_words = {
-            'type', 'stage', 'grade', 'mellitus', 'disorder', 'disease',
-            'syndrome', 'condition', '1', '2', '3', 'i', 'ii', 'iii',
-            'acute', 'chronic', 'severe', 'mild', 'moderate'
+            "type",
+            "stage",
+            "grade",
+            "mellitus",
+            "disorder",
+            "disease",
+            "syndrome",
+            "condition",
+            "1",
+            "2",
+            "3",
+            "i",
+            "ii",
+            "iii",
+            "acute",
+            "chronic",
+            "severe",
+            "mild",
+            "moderate",
         }
         significant_words = [w for w in words if w not in stop_words and len(w) > 3]
 
         # Return first significant word, or fall back to first word
-        return significant_words[0] if significant_words else (words[0] if words else condition_name.lower())
+        return (
+            significant_words[0]
+            if significant_words
+            else (words[0] if words else condition_name.lower())
+        )
 
     def _summarize_filters(
-        self,
-        search_params: Dict[str, Any],
-        post_filters: List[Dict[str, Any]]
+        self, search_params: Dict[str, Any], post_filters: List[Dict[str, Any]]
     ) -> str:
         """Generate human-readable filter summary"""
         summary_parts = []

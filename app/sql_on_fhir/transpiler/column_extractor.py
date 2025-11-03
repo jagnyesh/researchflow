@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ColumnDefinition:
     """Single column definition"""
+
     name: str
     sql_expression: str
     description: Optional[str] = None
@@ -32,6 +33,7 @@ class ColumnDefinition:
 @dataclass
 class SelectClause:
     """Complete SELECT clause with columns and lateral joins"""
+
     columns: List[ColumnDefinition]
     lateral_joins: List[str]
     select_sql: str
@@ -55,9 +57,7 @@ class ColumnExtractor:
         self._lateral_counter = 0
 
     def extract_columns(
-        self,
-        select_elements: List[Dict[str, Any]],
-        resource_type: str
+        self, select_elements: List[Dict[str, Any]], resource_type: str
     ) -> SelectClause:
         """
         Extract columns from ViewDefinition select elements
@@ -74,47 +74,36 @@ class ColumnExtractor:
 
         for select_elem in select_elements:
             # Handle forEach
-            if 'forEach' in select_elem:
+            if "forEach" in select_elem:
                 cols, join = self._extract_forEach_columns(
-                    select_elem,
-                    select_elem['forEach'],
-                    nullable=False
+                    select_elem, select_elem["forEach"], nullable=False
                 )
                 all_columns.extend(cols)
                 lateral_joins.append(join)
 
             # Handle forEachOrNull
-            elif 'forEachOrNull' in select_elem:
+            elif "forEachOrNull" in select_elem:
                 cols, join = self._extract_forEach_columns(
-                    select_elem,
-                    select_elem['forEachOrNull'],
-                    nullable=True
+                    select_elem, select_elem["forEachOrNull"], nullable=True
                 )
                 all_columns.extend(cols)
                 lateral_joins.append(join)
 
             # Handle simple columns
-            elif 'column' in select_elem:
-                cols = self._extract_simple_columns(select_elem['column'])
+            elif "column" in select_elem:
+                cols = self._extract_simple_columns(select_elem["column"])
                 all_columns.extend(cols)
 
             # Handle unionAll (advanced feature)
-            elif 'unionAll' in select_elem:
+            elif "unionAll" in select_elem:
                 logger.warning("unionAll not yet supported, skipping")
 
         # Build SELECT SQL
         select_sql = self._build_select_sql(all_columns)
 
-        return SelectClause(
-            columns=all_columns,
-            lateral_joins=lateral_joins,
-            select_sql=select_sql
-        )
+        return SelectClause(columns=all_columns, lateral_joins=lateral_joins, select_sql=select_sql)
 
-    def _extract_simple_columns(
-        self,
-        column_defs: List[Dict[str, Any]]
-    ) -> List[ColumnDefinition]:
+    def _extract_simple_columns(self, column_defs: List[Dict[str, Any]]) -> List[ColumnDefinition]:
         """
         Extract simple columns (no forEach)
 
@@ -127,12 +116,12 @@ class ColumnExtractor:
         columns = []
 
         for col_def in column_defs:
-            name = col_def.get('name', 'unnamed')
-            path = col_def.get('path', '')
-            description = col_def.get('description')
+            name = col_def.get("name", "unnamed")
+            path = col_def.get("path", "")
+            description = col_def.get("description")
 
             # Handle special functions
-            if path == 'getResourceKey()':
+            if path == "getResourceKey()":
                 # Resource key is the FHIR ID
                 sql_expr = f"v.res_text_vc::jsonb->>'id'"
             else:
@@ -140,20 +129,16 @@ class ColumnExtractor:
                 expr = self.transpiler.transpile(path, as_text=True)
                 sql_expr = expr.sql
 
-            columns.append(ColumnDefinition(
-                name=name,
-                sql_expression=sql_expr,
-                description=description,
-                is_nullable=False
-            ))
+            columns.append(
+                ColumnDefinition(
+                    name=name, sql_expression=sql_expr, description=description, is_nullable=False
+                )
+            )
 
         return columns
 
     def _extract_forEach_columns(
-        self,
-        select_elem: Dict[str, Any],
-        for_each_path: str,
-        nullable: bool
+        self, select_elem: Dict[str, Any], for_each_path: str, nullable: bool
     ) -> Tuple[List[ColumnDefinition], str]:
         """
         Extract columns from forEach/forEachOrNull
@@ -166,7 +151,7 @@ class ColumnExtractor:
         Returns:
             Tuple of (column list, lateral join SQL)
         """
-        column_defs = select_elem.get('column', [])
+        column_defs = select_elem.get("column", [])
 
         # Generate unique alias for this forEach
         self._lateral_counter += 1
@@ -183,7 +168,7 @@ class ColumnExtractor:
             join_type = "CROSS JOIN LATERAL"
 
         # Check if forEach path returns array or single element
-        if '.first()' in for_each_path or base_expr.requires_subquery:
+        if ".first()" in for_each_path or base_expr.requires_subquery:
             # Single element - use it directly as context
             # Note: LATERAL joins in PostgreSQL don't use ON clause
             lateral_join = f"""
@@ -205,19 +190,21 @@ class ColumnExtractor:
         # Extract columns in context of forEach element
         columns = []
         for col_def in column_defs:
-            name = col_def.get('name', 'unnamed')
-            path = col_def.get('path', '')
-            description = col_def.get('description')
+            name = col_def.get("name", "unnamed")
+            path = col_def.get("path", "")
+            description = col_def.get("description")
 
             # Transpile in forEach context
             expr = self.transpiler.transpile(path, as_text=True, context_path=context_path)
 
-            columns.append(ColumnDefinition(
-                name=name,
-                sql_expression=expr.sql,
-                description=description,
-                is_nullable=nullable
-            ))
+            columns.append(
+                ColumnDefinition(
+                    name=name,
+                    sql_expression=expr.sql,
+                    description=description,
+                    is_nullable=nullable,
+                )
+            )
 
         return columns, lateral_join
 
@@ -244,10 +231,7 @@ class ColumnExtractor:
 
         return select_sql
 
-    def extract_where_clause(
-        self,
-        where_elements: List[Dict[str, Any]]
-    ) -> str:
+    def extract_where_clause(self, where_elements: List[Dict[str, Any]]) -> str:
         """
         Extract WHERE clause from ViewDefinition
 
@@ -263,8 +247,8 @@ class ColumnExtractor:
         conditions = []
 
         for where_elem in where_elements:
-            path = where_elem.get('path', '')
-            description = where_elem.get('description')
+            path = where_elem.get("path", "")
+            description = where_elem.get("description")
 
             # Transpile FHIRPath to SQL
             expr = self.transpiler.transpile(path, as_text=False)

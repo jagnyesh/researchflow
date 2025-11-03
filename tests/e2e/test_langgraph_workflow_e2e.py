@@ -41,6 +41,7 @@ DATABASE_URL = "postgresql+asyncpg://researchflow:researchflow@localhost:5434/re
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def persistence():
     """Create persistence layer"""
@@ -51,7 +52,7 @@ def persistence():
 def test_request_data():
     """Load test request data from fixtures"""
     fixture_path = Path(__file__).parent / "fixtures" / "sample_diabetes_request.json"
-    with open(fixture_path, 'r') as f:
+    with open(fixture_path, "r") as f:
         return json.load(f)
 
 
@@ -64,6 +65,7 @@ def workflow():
 # ============================================================================
 # Test: Happy Path - Complete Workflow
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -92,7 +94,7 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=test_request_data["initial_request"],
-        researcher_info=test_request_data["researcher_info"]
+        researcher_info=test_request_data["researcher_info"],
     )
 
     print(f"  ✓ Initial state created: {request_id}")
@@ -104,7 +106,7 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     state_after_new_request = await workflow.run(initial_state)
 
     print(f"  ✓ State after new_request: {state_after_new_request['current_state']}")
-    assert state_after_new_request['current_state'] in ['requirements_gathering', 'wait_for_input']
+    assert state_after_new_request["current_state"] in ["requirements_gathering", "wait_for_input"]
 
     # ===== Step 3: Submit Requirements (Bypass Conversation) =====
     print("\\n[3/11] Submitting structured requirements...")
@@ -112,29 +114,26 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     # Update state with structured requirements
     state_with_requirements = {
         **state_after_new_request,
-        'requirements': test_request_data["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": test_request_data["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     # Process requirements_gathering
     state_after_requirements = await workflow.run(state_with_requirements)
 
     print(f"  ✓ State after requirements_gathering: {state_after_requirements['current_state']}")
-    assert state_after_requirements['current_state'] == 'requirements_review'
+    assert state_after_requirements["current_state"] == "requirements_review"
 
     # ===== Step 4: Approve Requirements =====
     print("\\n[4/11] Approving requirements...")
 
-    state_with_approval = {
-        **state_after_requirements,
-        'requirements_approved': True
-    }
+    state_with_approval = {**state_after_requirements, "requirements_approved": True}
 
     state_after_approval = await workflow.run(state_with_approval)
 
     print(f"  ✓ State after requirements approval: {state_after_approval['current_state']}")
-    assert state_after_approval['current_state'] == 'phenotype_review'
+    assert state_after_approval["current_state"] == "phenotype_review"
 
     # ===== Step 5: Verify Feasibility Validation =====
     print("\\n[5/11] Verifying feasibility validation (phenotype SQL generation)...")
@@ -147,50 +146,50 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     print(f"  ✓ Feasibility score: {state_after_phenotype.get('feasibility_score', 'N/A')}")
     print(f"  ✓ Estimated cohort: {state_after_phenotype.get('estimated_cohort_size', 'N/A')}")
 
-    assert state_after_phenotype['current_state'] == 'phenotype_review'
-    assert state_after_phenotype.get('phenotype_sql') is not None
+    assert state_after_phenotype["current_state"] == "phenotype_review"
+    assert state_after_phenotype.get("phenotype_sql") is not None
 
     # ===== Step 6: Approve Phenotype SQL =====
     print("\\n[6/11] Approving phenotype SQL...")
 
-    state_with_sql_approval = {
-        **state_after_phenotype,
-        'phenotype_approved': True
-    }
+    state_with_sql_approval = {**state_after_phenotype, "phenotype_approved": True}
 
     state_after_sql_approval = await workflow.run(state_with_sql_approval)
 
     print(f"  ✓ State after phenotype approval: {state_after_sql_approval['current_state']}")
-    assert state_after_sql_approval['current_state'] in ['schedule_kickoff', 'extraction_approval']
+    assert state_after_sql_approval["current_state"] in ["schedule_kickoff", "extraction_approval"]
 
     # ===== Step 7: Schedule Kickoff Meeting =====
     print("\\n[7/11] Scheduling kickoff meeting...")
 
-    if state_after_sql_approval['current_state'] == 'schedule_kickoff':
+    if state_after_sql_approval["current_state"] == "schedule_kickoff":
         state_after_kickoff = await workflow.run(state_after_sql_approval)
         print(f"  ✓ Kickoff meeting scheduled")
     else:
         state_after_kickoff = state_after_sql_approval
 
-    assert state_after_kickoff['current_state'] == 'extraction_approval'
+    assert state_after_kickoff["current_state"] == "extraction_approval"
 
     # ===== Step 8: Approve Extraction =====
     print("\\n[8/11] Approving data extraction...")
 
-    state_with_extraction_approval = {
-        **state_after_kickoff,
-        'extraction_approved': True
-    }
+    state_with_extraction_approval = {**state_after_kickoff, "extraction_approved": True}
 
     state_after_extraction_approval = await workflow.run(state_with_extraction_approval)
 
-    print(f"  ✓ State after extraction approval: {state_after_extraction_approval['current_state']}")
-    assert state_after_extraction_approval['current_state'] in ['data_extraction', 'qa_validation', 'qa_review']
+    print(
+        f"  ✓ State after extraction approval: {state_after_extraction_approval['current_state']}"
+    )
+    assert state_after_extraction_approval["current_state"] in [
+        "data_extraction",
+        "qa_validation",
+        "qa_review",
+    ]
 
     # ===== Step 9: Extract Data =====
     print("\\n[9/11] Extracting data...")
 
-    if state_after_extraction_approval['current_state'] == 'data_extraction':
+    if state_after_extraction_approval["current_state"] == "data_extraction":
         state_after_extraction = await workflow.run(state_after_extraction_approval)
         print(f"  ✓ Data extraction complete")
     else:
@@ -199,25 +198,22 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     # ===== Step 10: QA Validation =====
     print("\\n[10/11] Running QA validation...")
 
-    if state_after_extraction['current_state'] == 'qa_validation':
+    if state_after_extraction["current_state"] == "qa_validation":
         state_after_qa = await workflow.run(state_after_extraction)
         print(f"  ✓ QA validation complete")
     else:
         state_after_qa = state_after_extraction
 
-    assert state_after_qa['current_state'] == 'qa_review'
+    assert state_after_qa["current_state"] == "qa_review"
 
     # ===== Step 11: Approve QA and Complete =====
     print("\\n[11/11] Approving QA results and completing delivery...")
 
-    state_with_qa_approval = {
-        **state_after_qa,
-        'qa_approved': True
-    }
+    state_with_qa_approval = {**state_after_qa, "qa_approved": True}
 
     state_after_qa_approval = await workflow.run(state_with_qa_approval)
 
-    if state_after_qa_approval['current_state'] == 'data_delivery':
+    if state_after_qa_approval["current_state"] == "data_delivery":
         final_state = await workflow.run(state_after_qa_approval)
     else:
         final_state = state_after_qa_approval
@@ -225,8 +221,8 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     print(f"  ✓ Final state: {final_state['current_state']}")
 
     # ===== Verify Final State =====
-    assert final_state['current_state'] == 'complete'
-    assert final_state.get('delivered_at') is not None
+    assert final_state["current_state"] == "complete"
+    assert final_state.get("delivered_at") is not None
 
     elapsed_time = time.time() - start_time
 
@@ -243,6 +239,7 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
 # ============================================================================
 # Test: State Persistence & Resumption
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -273,7 +270,7 @@ async def test_workflow_persistence_langgraph(workflow, persistence, test_reques
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=test_request_data["initial_request"],
-        researcher_info=test_request_data["researcher_info"]
+        researcher_info=test_request_data["researcher_info"],
     )
 
     print(f"  ✓ Request created: {request_id}")
@@ -283,15 +280,15 @@ async def test_workflow_persistence_langgraph(workflow, persistence, test_reques
 
     state_with_requirements = {
         **state_after_new,
-        'requirements': test_request_data["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": test_request_data["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     checkpoint_state = await workflow.run(state_with_requirements)
 
     print(f"  ✓ Workflow at checkpoint: {checkpoint_state['current_state']}")
-    assert checkpoint_state['current_state'] == 'requirements_review'
+    assert checkpoint_state["current_state"] == "requirements_review"
 
     # ===== Step 2: Save State to Database =====
     print("\\n[2/5] Saving state to PostgreSQL...")
@@ -305,8 +302,8 @@ async def test_workflow_persistence_langgraph(workflow, persistence, test_reques
     loaded_state = await persistence.load_workflow_state(request_id)
 
     assert loaded_state is not None
-    assert loaded_state['request_id'] == request_id
-    assert loaded_state['current_state'] == 'requirements_review'
+    assert loaded_state["request_id"] == request_id
+    assert loaded_state["current_state"] == "requirements_review"
 
     print(f"  ✓ State loaded successfully:")
     print(f"    - request_id: {loaded_state['request_id']}")
@@ -316,23 +313,20 @@ async def test_workflow_persistence_langgraph(workflow, persistence, test_reques
     # ===== Step 4: Resume Workflow =====
     print("\\n[4/5] Resuming workflow from checkpoint...")
 
-    resumed_state = {
-        **loaded_state,
-        'requirements_approved': True
-    }
+    resumed_state = {**loaded_state, "requirements_approved": True}
 
     state_after_resume = await workflow.run(resumed_state)
 
     print(f"  ✓ Workflow resumed successfully")
     print(f"  ✓ New state: {state_after_resume['current_state']}")
-    assert state_after_resume['current_state'] == 'phenotype_review'
+    assert state_after_resume["current_state"] == "phenotype_review"
 
     # ===== Step 5: Verify No Data Loss =====
     print("\\n[5/5] Verifying data integrity after resumption...")
 
-    assert state_after_resume.get('requirements') is not None
-    assert state_after_resume.get('requirements_complete') == True
-    assert state_after_resume['request_id'] == request_id
+    assert state_after_resume.get("requirements") is not None
+    assert state_after_resume.get("requirements_complete") == True
+    assert state_after_resume["request_id"] == request_id
 
     print("  ✓ All data preserved after resumption")
     print("  ✓ No data loss detected")

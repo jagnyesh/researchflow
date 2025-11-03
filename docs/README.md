@@ -442,4 +442,3 @@ MIT License - See [../LICENSE](../LICENSE)
 **Last Updated**: 2025-10-30
 **Documentation Version**: 2.0
 **Project Version**: Sprint 6 (Security Baseline)
-

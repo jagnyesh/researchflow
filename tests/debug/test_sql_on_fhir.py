@@ -40,14 +40,14 @@ def test_view_definition_manager():
     for name in view_names:
         try:
             view_def = manager.load(name)
-            resource_type = view_def.get('resource')
-            title = view_def.get('title', 'N/A')
+            resource_type = view_def.get("resource")
+            title = view_def.get("title", "N/A")
             num_columns = 0
 
             # Count columns
-            for select_elem in view_def.get('select', []):
-                if 'column' in select_elem:
-                    num_columns += len(select_elem['column'])
+            for select_elem in view_def.get("select", []):
+                if "column" in select_elem:
+                    num_columns += len(select_elem["column"])
 
             print(f"   ✓ {name}")
             print(f"     Resource Type: {resource_type}")
@@ -70,15 +70,15 @@ def test_view_definition_manager():
     print()
     print("   Columns:")
 
-    for select_elem in patient_view.get('select', []):
-        if 'forEach' in select_elem or 'forEachOrNull' in select_elem:
-            collection = select_elem.get('forEach') or select_elem.get('forEachOrNull')
+    for select_elem in patient_view.get("select", []):
+        if "forEach" in select_elem or "forEachOrNull" in select_elem:
+            collection = select_elem.get("forEach") or select_elem.get("forEachOrNull")
             print(f"     [Collection: {collection}]")
 
-        for column in select_elem.get('column', []):
-            name = column.get('name')
-            path = column.get('path')
-            desc = column.get('description', '')
+        for column in select_elem.get("column", []):
+            name = column.get("name")
+            path = column.get("path")
+            desc = column.get("description", "")
             print(f"       • {name:20} <- {path}")
             if desc:
                 print(f"         ({desc})")
@@ -86,11 +86,11 @@ def test_view_definition_manager():
     print()
 
     # Show where clauses
-    if patient_view.get('where'):
+    if patient_view.get("where"):
         print("   Where Clauses:")
-        for where in patient_view['where']:
+        for where in patient_view["where"]:
             print(f"     - {where.get('path')}")
-            if where.get('description'):
+            if where.get("description"):
                 print(f"       ({where.get('description')})")
 
     print()
@@ -103,9 +103,9 @@ def test_view_definition_manager():
         columns=[
             {"name": "id", "path": "id"},
             {"name": "gender", "path": "gender"},
-            {"name": "birth_date", "path": "birthDate"}
+            {"name": "birth_date", "path": "birthDate"},
         ],
-        where=["active = true"]
+        where=["active = true"],
     )
     print("   ✓ Created custom ViewDefinition:")
     print(f"     Name: {custom_view.get('name')}")
@@ -128,7 +128,7 @@ def test_view_definition_manager():
         "resourceType": "ViewDefinition",
         "resource": "Patient",
         # Missing 'name' field - should fail
-        "select": [{"column": [{"name": "id", "path": "id"}]}]
+        "select": [{"column": [{"name": "id", "path": "id"}]}],
     }
     try:
         manager.validate(invalid_view)
@@ -143,10 +143,10 @@ def test_view_definition_manager():
 
     # Manually extract schema for demonstration
     schema = {}
-    for select_elem in patient_view.get('select', []):
-        for column in select_elem.get('column', []):
-            name = column.get('name')
-            col_type = column.get('type', 'string')
+    for select_elem in patient_view.get("select", []):
+        for column in select_elem.get("column", []):
+            name = column.get("name")
+            col_type = column.get("type", "string")
             schema[name] = col_type
 
     print(f"   ✓ Extracted {len(schema)} columns:")

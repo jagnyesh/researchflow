@@ -58,12 +58,7 @@ class MCPServerRegistry:
         """List all registered MCP servers"""
         return list(self._servers.keys())
 
-    async def call_tool(
-        self,
-        server_id: str,
-        tool_name: str,
-        parameters: Dict[str, Any]
-    ) -> Any:
+    async def call_tool(self, server_id: str, tool_name: str, parameters: Dict[str, Any]) -> Any:
         """
         Call a tool on an MCP server
 
@@ -82,7 +77,7 @@ class MCPServerRegistry:
         logger.debug(f"Calling {server_id}.{tool_name}")
 
         # Call the tool on the server
-        if hasattr(server, 'call_tool'):
+        if hasattr(server, "call_tool"):
             return await server.call_tool(tool_name, parameters)
         elif hasattr(server, tool_name):
             method = getattr(server, tool_name)

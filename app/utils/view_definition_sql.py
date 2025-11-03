@@ -20,10 +20,10 @@ def view_definition_to_sql(view_def: Dict[str, Any], search_params: Dict[str, An
     Returns:
         SQL-like string representation
     """
-    resource_type = view_def.get('resource', 'Unknown')
-    view_name = view_def.get('name', 'unnamed_view')
-    select_elements = view_def.get('select', [])
-    where_clauses = view_def.get('where', [])
+    resource_type = view_def.get("resource", "Unknown")
+    view_name = view_def.get("name", "unnamed_view")
+    select_elements = view_def.get("select", [])
+    where_clauses = view_def.get("where", [])
 
     # Build SELECT clause
     columns = _extract_columns(select_elements)
@@ -37,8 +37,8 @@ def view_definition_to_sql(view_def: Dict[str, Any], search_params: Dict[str, An
 
     # Add ViewDefinition where clauses
     for where in where_clauses:
-        path = where.get('path', '')
-        desc = where.get('description', '')
+        path = where.get("path", "")
+        desc = where.get("description", "")
         if desc:
             where_conditions.append(f"{path}  -- {desc}")
         else:
@@ -55,9 +55,9 @@ def view_definition_to_sql(view_def: Dict[str, Any], search_params: Dict[str, An
 
     # Build comment header
     header = f"-- ViewDefinition: {view_name}\n"
-    if view_def.get('title'):
+    if view_def.get("title"):
         header += f"-- {view_def['title']}\n"
-    if view_def.get('description'):
+    if view_def.get("description"):
         header += f"-- {view_def['description']}\n"
     header += "\n"
 
@@ -85,16 +85,16 @@ def _extract_columns(select_elements: List[Dict[str, Any]], prefix: str = "") ->
 
     for select_elem in select_elements:
         # Handle forEach
-        if 'forEach' in select_elem or 'forEachOrNull' in select_elem:
-            for_each_path = select_elem.get('forEach') or select_elem.get('forEachOrNull')
-            for_each_type = 'forEach' if 'forEach' in select_elem else 'forEachOrNull'
+        if "forEach" in select_elem or "forEachOrNull" in select_elem:
+            for_each_path = select_elem.get("forEach") or select_elem.get("forEachOrNull")
+            for_each_type = "forEach" if "forEach" in select_elem else "forEachOrNull"
 
             # Add columns with forEach context
-            elem_columns = select_elem.get('column', [])
+            elem_columns = select_elem.get("column", [])
             for col in elem_columns:
-                name = col.get('name', 'unnamed')
-                path = col.get('path', '')
-                desc = col.get('description', '')
+                name = col.get("name", "unnamed")
+                path = col.get("path", "")
+                desc = col.get("description", "")
 
                 comment = f" -- {for_each_type}({for_each_path}) -> {path}"
                 if desc:
@@ -103,12 +103,12 @@ def _extract_columns(select_elements: List[Dict[str, Any]], prefix: str = "") ->
                 columns.append(f"{prefix}{name}{comment}")
 
         # Handle regular columns
-        elif 'column' in select_elem:
-            elem_columns = select_elem['column']
+        elif "column" in select_elem:
+            elem_columns = select_elem["column"]
             for col in elem_columns:
-                name = col.get('name', 'unnamed')
-                path = col.get('path', '')
-                desc = col.get('description', '')
+                name = col.get("name", "unnamed")
+                path = col.get("path", "")
+                desc = col.get("description", "")
 
                 comment = f" -- {path}"
                 if desc:
@@ -117,13 +117,13 @@ def _extract_columns(select_elements: List[Dict[str, Any]], prefix: str = "") ->
                 columns.append(f"{prefix}{name}{comment}")
 
         # Handle nested select
-        if 'select' in select_elem:
-            nested_columns = _extract_columns(select_elem['select'], prefix + "  ")
+        if "select" in select_elem:
+            nested_columns = _extract_columns(select_elem["select"], prefix + "  ")
             columns.extend(nested_columns)
 
         # Handle unionAll
-        if 'unionAll' in select_elem:
-            for union_select in select_elem['unionAll']:
+        if "unionAll" in select_elem:
+            for union_select in select_elem["unionAll"]:
                 union_columns = _extract_columns([union_select], prefix)
                 columns.extend(union_columns)
 
@@ -133,7 +133,7 @@ def _extract_columns(select_elements: List[Dict[str, Any]], prefix: str = "") ->
 def generate_sql_for_view_names(
     view_names: List[str],
     view_definitions: Dict[str, Dict[str, Any]],
-    search_params: Dict[str, Any] = None
+    search_params: Dict[str, Any] = None,
 ) -> Dict[str, str]:
     """
     Generate SQL-like representations for multiple ViewDefinitions

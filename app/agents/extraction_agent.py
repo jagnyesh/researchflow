@@ -46,56 +46,45 @@ class DataExtractionAgent(BaseAgent):
         Returns:
             Dict with extraction results and next routing
         """
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        phenotype_sql = context.get('phenotype_sql')
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        phenotype_sql = context.get("phenotype_sql")
 
         logger.info(f"[{self.agent_id}] Starting extraction for {request_id}")
 
         # Step 1: Execute phenotype query to get patient cohort
         cohort = await self._execute_phenotype_query(phenotype_sql)
 
-        logger.info(
-            f"[{self.agent_id}] Cohort identified: {len(cohort)} patients"
-        )
+        logger.info(f"[{self.agent_id}] Cohort identified: {len(cohort)} patients")
 
         # Step 2: Extract requested data elements
         extraction_results = {}
-        data_elements = requirements.get('data_elements', [])
+        data_elements = requirements.get("data_elements", [])
 
         for data_element in data_elements:
             logger.debug(f"[{self.agent_id}] Extracting {data_element}")
             try:
                 element_data = await self._extract_data_element(
                     data_element=data_element,
-                    patient_ids=[p['patient_id'] for p in cohort],
-                    time_period=requirements.get('time_period', {})
+                    patient_ids=[p["patient_id"] for p in cohort],
+                    time_period=requirements.get("time_period", {}),
                 )
                 extraction_results[data_element] = element_data
                 logger.info(
-                    f"[{self.agent_id}] Extracted {len(element_data)} "
-                    f"{data_element} records"
+                    f"[{self.agent_id}] Extracted {len(element_data)} " f"{data_element} records"
                 )
             except Exception as e:
-                logger.error(
-                    f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}"
-                )
+                logger.error(f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}")
                 extraction_results[data_element] = []
 
         # Step 3: Apply de-identification if needed
-        phi_level = requirements.get('phi_level', 'de-identified')
-        if phi_level != 'identified':
-            extraction_results = await self._deidentify_data(
-                extraction_results,
-                phi_level
-            )
+        phi_level = requirements.get("phi_level", "de-identified")
+        if phi_level != "identified":
+            extraction_results = await self._deidentify_data(extraction_results, phi_level)
 
         # Step 4: Format data according to preferences
-        delivery_format = requirements.get('delivery_format', 'CSV')
-        formatted_data = await self._format_data(
-            extraction_results,
-            delivery_format
-        )
+        delivery_format = requirements.get("delivery_format", "CSV")
+        formatted_data = await self._format_data(extraction_results, delivery_format)
 
         # Step 5: Package data with metadata
         data_package = {
@@ -108,8 +97,8 @@ class DataExtractionAgent(BaseAgent):
                 "cohort_size": len(cohort),
                 "data_elements_extracted": list(extraction_results.keys()),
                 "phi_level": phi_level,
-                "delivery_format": delivery_format
-            }
+                "delivery_format": delivery_format,
+            },
         }
 
         logger.info(
@@ -122,9 +111,7 @@ class DataExtractionAgent(BaseAgent):
             "data_package": data_package,
             "next_agent": "qa_agent",
             "next_task": "validate_extracted_data",
-            "additional_context": {
-                "data_package": data_package
-            }
+            "additional_context": {"data_package": data_package},
         }
 
     async def _execute_phenotype_query(self, phenotype_sql: str) -> list:
@@ -142,10 +129,7 @@ class DataExtractionAgent(BaseAgent):
             return []
 
     async def _extract_data_element(
-        self,
-        data_element: str,
-        patient_ids: list,
-        time_period: Dict
+        self, data_element: str, patient_ids: list, time_period: Dict
     ) -> list:
         """
         Extract specific data element for patient cohort
@@ -206,7 +190,7 @@ class DataExtractionAgent(BaseAgent):
             """
 
         # Add time period filter if specified
-        if time_period.get('start') and time_period.get('end'):
+        if time_period.get("start") and time_period.get("end"):
             # Note: This is simplified - in production would handle different date fields
             sql += f" AND date BETWEEN '{time_period['start']}' AND '{time_period['end']}'"
 
@@ -217,11 +201,7 @@ class DataExtractionAgent(BaseAgent):
             logger.warning(f"[{self.agent_id}] Extraction query failed: {str(e)}")
             return []
 
-    async def _deidentify_data(
-        self,
-        data: Dict,
-        phi_level: str
-    ) -> Dict:
+    async def _deidentify_data(self, data: Dict, phi_level: str) -> Dict:
         """
         Apply de-identification transformations
 
@@ -235,32 +215,28 @@ class DataExtractionAgent(BaseAgent):
         logger.info(f"[{self.agent_id}] Applying {phi_level} de-identification")
 
         # Simplified de-identification: remove/mask sensitive fields
-        if phi_level == 'de-identified':
+        if phi_level == "de-identified":
             # Remove all PHI
             for element_name, records in data.items():
                 for record in records:
                     # Remove direct identifiers
-                    record.pop('patient_name', None)
-                    record.pop('mrn', None)
-                    record.pop('ssn', None)
+                    record.pop("patient_name", None)
+                    record.pop("mrn", None)
+                    record.pop("ssn", None)
                     # Mask patient_id
-                    if 'patient_id' in record:
-                        record['patient_id'] = f"DEIDENTIFIED_{hash(record['patient_id']) % 100000}"
+                    if "patient_id" in record:
+                        record["patient_id"] = f"DEIDENTIFIED_{hash(record['patient_id']) % 100000}"
 
-        elif phi_level == 'limited_dataset':
+        elif phi_level == "limited_dataset":
             # Remove some PHI, keep dates
             for element_name, records in data.items():
                 for record in records:
-                    record.pop('patient_name', None)
-                    record.pop('ssn', None)
+                    record.pop("patient_name", None)
+                    record.pop("ssn", None)
 
         return data
 
-    async def _format_data(
-        self,
-        data: Dict,
-        format_type: str
-    ) -> Dict:
+    async def _format_data(self, data: Dict, format_type: str) -> Dict:
         """
         Format data according to delivery preference
 
@@ -274,37 +250,32 @@ class DataExtractionAgent(BaseAgent):
         # TODO: Implement formatters for different types
         # For now, return as-is with format metadata
 
-        formatted = {
-            "format": format_type,
-            "data": data,
-            "files": []
-        }
+        formatted = {"format": format_type, "data": data, "files": []}
 
         if format_type == "CSV":
             # In production: Convert to CSV files
             for element_name, records in data.items():
-                formatted["files"].append({
-                    "filename": f"{element_name}.csv",
-                    "record_count": len(records)
-                })
+                formatted["files"].append(
+                    {"filename": f"{element_name}.csv", "record_count": len(records)}
+                )
 
         elif format_type == "FHIR":
             # In production: Convert to FHIR Bundle
-            formatted["files"].append({
-                "filename": "fhir_bundle.json",
-                "resource_type": "Bundle"
-            })
+            formatted["files"].append({"filename": "fhir_bundle.json", "resource_type": "Bundle"})
 
         elif format_type == "REDCap":
             # In production: Format for REDCap import
-            formatted["files"].append({
-                "filename": "redcap_import.csv",
-                "record_count": sum(len(records) for records in data.values())
-            })
+            formatted["files"].append(
+                {
+                    "filename": "redcap_import.csv",
+                    "record_count": sum(len(records) for records in data.values()),
+                }
+            )
 
         return formatted
 
     def _get_timestamp(self) -> str:
         """Get current timestamp as ISO string"""
         from datetime import datetime
+
         return datetime.now().isoformat()

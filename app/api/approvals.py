@@ -22,14 +22,18 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 class ApprovalResponse(BaseModel):
     """Approval decision request"""
+
     decision: str = Field(..., description="approve, reject, or modify")
     reviewer: str = Field(..., description="User ID or email of reviewer")
     notes: Optional[str] = Field(None, description="Review notes")
-    modifications: Optional[Dict[str, Any]] = Field(None, description="Modifications (for modify decision)")
+    modifications: Optional[Dict[str, Any]] = Field(
+        None, description="Modifications (for modify decision)"
+    )
 
 
 class ScopeChangeRequest(BaseModel):
     """Request to change scope mid-workflow"""
+
     request_id: str = Field(..., description="Research request ID")
     requested_by: str = Field(..., description="Email of requester")
     requested_changes: Dict[str, Any] = Field(..., description="Requested changes to requirements")
@@ -48,8 +52,7 @@ def set_orchestrator(orch: ResearchRequestOrchestrator):
 
 @router.get("/pending")
 async def get_pending_approvals(
-    approval_type: Optional[str] = None,
-    user_role: Optional[str] = None
+    approval_type: Optional[str] = None, user_role: Optional[str] = None
 ):
     """
     Get all pending approvals
@@ -66,8 +69,7 @@ async def get_pending_approvals(
             approval_service = ApprovalService(session)
 
             approvals = await approval_service.get_pending_approvals(
-                user_role=user_role,
-                approval_type=approval_type
+                user_role=user_role, approval_type=approval_type
             )
 
             return {
@@ -79,11 +81,13 @@ async def get_pending_approvals(
                         "approval_type": approval.approval_type,
                         "submitted_at": approval.submitted_at.isoformat(),
                         "submitted_by": approval.submitted_by,
-                        "timeout_at": approval.timeout_at.isoformat() if approval.timeout_at else None,
-                        "approval_data": approval.approval_data
+                        "timeout_at": (
+                            approval.timeout_at.isoformat() if approval.timeout_at else None
+                        ),
+                        "approval_data": approval.approval_data,
                     }
                     for approval in approvals
-                ]
+                ],
             }
 
     except Exception as e:
@@ -124,7 +128,7 @@ async def get_approval(approval_id: int):
                 "modifications": approval.modifications,
                 "timeout_at": approval.timeout_at.isoformat() if approval.timeout_at else None,
                 "timed_out": approval.timed_out,
-                "escalated": approval.escalated
+                "escalated": approval.escalated,
             }
 
     except HTTPException:
@@ -154,7 +158,7 @@ async def respond_to_approval(approval_id: int, response: ApprovalResponse):
                 reviewer=response.reviewer,
                 decision=response.decision,
                 notes=response.notes,
-                modifications=response.modifications
+                modifications=response.modifications,
             )
         else:
             # Without orchestrator, just update the approval status
@@ -164,23 +168,15 @@ async def respond_to_approval(approval_id: int, response: ApprovalResponse):
 
                 if response.decision == "approve":
                     await approval_service.approve(
-                        approval_id,
-                        response.reviewer,
-                        response.notes,
-                        response.modifications
+                        approval_id, response.reviewer, response.notes, response.modifications
                     )
                 elif response.decision == "reject":
                     await approval_service.reject(
-                        approval_id,
-                        response.reviewer,
-                        response.notes or "Rejected"
+                        approval_id, response.reviewer, response.notes or "Rejected"
                     )
                 elif response.decision == "modify":
                     await approval_service.modify(
-                        approval_id,
-                        response.reviewer,
-                        response.modifications,
-                        response.notes
+                        approval_id, response.reviewer, response.modifications, response.notes
                     )
                 else:
                     raise ValueError(f"Invalid decision: {response.decision}")
@@ -194,7 +190,7 @@ async def respond_to_approval(approval_id: int, response: ApprovalResponse):
             "success": True,
             "message": f"Approval {approval_id} {response.decision}d by {response.reviewer}",
             "approval_id": approval_id,
-            "decision": response.decision
+            "decision": response.decision,
         }
 
     except ValueError as e:
@@ -229,12 +225,14 @@ async def get_approvals_for_request(request_id: str):
                         "approval_type": approval.approval_type,
                         "status": approval.status,
                         "submitted_at": approval.submitted_at.isoformat(),
-                        "reviewed_at": approval.reviewed_at.isoformat() if approval.reviewed_at else None,
+                        "reviewed_at": (
+                            approval.reviewed_at.isoformat() if approval.reviewed_at else None
+                        ),
                         "reviewed_by": approval.reviewed_by,
-                        "review_notes": approval.review_notes
+                        "review_notes": approval.review_notes,
                     }
                     for approval in approvals
-                ]
+                ],
             }
 
     except Exception as e:
@@ -268,32 +266,30 @@ async def request_scope_change(request: ScopeChangeRequest):
 
         # Check if request is in a state that allows scope changes
         terminal_states = ["complete", "failed", "delivered"]
-        if request_status['current_state'] in terminal_states:
+        if request_status["current_state"] in terminal_states:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot change scope for request in state: {request_status['current_state']}"
+                detail=f"Cannot change scope for request in state: {request_status['current_state']}",
             )
 
-        logger.info(
-            f"Scope change requested for {request.request_id} by {request.requested_by}"
-        )
+        logger.info(f"Scope change requested for {request.request_id} by {request.requested_by}")
 
         # Route to coordinator agent for scope change handling
-        coordinator = orchestrator.agents.get('coordinator_agent')
+        coordinator = orchestrator.agents.get("coordinator_agent")
         if not coordinator:
             raise HTTPException(status_code=500, detail="Coordinator agent not available")
 
         # Execute scope change analysis
         result = await coordinator.handle_task(
-            task='handle_scope_change',
+            task="handle_scope_change",
             context={
-                'request_id': request.request_id,
-                'current_state': request_status['current_state'],
-                'requested_changes': request.requested_changes,
-                'requested_by': request.requested_by,
-                'reason': request.reason,
-                'original_requirements': {}  # TODO: Get from database
-            }
+                "request_id": request.request_id,
+                "current_state": request_status["current_state"],
+                "requested_changes": request.requested_changes,
+                "requested_by": request.requested_by,
+                "reason": request.reason,
+                "original_requirements": {},  # TODO: Get from database
+            },
         )
 
         # Create approval for scope change
@@ -307,22 +303,22 @@ async def request_scope_change(request: ScopeChangeRequest):
                 approval_data={
                     "requested_changes": request.requested_changes,
                     "reason": request.reason,
-                    "impact_analysis": result.get('impact_analysis', {}),
-                    "current_state": request_status['current_state']
-                }
+                    "impact_analysis": result.get("impact_analysis", {}),
+                    "current_state": request_status["current_state"],
+                },
             )
 
             # Send notification to stakeholders
             await coordinator.handle_task(
-                task='send_scope_change_notification',
+                task="send_scope_change_notification",
                 context={
-                    'request_id': request.request_id,
-                    'approval_id': approval.id,
-                    'requested_by': request.requested_by,
-                    'current_state': request_status['current_state'],
-                    'requested_changes': request.requested_changes,
-                    'impact_analysis': result.get('impact_analysis', {})
-                }
+                    "request_id": request.request_id,
+                    "approval_id": approval.id,
+                    "requested_by": request.requested_by,
+                    "current_state": request_status["current_state"],
+                    "requested_changes": request.requested_changes,
+                    "impact_analysis": result.get("impact_analysis", {}),
+                },
             )
 
             return {
@@ -330,7 +326,7 @@ async def request_scope_change(request: ScopeChangeRequest):
                 "message": "Scope change request submitted for approval",
                 "approval_id": approval.id,
                 "request_id": request.request_id,
-                "impact_analysis": result.get('impact_analysis', {})
+                "impact_analysis": result.get("impact_analysis", {}),
             }
 
     except HTTPException:
@@ -364,10 +360,10 @@ async def check_approval_timeouts():
                         "request_id": approval.request_id,
                         "approval_type": approval.approval_type,
                         "timeout_at": approval.timeout_at.isoformat(),
-                        "escalation_id": approval.escalation_id
+                        "escalation_id": approval.escalation_id,
                     }
                     for approval in timed_out
-                ]
+                ],
             }
 
     except Exception as e:

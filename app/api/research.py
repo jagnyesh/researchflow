@@ -31,17 +31,23 @@ def set_orchestrator(orch):
 
 class ResearchRequestSubmission(BaseModel):
     """Research request submission model"""
+
     researcher_name: str = Field(..., description="Name of the researcher")
     researcher_email: str = Field(..., description="Email of the researcher")
     researcher_department: Optional[str] = Field(None, description="Department")
     irb_number: str = Field(..., description="IRB approval number")
     initial_request: str = Field(..., description="Natural language research request")
-    structured_requirements: Optional[Dict[str, Any]] = Field(None, description="Pre-structured requirements (optional)")
+    structured_requirements: Optional[Dict[str, Any]] = Field(
+        None, description="Pre-structured requirements (optional)"
+    )
 
 
 class RequestProcessingTrigger(BaseModel):
     """Trigger for processing a specific request"""
-    structured_requirements: Optional[Dict[str, Any]] = Field(None, description="Pre-structured requirements")
+
+    structured_requirements: Optional[Dict[str, Any]] = Field(
+        None, description="Pre-structured requirements"
+    )
     skip_conversation: bool = Field(False, description="Skip conversational requirements gathering")
 
 
@@ -74,9 +80,9 @@ async def submit_research_request(submission: ResearchRequestSubmission):
                     {
                         "state": WorkflowState.NEW_REQUEST.value,
                         "timestamp": datetime.now().isoformat(),
-                        "notes": "Request submitted"
+                        "notes": "Request submitted",
                     }
-                ]
+                ],
             )
 
             session.add(research_request)
@@ -99,7 +105,7 @@ async def submit_research_request(submission: ResearchRequestSubmission):
             "request_id": request_id,
             "message": "Research request submitted successfully",
             "status": WorkflowState.NEW_REQUEST.value,
-            "next_step": f"Use POST /research/process/{request_id} to begin processing"
+            "next_step": f"Use POST /research/process/{request_id} to begin processing",
         }
 
     except Exception as e:
@@ -109,8 +115,7 @@ async def submit_research_request(submission: ResearchRequestSubmission):
 
 @router.post("/process/{request_id}")
 async def process_research_request(
-    request_id: str,
-    trigger: Optional[RequestProcessingTrigger] = None
+    request_id: str, trigger: Optional[RequestProcessingTrigger] = None
 ):
     """
     Trigger processing of a research request.
@@ -123,8 +128,7 @@ async def process_research_request(
     """
     if not orchestrator:
         raise HTTPException(
-            status_code=500,
-            detail="Orchestrator not initialized. Please restart the API server."
+            status_code=500, detail="Orchestrator not initialized. Please restart the API server."
         )
 
     try:
@@ -144,21 +148,23 @@ async def process_research_request(
         context = {
             "request_id": request_id,
             "initial_request": request.initial_request,
-            "researcher_email": request.researcher_email
+            "researcher_email": request.researcher_email,
         }
 
         # Add structured requirements if provided
         if trigger and trigger.structured_requirements:
             context["structured_requirements"] = trigger.structured_requirements
             context["skip_conversation"] = trigger.skip_conversation
-            logger.info(f"Processing with pre-structured requirements (skip_conversation={trigger.skip_conversation})")
+            logger.info(
+                f"Processing with pre-structured requirements (skip_conversation={trigger.skip_conversation})"
+            )
 
         # Start the orchestrator workflow using route_task
         result = await orchestrator.route_task(
             agent_id="requirements_agent",
             task="gather_requirements",
             context=context,
-            from_agent="research_api"
+            from_agent="research_api",
         )
 
         return {
@@ -167,7 +173,7 @@ async def process_research_request(
             "message": "Processing started - agent execution triggered",
             "agent": "requirements_agent",
             "task": "gather_requirements",
-            "result": result
+            "result": result,
         }
 
     except HTTPException:
@@ -202,7 +208,7 @@ async def get_request_status(request_id: str):
                 "created_at": request.created_at.isoformat() if request.created_at else None,
                 "updated_at": request.updated_at.isoformat() if request.updated_at else None,
                 "agents_involved": request.agents_involved,
-                "state_history": request.state_history
+                "state_history": request.state_history,
             }
 
     except HTTPException:
@@ -232,10 +238,10 @@ async def list_active_requests():
                         "researcher_name": req.researcher_name,
                         "current_state": req.current_state,
                         "current_agent": req.current_agent,
-                        "created_at": req.created_at.isoformat() if req.created_at else None
+                        "created_at": req.created_at.isoformat() if req.created_at else None,
                     }
                     for req in requests
-                ]
+                ],
             }
 
     except Exception as e:

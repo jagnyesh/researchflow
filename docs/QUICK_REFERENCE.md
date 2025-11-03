@@ -180,7 +180,7 @@ Result:
  ↓
 
  6 Agents ← Specialized AI workers
- (autonomous) 
+ (autonomous)
 
  ↓
 
@@ -189,7 +189,7 @@ Result:
  ↓
 
  Database + ← Data storage & retrieval
- Data Warehouse 
+ Data Warehouse
 
 ```
 
@@ -257,4 +257,4 @@ Result:
 - Diagrams: `architecture.puml`, `sequence_flow.puml`, `components.puml`
 - Code: `app/agents/`, `app/orchestrator/`
 
-Happy researching! 
+Happy researching!

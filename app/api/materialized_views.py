@@ -29,8 +29,10 @@ router = APIRouter(prefix="/analytics/materialized-views", tags=["materialized-v
 
 # Pydantic models for request/response
 
+
 class ViewRefreshResponse(BaseModel):
     """Response from view refresh operation"""
+
     view_name: str
     success: bool
     refresh_duration_ms: Optional[float] = None
@@ -40,6 +42,7 @@ class ViewRefreshResponse(BaseModel):
 
 class ViewStatusResponse(BaseModel):
     """Status information for a materialized view"""
+
     view_name: str
     exists: bool
     status: str
@@ -54,12 +57,14 @@ class ViewStatusResponse(BaseModel):
 
 class ViewListResponse(BaseModel):
     """List of materialized views"""
+
     views: List[Dict[str, Any]]
     total_count: int
 
 
 class RefreshAllResponse(BaseModel):
     """Response from refresh all operation"""
+
     total_views: int
     success: int
     failed: int
@@ -68,6 +73,7 @@ class RefreshAllResponse(BaseModel):
 
 # Helper function to get service instance
 
+
 async def get_service() -> MaterializedViewService:
     """
     Create MaterializedViewService instance
@@ -75,11 +81,12 @@ async def get_service() -> MaterializedViewService:
     Returns:
         MaterializedViewService
     """
-    database_url = os.getenv('DATABASE_URL', 'sqlite+aiosqlite:///./dev.db')
+    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
     return await MaterializedViewService.create(database_url)
 
 
 # API Endpoints
+
 
 @router.get("/", response_model=ViewListResponse)
 async def list_materialized_views():
@@ -99,10 +106,7 @@ async def list_materialized_views():
 
             logger.info(f"Listed {len(views)} materialized views")
 
-            return ViewListResponse(
-                views=views,
-                total_count=len(views)
-            )
+            return ViewListResponse(views=views, total_count=len(views))
 
         finally:
             await service.close()
@@ -131,10 +135,9 @@ async def get_view_status(view_name: str):
         try:
             status = await service.get_view_status(view_name)
 
-            if not status.get('exists'):
+            if not status.get("exists"):
                 raise HTTPException(
-                    status_code=404,
-                    detail=f"Materialized view '{view_name}' not found"
+                    status_code=404, detail=f"Materialized view '{view_name}' not found"
                 )
 
             return ViewStatusResponse(**status)
@@ -204,10 +207,10 @@ async def refresh_all_views(background_tasks: BackgroundTasks):
             result = await service.refresh_all_views()
 
             return RefreshAllResponse(
-                total_views=result['total_views'],
-                success=result['success'],
-                failed=result['failed'],
-                results=[ViewRefreshResponse(**r) for r in result['results']]
+                total_views=result["total_views"],
+                success=result["success"],
+                failed=result["failed"],
+                results=[ViewRefreshResponse(**r) for r in result["results"]],
             )
 
         finally:
@@ -240,11 +243,11 @@ async def refresh_stale_views():
             result = await service.check_and_refresh_stale_views()
 
             return {
-                "total_checked": result['total_checked'],
-                "stale_views_found": result['stale_views'],
-                "refreshed": result['refreshed'],
-                "failed": result.get('failed', 0),
-                "results": result['results']
+                "total_checked": result["total_checked"],
+                "stale_views_found": result["stale_views"],
+                "refreshed": result["refreshed"],
+                "failed": result.get("failed", 0),
+                "results": result["results"],
             }
 
         finally:
@@ -275,14 +278,11 @@ async def create_all_views():
         logger.info("Creating all materialized views via API")
 
         # Get HAPI DB URL from environment
-        hapi_db_url = os.getenv('HAPI_DB_URL', 'postgresql://hapi:hapi@localhost:5433/hapi')
+        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
 
         # Run the script
         script_path = os.path.join(
-            os.path.dirname(__file__),
-            "..", "..",
-            "scripts",
-            "create_materialized_views.py"
+            os.path.dirname(__file__), "..", "..", "scripts", "create_materialized_views.py"
         )
 
         process = await asyncio.create_subprocess_exec(
@@ -290,7 +290,7 @@ async def create_all_views():
             script_path,
             env={**os.environ, "HAPI_DB_URL": hapi_db_url},
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
 
         stdout, stderr = await process.communicate()
@@ -300,15 +300,12 @@ async def create_all_views():
             return {
                 "success": True,
                 "message": "All materialized views created successfully",
-                "output": stdout.decode() if stdout else ""
+                "output": stdout.decode() if stdout else "",
             }
         else:
             error_msg = stderr.decode() if stderr else "Script execution failed"
             logger.error(f"Failed to create views: {error_msg}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to create views: {error_msg}"
-            )
+            raise HTTPException(status_code=500, detail=f"Failed to create views: {error_msg}")
 
     except Exception as e:
         logger.error(f"Error creating views: {e}")
@@ -352,10 +349,7 @@ async def drop_view(view_name: str):
 
             logger.info(f"✓ Dropped view '{view_name}'")
 
-            return {
-                "success": True,
-                "message": f"View '{view_name}' dropped successfully"
-            }
+            return {"success": True, "message": f"View '{view_name}' dropped successfully"}
 
         finally:
             await service.close()
@@ -381,7 +375,7 @@ async def health_check():
         try:
             views = await service.list_views()
 
-            stale_count = sum(1 for v in views if v.get('is_stale', False))
+            stale_count = sum(1 for v in views if v.get("is_stale", False))
             healthy_count = len(views) - stale_count
 
             return {
@@ -389,7 +383,7 @@ async def health_check():
                 "total_views": len(views),
                 "healthy_views": healthy_count,
                 "stale_views": stale_count,
-                "schema": "sqlonfhir"
+                "schema": "sqlonfhir",
             }
 
         finally:
@@ -397,7 +391,4 @@ async def health_check():
 
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}

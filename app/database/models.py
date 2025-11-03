@@ -14,6 +14,7 @@ Base = declarative_base()
 
 class ResearchRequest(Base):
     """Main research data request tracking"""
+
     __tablename__ = "research_requests"
 
     id = Column(String, primary_key=True)  # REQ-YYYYMMDD-XXXXXXXX
@@ -49,6 +50,7 @@ class ResearchRequest(Base):
 
 class RequirementsData(Base):
     """Structured requirements extracted from researcher"""
+
     __tablename__ = "requirements_data"
 
     id = Column(Integer, primary_key=True)
@@ -89,6 +91,7 @@ class RequirementsData(Base):
 
 class FeasibilityReport(Base):
     """Phenotype validation and feasibility analysis results"""
+
     __tablename__ = "feasibility_reports"
 
     id = Column(Integer, primary_key=True)
@@ -124,6 +127,7 @@ class FeasibilityReport(Base):
 
 class AgentExecution(Base):
     """Individual agent task execution log"""
+
     __tablename__ = "agent_executions"
 
     id = Column(Integer, primary_key=True)
@@ -154,6 +158,7 @@ class AgentExecution(Base):
 
 class Escalation(Base):
     """Human review escalations - both reactive (errors) and proactive (timeouts, complexity)"""
+
     __tablename__ = "escalations"
 
     id = Column(Integer, primary_key=True)
@@ -168,14 +173,18 @@ class Escalation(Base):
     task = Column(JSON)
 
     # NEW: Proactive escalation fields
-    escalation_reason = Column(String, nullable=True)  # timeout, low_feasibility, complexity, approval_pending, error
+    escalation_reason = Column(
+        String, nullable=True
+    )  # timeout, low_feasibility, complexity, approval_pending, error
     severity = Column(String, default="medium")  # low, medium, high, critical
     recommended_action = Column(Text, nullable=True)  # AI-suggested next steps
     auto_resolved = Column(Boolean, default=False)
     resolution_agent = Column(String, nullable=True)  # Which agent resolved it
 
     # Review
-    status = Column(String, default="pending_review")  # pending_review, approved, rejected, modified, auto_resolved
+    status = Column(
+        String, default="pending_review"
+    )  # pending_review, approved, rejected, modified, auto_resolved
     reviewed_by = Column(String, nullable=True)
     review_notes = Column(Text, nullable=True)
     resolution = Column(JSON, nullable=True)
@@ -186,6 +195,7 @@ class Escalation(Base):
 
 class Approval(Base):
     """Human approval tracking for critical decision points"""
+
     __tablename__ = "approvals"
 
     id = Column(Integer, primary_key=True)
@@ -193,7 +203,9 @@ class Approval(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     # Approval type
-    approval_type = Column(String, nullable=False)  # requirements, phenotype_sql, extraction, qa, scope_change
+    approval_type = Column(
+        String, nullable=False
+    )  # requirements, phenotype_sql, extraction, qa, scope_change
 
     # Request details
     submitted_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -201,7 +213,9 @@ class Approval(Base):
     approval_data = Column(JSON, nullable=False)  # What needs approval (SQL, requirements, etc.)
 
     # Review status
-    status = Column(String, default="pending", nullable=False)  # pending, approved, rejected, modified, timeout
+    status = Column(
+        String, default="pending", nullable=False
+    )  # pending, approved, rejected, modified, timeout
     reviewed_at = Column(DateTime, nullable=True)
     reviewed_by = Column(String, nullable=True)  # user_id or email of reviewer
     review_notes = Column(Text, nullable=True)
@@ -221,6 +235,7 @@ class Approval(Base):
 
 class DataDelivery(Base):
     """Data delivery tracking"""
+
     __tablename__ = "data_deliveries"
 
     id = Column(Integer, primary_key=True)
@@ -251,6 +266,7 @@ class DataDelivery(Base):
 
 class AuditLog(Base):
     """Audit log for compliance and debugging - append-only event tracking"""
+
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)
@@ -260,7 +276,9 @@ class AuditLog(Base):
     request_id = Column(String, ForeignKey("research_requests.id"), index=True)
 
     # Event details
-    event_type = Column(String, nullable=False, index=True)  # state_changed, agent_started, error_occurred, etc.
+    event_type = Column(
+        String, nullable=False, index=True
+    )  # state_changed, agent_started, error_occurred, etc.
     agent_id = Column(String, nullable=True)
 
     # Event data (flexible JSON for different event types)
@@ -275,11 +293,16 @@ class AuditLog(Base):
 
 class MaterializedViewMetadata(Base):
     """Metadata for materialized views in sqlonfhir schema"""
+
     __tablename__ = "materialized_view_metadata"
 
     id = Column(Integer, primary_key=True)
-    view_name = Column(String, unique=True, nullable=False, index=True)  # Name of the materialized view
-    created_at = Column(DateTime, default=datetime.now, nullable=False)  # When view was first created
+    view_name = Column(
+        String, unique=True, nullable=False, index=True
+    )  # Name of the materialized view
+    created_at = Column(
+        DateTime, default=datetime.now, nullable=False
+    )  # When view was first created
     last_refreshed_at = Column(DateTime, nullable=True)  # When view was last refreshed
     next_refresh_at = Column(DateTime, nullable=True)  # Scheduled next refresh time
 
@@ -317,7 +340,7 @@ class MaterializedViewMetadata(Base):
     @property
     def is_healthy(self) -> bool:
         """Check if view is in healthy state"""
-        return self.status == 'active' and not self.is_stale
+        return self.status == "active" and not self.is_stale
 
     @property
     def needs_refresh(self) -> bool:

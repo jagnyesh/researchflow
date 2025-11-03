@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryIntent:
     """Parsed query intent"""
+
     query_type: str  # "count", "list", "filter", "aggregate"
     resources: List[str]  # ["Patient", "Condition", "Observation"]
     filters: Dict[str, Any]  # Extracted filters
@@ -50,43 +51,116 @@ class QueryInterpreter:
         "patient_demographics": {
             "resource": "Patient",
             "description": "Core patient demographics (gender, birth date, name, contact)",
-            "columns": ["id", "gender", "birth_date", "family_name", "given_name", "full_name",
-                       "phone", "email", "address", "city", "state", "postal_code"]
+            "columns": [
+                "id",
+                "gender",
+                "birth_date",
+                "family_name",
+                "given_name",
+                "full_name",
+                "phone",
+                "email",
+                "address",
+                "city",
+                "state",
+                "postal_code",
+            ],
         },
         "observation_labs": {
             "resource": "Observation",
             "description": "Laboratory test results with LOINC codes, values, units",
-            "columns": ["patient_id", "code", "code_display", "value_quantity", "value_unit",
-                       "effective_datetime", "interpretation", "ref_range_low", "ref_range_high"]
+            "columns": [
+                "patient_id",
+                "code",
+                "code_display",
+                "value_quantity",
+                "value_unit",
+                "effective_datetime",
+                "interpretation",
+                "ref_range_low",
+                "ref_range_high",
+            ],
         },
         "condition_simple": {
             "resource": "Condition",
             "description": "Patient conditions with ICD-10 and SNOMED codes (materialized view with dual columns)",
-            "columns": ["id", "patient_ref", "patient_id", "icd10_code", "icd10_display",
-                       "snomed_code", "snomed_display", "code_text", "clinical_status"]
+            "columns": [
+                "id",
+                "patient_ref",
+                "patient_id",
+                "icd10_code",
+                "icd10_display",
+                "snomed_code",
+                "snomed_display",
+                "code_text",
+                "clinical_status",
+            ],
         },
         "medication_requests": {
             "resource": "MedicationRequest",
             "description": "Medication orders and prescriptions with RxNorm codes",
-            "columns": ["patient_id", "status", "medication_code", "medication_display",
-                       "dosage_text", "authored_on"]
+            "columns": [
+                "patient_id",
+                "status",
+                "medication_code",
+                "medication_display",
+                "dosage_text",
+                "authored_on",
+            ],
         },
         "procedure_history": {
             "resource": "Procedure",
             "description": "Patient procedures with CPT and SNOMED codes",
-            "columns": ["patient_id", "status", "cpt_code", "cpt_display", "snomed_code",
-                       "snomed_display", "performed_datetime"]
-        }
+            "columns": [
+                "patient_id",
+                "status",
+                "cpt_code",
+                "cpt_display",
+                "snomed_code",
+                "snomed_display",
+                "performed_datetime",
+            ],
+        },
     }
 
     # Common medical condition mappings
     CONDITION_MAPPINGS = {
-        "type 2 diabetes": {"snomed": "44054006", "icd10": "E11.9", "icd10_pattern": "E11%", "name": "Type 2 diabetes mellitus"},
-        "diabetes": {"snomed": "73211009", "icd10": "E11.9", "icd10_pattern": "E1%", "name": "Diabetes mellitus (all types)"},
-        "hypertension": {"snomed": "38341003", "icd10": "I10", "icd10_pattern": "I10%", "name": "Hypertension"},
-        "high blood pressure": {"snomed": "38341003", "icd10": "I10", "icd10_pattern": "I10%", "name": "Hypertension"},
-        "hyperlipidemia": {"snomed": "13645005", "icd10": "E78.5", "icd10_pattern": "E78%", "name": "Hyperlipidemia"},
-        "asthma": {"snomed": "195967001", "icd10": "J45.909", "icd10_pattern": "J45%", "name": "Asthma"},
+        "type 2 diabetes": {
+            "snomed": "44054006",
+            "icd10": "E11.9",
+            "icd10_pattern": "E11%",
+            "name": "Type 2 diabetes mellitus",
+        },
+        "diabetes": {
+            "snomed": "73211009",
+            "icd10": "E11.9",
+            "icd10_pattern": "E1%",
+            "name": "Diabetes mellitus (all types)",
+        },
+        "hypertension": {
+            "snomed": "38341003",
+            "icd10": "I10",
+            "icd10_pattern": "I10%",
+            "name": "Hypertension",
+        },
+        "high blood pressure": {
+            "snomed": "38341003",
+            "icd10": "I10",
+            "icd10_pattern": "I10%",
+            "name": "Hypertension",
+        },
+        "hyperlipidemia": {
+            "snomed": "13645005",
+            "icd10": "E78.5",
+            "icd10_pattern": "E78%",
+            "name": "Hyperlipidemia",
+        },
+        "asthma": {
+            "snomed": "195967001",
+            "icd10": "J45.909",
+            "icd10_pattern": "J45%",
+            "name": "Asthma",
+        },
     }
 
     def __init__(self):
@@ -127,7 +201,7 @@ class QueryInterpreter:
                     "explanation": "Human-readable explanation of what the query will do"
                 }
                 """,
-                system=system_prompt
+                system=system_prompt,
             )
 
             # Response is already a Dict from extract_structured_json()
@@ -146,10 +220,12 @@ class QueryInterpreter:
 
     def _build_system_prompt(self) -> str:
         """Build system prompt for Claude"""
-        view_defs_desc = "\n".join([
-            f"- {name}: {info['description']}"
-            for name, info in self.AVAILABLE_VIEW_DEFINITIONS.items()
-        ])
+        view_defs_desc = "\n".join(
+            [
+                f"- {name}: {info['description']}"
+                for name, info in self.AVAILABLE_VIEW_DEFINITIONS.items()
+            ]
+        )
 
         return f"""You are a clinical research data query interpreter. Your job is to translate natural language queries about patient data into structured SQL-on-FHIR ViewDefinition executions.
 
@@ -251,11 +327,13 @@ Focus on:
                 # Check if we have a valid SNOMED or ICD-10 code
                 if snomed_code or icd10_code:
                     # Standard code lookup (preferred)
-                    post_filters.append({
-                        "field": "snomed_code" if snomed_code else "icd10_code",
-                        "value": snomed_code or icd10_code,
-                        "condition_name": condition_name
-                    })
+                    post_filters.append(
+                        {
+                            "field": "snomed_code" if snomed_code else "icd10_code",
+                            "value": snomed_code or icd10_code,
+                            "condition_name": condition_name,
+                        }
+                    )
                 else:
                     # FALLBACK: Use text search for unmapped conditions
                     # This handles cases where condition is not in CONDITION_MAPPINGS
@@ -263,13 +341,15 @@ Focus on:
                         f"Condition '{condition_name}' not mapped to SNOMED/ICD-10 codes. "
                         f"Using text search fallback. Consider adding to CONDITION_MAPPINGS for accuracy."
                     )
-                    post_filters.append({
-                        "field": "code_text",
-                        "value": None,  # Special flag indicating text search
-                        "condition_name": condition_name,
-                        "use_text_search": True,
-                        "text_pattern": f"%{condition_name}%"
-                    })
+                    post_filters.append(
+                        {
+                            "field": "code_text",
+                            "value": None,  # Special flag indicating text search
+                            "condition_name": condition_name,
+                            "use_text_search": True,
+                            "text_pattern": f"%{condition_name}%",
+                        }
+                    )
 
         # Aggregations
         aggregations = []
@@ -285,17 +365,18 @@ Focus on:
         # DEFENSIVE FALLBACK: If LLM failed to detect breakdown pattern, use regex
         if not group_by:
             import re
+
             query_lower = original_query.lower()
 
             # Regex patterns for breakdown detection
             # Pattern captures: "breakdown by X", "broken down by X and Y", "split by X", etc.
             breakdown_patterns = [
-                r'break\s*down\s+by\s+([a-z_,\s]+)',
-                r'broken\s+down\s+by\s+([a-z_,\s]+)',
-                r'breakdown\s+by\s+([a-z_,\s]+)',
-                r'split\s+by\s+([a-z_,\s]+)',
-                r'grouped?\s+by\s+([a-z_,\s]+)',
-                r'group\s+by\s+([a-z_,\s]+)',
+                r"break\s*down\s+by\s+([a-z_,\s]+)",
+                r"broken\s+down\s+by\s+([a-z_,\s]+)",
+                r"breakdown\s+by\s+([a-z_,\s]+)",
+                r"split\s+by\s+([a-z_,\s]+)",
+                r"grouped?\s+by\s+([a-z_,\s]+)",
+                r"group\s+by\s+([a-z_,\s]+)",
             ]
 
             for pattern in breakdown_patterns:
@@ -305,7 +386,7 @@ Focus on:
                     dimension_str = match.group(1).strip()
 
                     # Parse multiple dimensions (split by "and" or ",")
-                    dimensions = re.split(r'\s+and\s+|,\s*', dimension_str)
+                    dimensions = re.split(r"\s+and\s+|,\s*", dimension_str)
 
                     # Map common terms to standard dimension names
                     dimension_mapping = {
@@ -313,7 +394,7 @@ Focus on:
                         "sex": "gender",
                         "age": "age_group",
                         "age group": "age_group",
-                        "age groups": "age_group"
+                        "age groups": "age_group",
                     }
 
                     group_by = []
@@ -330,7 +411,9 @@ Focus on:
 
         # Log breakdown detection
         if group_by:
-            logger.info(f"Detected breakdown query: group_by={group_by}, aggregation_type={aggregation_type}")
+            logger.info(
+                f"Detected breakdown query: group_by={group_by}, aggregation_type={aggregation_type}"
+            )
 
         return QueryIntent(
             query_type=query_data.get("query_type", "list"),
@@ -342,7 +425,7 @@ Focus on:
             aggregations=aggregations,
             explanation=query_data.get("explanation", f"Execute query: {original_query}"),
             group_by=group_by,
-            aggregation_type=aggregation_type
+            aggregation_type=aggregation_type,
         )
 
     def _fallback_interpretation(self, query: str) -> QueryIntent:
@@ -369,6 +452,7 @@ Focus on:
 
         # Age filter
         import re
+
         age_match = re.search(r"under\s+(?:age\s+)?(\d+)", query_lower)
         if age_match:
             age = int(age_match.group(1))
@@ -382,12 +466,14 @@ Focus on:
             for cond_name, codes in self.CONDITION_MAPPINGS.items():
                 if cond_name in query_lower:
                     # Use ICD-10 pattern for better matching
-                    post_filters.append({
-                        "field": "icd10_code",
-                        "value": codes.get("icd10_pattern", codes["icd10"]),
-                        "condition_name": codes["name"],
-                        "use_like": True  # Use LIKE matching for patterns
-                    })
+                    post_filters.append(
+                        {
+                            "field": "icd10_code",
+                            "value": codes.get("icd10_pattern", codes["icd10"]),
+                            "condition_name": codes["name"],
+                            "use_like": True,  # Use LIKE matching for patterns
+                        }
+                    )
 
         # BREAKDOWN DETECTION - Regex fallback
         group_by = []
@@ -395,12 +481,12 @@ Focus on:
 
         # Regex patterns for breakdown detection
         breakdown_patterns = [
-            r'break\s*down\s+by\s+([a-z_,\s]+)',
-            r'broken\s+down\s+by\s+([a-z_,\s]+)',
-            r'breakdown\s+by\s+([a-z_,\s]+)',
-            r'split\s+by\s+([a-z_,\s]+)',
-            r'grouped?\s+by\s+([a-z_,\s]+)',
-            r'group\s+by\s+([a-z_,\s]+)',
+            r"break\s*down\s+by\s+([a-z_,\s]+)",
+            r"broken\s+down\s+by\s+([a-z_,\s]+)",
+            r"breakdown\s+by\s+([a-z_,\s]+)",
+            r"split\s+by\s+([a-z_,\s]+)",
+            r"grouped?\s+by\s+([a-z_,\s]+)",
+            r"group\s+by\s+([a-z_,\s]+)",
         ]
 
         for pattern in breakdown_patterns:
@@ -410,7 +496,7 @@ Focus on:
                 dimension_str = match.group(1).strip()
 
                 # Parse multiple dimensions (split by "and" or ",")
-                dimensions = re.split(r'\s+and\s+|,\s*', dimension_str)
+                dimensions = re.split(r"\s+and\s+|,\s*", dimension_str)
 
                 # Map common terms to standard dimension names
                 dimension_mapping = {
@@ -418,7 +504,7 @@ Focus on:
                     "sex": "gender",
                     "age": "age_group",
                     "age group": "age_group",
-                    "age groups": "age_group"
+                    "age groups": "age_group",
                 }
 
                 for dim in dimensions:
@@ -442,5 +528,5 @@ Focus on:
             aggregations=["count"] if query_type == "count" else [],
             explanation=f"Simple interpretation of: {query}",
             group_by=group_by,
-            aggregation_type=aggregation_type
+            aggregation_type=aggregation_type,
         )

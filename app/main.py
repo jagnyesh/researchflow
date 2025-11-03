@@ -24,7 +24,7 @@ from .agents import (
     CalendarAgent,
     DataExtractionAgent,
     QualityAssuranceAgent,
-    DeliveryAgent
+    DeliveryAgent,
 )
 from .agents.coordinator_agent import CoordinatorAgent
 
@@ -100,7 +100,7 @@ app = FastAPI(
     title="ResearchFlow - Clinical Research Data Automation",
     description="AI-Powered Multi-Agent System for Clinical Research Data Requests",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 app.include_router(health_router)
@@ -123,5 +123,5 @@ async def root():
         "status": "operational",
         "orchestrator_initialized": orchestrator is not None,
         "documentation": "/docs",
-        "health": "/health"
+        "health": "/health",
     }

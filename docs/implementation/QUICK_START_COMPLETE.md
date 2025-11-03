@@ -344,4 +344,4 @@ You've successfully implemented and tested SQL-on-FHIR v2!
 **Code quality**: Production-ready with error handling, retry logic, validation
 **Standards compliance**: Full SQL-on-FHIR v2 ViewDefinition spec
 
-Enjoy exploring FHIR data with SQL-on-FHIR v2! 
+Enjoy exploring FHIR data with SQL-on-FHIR v2!

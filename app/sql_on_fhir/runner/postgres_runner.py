@@ -23,10 +23,7 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 
 from app.clients.hapi_db_client import HAPIDBClient
-from app.sql_on_fhir.transpiler import (
-    create_fhirpath_transpiler,
-    create_column_extractor
-)
+from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column_extractor
 from app.sql_on_fhir.query_builder import create_sql_query_builder
 
 logger = logging.getLogger(__name__)
@@ -43,10 +40,7 @@ class PostgresRunner:
     """
 
     def __init__(
-        self,
-        db_client: HAPIDBClient,
-        enable_cache: bool = True,
-        cache_ttl_seconds: int = 300
+        self, db_client: HAPIDBClient, enable_cache: bool = True, cache_ttl_seconds: int = 300
     ):
         """
         Initialize PostgreSQL runner
@@ -88,7 +82,7 @@ class PostgresRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute a ViewDefinition and return tabular results
@@ -108,8 +102,8 @@ class PostgresRunner:
                 max_resources=1000
             )
         """
-        resource_type = view_definition.get('resource')
-        view_name = view_definition.get('name')
+        resource_type = view_definition.get("resource")
+        view_name = view_definition.get("name")
 
         # Step 0: Check cache
         if self.enable_cache:
@@ -135,12 +129,12 @@ class PostgresRunner:
         # Step 1: Build SQL query
         try:
             query = self.builder.build_query(
-                view_definition,
-                search_params=search_params,
-                limit=max_resources
+                view_definition, search_params=search_params, limit=max_resources
             )
 
-            logger.debug(f"Built SQL query: {len(query.sql)} characters, {query.column_count} columns")
+            logger.debug(
+                f"Built SQL query: {len(query.sql)} characters, {query.column_count} columns"
+            )
             logger.debug(f"Generated SQL:\n{query.sql}")
 
         except Exception as e:
@@ -177,9 +171,7 @@ class PostgresRunner:
         return rows
 
     async def execute_count(
-        self,
-        view_definition: Dict[str, Any],
-        search_params: Optional[Dict[str, Any]] = None
+        self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Execute COUNT query for feasibility checks
@@ -191,7 +183,7 @@ class PostgresRunner:
         Returns:
             Count of matching resources
         """
-        view_name = view_definition.get('name')
+        view_name = view_definition.get("name")
 
         logger.info(f"Executing COUNT query for '{view_name}'")
 
@@ -207,11 +199,13 @@ class PostgresRunner:
 
         try:
             rows = await self.db_client.execute_query(count_sql)
-            count = rows[0]['count']
+            count = rows[0]["count"]
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
 
-            logger.info(f"✓ COUNT query for '{view_name}': {count} resources in {execution_time:.1f}ms")
+            logger.info(
+                f"✓ COUNT query for '{view_name}': {count} resources in {execution_time:.1f}ms"
+            )
 
             return count
 
@@ -231,18 +225,14 @@ class PostgresRunner:
         """
         schema = {}
 
-        select_elements = view_definition.get('select', [])
+        select_elements = view_definition.get("select", [])
 
         for select_elem in select_elements:
             self._extract_schema_from_select(select_elem, schema)
 
         return schema
 
-    def _extract_schema_from_select(
-        self,
-        select_elem: Dict[str, Any],
-        schema: Dict[str, str]
-    ):
+    def _extract_schema_from_select(self, select_elem: Dict[str, Any], schema: Dict[str, str]):
         """
         Recursively extract schema from select element
 
@@ -250,27 +240,27 @@ class PostgresRunner:
             select_elem: Select element
             schema: Schema dict to populate
         """
-        if 'column' in select_elem:
-            for column in select_elem['column']:
-                name = column.get('name')
-                col_type = column.get('type', 'string')  # Default to string
+        if "column" in select_elem:
+            for column in select_elem["column"]:
+                name = column.get("name")
+                col_type = column.get("type", "string")  # Default to string
 
                 if name:
                     schema[name] = col_type
 
         # Handle nested selects
-        if 'select' in select_elem:
-            for nested in select_elem['select']:
+        if "select" in select_elem:
+            for nested in select_elem["select"]:
                 self._extract_schema_from_select(nested, schema)
 
         # Handle forEach/forEachOrNull
-        if 'forEach' in select_elem or 'forEachOrNull' in select_elem:
+        if "forEach" in select_elem or "forEachOrNull" in select_elem:
             # Schema is same, just extracted from forEach context
             pass
 
         # Handle unionAll
-        if 'unionAll' in select_elem:
-            for union_select in select_elem['unionAll']:
+        if "unionAll" in select_elem:
+            for union_select in select_elem["unionAll"]:
                 self._extract_schema_from_select(union_select, schema)
 
     # ========================================================================
@@ -281,7 +271,7 @@ class PostgresRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]],
-        max_resources: Optional[int]
+        max_resources: Optional[int],
     ) -> str:
         """
         Generate cache key from query parameters
@@ -295,15 +285,15 @@ class PostgresRunner:
             Cache key (MD5 hash)
         """
         key_components = {
-            'runner': 'postgres',  # Distinguish from in-memory cache
-            'view_name': view_definition.get('name'),
-            'resource_type': view_definition.get('resource'),
-            'search_params': search_params or {},
-            'max_resources': max_resources,
-            'where_clauses': view_definition.get('where', []),
-            'select_hash': hashlib.md5(
-                json.dumps(view_definition.get('select', []), sort_keys=True).encode()
-            ).hexdigest()
+            "runner": "postgres",  # Distinguish from in-memory cache
+            "view_name": view_definition.get("name"),
+            "resource_type": view_definition.get("resource"),
+            "search_params": search_params or {},
+            "max_resources": max_resources,
+            "where_clauses": view_definition.get("where", []),
+            "select_hash": hashlib.md5(
+                json.dumps(view_definition.get("select", []), sort_keys=True).encode()
+            ).hexdigest(),
         }
 
         key_string = json.dumps(key_components, sort_keys=True)
@@ -366,14 +356,14 @@ class PostgresRunner:
         hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
 
         return {
-            'runner_type': 'postgres',
-            'enabled': self.enable_cache,
-            'ttl_seconds': self.cache_ttl_seconds,
-            'cache_size': len(self._cache),
-            'cache_hits': self._cache_hits,
-            'cache_misses': self._cache_misses,
-            'total_requests': total_requests,
-            'hit_rate_percent': round(hit_rate, 2)
+            "runner_type": "postgres",
+            "enabled": self.enable_cache,
+            "ttl_seconds": self.cache_ttl_seconds,
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "total_requests": total_requests,
+            "hit_rate_percent": round(hit_rate, 2),
         }
 
     def get_execution_stats(self) -> Dict[str, Any]:
@@ -384,15 +374,14 @@ class PostgresRunner:
             Dict with execution metrics
         """
         avg_time = (
-            self._total_execution_time_ms / self._total_queries
-            if self._total_queries > 0 else 0
+            self._total_execution_time_ms / self._total_queries if self._total_queries > 0 else 0
         )
 
         return {
-            'runner_type': 'postgres',
-            'total_queries': self._total_queries,
-            'total_execution_time_ms': round(self._total_execution_time_ms, 2),
-            'average_execution_time_ms': round(avg_time, 2)
+            "runner_type": "postgres",
+            "total_queries": self._total_queries,
+            "total_execution_time_ms": round(self._total_execution_time_ms, 2),
+            "average_execution_time_ms": round(avg_time, 2),
         }
 
     def get_last_executed_sql(self) -> Optional[str]:
@@ -406,9 +395,7 @@ class PostgresRunner:
 
 
 async def create_postgres_runner(
-    db_client: HAPIDBClient,
-    enable_cache: bool = True,
-    cache_ttl_seconds: int = 300
+    db_client: HAPIDBClient, enable_cache: bool = True, cache_ttl_seconds: int = 300
 ) -> PostgresRunner:
     """
     Factory function to create PostgreSQL runner

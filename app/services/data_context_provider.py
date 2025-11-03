@@ -38,9 +38,9 @@ class DataContextProvider:
                     "Gender",
                     "Contact (phone, email)",
                     "Address (street, city, state, postal code, country)",
-                    "Active/deceased status"
+                    "Active/deceased status",
                 ],
-                "resource_type": "Patient"
+                "resource_type": "Patient",
             },
             "condition_diagnoses": {
                 "title": "Patient Conditions and Diagnoses",
@@ -56,7 +56,7 @@ class DataContextProvider:
                     "Resolution date",
                     "Severity (mild, moderate, severe)",
                     "Recording date",
-                    "Associated encounter"
+                    "Associated encounter",
                 ],
                 "resource_type": "Condition",
                 "common_examples": [
@@ -64,8 +64,8 @@ class DataContextProvider:
                     "Hypertension",
                     "Heart failure",
                     "COPD",
-                    "Cancer diagnoses"
-                ]
+                    "Cancer diagnoses",
+                ],
             },
             "medication_requests": {
                 "title": "Medication Requests",
@@ -79,7 +79,7 @@ class DataContextProvider:
                     "Prescription date",
                     "Status (active, completed, stopped)",
                     "Prescriber information",
-                    "Refills"
+                    "Refills",
                 ],
                 "resource_type": "MedicationRequest",
                 "common_examples": [
@@ -87,8 +87,8 @@ class DataContextProvider:
                     "Lisinopril (blood pressure)",
                     "Atorvastatin (cholesterol)",
                     "Insulin",
-                    "Antibiotics"
-                ]
+                    "Antibiotics",
+                ],
             },
             "observation_labs": {
                 "title": "Laboratory Results and Observations",
@@ -102,7 +102,7 @@ class DataContextProvider:
                     "Reference ranges",
                     "Test date",
                     "Status (final, preliminary)",
-                    "Interpretation (normal, abnormal)"
+                    "Interpretation (normal, abnormal)",
                 ],
                 "resource_type": "Observation",
                 "common_examples": [
@@ -111,8 +111,8 @@ class DataContextProvider:
                     "Cholesterol panels",
                     "Creatinine (kidney function)",
                     "Complete blood count (CBC)",
-                    "Glucose levels"
-                ]
+                    "Glucose levels",
+                ],
             },
             "procedure_history": {
                 "title": "Procedure History",
@@ -127,7 +127,7 @@ class DataContextProvider:
                     "Performer information",
                     "Associated encounter",
                     "Body site",
-                    "Outcome"
+                    "Outcome",
                 ],
                 "resource_type": "Procedure",
                 "common_examples": [
@@ -135,12 +135,14 @@ class DataContextProvider:
                     "Diagnostic procedures",
                     "Therapeutic procedures",
                     "Dialysis",
-                    "Imaging studies"
-                ]
-            }
+                    "Imaging studies",
+                ],
+            },
         }
 
-        logger.info(f"Initialized DataContextProvider with {len(self.available_view_definitions)} ViewDefinitions")
+        logger.info(
+            f"Initialized DataContextProvider with {len(self.available_view_definitions)} ViewDefinitions"
+        )
 
     def get_available_data_summary(self) -> str:
         """
@@ -149,10 +151,7 @@ class DataContextProvider:
         Returns:
             Formatted string describing available data types
         """
-        summary_parts = [
-            "I have access to the following types of patient data:",
-            ""
-        ]
+        summary_parts = ["I have access to the following types of patient data:", ""]
 
         for view_name, view_info in self.available_view_definitions.items():
             summary_parts.append(f"**{view_info['title']}** ({view_info['resource_type']})")
@@ -160,20 +159,22 @@ class DataContextProvider:
 
             # Add examples if available
             if "common_examples" in view_info:
-                examples = ", ".join(view_info['common_examples'][:3])
+                examples = ", ".join(view_info["common_examples"][:3])
                 summary_parts.append(f"- Examples: {examples}")
 
             summary_parts.append("")
 
-        summary_parts.extend([
-            "**Key Capabilities:**",
-            "- Query by medical conditions (ICD-10, SNOMED)",
-            "- Filter by medications (RxNorm)",
-            "- Analyze lab results (LOINC)",
-            "- Track procedures (CPT, SNOMED)",
-            "- Demographics and vital statistics",
-            ""
-        ])
+        summary_parts.extend(
+            [
+                "**Key Capabilities:**",
+                "- Query by medical conditions (ICD-10, SNOMED)",
+                "- Filter by medications (RxNorm)",
+                "- Analyze lab results (LOINC)",
+                "- Track procedures (CPT, SNOMED)",
+                "- Demographics and vital statistics",
+                "",
+            ]
+        )
 
         return "\n".join(summary_parts)
 
@@ -188,7 +189,7 @@ class DataContextProvider:
             "=== AVAILABLE DATA CONTEXT ===",
             "",
             "You have access to the following FHIR data resources:",
-            ""
+            "",
         ]
 
         for view_name, view_info in self.available_view_definitions.items():
@@ -197,37 +198,39 @@ class DataContextProvider:
             context_parts.append(f"Description: {view_info['description']}")
             context_parts.append("")
             context_parts.append("Data Elements:")
-            for element in view_info['data_elements']:
+            for element in view_info["data_elements"]:
                 context_parts.append(f"  - {element}")
 
             if "common_examples" in view_info:
                 context_parts.append("")
                 context_parts.append("Common Examples:")
-                for example in view_info['common_examples']:
+                for example in view_info["common_examples"]:
                     context_parts.append(f"  - {example}")
 
             context_parts.append("")
             context_parts.append("---")
             context_parts.append("")
 
-        context_parts.extend([
-            "## Coding Standards Supported:",
-            "- ICD-10-CM: Diagnosis codes",
-            "- SNOMED CT: Clinical terms",
-            "- LOINC: Laboratory observations",
-            "- RxNorm: Medications",
-            "- CPT: Procedures",
-            "",
-            "## Query Capabilities:",
-            "- Filter by demographics (age, gender, etc.)",
-            "- Filter by conditions (with date ranges)",
-            "- Filter by medications (active, historical)",
-            "- Filter by lab results (with value ranges)",
-            "- Filter by procedures (with dates)",
-            "- Calculate cohort sizes (feasibility)",
-            "- Extract full data sets (with appropriate approvals)",
-            ""
-        ])
+        context_parts.extend(
+            [
+                "## Coding Standards Supported:",
+                "- ICD-10-CM: Diagnosis codes",
+                "- SNOMED CT: Clinical terms",
+                "- LOINC: Laboratory observations",
+                "- RxNorm: Medications",
+                "- CPT: Procedures",
+                "",
+                "## Query Capabilities:",
+                "- Filter by demographics (age, gender, etc.)",
+                "- Filter by conditions (with date ranges)",
+                "- Filter by medications (active, historical)",
+                "- Filter by lab results (with value ranges)",
+                "- Filter by procedures (with dates)",
+                "- Calculate cohort sizes (feasibility)",
+                "- Extract full data sets (with appropriate approvals)",
+                "",
+            ]
+        )
 
         return "\n".join(context_parts)
 
@@ -240,7 +243,7 @@ class DataContextProvider:
         """
         elements = []
         for view_info in self.available_view_definitions.values():
-            elements.extend(view_info['data_elements'])
+            elements.extend(view_info["data_elements"])
         return elements
 
     def get_resource_types(self) -> List[str]:
@@ -250,7 +253,9 @@ class DataContextProvider:
         Returns:
             List of resource type names
         """
-        return [view_info['resource_type'] for view_info in self.available_view_definitions.values()]
+        return [
+            view_info["resource_type"] for view_info in self.available_view_definitions.values()
+        ]
 
     def can_query_condition(self, condition_name: str) -> bool:
         """
@@ -303,7 +308,9 @@ class DataContextProvider:
             KeyError: If ViewDefinition not found
         """
         if view_name not in self.available_view_definitions:
-            raise KeyError(f"ViewDefinition '{view_name}' not found. Available: {list(self.available_view_definitions.keys())}")
+            raise KeyError(
+                f"ViewDefinition '{view_name}' not found. Available: {list(self.available_view_definitions.keys())}"
+            )
 
         return self.available_view_definitions[view_name]
 
@@ -320,7 +327,10 @@ class DataContextProvider:
         question_lower = question.lower()
 
         # Condition/diagnosis questions
-        if any(keyword in question_lower for keyword in ["condition", "diagnosis", "disease", "diabetes", "hypertension"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["condition", "diagnosis", "disease", "diabetes", "hypertension"]
+        ):
             return (
                 "Yes, I have access to patient conditions and diagnoses. "
                 "This includes ICD-10-CM and SNOMED CT coded diagnoses, clinical status, "
@@ -329,7 +339,10 @@ class DataContextProvider:
             )
 
         # Medication questions
-        if any(keyword in question_lower for keyword in ["medication", "drug", "prescription", "metformin"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["medication", "drug", "prescription", "metformin"]
+        ):
             return (
                 "Yes, I have access to patient medication data. "
                 "This includes medication requests/prescriptions, RxNorm codes, dosages, "
@@ -338,7 +351,10 @@ class DataContextProvider:
             )
 
         # Lab/observation questions
-        if any(keyword in question_lower for keyword in ["lab", "test", "observation", "hba1c", "glucose", "cholesterol"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["lab", "test", "observation", "hba1c", "glucose", "cholesterol"]
+        ):
             return (
                 "Yes, I have access to laboratory results and clinical observations. "
                 "This includes lab test results, vital signs, LOINC codes, values with units, "
@@ -347,7 +363,10 @@ class DataContextProvider:
             )
 
         # Procedure questions
-        if any(keyword in question_lower for keyword in ["procedure", "surgery", "operation", "dialysis"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["procedure", "surgery", "operation", "dialysis"]
+        ):
             return (
                 "Yes, I have access to patient procedure history. "
                 "This includes surgical and diagnostic procedures, CPT/SNOMED codes, "
@@ -356,7 +375,10 @@ class DataContextProvider:
             )
 
         # Demographics questions
-        if any(keyword in question_lower for keyword in ["demographic", "age", "gender", "address", "contact"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["demographic", "age", "gender", "address", "contact"]
+        ):
             return (
                 "Yes, I have access to patient demographics. "
                 "This includes name, birth date, gender, contact information (phone, email), "
@@ -364,7 +386,10 @@ class DataContextProvider:
             )
 
         # General "what data" questions
-        if any(keyword in question_lower for keyword in ["what data", "what kind", "what type", "available"]):
+        if any(
+            keyword in question_lower
+            for keyword in ["what data", "what kind", "what type", "available"]
+        ):
             return self.get_available_data_summary()
 
         # Default response

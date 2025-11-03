@@ -39,10 +39,7 @@ async def test_phenotype_filtering():
 
     agent.use_view_definitions = True
     agent.hapi_db_client = HAPIDBClient(connection_url=hapi_url)
-    agent.postgres_runner = PostgresRunner(
-        db_client=agent.hapi_db_client,
-        enable_cache=False
-    )
+    agent.postgres_runner = PostgresRunner(db_client=agent.hapi_db_client, enable_cache=False)
 
     # Wait for database connection
     if agent.hapi_db_client and not agent.hapi_db_client.pool:
@@ -67,18 +64,14 @@ async def test_phenotype_filtering():
                 {
                     "text": "female patients",
                     "concepts": [
-                        {
-                            "term": "female",
-                            "type": "demographic",
-                            "details": "female patients"
-                        }
-                    ]
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
                 }
             ],
             "exclusion_criteria": [],
             "data_elements": [],
             "time_period": {},
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         count2 = await agent._estimate_cohort_size(count_sql="", requirements=requirements2)
@@ -93,28 +86,20 @@ async def test_phenotype_filtering():
                 {
                     "text": "female patients",
                     "concepts": [
-                        {
-                            "term": "female",
-                            "type": "demographic",
-                            "details": "female patients"
-                        }
-                    ]
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
                 },
                 {
                     "text": "age between 20 and 30",
                     "concepts": [
-                        {
-                            "term": "age",
-                            "type": "demographic",
-                            "details": "between 20 and 30"
-                        }
-                    ]
-                }
+                        {"term": "age", "type": "demographic", "details": "between 20 and 30"}
+                    ],
+                },
             ],
             "exclusion_criteria": [],
             "data_elements": [],
             "time_period": {},
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         count3 = await agent._estimate_cohort_size(count_sql="", requirements=requirements3)

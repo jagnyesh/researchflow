@@ -44,58 +44,46 @@ class QualityAssuranceAgent(BaseAgent):
         Returns:
             Dict with QA results and next routing
         """
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        data_package = context.get('data_package')
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        data_package = context.get("data_package")
 
         logger.info(f"[{self.agent_id}] Running QA checks for {request_id}")
 
-        qa_report = {
-            "overall_status": "pending",
-            "checks": [],
-            "issues": [],
-            "recommendations": []
-        }
+        qa_report = {"overall_status": "pending", "checks": [], "issues": [], "recommendations": []}
 
         # Check 1: Completeness
-        completeness_check = await self._check_completeness(
-            data_package,
-            requirements
-        )
-        qa_report['checks'].append(completeness_check)
+        completeness_check = await self._check_completeness(data_package, requirements)
+        qa_report["checks"].append(completeness_check)
 
         # Check 2: Data quality metrics
         quality_check = await self._check_data_quality(data_package)
-        qa_report['checks'].append(quality_check)
+        qa_report["checks"].append(quality_check)
 
         # Check 3: PHI scrubbing validation (if de-identified)
-        if requirements.get('phi_level') != 'identified':
+        if requirements.get("phi_level") != "identified":
             phi_check = await self._validate_deidentification(
-                data_package,
-                requirements.get('phi_level')
+                data_package, requirements.get("phi_level")
             )
-            qa_report['checks'].append(phi_check)
+            qa_report["checks"].append(phi_check)
 
         # Check 4: Cohort validation
-        cohort_check = await self._validate_cohort_characteristics(
-            data_package,
-            requirements
-        )
-        qa_report['checks'].append(cohort_check)
+        cohort_check = await self._validate_cohort_characteristics(data_package, requirements)
+        qa_report["checks"].append(cohort_check)
 
         # Determine overall status
         critical_failures = [
-            c for c in qa_report['checks']
-            if c.get('severity') == 'critical' and not c.get('passed')
+            c
+            for c in qa_report["checks"]
+            if c.get("severity") == "critical" and not c.get("passed")
         ]
 
         if critical_failures:
-            qa_report['overall_status'] = 'failed'
-            qa_report['issues'] = critical_failures
+            qa_report["overall_status"] = "failed"
+            qa_report["issues"] = critical_failures
 
             logger.warning(
-                f"[{self.agent_id}] QA failed: {len(critical_failures)} "
-                f"critical issues"
+                f"[{self.agent_id}] QA failed: {len(critical_failures)} " f"critical issues"
             )
 
             # Escalate to human review
@@ -105,10 +93,10 @@ class QualityAssuranceAgent(BaseAgent):
                 "overall_status": "failed",
                 "qa_report": qa_report,
                 "next_agent": None,
-                "next_task": None
+                "next_task": None,
             }
         else:
-            qa_report['overall_status'] = 'passed'
+            qa_report["overall_status"] = "passed"
 
             logger.info(f"[{self.agent_id}] QA passed for {request_id}")
 
@@ -117,24 +105,18 @@ class QualityAssuranceAgent(BaseAgent):
                 "qa_report": qa_report,
                 "next_agent": "delivery_agent",
                 "next_task": "deliver_data",
-                "additional_context": {
-                    "qa_report": qa_report
-                }
+                "additional_context": {"qa_report": qa_report},
             }
 
-    async def _check_completeness(
-        self,
-        data_package: Dict,
-        requirements: Dict
-    ) -> Dict:
+    async def _check_completeness(self, data_package: Dict, requirements: Dict) -> Dict:
         """
         Check if all requested data elements were extracted
 
         Returns:
             Check result dict
         """
-        requested_elements = set(requirements.get('data_elements', []))
-        extracted_elements = set(data_package.get('data_elements', {}).keys())
+        requested_elements = set(requirements.get("data_elements", []))
+        extracted_elements = set(data_package.get("data_elements", {}).keys())
 
         missing_elements = requested_elements - extracted_elements
         passed = len(missing_elements) == 0
@@ -146,10 +128,13 @@ class QualityAssuranceAgent(BaseAgent):
             "details": {
                 "requested_count": len(requested_elements),
                 "extracted_count": len(extracted_elements),
-                "missing_elements": list(missing_elements)
+                "missing_elements": list(missing_elements),
             },
-            "message": "All requested data elements extracted" if passed
-                      else f"Missing {len(missing_elements)} data elements"
+            "message": (
+                "All requested data elements extracted"
+                if passed
+                else f"Missing {len(missing_elements)} data elements"
+            ),
         }
 
     async def _check_data_quality(self, data_package: Dict) -> Dict:
@@ -162,7 +147,7 @@ class QualityAssuranceAgent(BaseAgent):
         - Date inconsistencies
         """
         issues = []
-        data_elements = data_package.get('data_elements', {})
+        data_elements = data_package.get("data_elements", {})
 
         # Check missing data rates
         for element_name, records in data_elements.items():
@@ -172,42 +157,42 @@ class QualityAssuranceAgent(BaseAgent):
             missing_rate = self._calculate_missing_rate(records)
 
             if missing_rate > 0.3:  # 30% threshold
-                issues.append({
-                    "element": element_name,
-                    "issue": "high_missing_rate",
-                    "rate": missing_rate,
-                    "severity": "warning"
-                })
+                issues.append(
+                    {
+                        "element": element_name,
+                        "issue": "high_missing_rate",
+                        "rate": missing_rate,
+                        "severity": "warning",
+                    }
+                )
 
         # Check for duplicates
         duplicates = self._check_duplicates(data_package)
         if duplicates:
-            issues.append({
-                "issue": "duplicate_records",
-                "count": len(duplicates),
-                "severity": "critical",
-                "details": duplicates[:10]  # First 10 duplicates
-            })
+            issues.append(
+                {
+                    "issue": "duplicate_records",
+                    "count": len(duplicates),
+                    "severity": "critical",
+                    "details": duplicates[:10],  # First 10 duplicates
+                }
+            )
 
         # Check date consistency
         date_issues = self._validate_dates(data_package)
         issues.extend(date_issues)
 
-        passed = len([i for i in issues if i.get('severity') == 'critical']) == 0
+        passed = len([i for i in issues if i.get("severity") == "critical"]) == 0
 
         return {
             "check_name": "data_quality",
             "passed": passed,
             "severity": "critical" if not passed else "info",
             "issues": issues,
-            "message": f"Found {len(issues)} data quality issues"
+            "message": f"Found {len(issues)} data quality issues",
         }
 
-    async def _validate_deidentification(
-        self,
-        data_package: Dict,
-        phi_level: str
-    ) -> Dict:
+    async def _validate_deidentification(self, data_package: Dict, phi_level: str) -> Dict:
         """
         Validate that de-identification was properly applied
 
@@ -218,26 +203,28 @@ class QualityAssuranceAgent(BaseAgent):
         - Dates shifted (if de-identified)
         """
         issues = []
-        data_elements = data_package.get('data_elements', {})
+        data_elements = data_package.get("data_elements", {})
 
         # Fields that should not be present
         prohibited_fields = []
-        if phi_level == 'de-identified':
-            prohibited_fields = ['patient_name', 'ssn', 'mrn', 'address', 'phone']
-        elif phi_level == 'limited_dataset':
-            prohibited_fields = ['patient_name', 'ssn', 'address']
+        if phi_level == "de-identified":
+            prohibited_fields = ["patient_name", "ssn", "mrn", "address", "phone"]
+        elif phi_level == "limited_dataset":
+            prohibited_fields = ["patient_name", "ssn", "address"]
 
         # Check for prohibited fields
         for element_name, records in data_elements.items():
             for record in records[:100]:  # Sample first 100
                 for field in prohibited_fields:
                     if field in record and record[field]:
-                        issues.append({
-                            "issue": "phi_not_removed",
-                            "field": field,
-                            "element": element_name,
-                            "severity": "critical"
-                        })
+                        issues.append(
+                            {
+                                "issue": "phi_not_removed",
+                                "field": field,
+                                "element": element_name,
+                                "severity": "critical",
+                            }
+                        )
                         break
 
         passed = len(issues) == 0
@@ -247,14 +234,13 @@ class QualityAssuranceAgent(BaseAgent):
             "passed": passed,
             "severity": "critical" if not passed else "info",
             "issues": issues,
-            "message": "De-identification verified" if passed
-                      else f"Found {len(issues)} PHI issues"
+            "message": (
+                "De-identification verified" if passed else f"Found {len(issues)} PHI issues"
+            ),
         }
 
     async def _validate_cohort_characteristics(
-        self,
-        data_package: Dict,
-        requirements: Dict
+        self, data_package: Dict, requirements: Dict
     ) -> Dict:
         """
         Validate cohort matches expected characteristics
@@ -263,11 +249,11 @@ class QualityAssuranceAgent(BaseAgent):
         - Cohort size within expected range
         - Demographic distribution reasonable
         """
-        cohort = data_package.get('cohort', [])
+        cohort = data_package.get("cohort", [])
         cohort_size = len(cohort)
 
-        feasibility_report = requirements.get('feasibility_report', {})
-        estimated_size = feasibility_report.get('estimated_cohort_size', cohort_size)
+        feasibility_report = requirements.get("feasibility_report", {})
+        estimated_size = feasibility_report.get("estimated_cohort_size", cohort_size)
 
         # Allow ±20% variance from estimate
         min_expected = estimated_size * 0.8
@@ -282,10 +268,11 @@ class QualityAssuranceAgent(BaseAgent):
             "details": {
                 "actual_size": cohort_size,
                 "estimated_size": estimated_size,
-                "variance": abs(cohort_size - estimated_size) / estimated_size if estimated_size > 0 else 0
+                "variance": (
+                    abs(cohort_size - estimated_size) / estimated_size if estimated_size > 0 else 0
+                ),
             },
-            "message": f"Cohort size: {cohort_size} "
-                      f"(expected: {estimated_size})"
+            "message": f"Cohort size: {cohort_size} " f"(expected: {estimated_size})",
         }
 
     def _calculate_missing_rate(self, records: list) -> float:
@@ -299,7 +286,7 @@ class QualityAssuranceAgent(BaseAgent):
         for record in records:
             for key, value in record.items():
                 total_fields += 1
-                if value is None or value == '':
+                if value is None or value == "":
                     missing_fields += 1
 
         return missing_fields / total_fields if total_fields > 0 else 0.0
@@ -307,18 +294,15 @@ class QualityAssuranceAgent(BaseAgent):
     def _check_duplicates(self, data_package: Dict) -> list:
         """Check for duplicate records"""
         duplicates = []
-        data_elements = data_package.get('data_elements', {})
+        data_elements = data_package.get("data_elements", {})
 
         for element_name, records in data_elements.items():
             seen = set()
             for record in records:
                 # Create a simple fingerprint (in production use better method)
-                fingerprint = str(record.get('patient_id', '')) + str(record.get('date', ''))
+                fingerprint = str(record.get("patient_id", "")) + str(record.get("date", ""))
                 if fingerprint in seen:
-                    duplicates.append({
-                        "element": element_name,
-                        "fingerprint": fingerprint
-                    })
+                    duplicates.append({"element": element_name, "fingerprint": fingerprint})
                 seen.add(fingerprint)
 
         return duplicates
@@ -336,7 +320,5 @@ class QualityAssuranceAgent(BaseAgent):
 
     async def _escalate_qa_failure(self, request_id: str, qa_report: Dict):
         """Escalate QA failure to human review"""
-        logger.warning(
-            f"[{self.agent_id}] Escalating QA failure for {request_id}"
-        )
+        logger.warning(f"[{self.agent_id}] Escalating QA failure for {request_id}")
         # Will be handled by base agent's escalation mechanism

@@ -103,7 +103,7 @@ class ResearchRequestSaga:
                 requirements=event.requirements
             )
         )
-    
+
     async def on_feasibility_validated(self, event: FeasibilityValidated):
         if event.feasible:
             # Trigger parallel agents
@@ -154,10 +154,10 @@ class FHIRServingLayer:
             SELECT * FROM read_parquet('s3://fhir-lake/Patient/*.parquet')
             WHERE birthDate > '1980-01-01'
         """)
-        
+
         # Merge with speed layer (recent updates)
         recent_updates = self.speed_layer.get_recent('Patient', since=yesterday)
-        
+
         return merge_deduplicate(batch_results, recent_updates)
 Benefits:
 ✅ Massive performance improvement - Pre-computed views
@@ -188,16 +188,16 @@ class ResearchRequestWorkflow:
             request,
             start_to_close_timeout=timedelta(hours=24)
         )
-        
+
         # Step 2: Feasibility
         feasibility = await workflow.execute_activity(
             validate_feasibility,
             requirements
         )
-        
+
         if not feasibility.feasible:
             return "Not feasible"
-        
+
         # Step 3: Parallel execution
         extraction, kickoff = await asyncio.gather(
             workflow.execute_activity(extract_data, ...),

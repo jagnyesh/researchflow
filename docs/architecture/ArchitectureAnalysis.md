@@ -20,38 +20,38 @@ Issues:
 2. Recommended Architecture: Event-Sourced Lambda with FHIR Materialized Views
 Here's a better architecture:
 
- STREAM INGESTION LAYER 
- (Kappa/Lambda - Real-time + Batch FHIR ingestion) 
+ STREAM INGESTION LAYER
+ (Kappa/Lambda - Real-time + Batch FHIR ingestion)
 
- EVENT STORE (Immutable Log) 
- - All FHIR resource changes (create/update/delete) 
- - Agent state transitions 
- - Request lifecycle events 
- Tech: Kafka, EventStore, Postgres event table 
+ EVENT STORE (Immutable Log)
+ - All FHIR resource changes (create/update/delete)
+ - Agent state transitions
+ - Request lifecycle events
+ Tech: Kafka, EventStore, Postgres event table
 
- BATCH VIEW REAL-TIME VIEW 
- (Lambda Layer) (Speed Layer) 
+ BATCH VIEW REAL-TIME VIEW
+ (Lambda Layer) (Speed Layer)
 
- - SQL-on-FHIR v2 - In-memory cache 
- - Materialized - Recent updates 
- ViewDefinitions 
- - Optimized for - Optimized for 
- analytics latency 
+ - SQL-on-FHIR v2 - In-memory cache
+ - Materialized - Recent updates
+ ViewDefinitions
+ - Optimized for - Optimized for
+ analytics latency
 
- QUERY LAYER 
- (Serving Layer) 
+ QUERY LAYER
+ (Serving Layer)
 
- - Merge batch + 
- real-time views 
- - Agent queries 
- execute here 
+ - Merge batch +
+ real-time views
+ - Agent queries
+ execute here
 
- AGENT LAYER 
- (Reactive/Async) 
+ AGENT LAYER
+ (Reactive/Async)
 
- - Event-driven 
- - Parallel exec 
- - Saga pattern 
+ - Event-driven
+ - Parallel exec
+ - Saga pattern
 
 Alternative Architectural Patterns
 Option 1: Event-Sourced CQRS with Saga Orchestration RECOMMENDED

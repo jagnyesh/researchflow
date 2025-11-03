@@ -32,6 +32,7 @@ except ImportError:
 
 class AgentState(Enum):
     """Agent operational states (matches production BaseAgent)"""
+
     IDLE = "idle"
     WORKING = "working"
     FAILED = "failed"
@@ -65,10 +66,7 @@ class LangChainBaseAgentMixin:
         logger.info(f"[{self.agent_id}] LangChain agent initialized with production features")
 
     async def execute_with_production_features(
-        self,
-        task: str,
-        context: Dict[str, Any],
-        task_impl_func
+        self, task: str, context: Dict[str, Any], task_impl_func
     ) -> Dict[str, Any]:
         """
         Execute task with retry, persistence, and error handling.
@@ -86,7 +84,7 @@ class LangChainBaseAgentMixin:
             "task": task,
             "context": context,
             "started_at": datetime.now(),
-            "agent_id": self.agent_id
+            "agent_id": self.agent_id,
         }
 
         try:
@@ -141,7 +139,7 @@ class LangChainBaseAgentMixin:
 
         Matches production BaseAgent logic.
         """
-        retry_count = context.get('retry_count', 0)
+        retry_count = context.get("retry_count", 0)
 
         # Don't retry if max retries exceeded
         if retry_count >= self.max_retries:
@@ -153,35 +151,27 @@ class LangChainBaseAgentMixin:
             "TimeoutError",
             "TemporaryFailure",
             "ServiceUnavailable",
-            "RateLimitError"
+            "RateLimitError",
         ]
 
         return type(error).__name__ in transient_errors
 
-    async def retry_task(
-        self,
-        task: str,
-        context: Dict,
-        task_impl_func
-    ) -> Dict[str, Any]:
+    async def retry_task(self, task: str, context: Dict, task_impl_func) -> Dict[str, Any]:
         """
         Retry failed task with exponential backoff.
 
         Matches production BaseAgent logic: 2^retry_count seconds.
         """
-        retry_count = context.get('retry_count', 0)
+        retry_count = context.get("retry_count", 0)
 
         if retry_count >= self.max_retries:
             error_msg = f"Max retries ({self.max_retries}) exceeded"
             logger.error(f"[{self.agent_id}] {error_msg}")
-            await self.escalate_to_human(
-                error=error_msg,
-                context=context
-            )
+            await self.escalate_to_human(error=error_msg, context=context)
             raise Exception(error_msg)
 
         # Exponential backoff: 2^retry_count seconds
-        wait_time = 2 ** retry_count
+        wait_time = 2**retry_count
         logger.info(
             f"[{self.agent_id}] Retrying task after {wait_time}s "
             f"(attempt {retry_count + 1}/{self.max_retries})"
@@ -189,10 +179,8 @@ class LangChainBaseAgentMixin:
         await asyncio.sleep(wait_time)
 
         # Retry with incremented count
-        context['retry_count'] = retry_count + 1
-        return await self.execute_with_production_features(
-            task, context, task_impl_func
-        )
+        context["retry_count"] = retry_count + 1
+        return await self.execute_with_production_features(task, context, task_impl_func)
 
     async def escalate_to_human(self, error: Any, context: Dict):
         """
@@ -207,7 +195,7 @@ class LangChainBaseAgentMixin:
             "context": context,
             "task": self.current_task,
             "escalated_at": datetime.now().isoformat(),
-            "status": "pending_review"
+            "status": "pending_review",
         }
 
         logger.warning(f"[{self.agent_id}] Escalating to human review: {str(error)}")
@@ -235,7 +223,7 @@ class LangChainBaseAgentMixin:
                     started_at=task_data.get("started_at"),
                     completed_at=task_data.get("completed_at"),
                     error=task_data.get("error"),
-                    result=task_data.get("result")
+                    result=task_data.get("result"),
                 )
                 session.add(execution)
                 await session.commit()
@@ -262,7 +250,7 @@ class LangChainBaseAgentMixin:
                     context=escalation_data.get("context"),
                     task=escalation_data.get("task"),
                     status="pending_review",
-                    escalated_at=datetime.fromisoformat(escalation_data["escalated_at"])
+                    escalated_at=datetime.fromisoformat(escalation_data["escalated_at"]),
                 )
                 session.add(escalation)
                 await session.commit()

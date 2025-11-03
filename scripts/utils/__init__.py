@@ -4,12 +4,12 @@ from .fhir_reference_utils import (
     FHIRReferenceUtils,
     extract_patient_id_from_reference,
     sql_extract_id,
-    generate_dual_column_sql
+    generate_dual_column_sql,
 )
 
 __all__ = [
-    'FHIRReferenceUtils',
-    'extract_patient_id_from_reference',
-    'sql_extract_id',
-    'generate_dual_column_sql'
+    "FHIRReferenceUtils",
+    "extract_patient_id_from_reference",
+    "sql_extract_id",
+    "generate_dual_column_sql",
 ]

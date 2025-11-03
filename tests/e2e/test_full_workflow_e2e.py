@@ -26,13 +26,14 @@ from tests.e2e.utils import (
     wait_for_approval_gate,
     assert_workflow_complete,
     assert_agents_executed,
-    assert_sql_generated
+    assert_sql_generated,
 )
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture(scope="module")
 def api_client():
@@ -57,6 +58,7 @@ def test_request_data():
 # ============================================================================
 # Test: Happy Path - Complete Workflow
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.slow
@@ -93,7 +95,7 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
 
     response = api_client.create_request(
         researcher_info=test_request_data["researcher_info"],
-        initial_request=test_request_data["initial_request"]
+        initial_request=test_request_data["initial_request"],
     )
 
     request_id = response.get("request_id")
@@ -107,8 +109,7 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
     print("\n[2/11] Submitting structured requirements (bypass conversation)...")
 
     requirements_response = api_client.submit_requirements(
-        request_id=request_id,
-        structured_requirements=test_request_data["structured_requirements"]
+        request_id=request_id, structured_requirements=test_request_data["structured_requirements"]
     )
 
     assert requirements_response.get("success") == True, "Requirements submission failed"
@@ -214,7 +215,7 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
         "calendar_agent",
         "extraction_agent",
         "qa_agent",
-        "delivery_agent"
+        "delivery_agent",
     ]
     # Note: This will need actual agent execution tracking in database
     # assert_agents_executed(db_helper, request_id, expected_agents)
@@ -236,6 +237,7 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
 # ============================================================================
 # Test: State Persistence & Resumption
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.slow
@@ -265,7 +267,7 @@ async def test_workflow_resume_after_interruption(api_client, db_helper, test_re
 
     response = api_client.create_request(
         researcher_info=test_request_data["researcher_info"],
-        initial_request=test_request_data["initial_request"]
+        initial_request=test_request_data["initial_request"],
     )
 
     request_id = response.get("request_id")
@@ -274,8 +276,7 @@ async def test_workflow_resume_after_interruption(api_client, db_helper, test_re
 
     # Submit requirements
     requirements_response = api_client.submit_requirements(
-        request_id=request_id,
-        structured_requirements=test_request_data["structured_requirements"]
+        request_id=request_id, structured_requirements=test_request_data["structured_requirements"]
     )
 
     # Wait for requirements_review

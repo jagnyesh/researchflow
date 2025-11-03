@@ -7,7 +7,7 @@ plugins: asyncio-1.2.0, anyio-4.11.0, langsmith-0.4.38
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
 collecting ... collected 1 item
 
-tests/test_phase2_parallel.py::test_phase2_parallel_testing 
+tests/test_phase2_parallel.py::test_phase2_parallel_testing
 ================================================================================
 PHASE 2 PARALLEL TESTING - 50 SCENARIOS
 ================================================================================

@@ -32,11 +32,7 @@ class ApprovalService:
         self.workflow_engine = WorkflowEngine()
 
     async def create_approval(
-        self,
-        request_id: str,
-        approval_type: str,
-        submitted_by: str,
-        approval_data: Dict[str, Any]
+        self, request_id: str, approval_type: str, submitted_by: str, approval_data: Dict[str, Any]
     ) -> Approval:
         """
         Create a new approval request
@@ -61,7 +57,7 @@ class ApprovalService:
             approval_data=approval_data,
             submitted_at=datetime.now(),
             timeout_at=timeout_at,
-            status="pending"
+            status="pending",
         )
 
         self.db.add(approval)
@@ -76,9 +72,7 @@ class ApprovalService:
         return approval
 
     async def get_pending_approvals(
-        self,
-        user_role: Optional[str] = None,
-        approval_type: Optional[str] = None
+        self, user_role: Optional[str] = None, approval_type: Optional[str] = None
     ) -> List[Approval]:
         """
         Get pending approvals, optionally filtered by user role or type
@@ -115,7 +109,7 @@ class ApprovalService:
         approval_id: int,
         reviewer: str,
         notes: Optional[str] = None,
-        modifications: Optional[Dict[str, Any]] = None
+        modifications: Optional[Dict[str, Any]] = None,
     ) -> Approval:
         """
         Approve a pending request
@@ -155,12 +149,7 @@ class ApprovalService:
 
         return approval
 
-    async def reject(
-        self,
-        approval_id: int,
-        reviewer: str,
-        reason: str
-    ) -> Approval:
+    async def reject(self, approval_id: int, reviewer: str, reason: str) -> Approval:
         """
         Reject a pending request
 
@@ -199,7 +188,7 @@ class ApprovalService:
         approval_id: int,
         reviewer: str,
         modifications: Dict[str, Any],
-        notes: Optional[str] = None
+        notes: Optional[str] = None,
     ) -> Approval:
         """
         Approve with modifications
@@ -214,10 +203,7 @@ class ApprovalService:
             Updated Approval object
         """
         return await self.approve(
-            approval_id=approval_id,
-            reviewer=reviewer,
-            notes=notes,
-            modifications=modifications
+            approval_id=approval_id, reviewer=reviewer, notes=notes, modifications=modifications
         )
 
     async def check_timeouts(self) -> List[Approval]:
@@ -232,9 +218,7 @@ class ApprovalService:
         # Find pending approvals that have timed out
         query = select(Approval).where(
             and_(
-                Approval.status == "pending",
-                Approval.timeout_at < now,
-                Approval.timed_out == False
+                Approval.status == "pending", Approval.timeout_at < now, Approval.timed_out == False
             )
         )
 
@@ -255,13 +239,13 @@ class ApprovalService:
                     "approval_id": approval.id,
                     "approval_type": approval.approval_type,
                     "submitted_at": approval.submitted_at.isoformat(),
-                    "timeout_at": approval.timeout_at.isoformat()
+                    "timeout_at": approval.timeout_at.isoformat(),
                 },
                 task={"task": "approve", "approval_type": approval.approval_type},
                 escalation_reason="approval_pending",
                 severity="high",
                 recommended_action=f"Review and approve pending {approval.approval_type} approval",
-                status="pending_review"
+                status="pending_review",
             )
 
             self.db.add(escalation)
@@ -292,12 +276,12 @@ class ApprovalService:
         Returns:
             Approval status or None if not found
         """
-        query = select(Approval).where(
-            and_(
-                Approval.request_id == request_id,
-                Approval.approval_type == approval_type
-            )
-        ).order_by(Approval.submitted_at.desc()).limit(1)
+        query = (
+            select(Approval)
+            .where(and_(Approval.request_id == request_id, Approval.approval_type == approval_type))
+            .order_by(Approval.submitted_at.desc())
+            .limit(1)
+        )
 
         result = await self.db.execute(query)
         approval = result.scalar_one_or_none()
@@ -314,9 +298,11 @@ class ApprovalService:
         Returns:
             List of Approval objects
         """
-        query = select(Approval).where(
-            Approval.request_id == request_id
-        ).order_by(Approval.submitted_at)
+        query = (
+            select(Approval)
+            .where(Approval.request_id == request_id)
+            .order_by(Approval.submitted_at)
+        )
 
         result = await self.db.execute(query)
         return result.scalars().all()

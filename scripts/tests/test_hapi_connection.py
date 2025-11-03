@@ -58,9 +58,9 @@ async def main():
 
         # Test fetching a resource
         print("\n5. Testing resource fetch...")
-        if stats['resource_counts']:
+        if stats["resource_counts"]:
             # Get first available resource type
-            first_type = list(stats['resource_counts'].keys())[0]
+            first_type = list(stats["resource_counts"].keys())[0]
             print(f"   Fetching sample {first_type} resource...")
 
             # Get resource IDs
@@ -74,7 +74,7 @@ async def main():
             rows = await client.execute_query(sql)
 
             if rows:
-                resource_id = rows[0]['res_id']
+                resource_id = rows[0]["res_id"]
                 resource = await client.get_resource_by_id(first_type, resource_id)
                 if resource:
                     print(f"✓ Successfully fetched {first_type}/{resource.get('id')}")
@@ -87,11 +87,13 @@ async def main():
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:
         # Clean up
         from app.clients.hapi_db_client import close_hapi_db_client
+
         await close_hapi_db_client()
         print("\n✓ Connection closed")
 

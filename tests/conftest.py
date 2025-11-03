@@ -1,6 +1,7 @@
 """
 Pytest configuration for test database isolation
 """
+
 import os
 import sys
 import pytest

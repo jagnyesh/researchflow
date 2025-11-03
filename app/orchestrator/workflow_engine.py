@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 class WorkflowState(Enum):
     """Workflow states for research data requests"""
+
     NEW_REQUEST = "new_request"
     REQUIREMENTS_GATHERING = "requirements_gathering"
     REQUIREMENTS_COMPLETE = "requirements_complete"
@@ -58,166 +59,149 @@ class WorkflowEngine:
         """
         return {
             # Requirements gathering - multiple outcomes based on completeness and approval needs
-            ('requirements_agent', 'gather_requirements'): [
+            ("requirements_agent", "gather_requirements"): [
                 {
                     # Requirements complete AND needs approval -> Requirements Review (conversational mode)
-                    'condition': lambda r: r.get('requirements_complete') == True and r.get('requires_approval') == True,
-                    'next_agent': None,  # Wait for approval
-                    'next_task': None,
-                    'next_state': WorkflowState.REQUIREMENTS_REVIEW
+                    "condition": lambda r: r.get("requirements_complete") == True
+                    and r.get("requires_approval") == True,
+                    "next_agent": None,  # Wait for approval
+                    "next_task": None,
+                    "next_state": WorkflowState.REQUIREMENTS_REVIEW,
                 },
                 {
                     # Requirements complete AND NO approval needed -> Phenotype Agent (form-based mode)
                     # Skip requirements review, go straight to SQL generation (SQL will be reviewed instead)
-                    'condition': lambda r: r.get('requirements_complete') == True and r.get('requires_approval') == False,
-                    'next_agent': 'phenotype_agent',  # Trigger phenotype agent immediately
-                    'next_task': 'validate_feasibility',
-                    'next_state': WorkflowState.FEASIBILITY_VALIDATION
+                    "condition": lambda r: r.get("requirements_complete") == True
+                    and r.get("requires_approval") == False,
+                    "next_agent": "phenotype_agent",  # Trigger phenotype agent immediately
+                    "next_task": "validate_feasibility",
+                    "next_state": WorkflowState.FEASIBILITY_VALIDATION,
                 },
                 {
                     # Requirements incomplete -> Continue gathering (conversational loop)
-                    'condition': lambda r: r.get('requirements_complete') == False,
-                    'next_agent': 'requirements_agent',
-                    'next_task': 'gather_requirements',
-                    'next_state': WorkflowState.REQUIREMENTS_GATHERING
-                }
+                    "condition": lambda r: r.get("requirements_complete") == False,
+                    "next_agent": "requirements_agent",
+                    "next_task": "gather_requirements",
+                    "next_state": WorkflowState.REQUIREMENTS_GATHERING,
+                },
             ],
-
             # Requirements approved -> Phenotype validation
-            ('approval_service', 'approve_requirements'): {
-                'condition': lambda r: r.get('approved') == True,
-                'next_agent': 'phenotype_agent',
-                'next_task': 'validate_feasibility',
-                'next_state': WorkflowState.FEASIBILITY_VALIDATION
+            ("approval_service", "approve_requirements"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "phenotype_agent",
+                "next_task": "validate_feasibility",
+                "next_state": WorkflowState.FEASIBILITY_VALIDATION,
             },
-
             # Requirements rejected -> Back to requirements gathering
-            ('approval_service', 'reject_requirements'): {
-                'condition': lambda r: r.get('approved') == False,
-                'next_agent': 'requirements_agent',
-                'next_task': 'gather_requirements',
-                'next_state': WorkflowState.REQUIREMENTS_GATHERING
+            ("approval_service", "reject_requirements"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": "requirements_agent",
+                "next_task": "gather_requirements",
+                "next_state": WorkflowState.REQUIREMENTS_GATHERING,
             },
-
             # Phenotype validation complete -> ALWAYS go to SQL review
             # The phenotype agent generates SQL and metrics, but the informatician
             # decides whether the SQL is appropriate to run (regardless of cohort size)
-            ('phenotype_agent', 'validate_feasibility'): {
-                'condition': lambda r: True,  # Always proceed to review
-                'next_agent': None,  # Waits for informatician SQL approval
-                'next_task': None,
-                'next_state': WorkflowState.PHENOTYPE_REVIEW
+            ("phenotype_agent", "validate_feasibility"): {
+                "condition": lambda r: True,  # Always proceed to review
+                "next_agent": None,  # Waits for informatician SQL approval
+                "next_task": None,
+                "next_state": WorkflowState.PHENOTYPE_REVIEW,
             },
-
             # Phenotype SQL approved -> Schedule kickoff
-            ('approval_service', 'approve_phenotype_sql'): {
-                'condition': lambda r: r.get('approved') == True,
-                'next_agent': 'calendar_agent',
-                'next_task': 'schedule_kickoff_meeting',
-                'next_state': WorkflowState.SCHEDULE_KICKOFF
+            ("approval_service", "approve_phenotype_sql"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "calendar_agent",
+                "next_task": "schedule_kickoff_meeting",
+                "next_state": WorkflowState.SCHEDULE_KICKOFF,
             },
-
             # Phenotype SQL rejected -> Back to phenotype agent
-            ('approval_service', 'reject_phenotype_sql'): {
-                'condition': lambda r: r.get('approved') == False,
-                'next_agent': 'phenotype_agent',
-                'next_task': 'validate_feasibility',
-                'next_state': WorkflowState.FEASIBILITY_VALIDATION
+            ("approval_service", "reject_phenotype_sql"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": "phenotype_agent",
+                "next_task": "validate_feasibility",
+                "next_state": WorkflowState.FEASIBILITY_VALIDATION,
             },
-
             # Kickoff meeting scheduled -> Extraction Approval (NEW APPROVAL GATE)
-            ('calendar_agent', 'schedule_kickoff_meeting'): {
-                'condition': lambda r: r.get('meeting_scheduled') == True,
-                'next_agent': None,  # Waits for extraction approval
-                'next_task': None,
-                'next_state': WorkflowState.EXTRACTION_APPROVAL
+            ("calendar_agent", "schedule_kickoff_meeting"): {
+                "condition": lambda r: r.get("meeting_scheduled") == True,
+                "next_agent": None,  # Waits for extraction approval
+                "next_task": None,
+                "next_state": WorkflowState.EXTRACTION_APPROVAL,
             },
-
             # Extraction approved -> Data extraction
-            ('approval_service', 'approve_extraction'): {
-                'condition': lambda r: r.get('approved') == True,
-                'next_agent': 'extraction_agent',
-                'next_task': 'extract_data',
-                'next_state': WorkflowState.DATA_EXTRACTION
+            ("approval_service", "approve_extraction"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "extraction_agent",
+                "next_task": "extract_data",
+                "next_state": WorkflowState.DATA_EXTRACTION,
             },
-
             # Extraction rejected -> Human review
-            ('approval_service', 'reject_extraction'): {
-                'condition': lambda r: r.get('approved') == False,
-                'next_agent': None,
-                'next_task': None,
-                'next_state': WorkflowState.HUMAN_REVIEW
+            ("approval_service", "reject_extraction"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": None,
+                "next_task": None,
+                "next_state": WorkflowState.HUMAN_REVIEW,
             },
-
             # Data extraction complete -> QA validation
-            ('extraction_agent', 'extract_data'): {
-                'condition': lambda r: r.get('extraction_complete') == True,
-                'next_agent': 'qa_agent',
-                'next_task': 'validate_extracted_data',
-                'next_state': WorkflowState.QA_VALIDATION
+            ("extraction_agent", "extract_data"): {
+                "condition": lambda r: r.get("extraction_complete") == True,
+                "next_agent": "qa_agent",
+                "next_task": "validate_extracted_data",
+                "next_state": WorkflowState.QA_VALIDATION,
             },
-
             # QA passed -> QA Review (NEW APPROVAL GATE)
-            ('qa_agent', 'validate_extracted_data'): {
-                'condition': lambda r: r.get('overall_status') == 'passed',
-                'next_agent': None,  # Waits for QA approval
-                'next_task': None,
-                'next_state': WorkflowState.QA_REVIEW
+            ("qa_agent", "validate_extracted_data"): {
+                "condition": lambda r: r.get("overall_status") == "passed",
+                "next_agent": None,  # Waits for QA approval
+                "next_task": None,
+                "next_state": WorkflowState.QA_REVIEW,
             },
-
             # QA approved -> Data delivery
-            ('approval_service', 'approve_qa'): {
-                'condition': lambda r: r.get('approved') == True,
-                'next_agent': 'delivery_agent',
-                'next_task': 'deliver_data',
-                'next_state': WorkflowState.DATA_DELIVERY
+            ("approval_service", "approve_qa"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "delivery_agent",
+                "next_task": "deliver_data",
+                "next_state": WorkflowState.DATA_DELIVERY,
             },
-
             # QA rejected -> Back to extraction
-            ('approval_service', 'reject_qa'): {
-                'condition': lambda r: r.get('approved') == False,
-                'next_agent': 'extraction_agent',
-                'next_task': 'extract_data',
-                'next_state': WorkflowState.DATA_EXTRACTION
+            ("approval_service", "reject_qa"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": "extraction_agent",
+                "next_task": "extract_data",
+                "next_state": WorkflowState.DATA_EXTRACTION,
             },
-
             # QA failed -> Human review
-            ('qa_agent', 'validate_extracted_data_failed'): {
-                'condition': lambda r: r.get('overall_status') == 'failed',
-                'next_agent': None,
-                'next_task': None,
-                'next_state': WorkflowState.QA_FAILED
+            ("qa_agent", "validate_extracted_data_failed"): {
+                "condition": lambda r: r.get("overall_status") == "failed",
+                "next_agent": None,
+                "next_task": None,
+                "next_state": WorkflowState.QA_FAILED,
             },
-
             # Data delivered -> Complete
-            ('delivery_agent', 'deliver_data'): {
-                'condition': lambda r: r.get('delivered') == True,
-                'next_agent': None,
-                'next_task': None,
-                'next_state': WorkflowState.COMPLETE
+            ("delivery_agent", "deliver_data"): {
+                "condition": lambda r: r.get("delivered") == True,
+                "next_agent": None,
+                "next_task": None,
+                "next_state": WorkflowState.COMPLETE,
             },
-
             # Scope change workflows - can be triggered from any state
-            ('coordinator_agent', 'handle_scope_change'): {
-                'condition': lambda r: r.get('scope_approved') == True,
-                'next_agent': 'requirements_agent',
-                'next_task': 'gather_requirements',
-                'next_state': WorkflowState.REQUIREMENTS_GATHERING
+            ("coordinator_agent", "handle_scope_change"): {
+                "condition": lambda r: r.get("scope_approved") == True,
+                "next_agent": "requirements_agent",
+                "next_task": "gather_requirements",
+                "next_state": WorkflowState.REQUIREMENTS_GATHERING,
             },
-
-            ('coordinator_agent', 'reject_scope_change'): {
-                'condition': lambda r: r.get('scope_approved') == False,
-                'next_agent': None,
-                'next_task': None,
-                'next_state': WorkflowState.HUMAN_REVIEW
+            ("coordinator_agent", "reject_scope_change"): {
+                "condition": lambda r: r.get("scope_approved") == False,
+                "next_agent": None,
+                "next_task": None,
+                "next_state": WorkflowState.HUMAN_REVIEW,
             },
         }
 
     def determine_next_step(
-        self,
-        completed_agent: str,
-        completed_task: str,
-        result: Dict[str, Any]
+        self, completed_agent: str, completed_task: str, result: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
         Determine next workflow step based on current state and results
@@ -243,19 +227,23 @@ class WorkflowEngine:
         # Check each condition in order
         for single_rule in rules_to_check:
             try:
-                if single_rule['condition'](result):
+                if single_rule["condition"](result):
                     next_step = {
-                        'next_agent': single_rule['next_agent'],
-                        'next_task': single_rule['next_task'],
-                        'next_state': single_rule['next_state']
+                        "next_agent": single_rule["next_agent"],
+                        "next_task": single_rule["next_task"],
+                        "next_state": single_rule["next_state"],
                     }
-                    logger.info(f"Workflow transition: {completed_agent}.{completed_task} -> {next_step['next_agent']}.{next_step['next_task']} (state: {next_step['next_state'].value})")
+                    logger.info(
+                        f"Workflow transition: {completed_agent}.{completed_task} -> {next_step['next_agent']}.{next_step['next_task']} (state: {next_step['next_state'].value})"
+                    )
                     return next_step
             except Exception as e:
                 logger.error(f"Error evaluating workflow condition for {rule_key}: {e}")
                 continue
 
-        logger.warning(f"No workflow condition matched for {rule_key}. Result keys: {result.keys()}")
+        logger.warning(
+            f"No workflow condition matched for {rule_key}. Result keys: {result.keys()}"
+        )
         return None
 
     def get_initial_state(self) -> WorkflowState:
@@ -268,7 +256,7 @@ class WorkflowEngine:
             WorkflowState.COMPLETE,
             WorkflowState.FAILED,
             WorkflowState.NOT_FEASIBLE,
-            WorkflowState.QA_FAILED
+            WorkflowState.QA_FAILED,
         ]
         return state in terminal_states
 
@@ -285,7 +273,7 @@ class WorkflowEngine:
             WorkflowState.EXTRACTION_APPROVAL,
             WorkflowState.QA_REVIEW,
             WorkflowState.SCOPE_CHANGE,
-            WorkflowState.HUMAN_REVIEW
+            WorkflowState.HUMAN_REVIEW,
         ]
         return state in approval_states
 
@@ -301,7 +289,7 @@ class WorkflowEngine:
             WorkflowState.PHENOTYPE_REVIEW: "phenotype_sql",
             WorkflowState.EXTRACTION_APPROVAL: "extraction",
             WorkflowState.QA_REVIEW: "qa",
-            WorkflowState.SCOPE_CHANGE: "scope_change"
+            WorkflowState.SCOPE_CHANGE: "scope_change",
         }
         return approval_types.get(state)
 
@@ -317,7 +305,7 @@ class WorkflowEngine:
             "phenotype_sql": 24,  # Critical - SQL must be reviewed
             "extraction": 12,
             "qa": 24,
-            "scope_change": 48
+            "scope_change": 48,
         }
         return timeout_config.get(approval_type, 24)  # Default 24 hours
 
@@ -327,14 +315,12 @@ class WorkflowEngine:
             WorkflowState.NEW_REQUEST: "New request received",
             WorkflowState.REQUIREMENTS_GATHERING: "Gathering requirements from researcher",
             WorkflowState.REQUIREMENTS_COMPLETE: "Requirements complete, validating feasibility",
-
             # New approval state descriptions
             WorkflowState.REQUIREMENTS_REVIEW: "Waiting for informatician to review requirements",
             WorkflowState.PHENOTYPE_REVIEW: "Waiting for informatician to approve SQL query",
             WorkflowState.EXTRACTION_APPROVAL: "Waiting for approval to extract data",
             WorkflowState.QA_REVIEW: "Waiting for informatician to approve QA results",
             WorkflowState.SCOPE_CHANGE: "Scope change requested, waiting for review",
-
             WorkflowState.FEASIBILITY_VALIDATION: "Checking data availability and feasibility",
             WorkflowState.FEASIBLE: "Request is feasible, scheduling kickoff",
             WorkflowState.NOT_FEASIBLE: "Request not feasible with current criteria",
@@ -349,6 +335,6 @@ class WorkflowEngine:
             WorkflowState.DELIVERED: "Data delivered to researcher",
             WorkflowState.COMPLETE: "Request complete",
             WorkflowState.FAILED: "Request failed",
-            WorkflowState.HUMAN_REVIEW: "Escalated to human review"
+            WorkflowState.HUMAN_REVIEW: "Escalated to human review",
         }
         return descriptions.get(state, state.value)

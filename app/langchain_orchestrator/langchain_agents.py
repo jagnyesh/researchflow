@@ -59,7 +59,7 @@ class LangChainRequirementsAgent(LangChainBaseAgentMixin):
         self,
         agent_id: str = "langchain_requirements_agent",
         orchestrator=None,
-        model: str = "claude-3-7-sonnet-20250219"
+        model: str = "claude-3-7-sonnet-20250219",
     ):
         """
         Initialize LangChain Requirements Agent
@@ -74,11 +74,7 @@ class LangChainRequirementsAgent(LangChainBaseAgentMixin):
         self.model = model
 
         # Initialize LangChain LLM
-        self.llm = ChatAnthropic(
-            model=model,
-            temperature=0.7,
-            max_tokens=4096
-        )
+        self.llm = ChatAnthropic(model=model, temperature=0.7, max_tokens=4096)
 
         # Conversation messages per request (simpler than ConversationBufferMemory)
         self.conversations: Dict[str, List[Any]] = {}
@@ -89,7 +85,9 @@ class LangChainRequirementsAgent(LangChainBaseAgentMixin):
         # Initialize production features mixin (Sprint 6.5)
         self.init_base_agent(orchestrator)
 
-        logger.info(f"[{self.agent_id}] Initialized with LangChain + production features + conversational AI")
+        logger.info(
+            f"[{self.agent_id}] Initialized with LangChain + production features + conversational AI"
+        )
 
     def _get_or_create_conversation(self, request_id: str) -> List[Any]:
         """Get or create conversation message list for request"""
@@ -151,12 +149,17 @@ Return JSON:
 }}
 """
 
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_message),
-            MessagesPlaceholder(variable_name="chat_history"),
-            ("human", "{input}"),
-            ("assistant", "Based on the conversation, I'll extract requirements in JSON format:")
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", system_message),
+                MessagesPlaceholder(variable_name="chat_history"),
+                ("human", "{input}"),
+                (
+                    "assistant",
+                    "Based on the conversation, I'll extract requirements in JSON format:",
+                ),
+            ]
+        )
 
         return prompt
 
@@ -164,7 +167,7 @@ Return JSON:
         run_type="chain",
         name="RequirementsAgent",
         tags=["agent", "requirements", "llm", "claude"],
-        metadata={"agent_type": "requirements", "llm": "claude-3-5-sonnet"}
+        metadata={"agent_type": "requirements", "llm": "claude-3-5-sonnet"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -217,16 +220,16 @@ Return JSON:
         Returns:
             Dict with requirements_complete, structured_requirements, next_question, etc.
         """
-        request_id = context.get('request_id')
-        initial_request = context.get('initial_request')
-        user_response = context.get('user_response')
+        request_id = context.get("request_id")
+        initial_request = context.get("initial_request")
+        user_response = context.get("user_response")
 
         # Get conversation messages for this request
         messages = self._get_or_create_conversation(request_id)
 
         # Check for pre-structured requirements (Research Notebook shortcut)
-        pre_structured = context.get('structured_requirements')
-        skip_conversation = context.get('skip_conversation', False)
+        pre_structured = context.get("structured_requirements")
+        skip_conversation = context.get("skip_conversation", False)
 
         if pre_structured and skip_conversation:
             logger.info(f"[{self.agent_id}] Processing pre-structured requirements")
@@ -247,11 +250,11 @@ Return JSON:
                         "conversation_history": [
                             {"role": "system", "content": "Requirements from Research Notebook"}
                         ],
-                        "inclusion_criteria": pre_structured.get('inclusion_criteria', []),
-                        "exclusion_criteria": pre_structured.get('exclusion_criteria', []),
-                        "data_elements": pre_structured.get('data_elements', [])
-                    }
-                }
+                        "inclusion_criteria": pre_structured.get("inclusion_criteria", []),
+                        "exclusion_criteria": pre_structured.get("exclusion_criteria", []),
+                        "data_elements": pre_structured.get("data_elements", []),
+                    },
+                },
             }
 
         # Prepare conversation input
@@ -260,7 +263,9 @@ Return JSON:
             conversation_input = user_response
         else:
             # Starting new conversation
-            conversation_input = initial_request or "I need help defining data requirements for my study."
+            conversation_input = (
+                initial_request or "I need help defining data requirements for my study."
+            )
 
         logger.info(
             f"[{self.agent_id}] Processing conversation turn for {request_id} "
@@ -274,8 +279,7 @@ Return JSON:
 
             # Build prompt with history
             formatted_messages = prompt.format_messages(
-                chat_history=messages,
-                input=conversation_input
+                chat_history=messages, input=conversation_input
             )
 
             # Invoke LLM
@@ -303,25 +307,29 @@ Return JSON:
 
             # Update conversation messages with this turn
             messages.append(HumanMessage(content=conversation_input))
-            messages.append(AIMessage(
-                content=analysis.get('next_question', 'Requirements extracted.')
-            ))
+            messages.append(
+                AIMessage(content=analysis.get("next_question", "Requirements extracted."))
+            )
 
             # Convert messages to conversation history format (for compatibility)
             conversation_history = []
             for msg in messages:
                 if isinstance(msg, HumanMessage):
-                    conversation_history.append({
-                        "role": "user",
-                        "content": msg.content,
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    conversation_history.append(
+                        {
+                            "role": "user",
+                            "content": msg.content,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
                 elif isinstance(msg, AIMessage):
-                    conversation_history.append({
-                        "role": "assistant",
-                        "content": msg.content,
-                        "timestamp": datetime.now().isoformat()
-                    })
+                    conversation_history.append(
+                        {
+                            "role": "assistant",
+                            "content": msg.content,
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    )
 
             logger.info(
                 f"[{self.agent_id}] Completeness: {analysis.get('completeness_score', 0):.1%}, "
@@ -329,8 +337,8 @@ Return JSON:
             )
 
             # Check if requirements are complete
-            if analysis.get('ready_for_submission', False):
-                final_requirements = analysis['extracted_requirements']
+            if analysis.get("ready_for_submission", False):
+                final_requirements = analysis["extracted_requirements"]
 
                 logger.info(f"[{self.agent_id}] Requirements complete for {request_id}")
 
@@ -338,7 +346,7 @@ Return JSON:
                     "requirements_complete": True,
                     "structured_requirements": final_requirements,
                     "conversation_history": conversation_history,
-                    "completeness_score": analysis.get('completeness_score', 1.0),
+                    "completeness_score": analysis.get("completeness_score", 1.0),
                     "requires_approval": True,
                     "approval_type": "requirements",
                     "next_agent": None,
@@ -347,23 +355,25 @@ Return JSON:
                         "requirements": final_requirements,
                         "approval_data": {
                             "structured_requirements": final_requirements,
-                            "completeness_score": analysis.get('completeness_score', 1.0),
+                            "completeness_score": analysis.get("completeness_score", 1.0),
                             "conversation_history": conversation_history,
-                            "inclusion_criteria": final_requirements.get('inclusion_criteria', []),
-                            "exclusion_criteria": final_requirements.get('exclusion_criteria', []),
-                            "data_elements": final_requirements.get('data_elements', [])
-                        }
-                    }
+                            "inclusion_criteria": final_requirements.get("inclusion_criteria", []),
+                            "exclusion_criteria": final_requirements.get("exclusion_criteria", []),
+                            "data_elements": final_requirements.get("data_elements", []),
+                        },
+                    },
                 }
             else:
                 # More conversation needed
                 return {
                     "requirements_complete": False,
-                    "next_question": analysis.get('next_question', 'Could you provide more details?'),
-                    "extracted_requirements": analysis.get('extracted_requirements', {}),
-                    "completeness_score": analysis.get('completeness_score', 0.0),
-                    "missing_fields": analysis.get('missing_fields', []),
-                    "conversation_history": conversation_history
+                    "next_question": analysis.get(
+                        "next_question", "Could you provide more details?"
+                    ),
+                    "extracted_requirements": analysis.get("extracted_requirements", {}),
+                    "completeness_score": analysis.get("completeness_score", 0.0),
+                    "missing_fields": analysis.get("missing_fields", []),
+                    "conversation_history": conversation_history,
                 }
 
         except json.JSONDecodeError as e:
@@ -377,7 +387,7 @@ Return JSON:
                 "extracted_requirements": {},
                 "completeness_score": 0.0,
                 "missing_fields": ["all"],
-                "conversation_history": []
+                "conversation_history": [],
             }
 
         except Exception as e:
@@ -397,7 +407,7 @@ Return JSON:
         run_type="chain",
         name="ConversationalChat",
         tags=["agent", "conversational", "informational", "llm"],
-        metadata={"agent_type": "requirements", "mode": "conversational"}
+        metadata={"agent_type": "requirements", "mode": "conversational"},
     )
     async def _handle_conversational_chat(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -417,12 +427,18 @@ Return JSON:
         Returns:
             Dict with conversational response, no SQL execution
         """
-        user_message = context.get('user_message') or context.get('user_response') or context.get('message', '')
-        request_id = context.get('request_id', 'chat')
-        conversation_history = context.get('conversation_history', [])
-        mode = context.get('mode', 'exploratory')  # Default to exploratory mode
+        user_message = (
+            context.get("user_message")
+            or context.get("user_response")
+            or context.get("message", "")
+        )
+        request_id = context.get("request_id", "chat")
+        conversation_history = context.get("conversation_history", [])
+        mode = context.get("mode", "exploratory")  # Default to exploratory mode
 
-        logger.info(f"[{self.agent_id}] Handling conversational chat in {mode} mode: '{user_message}'")
+        logger.info(
+            f"[{self.agent_id}] Handling conversational chat in {mode} mode: '{user_message}'"
+        )
 
         # Get conversation messages for this request
         messages = self._get_or_create_conversation(request_id)
@@ -567,12 +583,24 @@ RESPONSE: <your response>
                     # Check if data query
                     if "data_query" in intent_line.lower():
                         requires_sql = True
-                        logger.info(f"[{self.agent_id}] Detected DATA QUERY - will trigger SQL execution")
+                        logger.info(
+                            f"[{self.agent_id}] Detected DATA QUERY - will trigger SQL execution"
+                        )
                     else:
-                        logger.info(f"[{self.agent_id}] Detected INFORMATIONAL question - no SQL needed")
+                        logger.info(
+                            f"[{self.agent_id}] Detected INFORMATIONAL question - no SQL needed"
+                        )
                 else:
                     # Fallback: simple keyword detection
-                    data_query_keywords = ["how many", "count", "patients with", "give me", "find", "show me", "get"]
+                    data_query_keywords = [
+                        "how many",
+                        "count",
+                        "patients with",
+                        "give me",
+                        "find",
+                        "show me",
+                        "get",
+                    ]
                     if any(keyword in user_message.lower() for keyword in data_query_keywords):
                         requires_sql = True
                         actual_response = "Let me check that data for you..."
@@ -582,13 +610,18 @@ RESPONSE: <your response>
                 # Wait for user to answer the questions first
                 if actual_response.strip().endswith("?") or "?" in actual_response:
                     requires_sql = False
-                    logger.info(f"[{self.agent_id}] Agent asking clarifying questions - NOT executing SQL yet")
+                    logger.info(
+                        f"[{self.agent_id}] Agent asking clarifying questions - NOT executing SQL yet"
+                    )
 
                 # Add AI response to conversation
                 messages.append(AIMessage(content=actual_response))
 
                 # Check if user's question is about data capabilities
-                if any(keyword in user_message.lower() for keyword in ["what data", "what kind", "available data", "what type"]):
+                if any(
+                    keyword in user_message.lower()
+                    for keyword in ["what data", "what kind", "available data", "what type"]
+                ):
                     data_summary = self.data_context.get_available_data_summary()
                     actual_response = f"{actual_response}\n\n{data_summary}"
 
@@ -597,7 +630,7 @@ RESPONSE: <your response>
                     "conversation_mode": "conversational",
                     "requires_sql": requires_sql,
                     "conversation_history": self.get_conversation_history(request_id),
-                    "next_action": None
+                    "next_action": None,
                 }
 
             else:
@@ -606,7 +639,10 @@ RESPONSE: <your response>
                 messages.append(AIMessage(content=response.content))
 
                 # Check if user's question is about data capabilities
-                if any(keyword in user_message.lower() for keyword in ["what data", "what kind", "available data", "what type"]):
+                if any(
+                    keyword in user_message.lower()
+                    for keyword in ["what data", "what kind", "available data", "what type"]
+                ):
                     data_summary = self.data_context.get_available_data_summary()
                     enhanced_response = f"{response.content}\n\n{data_summary}"
                 else:
@@ -617,7 +653,7 @@ RESPONSE: <your response>
                     "conversation_mode": "conversational",
                     "requires_sql": False,
                     "conversation_history": self.get_conversation_history(request_id),
-                    "next_action": None  # No automatic next step
+                    "next_action": None,  # No automatic next step
                 }
 
         except Exception as e:
@@ -632,7 +668,7 @@ RESPONSE: <your response>
                 "requires_sql": False,
                 "conversation_history": conversation_history,
                 "error": str(e),
-                "fallback_used": True
+                "fallback_used": True,
             }
 
     def get_conversation_history(self, request_id: str) -> List[Dict[str, Any]]:
@@ -650,17 +686,21 @@ RESPONSE: <your response>
         history = []
         for msg in messages:
             if isinstance(msg, HumanMessage):
-                history.append({
-                    "role": "user",
-                    "content": msg.content,
-                    "timestamp": datetime.now().isoformat()
-                })
+                history.append(
+                    {
+                        "role": "user",
+                        "content": msg.content,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
             elif isinstance(msg, AIMessage):
-                history.append({
-                    "role": "assistant",
-                    "content": msg.content,
-                    "timestamp": datetime.now().isoformat()
-                })
+                history.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
 
         return history
 
@@ -689,13 +729,14 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
         self,
         agent_id: str = "langchain_phenotype_agent",
         orchestrator=None,
-        database_url: Optional[str] = None
+        database_url: Optional[str] = None,
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
         # Import custom components (reuse existing logic)
         from ..utils.sql_generator import SQLGenerator
         from ..adapters.sql_on_fhir import SQLonFHIRAdapter
+
         self.sql_generator = SQLGenerator()
         self.sql_adapter = SQLonFHIRAdapter()
 
@@ -708,7 +749,7 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
         run_type="chain",
         name="PhenotypeAgent",
         tags=["agent", "phenotype", "sql", "validation"],
-        metadata={"agent_type": "phenotype", "capability": "sql_generation"}
+        metadata={"agent_type": "phenotype", "capability": "sql_generation"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -734,16 +775,13 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
         This wraps the custom PhenotypeAgent logic but uses LangChain
         for better observability via LangSmith.
         """
-        requirements = context.get('requirements')
-        request_id = context.get('request_id')
+        requirements = context.get("requirements")
+        request_id = context.get("request_id")
 
         logger.info(f"[{self.agent_id}] Validating feasibility for {request_id}")
 
         # Generate SQL using existing SQLGenerator
-        phenotype_sql = self.sql_generator.generate_phenotype_sql(
-            requirements,
-            count_only=True
-        )
+        phenotype_sql = self.sql_generator.generate_phenotype_sql(requirements, count_only=True)
 
         # Estimate cohort size (simplified for Sprint 3)
         estimated_count = await self._estimate_cohort_size(phenotype_sql)
@@ -754,8 +792,7 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
 
         # Generate full SQL
         full_phenotype_sql = self.sql_generator.generate_phenotype_sql(
-            requirements,
-            count_only=False
+            requirements, count_only=False
         )
 
         logger.info(
@@ -772,7 +809,7 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
                 "feasible": feasible,
                 "feasibility_score": feasibility_score,
                 "estimated_cohort_size": estimated_count,
-                "generated_sql": full_phenotype_sql
+                "generated_sql": full_phenotype_sql,
             },
             "requires_approval": True,
             "approval_type": "phenotype_sql",
@@ -782,16 +819,16 @@ class LangChainPhenotypeAgent(LangChainBaseAgentMixin):
                 "phenotype_sql": full_phenotype_sql,
                 "feasibility_report": {
                     "estimated_cohort_size": estimated_count,
-                    "feasibility_score": feasibility_score
-                }
-            }
+                    "feasibility_score": feasibility_score,
+                },
+            },
         }
 
     async def _estimate_cohort_size(self, sql: str) -> int:
         """Estimate cohort size (simplified for Sprint 3)"""
         try:
             result = await self.sql_adapter.execute_query(sql)
-            return result.get('count', 0) if result else 0
+            return result.get("count", 0) if result else 0
         except Exception as e:
             logger.warning(f"[{self.agent_id}] Cohort estimation failed: {e}")
             return 0  # Conservative estimate
@@ -814,18 +851,14 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
         self,
         agent_id: str = "langchain_calendar_agent",
         orchestrator=None,
-        model: str = "claude-3-7-sonnet-20250219"
+        model: str = "claude-3-7-sonnet-20250219",
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
         self.model = model
 
         # Initialize LangChain LLM for agenda generation
-        self.llm = ChatAnthropic(
-            model=model,
-            temperature=0.7,
-            max_tokens=2048
-        )
+        self.llm = ChatAnthropic(model=model, temperature=0.7, max_tokens=2048)
 
         # Initialize production features mixin (Sprint 6.5)
         self.init_base_agent(orchestrator)
@@ -836,7 +869,7 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
         run_type="chain",
         name="CalendarAgent",
         tags=["agent", "calendar", "scheduling", "llm"],
-        metadata={"agent_type": "calendar", "llm": "claude-3-5-sonnet"}
+        metadata={"agent_type": "calendar", "llm": "claude-3-5-sonnet"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -857,9 +890,9 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
 
     async def _schedule_kickoff_meeting(self, context: Dict) -> Dict[str, Any]:
         """Schedule kickoff meeting with LLM-generated agenda"""
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        feasibility_report = context.get('feasibility_report', {})
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        feasibility_report = context.get("feasibility_report", {})
 
         logger.info(f"[{self.agent_id}] Scheduling kickoff for {request_id}")
 
@@ -872,13 +905,13 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
             "title": f"Data Request Kickoff - {requirements.get('study_title', 'Research Study')}",
             "attendees": {
                 "required": ["informatician", "researcher"],
-                "optional": ["data_engineer"]
+                "optional": ["data_engineer"],
             },
             "datetime": (datetime.now() + timedelta(days=3)).isoformat(),
             "duration_minutes": 30,
             "agenda": agenda,
             "location": "Virtual (Teams)",
-            "scheduled_at": datetime.now().isoformat()
+            "scheduled_at": datetime.now().isoformat(),
         }
 
         logger.info(f"[{self.agent_id}] Meeting scheduled: {meeting['meeting_id']}")
@@ -890,16 +923,10 @@ class LangChainCalendarAgent(LangChainBaseAgentMixin):
             "approval_type": "extraction",
             "next_agent": None,
             "next_task": None,
-            "additional_context": {
-                "meeting": meeting
-            }
+            "additional_context": {"meeting": meeting},
         }
 
-    async def _generate_meeting_agenda(
-        self,
-        requirements: Dict,
-        feasibility_report: Dict
-    ) -> str:
+    async def _generate_meeting_agenda(self, requirements: Dict, feasibility_report: Dict) -> str:
         """Generate meeting agenda using LLM"""
         prompt = f"""Generate a concise kickoff meeting agenda for a clinical data request.
 
@@ -934,11 +961,7 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
     - State management (idle/working/failed/waiting)
     """
 
-    def __init__(
-        self,
-        agent_id: str = "langchain_extraction_agent",
-        orchestrator=None
-    ):
+    def __init__(self, agent_id: str = "langchain_extraction_agent", orchestrator=None):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
 
@@ -951,7 +974,7 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
         run_type="chain",
         name="ExtractionAgent",
         tags=["agent", "extraction", "data", "fhir"],
-        metadata={"agent_type": "extraction", "capability": "data_retrieval"}
+        metadata={"agent_type": "extraction", "capability": "data_retrieval"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -964,17 +987,15 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
 
         if task == "extract_data":
             # Wrap with production features: retry, persistence, escalation
-            return await self.execute_with_production_features(
-                task, context, self._extract_data
-            )
+            return await self.execute_with_production_features(task, context, self._extract_data)
         else:
             raise ValueError(f"Unknown task: {task}")
 
     async def _extract_data(self, context: Dict) -> Dict[str, Any]:
         """Extract data (simplified for Sprint 3)"""
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        phenotype_sql = context.get('phenotype_sql')
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        phenotype_sql = context.get("phenotype_sql")
 
         logger.info(f"[{self.agent_id}] Extracting data for {request_id}")
 
@@ -986,8 +1007,8 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
             "extraction_summary": {
                 "total_patients": 0,
                 "total_records": 0,
-                "extraction_timestamp": datetime.now().isoformat()
-            }
+                "extraction_timestamp": datetime.now().isoformat(),
+            },
         }
 
         logger.info(f"[{self.agent_id}] Extraction complete for {request_id}")
@@ -995,12 +1016,10 @@ class LangChainExtractionAgent(LangChainBaseAgentMixin):
         return {
             "extraction_complete": True,
             "data_package": data_package,
-            "extracted_data_summary": data_package['extraction_summary'],
+            "extracted_data_summary": data_package["extraction_summary"],
             "next_agent": "qa_agent",
             "next_task": "validate_extracted_data",
-            "additional_context": {
-                "data_package": data_package
-            }
+            "additional_context": {"data_package": data_package},
         }
 
 
@@ -1017,11 +1036,7 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
     - State management (idle/working/failed/waiting)
     """
 
-    def __init__(
-        self,
-        agent_id: str = "langchain_qa_agent",
-        orchestrator=None
-    ):
+    def __init__(self, agent_id: str = "langchain_qa_agent", orchestrator=None):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
 
@@ -1034,7 +1049,7 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
         run_type="chain",
         name="QAAgent",
         tags=["agent", "qa", "validation", "quality"],
-        metadata={"agent_type": "qa", "capability": "data_validation"}
+        metadata={"agent_type": "qa", "capability": "data_validation"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1055,8 +1070,8 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
 
     async def _validate_extracted_data(self, context: Dict) -> Dict[str, Any]:
         """Validate data quality (simplified for Sprint 3)"""
-        request_id = context.get('request_id')
-        data_package = context.get('data_package', {})
+        request_id = context.get("request_id")
+        data_package = context.get("data_package", {})
 
         logger.info(f"[{self.agent_id}] Validating data for {request_id}")
 
@@ -1066,9 +1081,9 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
             "checks": {
                 "completeness": {"passed": True, "score": 1.0},
                 "duplicates": {"passed": True, "duplicates_found": 0},
-                "phi_scrubbing": {"passed": True, "phi_found": 0}
+                "phi_scrubbing": {"passed": True, "phi_found": 0},
             },
-            "validation_timestamp": datetime.now().isoformat()
+            "validation_timestamp": datetime.now().isoformat(),
         }
 
         logger.info(f"[{self.agent_id}] QA status: {qa_report['overall_status']}")
@@ -1080,9 +1095,7 @@ class LangChainQAAgent(LangChainBaseAgentMixin):
             "approval_type": "qa",
             "next_agent": None,
             "next_task": None,
-            "additional_context": {
-                "qa_report": qa_report
-            }
+            "additional_context": {"qa_report": qa_report},
         }
 
 
@@ -1103,18 +1116,14 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
         self,
         agent_id: str = "langchain_delivery_agent",
         orchestrator=None,
-        model: str = "claude-3-7-sonnet-20250219"
+        model: str = "claude-3-7-sonnet-20250219",
     ):
         self.agent_id = agent_id
         self.orchestrator = orchestrator
         self.model = model
 
         # Initialize LangChain LLM for documentation
-        self.llm = ChatAnthropic(
-            model=model,
-            temperature=0.5,
-            max_tokens=2048
-        )
+        self.llm = ChatAnthropic(model=model, temperature=0.5, max_tokens=2048)
 
         # Initialize production features mixin (Sprint 6.5)
         self.init_base_agent(orchestrator)
@@ -1125,7 +1134,7 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
         run_type="chain",
         name="DeliveryAgent",
         tags=["agent", "delivery", "packaging", "llm"],
-        metadata={"agent_type": "delivery", "llm": "claude-3-5-sonnet"}
+        metadata={"agent_type": "delivery", "llm": "claude-3-5-sonnet"},
     )
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -1138,17 +1147,15 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
 
         if task == "deliver_data":
             # Wrap with production features: retry, persistence, escalation
-            return await self.execute_with_production_features(
-                task, context, self._deliver_data
-            )
+            return await self.execute_with_production_features(task, context, self._deliver_data)
         else:
             raise ValueError(f"Unknown task: {task}")
 
     async def _deliver_data(self, context: Dict) -> Dict[str, Any]:
         """Package and deliver data with LLM-generated docs"""
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        data_package = context.get('data_package', {})
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        data_package = context.get("data_package", {})
 
         logger.info(f"[{self.agent_id}] Preparing delivery for {request_id}")
 
@@ -1159,13 +1166,13 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
         delivery_info = {
             "delivery_id": f"DEL-{request_id}",
             "location": f"/secure/data/{request_id}",
-            "format": requirements.get('delivery_format', 'CSV'),
+            "format": requirements.get("delivery_format", "CSV"),
             "delivered_at": datetime.now().isoformat(),
             "documentation": {
                 "citation": citation,
                 "data_dictionary": "Generated data dictionary",
-                "extraction_methods": "Extraction methodology"
-            }
+                "extraction_methods": "Extraction methodology",
+            },
         }
 
         logger.info(f"[{self.agent_id}] Delivery complete: {delivery_info['location']}")
@@ -1175,9 +1182,7 @@ class LangChainDeliveryAgent(LangChainBaseAgentMixin):
             "delivery_info": delivery_info,
             "next_agent": None,
             "next_task": None,
-            "additional_context": {
-                "delivery_info": delivery_info
-            }
+            "additional_context": {"delivery_info": delivery_info},
         }
 
     async def _generate_citation(self, requirements: Dict) -> str:

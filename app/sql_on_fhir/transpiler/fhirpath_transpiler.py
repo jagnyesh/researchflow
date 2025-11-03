@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class FHIRPathExpression:
     """Parsed FHIRPath expression"""
+
     path: str  # Original FHIRPath
     sql: str  # Transpiled SQL
     requires_subquery: bool = False  # True if needs lateral join
@@ -57,10 +58,7 @@ class FHIRPathTranspiler:
         self._array_counter = 0  # For generating unique array aliases
 
     def transpile(
-        self,
-        fhir_path: str,
-        as_text: bool = True,
-        context_path: Optional[str] = None
+        self, fhir_path: str, as_text: bool = True, context_path: Optional[str] = None
     ) -> FHIRPathExpression:
         """
         Transpile FHIRPath expression to SQL
@@ -77,44 +75,38 @@ class FHIRPathTranspiler:
         fhir_path = fhir_path.strip()
 
         # Handle empty path
-        if not fhir_path or fhir_path == '.':
+        if not fhir_path or fhir_path == ".":
             base_path = f"{self.resource_alias}.{self.resource_column}::jsonb"
             if context_path:
                 base_path = context_path
-            return FHIRPathExpression(
-                path=fhir_path,
-                sql=base_path
-            )
+            return FHIRPathExpression(path=fhir_path, sql=base_path)
 
         # Check for string concatenation with + operator
-        if ' + ' in fhir_path:
+        if " + " in fhir_path:
             return self._transpile_concatenation(fhir_path, as_text, context_path)
 
         # Check for where() clause
-        if '.where(' in fhir_path:
+        if ".where(" in fhir_path:
             return self._transpile_where_clause(fhir_path, as_text, context_path)
 
         # Check for function calls
-        if '.first()' in fhir_path:
+        if ".first()" in fhir_path:
             return self._transpile_first(fhir_path, as_text, context_path)
 
-        if '.exists()' in fhir_path:
+        if ".exists()" in fhir_path:
             return self._transpile_exists(fhir_path, context_path)
 
-        if '.count()' in fhir_path:
+        if ".count()" in fhir_path:
             return self._transpile_count(fhir_path, context_path)
 
-        if '.empty()' in fhir_path:
+        if ".empty()" in fhir_path:
             return self._transpile_empty(fhir_path, context_path)
 
         # Simple field path (most common case)
         return self._transpile_simple_path(fhir_path, as_text, context_path)
 
     def _transpile_simple_path(
-        self,
-        fhir_path: str,
-        as_text: bool,
-        context_path: Optional[str]
+        self, fhir_path: str, as_text: bool, context_path: Optional[str]
     ) -> FHIRPathExpression:
         """
         Transpile simple field path like "name.family" or "birthDate"
@@ -134,17 +126,17 @@ class FHIRPathTranspiler:
             base = f"{self.resource_alias}.{self.resource_column}::jsonb"
 
         # Split path into segments
-        segments = fhir_path.split('.')
+        segments = fhir_path.split(".")
 
         # Build JSONB navigation
         sql_parts = [base]
 
         for i, segment in enumerate(segments):
-            is_last = (i == len(segments) - 1)
+            is_last = i == len(segments) - 1
 
             # Handle array access (assume first element for simple paths)
             # In FHIR, many fields like "name" and "address" are arrays
-            if segment in ['name', 'address', 'telecom', 'identifier', 'coding']:
+            if segment in ["name", "address", "telecom", "identifier", "coding"]:
                 # Access first element of array
                 sql_parts.append(f"->0")
                 # Then access the field
@@ -161,16 +153,10 @@ class FHIRPathTranspiler:
 
         sql = "".join(sql_parts)
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
     def _transpile_where_clause(
-        self,
-        fhir_path: str,
-        as_text: bool,
-        context_path: Optional[str]
+        self, fhir_path: str, as_text: bool, context_path: Optional[str]
     ) -> FHIRPathExpression:
         """
         Transpile where() clause like "coding.where(system='http://loinc.org').code"
@@ -194,7 +180,7 @@ class FHIRPathTranspiler:
             return self._transpile_simple_path(fhir_path, as_text, context_path)
 
         array_path = match.group(1)  # e.g., "coding" or "code.coding"
-        condition = match.group(2)   # e.g., "system='http://loinc.org'"
+        condition = match.group(2)  # e.g., "system='http://loinc.org'"
         result_path = match.group(3)  # e.g., "code"
 
         # Generate unique alias for array element
@@ -208,9 +194,9 @@ class FHIRPathTranspiler:
             base = f"{self.resource_alias}.{self.resource_column}::jsonb"
 
         # Path to array - handle nested paths like "code.coding"
-        if '.' in array_path:
+        if "." in array_path:
             # Nested path: navigate to parent, then to array
-            path_parts = array_path.split('.')
+            path_parts = array_path.split(".")
             for part in path_parts:
                 base = f"{base}->'{part}'"
             array_sql = base
@@ -245,10 +231,7 @@ class FHIRPathTranspiler:
             )""".strip()
 
         return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql,
-            requires_subquery=True,
-            array_alias=array_alias
+            path=fhir_path, sql=sql, requires_subquery=True, array_alias=array_alias
         )
 
     def _parse_where_condition(self, condition: str, elem_alias: str) -> str:
@@ -274,10 +257,7 @@ class FHIRPathTranspiler:
         return "true"
 
     def _transpile_first(
-        self,
-        fhir_path: str,
-        as_text: bool,
-        context_path: Optional[str]
+        self, fhir_path: str, as_text: bool, context_path: Optional[str]
     ) -> FHIRPathExpression:
         """
         Transpile first() function
@@ -291,7 +271,7 @@ class FHIRPathTranspiler:
             FHIRPathExpression accessing first array element
         """
         # Remove .first() and access [0]
-        base_path = fhir_path.replace('.first()', '')
+        base_path = fhir_path.replace(".first()", "")
 
         # Transpile base path
         base_expr = self._transpile_simple_path(base_path, False, context_path)
@@ -302,16 +282,9 @@ class FHIRPathTranspiler:
         else:
             sql = f"({base_expr.sql})->0"
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
-    def _transpile_exists(
-        self,
-        fhir_path: str,
-        context_path: Optional[str]
-    ) -> FHIRPathExpression:
+    def _transpile_exists(self, fhir_path: str, context_path: Optional[str]) -> FHIRPathExpression:
         """
         Transpile exists() function to check if field exists and is not null
 
@@ -322,21 +295,14 @@ class FHIRPathTranspiler:
         Returns:
             FHIRPathExpression with boolean check
         """
-        base_path = fhir_path.replace('.exists()', '')
+        base_path = fhir_path.replace(".exists()", "")
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
         sql = f"({base_expr.sql} IS NOT NULL)"
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
-    def _transpile_count(
-        self,
-        fhir_path: str,
-        context_path: Optional[str]
-    ) -> FHIRPathExpression:
+    def _transpile_count(self, fhir_path: str, context_path: Optional[str]) -> FHIRPathExpression:
         """
         Transpile count() function for arrays
 
@@ -347,21 +313,14 @@ class FHIRPathTranspiler:
         Returns:
             FHIRPathExpression with jsonb_array_length
         """
-        base_path = fhir_path.replace('.count()', '')
+        base_path = fhir_path.replace(".count()", "")
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
         sql = f"jsonb_array_length({base_expr.sql})"
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
-    def _transpile_empty(
-        self,
-        fhir_path: str,
-        context_path: Optional[str]
-    ) -> FHIRPathExpression:
+    def _transpile_empty(self, fhir_path: str, context_path: Optional[str]) -> FHIRPathExpression:
         """
         Transpile empty() function to check if value is null or empty
 
@@ -372,21 +331,15 @@ class FHIRPathTranspiler:
         Returns:
             FHIRPathExpression with null/empty check
         """
-        base_path = fhir_path.replace('.empty()', '')
+        base_path = fhir_path.replace(".empty()", "")
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
         sql = f"({base_expr.sql} IS NULL OR {base_expr.sql} = '[]'::jsonb)"
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
     def _transpile_concatenation(
-        self,
-        fhir_path: str,
-        as_text: bool,
-        context_path: Optional[str]
+        self, fhir_path: str, as_text: bool, context_path: Optional[str]
     ) -> FHIRPathExpression:
         """
         Transpile string concatenation using + operator
@@ -400,7 +353,7 @@ class FHIRPathTranspiler:
             FHIRPathExpression with SQL concatenation using ||
         """
         # Split by + operator
-        parts = fhir_path.split(' + ')
+        parts = fhir_path.split(" + ")
 
         sql_parts = []
         for part in parts:
@@ -418,15 +371,10 @@ class FHIRPathTranspiler:
         # Join with SQL concatenation operator ||
         sql = " || ".join(sql_parts)
 
-        return FHIRPathExpression(
-            path=fhir_path,
-            sql=sql
-        )
+        return FHIRPathExpression(path=fhir_path, sql=sql)
 
     def transpile_forEach(
-        self,
-        fhir_path: str,
-        column_paths: List[Tuple[str, str]]
+        self, fhir_path: str, column_paths: List[Tuple[str, str]]
     ) -> Tuple[str, str, str]:
         """
         Transpile forEach expression for lateral join
@@ -463,8 +411,7 @@ class FHIRPathTranspiler:
 
 
 def create_fhirpath_transpiler(
-    resource_alias: str = "v",
-    resource_column: str = "res_text_vc"
+    resource_alias: str = "v", resource_column: str = "res_text_vc"
 ) -> FHIRPathTranspiler:
     """
     Factory function to create FHIRPath transpiler

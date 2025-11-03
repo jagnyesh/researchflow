@@ -57,11 +57,7 @@ class LangGraphAgentAdapter:
         self.agent_name = base_agent.__class__.__name__
         logger.info(f"[LangGraphAgentAdapter] Initialized for {self.agent_name}")
 
-    async def execute_with_state(
-        self,
-        task: str,
-        state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute_with_state(self, task: str, state: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute agent task and return LangGraph state updates.
 
@@ -116,10 +112,7 @@ class LangGraphAgentAdapter:
         except Exception as e:
             logger.error(f"[LangGraphAgentAdapter] {self.agent_name} failed: {e}")
             # Return error state updates
-            return {
-                "error": str(e),
-                "updated_at": datetime.now().isoformat()
-            }
+            return {"error": str(e), "updated_at": datetime.now().isoformat()}
 
         # Map agent result to state updates
         state_updates = self._result_to_state(result, task)
@@ -149,40 +142,30 @@ class LangGraphAgentAdapter:
             # Request metadata
             "request_id": state.get("request_id"),
             "current_state": state.get("current_state"),
-
             # Requirements (for phenotype/extraction agents)
             "requirements": state.get("requirements", {}),
             "requirements_complete": state.get("requirements_complete", False),
-
             # Feasibility (for extraction/qa agents)
             "phenotype_sql": state.get("phenotype_sql"),
             "feasible": state.get("feasible", False),
             "estimated_cohort_size": state.get("estimated_cohort_size"),
-
             # Meeting info (for extraction agent)
             "meeting_scheduled": state.get("meeting_scheduled", False),
             "meeting_details": state.get("meeting_details"),
-
             # Extraction data (for QA agent)
             "extraction_complete": state.get("extraction_complete", False),
             "extracted_data_summary": state.get("extracted_data_summary"),
-
             # Researcher info (for delivery agent)
             "researcher_info": state.get("researcher_info", {}),
             "researcher_request": state.get("researcher_request"),
-
             # Generic fields agents may use
             "created_at": state.get("created_at"),
-            "updated_at": state.get("updated_at")
+            "updated_at": state.get("updated_at"),
         }
 
         return context
 
-    def _result_to_state(
-        self,
-        result: Dict[str, Any],
-        task: str
-    ) -> Dict[str, Any]:
+    def _result_to_state(self, result: Dict[str, Any], task: str) -> Dict[str, Any]:
         """
         Convert BaseAgent result to LangGraph state updates.
 
@@ -202,9 +185,7 @@ class LangGraphAgentAdapter:
         - QAAgent: {overall_status, qa_report, passed}
         - DeliveryAgent: {delivered, delivery_info}
         """
-        state_updates = {
-            "updated_at": datetime.now().isoformat()
-        }
+        state_updates = {"updated_at": datetime.now().isoformat()}
 
         # Map common fields
         if "error" in result:
@@ -218,22 +199,17 @@ class LangGraphAgentAdapter:
             state_updates["feasibility_score"] = result["feasibility_score"]
         if "estimated_cohort_size" in result or "cohort_size" in result:
             state_updates["estimated_cohort_size"] = result.get(
-                "estimated_cohort_size",
-                result.get("cohort_size")
+                "estimated_cohort_size", result.get("cohort_size")
             )
         if "phenotype_sql" in result or "sql" in result:
-            state_updates["phenotype_sql"] = result.get(
-                "phenotype_sql",
-                result.get("sql")
-            )
+            state_updates["phenotype_sql"] = result.get("phenotype_sql", result.get("sql"))
 
         # Extraction Agent results
         if "extraction_complete" in result:
             state_updates["extraction_complete"] = result["extraction_complete"]
         if "extracted_data_summary" in result or "data_summary" in result:
             state_updates["extracted_data_summary"] = result.get(
-                "extracted_data_summary",
-                result.get("data_summary")
+                "extracted_data_summary", result.get("data_summary")
             )
 
         # QA Agent results
@@ -257,19 +233,16 @@ class LangGraphAgentAdapter:
         if "needs_approval" in result:
             # Agents can request human approval
             state_updates["escalation_reason"] = result.get(
-                "escalation_reason",
-                "Agent requested human review"
+                "escalation_reason", "Agent requested human review"
             )
 
-        logger.debug(f"[LangGraphAgentAdapter] Mapped {task} result to state updates: {list(state_updates.keys())}")
+        logger.debug(
+            f"[LangGraphAgentAdapter] Mapped {task} result to state updates: {list(state_updates.keys())}"
+        )
 
         return state_updates
 
-    async def execute_task(
-        self,
-        task: str,
-        context: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Direct passthrough to BaseAgent.handle_task().
 
@@ -297,13 +270,14 @@ class LangGraphAgentAdapter:
             "agent_type": type(self.agent).__name__,
             "agent_module": type(self.agent).__module__,
             "has_handle_task": hasattr(self.agent, "handle_task"),
-            "has_execute_task": hasattr(self.agent, "execute_task")
+            "has_execute_task": hasattr(self.agent, "execute_task"),
         }
 
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
+
 
 def create_adapter_for_agent(agent_instance) -> LangGraphAgentAdapter:
     """
@@ -335,7 +309,7 @@ def create_adapters_for_all_agents(
     qa_agent=None,
     delivery_agent=None,
     requirements_agent=None,
-    calendar_agent=None
+    calendar_agent=None,
 ) -> Dict[str, LangGraphAgentAdapter]:
     """
     Create adapters for all provided agents.

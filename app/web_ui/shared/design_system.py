@@ -12,104 +12,98 @@ Provides consistency across Researcher Portal, Admin Dashboard, and Research Not
 # Color Palette
 COLORS = {
     # Primary (Actions, Links)
-    'primary': '#007AFF',
-    'primary_hover': '#0051D5',
-    'primary_light': 'rgba(0, 122, 255, 0.1)',
-
+    "primary": "#007AFF",
+    "primary_hover": "#0051D5",
+    "primary_light": "rgba(0, 122, 255, 0.1)",
     # Secondary
-    'secondary': '#5856D6',
-    'secondary_light': 'rgba(88, 86, 214, 0.1)',
-
+    "secondary": "#5856D6",
+    "secondary_light": "rgba(88, 86, 214, 0.1)",
     # Status Colors
-    'success': '#28a745',
-    'success_light': '#d4edda',
-    'warning': '#ffc107',
-    'warning_light': '#fff3cd',
-    'danger': '#dc3545',
-    'danger_light': '#f8d7da',
-    'info': '#17a2b8',
-    'info_light': '#d1ecf1',
-
+    "success": "#28a745",
+    "success_light": "#d4edda",
+    "warning": "#ffc107",
+    "warning_light": "#fff3cd",
+    "danger": "#dc3545",
+    "danger_light": "#f8d7da",
+    "info": "#17a2b8",
+    "info_light": "#d1ecf1",
     # Neutral Grays
-    'gray_50': '#f5f7fa',
-    'gray_100': '#e8ecf1',
-    'gray_200': '#d1d5db',
-    'gray_300': '#9ca3af',
-    'gray_400': '#6b7280',
-    'gray_500': '#4b5563',
-    'gray_600': '#374151',
-    'gray_700': '#1f2937',
-    'gray_800': '#111827',
-
+    "gray_50": "#f5f7fa",
+    "gray_100": "#e8ecf1",
+    "gray_200": "#d1d5db",
+    "gray_300": "#9ca3af",
+    "gray_400": "#6b7280",
+    "gray_500": "#4b5563",
+    "gray_600": "#374151",
+    "gray_700": "#1f2937",
+    "gray_800": "#111827",
     # Text
-    'text_primary': '#1d1d1f',
-    'text_secondary': '#86868b',
-    'text_inverse': '#ffffff',
-
+    "text_primary": "#1d1d1f",
+    "text_secondary": "#86868b",
+    "text_inverse": "#ffffff",
     # Backgrounds
-    'bg_gradient_start': '#f5f7fa',
-    'bg_gradient_end': '#e8ecf1',
-    'bg_glass': 'rgba(255, 255, 255, 0.7)',
-    'bg_glass_elevated': 'rgba(255, 255, 255, 0.85)',
-    'bg_sidebar': 'rgba(255, 255, 255, 0.6)',
+    "bg_gradient_start": "#f5f7fa",
+    "bg_gradient_end": "#e8ecf1",
+    "bg_glass": "rgba(255, 255, 255, 0.7)",
+    "bg_glass_elevated": "rgba(255, 255, 255, 0.85)",
+    "bg_sidebar": "rgba(255, 255, 255, 0.6)",
 }
 
 # Typography Scale
 TYPOGRAPHY = {
-    'font_family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-    'font_family_mono': '"SF Mono", "Roboto Mono", "Courier New", monospace',
-
+    "font_family": '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    "font_family_mono": '"SF Mono", "Roboto Mono", "Courier New", monospace',
     # Font Sizes
-    'text_xs': '0.75rem',    # 12px
-    'text_sm': '0.875rem',   # 14px
-    'text_base': '1rem',     # 16px
-    'text_lg': '1.125rem',   # 18px
-    'text_xl': '1.25rem',    # 20px
-    'text_2xl': '1.5rem',    # 24px
-    'text_3xl': '1.875rem',  # 30px
-
+    "text_xs": "0.75rem",  # 12px
+    "text_sm": "0.875rem",  # 14px
+    "text_base": "1rem",  # 16px
+    "text_lg": "1.125rem",  # 18px
+    "text_xl": "1.25rem",  # 20px
+    "text_2xl": "1.5rem",  # 24px
+    "text_3xl": "1.875rem",  # 30px
     # Font Weights
-    'weight_normal': '400',
-    'weight_medium': '500',
-    'weight_semibold': '600',
-    'weight_bold': '700',
+    "weight_normal": "400",
+    "weight_medium": "500",
+    "weight_semibold": "600",
+    "weight_bold": "700",
 }
 
 # Spacing System (8px grid)
 SPACING = {
-    'xs': '0.25rem',   # 4px
-    'sm': '0.5rem',    # 8px
-    'md': '1rem',      # 16px
-    'lg': '1.5rem',    # 24px
-    'xl': '2rem',      # 32px
-    '2xl': '3rem',     # 48px
-    '3xl': '4rem',     # 64px
+    "xs": "0.25rem",  # 4px
+    "sm": "0.5rem",  # 8px
+    "md": "1rem",  # 16px
+    "lg": "1.5rem",  # 24px
+    "xl": "2rem",  # 32px
+    "2xl": "3rem",  # 48px
+    "3xl": "4rem",  # 64px
 }
 
 # Border Radius
 RADIUS = {
-    'sm': '0.375rem',   # 6px
-    'md': '0.5rem',     # 8px
-    'lg': '0.75rem',    # 12px
-    'xl': '1rem',       # 16px
-    '2xl': '1.25rem',   # 20px
-    'full': '9999px',
+    "sm": "0.375rem",  # 6px
+    "md": "0.5rem",  # 8px
+    "lg": "0.75rem",  # 12px
+    "xl": "1rem",  # 16px
+    "2xl": "1.25rem",  # 20px
+    "full": "9999px",
 }
 
 # Shadows
 SHADOWS = {
-    'sm': '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-    'md': '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
-    'lg': '0 10px 15px -3px rgba(0, 0, 0, 0.1)',
-    'xl': '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-    'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.15)',
-    'primary': '0 4px 15px rgba(0, 122, 255, 0.3)',
+    "sm": "0 1px 2px 0 rgba(0, 0, 0, 0.05)",
+    "md": "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+    "lg": "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
+    "xl": "0 20px 25px -5px rgba(0, 0, 0, 0.1)",
+    "glass": "0 8px 32px 0 rgba(31, 38, 135, 0.15)",
+    "primary": "0 4px 15px rgba(0, 122, 255, 0.3)",
 }
 
 
 # ============================================================================
 # BASE STYLES
 # ============================================================================
+
 
 def get_base_styles() -> str:
     """
@@ -687,6 +681,7 @@ def get_base_styles() -> str:
 # COMPONENT FUNCTIONS
 # ============================================================================
 
+
 def render_status_badge(status: str) -> str:
     """
     Render a status badge with appropriate styling
@@ -697,8 +692,8 @@ def render_status_badge(status: str) -> str:
     Returns:
         HTML string for the badge
     """
-    status_lower = status.lower().replace('_', '-')
-    status_display = status.replace('_', ' ').title()
+    status_lower = status.lower().replace("_", "-")
+    status_display = status.replace("_", " ").title()
 
     return f'<span class="status-badge status-{status_lower}">{status_display}</span>'
 
@@ -716,8 +711,8 @@ def render_metric_card(label: str, value: str, delta: str = None, help_text: str
     Returns:
         HTML string for metric card
     """
-    delta_html = f'<div class="metric-delta">{delta}</div>' if delta else ''
-    help_html = f'<span class="metric-help" title="{help_text}">ⓘ</span>' if help_text else ''
+    delta_html = f'<div class="metric-delta">{delta}</div>' if delta else ""
+    help_html = f'<span class="metric-help" title="{help_text}">ⓘ</span>' if help_text else ""
 
     return f"""
     <div class="glass-card" style="text-align: center;">
@@ -732,7 +727,7 @@ def render_metric_card(label: str, value: str, delta: str = None, help_text: str
     """
 
 
-def get_app_navigation_header(role: str = 'researcher') -> str:
+def get_app_navigation_header(role: str = "researcher") -> str:
     """
     Render navigation header with links based on user role
 
@@ -785,7 +780,7 @@ def get_app_navigation_header(role: str = 'researcher') -> str:
     """
 
 
-def render_app_navigation_links(role: str = 'researcher') -> str:
+def render_app_navigation_links(role: str = "researcher") -> str:
     """
     Render clickable navigation links using simple HTML without JavaScript
 
@@ -798,12 +793,18 @@ def render_app_navigation_links(role: str = 'researcher') -> str:
     Returns:
         HTML string with navigation links (no JavaScript)
     """
-    portal_link = f'<a href="http://localhost:8501" target="_blank" class="nav-link">🔬 Researcher Portal</a>'
-    admin_link = f'<a href="http://localhost:8502" target="_blank" class="nav-link">⚙️ Admin Dashboard</a>'
-    notebook_link = f'<a href="http://localhost:8503" target="_blank" class="nav-link">🤖 Research Notebook</a>'
+    portal_link = (
+        f'<a href="http://localhost:8501" target="_blank" class="nav-link">🔬 Researcher Portal</a>'
+    )
+    admin_link = (
+        f'<a href="http://localhost:8502" target="_blank" class="nav-link">⚙️ Admin Dashboard</a>'
+    )
+    notebook_link = (
+        f'<a href="http://localhost:8503" target="_blank" class="nav-link">🤖 Research Notebook</a>'
+    )
 
     links = portal_link
-    if role == 'admin':
+    if role == "admin":
         links += admin_link
     links += notebook_link
 

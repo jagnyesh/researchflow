@@ -266,4 +266,4 @@ For production use, consider:
 - **Architecture:** See `CLAUDE.md`
 - **PRD Reference:** See `ResearchFlow PRD.md`
 
-Enjoy automating your research data requests! 
+Enjoy automating your research data requests!

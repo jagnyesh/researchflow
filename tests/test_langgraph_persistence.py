@@ -18,17 +18,15 @@ from datetime import datetime
 from app.langchain_orchestrator.persistence import (
     get_checkpointer,
     create_thread_config,
-    DEFAULT_CHECKPOINT_DB
+    DEFAULT_CHECKPOINT_DB,
 )
-from app.langchain_orchestrator.langgraph_workflow import (
-    FullWorkflow,
-    FullWorkflowState
-)
+from app.langchain_orchestrator.langgraph_workflow import FullWorkflow, FullWorkflowState
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 async def test_checkpointer():
@@ -65,15 +63,13 @@ def sample_initial_state() -> FullWorkflowState:
         "current_state": "new_request",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
-
         # Researcher info
         "researcher_request": "Test persistence request",
         "researcher_info": {
             "name": "Test Researcher",
             "email": "test@example.com",
-            "department": "Test Department"
+            "department": "Test Department",
         },
-
         # Requirements phase
         "requirements": {},
         "conversation_history": [],
@@ -81,7 +77,6 @@ def sample_initial_state() -> FullWorkflowState:
         "requirements_complete": False,
         "requirements_approved": None,
         "requirements_rejection_reason": None,
-
         # Feasibility phase
         "phenotype_sql": None,
         "feasibility_score": 0.0,
@@ -89,36 +84,30 @@ def sample_initial_state() -> FullWorkflowState:
         "feasible": False,
         "phenotype_approved": None,
         "phenotype_rejection_reason": None,
-
         # Kickoff phase
         "meeting_scheduled": False,
         "meeting_details": None,
-
         # Extraction phase
         "extraction_approved": None,
         "extraction_rejection_reason": None,
         "extraction_complete": False,
         "extracted_data_summary": None,
-
         # QA phase
         "overall_status": None,
         "qa_report": None,
         "qa_approved": None,
         "qa_rejection_reason": None,
-
         # Delivery phase
         "delivered": False,
         "delivered_at": None,
         "delivery_location": None,
         "delivery_info": None,
-
         # Error handling
         "error": None,
         "escalation_reason": None,
-
         # Scope change
         "scope_change_requested": False,
-        "scope_approved": None
+        "scope_approved": None,
     }
 
 
@@ -126,13 +115,14 @@ def sample_initial_state() -> FullWorkflowState:
 # Tests: Checkpointer Initialization
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_checkpointer_initialization(test_checkpointer):
     """Test that checkpointer initializes successfully"""
     assert test_checkpointer is not None
-    assert hasattr(test_checkpointer, 'setup')
-    assert hasattr(test_checkpointer, 'aget')
-    assert hasattr(test_checkpointer, 'aput')
+    assert hasattr(test_checkpointer, "setup")
+    assert hasattr(test_checkpointer, "aget")
+    assert hasattr(test_checkpointer, "aput")
 
 
 @pytest.mark.asyncio
@@ -155,6 +145,7 @@ async def test_checkpointer_creates_database():
 # Tests: Thread Configuration
 # ============================================================================
 
+
 def test_create_thread_config():
     """Test thread config creation"""
     request_id = "REQ-12345"
@@ -176,6 +167,7 @@ def test_thread_config_unique_per_request():
 # ============================================================================
 # Tests: Workflow Integration
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_workflow_with_persistence(test_checkpointer, sample_initial_state):
@@ -272,6 +264,7 @@ async def test_thread_isolation(test_checkpointer, sample_initial_state):
 # Tests: Persistence Configuration
 # ============================================================================
 
+
 def test_default_checkpoint_db_path():
     """Test that default checkpoint path is correct"""
     assert DEFAULT_CHECKPOINT_DB == "data/langgraph_checkpoints.db"
@@ -293,6 +286,7 @@ def test_checkpoint_db_path_from_env():
 # Tests: Error Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_checkpointer_handles_concurrent_access(test_checkpointer):
     """Test that checkpointer handles concurrent writes safely"""
@@ -309,7 +303,7 @@ async def test_checkpointer_handles_concurrent_access(test_checkpointer):
     results = await asyncio.gather(
         run_workflow("CONCURRENT-001", sample_initial_state()),
         run_workflow("CONCURRENT-002", sample_initial_state()),
-        run_workflow("CONCURRENT-003", sample_initial_state())
+        run_workflow("CONCURRENT-003", sample_initial_state()),
     )
 
     # All should complete successfully
@@ -323,6 +317,7 @@ async def test_checkpointer_handles_concurrent_access(test_checkpointer):
 # ============================================================================
 # Tests: Cleanup & Maintenance
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_checkpoint_database_cleanup():
@@ -348,6 +343,7 @@ async def test_checkpoint_database_cleanup():
 # ============================================================================
 # Integration Test: Complete Workflow with Persistence
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_complete_workflow_with_checkpoints(test_checkpointer, sample_initial_state):

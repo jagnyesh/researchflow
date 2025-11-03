@@ -37,7 +37,7 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # Load environment variables from .env file
-env_path = project_root / '.env'
+env_path = project_root / ".env"
 load_dotenv(dotenv_path=env_path)
 
 # Import both agents
@@ -51,10 +51,7 @@ class RequirementsAgentBenchmark:
     def __init__(self, iterations: int = 10, verbose: bool = False):
         self.iterations = iterations
         self.verbose = verbose
-        self.results = {
-            'custom': [],
-            'langchain': []
-        }
+        self.results = {"custom": [], "langchain": []}
 
     def log(self, message: str) -> None:
         """Log message if verbose mode enabled"""
@@ -62,10 +59,7 @@ class RequirementsAgentBenchmark:
             print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}")
 
     async def benchmark_single_turn(
-        self,
-        agent,
-        request_id: str,
-        initial_request: str
+        self, agent, request_id: str, initial_request: str
     ) -> Dict[str, Any]:
         """
         Benchmark single conversation turn
@@ -85,45 +79,37 @@ class RequirementsAgentBenchmark:
                         {
                             "description": "diabetes mellitus",
                             "concepts": [{"type": "condition", "term": "diabetes"}],
-                            "codes": []
+                            "codes": [],
                         }
                     ],
                     "exclusion_criteria": [],
                     "data_elements": [],
-                    "time_period": {"start": "2024-01-01", "end": "2024-12-31"}
+                    "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
                 },
                 "completeness_score": 0.4,
                 "missing_fields": ["data_elements", "phi_level", "irb_number"],
                 "ready_for_submission": False,
-                "next_question": "What specific data elements do you need?"
+                "next_question": "What specific data elements do you need?",
             }
 
             # For custom agent: mock llm_client.extract_requirements
             # For LangChain agent: mock llm.ainvoke
             if isinstance(agent, CustomAgent):
                 with patch.object(
-                    agent.llm_client,
-                    'extract_requirements',
-                    return_value=mock_response_data
+                    agent.llm_client, "extract_requirements", return_value=mock_response_data
                 ):
                     result = await agent.execute_task(
                         "gather_requirements",
-                        {
-                            "request_id": request_id,
-                            "initial_request": initial_request
-                        }
+                        {"request_id": request_id, "initial_request": initial_request},
                     )
             else:  # LangChainAgent
                 mock_response = Mock()
                 mock_response.content = json.dumps(mock_response_data)
 
-                with patch.object(agent.llm, 'ainvoke', return_value=mock_response):
+                with patch.object(agent.llm, "ainvoke", return_value=mock_response):
                     result = await agent.execute_task(
                         "gather_requirements",
-                        {
-                            "request_id": request_id,
-                            "initial_request": initial_request
-                        }
+                        {"request_id": request_id, "initial_request": initial_request},
                     )
 
             # Measure time
@@ -138,7 +124,7 @@ class RequirementsAgentBenchmark:
                 "memory_current": current / 1024 / 1024,  # MB
                 "memory_peak": peak / 1024 / 1024,  # MB
                 "result": result,
-                "success": True
+                "success": True,
             }
 
         except Exception as e:
@@ -151,14 +137,10 @@ class RequirementsAgentBenchmark:
                 "memory_peak": 0,
                 "result": None,
                 "success": False,
-                "error": str(e)
+                "error": str(e),
             }
 
-    async def benchmark_multi_turn_conversation(
-        self,
-        agent,
-        request_id: str
-    ) -> Dict[str, Any]:
+    async def benchmark_multi_turn_conversation(self, agent, request_id: str) -> Dict[str, Any]:
         """
         Benchmark complete multi-turn conversation (3 turns to completion)
 
@@ -175,29 +157,41 @@ class RequirementsAgentBenchmark:
             mock_response_1 = {
                 "extracted_requirements": {
                     "inclusion_criteria": [
-                        {"description": "diabetes", "concepts": [{"type": "condition", "term": "diabetes"}], "codes": []}
+                        {
+                            "description": "diabetes",
+                            "concepts": [{"type": "condition", "term": "diabetes"}],
+                            "codes": [],
+                        }
                     ],
-                    "time_period": {"start": "2024-01-01", "end": "2024-12-31"}
+                    "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
                 },
                 "completeness_score": 0.4,
                 "missing_fields": ["data_elements", "phi_level"],
                 "ready_for_submission": False,
-                "next_question": "What data elements?"
+                "next_question": "What data elements?",
             }
 
             if isinstance(agent, CustomAgent):
-                with patch.object(agent.llm_client, 'extract_requirements', return_value=mock_response_1):
+                with patch.object(
+                    agent.llm_client, "extract_requirements", return_value=mock_response_1
+                ):
                     result1 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "initial_request": "I need diabetes patients from 2024"}
+                        {
+                            "request_id": request_id,
+                            "initial_request": "I need diabetes patients from 2024",
+                        },
                     )
             else:
                 mock = Mock()
                 mock.content = json.dumps(mock_response_1)
-                with patch.object(agent.llm, 'ainvoke', return_value=mock):
+                with patch.object(agent.llm, "ainvoke", return_value=mock):
                     result1 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "initial_request": "I need diabetes patients from 2024"}
+                        {
+                            "request_id": request_id,
+                            "initial_request": "I need diabetes patients from 2024",
+                        },
                     )
 
             turns.append(result1)
@@ -206,30 +200,36 @@ class RequirementsAgentBenchmark:
             mock_response_2 = {
                 "extracted_requirements": {
                     "inclusion_criteria": [
-                        {"description": "diabetes", "concepts": [{"type": "condition", "term": "diabetes"}], "codes": []}
+                        {
+                            "description": "diabetes",
+                            "concepts": [{"type": "condition", "term": "diabetes"}],
+                            "codes": [],
+                        }
                     ],
                     "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
-                    "data_elements": ["demographics", "lab_results"]
+                    "data_elements": ["demographics", "lab_results"],
                 },
                 "completeness_score": 0.7,
                 "missing_fields": ["phi_level"],
                 "ready_for_submission": False,
-                "next_question": "What PHI level?"
+                "next_question": "What PHI level?",
             }
 
             if isinstance(agent, CustomAgent):
-                with patch.object(agent.llm_client, 'extract_requirements', return_value=mock_response_2):
+                with patch.object(
+                    agent.llm_client, "extract_requirements", return_value=mock_response_2
+                ):
                     result2 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "user_response": "Demographics and lab results"}
+                        {"request_id": request_id, "user_response": "Demographics and lab results"},
                     )
             else:
                 mock = Mock()
                 mock.content = json.dumps(mock_response_2)
-                with patch.object(agent.llm, 'ainvoke', return_value=mock):
+                with patch.object(agent.llm, "ainvoke", return_value=mock):
                     result2 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "user_response": "Demographics and lab results"}
+                        {"request_id": request_id, "user_response": "Demographics and lab results"},
                     )
 
             turns.append(result2)
@@ -238,31 +238,37 @@ class RequirementsAgentBenchmark:
             mock_response_3 = {
                 "extracted_requirements": {
                     "inclusion_criteria": [
-                        {"description": "diabetes", "concepts": [{"type": "condition", "term": "diabetes"}], "codes": []}
+                        {
+                            "description": "diabetes",
+                            "concepts": [{"type": "condition", "term": "diabetes"}],
+                            "codes": [],
+                        }
                     ],
                     "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
                     "data_elements": ["demographics", "lab_results"],
-                    "phi_level": "de-identified"
+                    "phi_level": "de-identified",
                 },
                 "completeness_score": 0.9,
                 "missing_fields": [],
                 "ready_for_submission": True,
-                "next_question": ""
+                "next_question": "",
             }
 
             if isinstance(agent, CustomAgent):
-                with patch.object(agent.llm_client, 'extract_requirements', return_value=mock_response_3):
+                with patch.object(
+                    agent.llm_client, "extract_requirements", return_value=mock_response_3
+                ):
                     result3 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "user_response": "De-identified"}
+                        {"request_id": request_id, "user_response": "De-identified"},
                     )
             else:
                 mock = Mock()
                 mock.content = json.dumps(mock_response_3)
-                with patch.object(agent.llm, 'ainvoke', return_value=mock):
+                with patch.object(agent.llm, "ainvoke", return_value=mock):
                     result3 = await agent.execute_task(
                         "gather_requirements",
-                        {"request_id": request_id, "user_response": "De-identified"}
+                        {"request_id": request_id, "user_response": "De-identified"},
                     )
 
             turns.append(result3)
@@ -276,9 +282,9 @@ class RequirementsAgentBenchmark:
                 "total_time": execution_time,
                 "memory_peak": peak / 1024 / 1024,  # MB
                 "conversation_turns": len(turns),
-                "final_completeness": result3.get('completeness_score', 0),
-                "requirements_complete": result3.get('requirements_complete', False),
-                "success": True
+                "final_completeness": result3.get("completeness_score", 0),
+                "requirements_complete": result3.get("requirements_complete", False),
+                "success": True,
             }
 
         except Exception as e:
@@ -292,7 +298,7 @@ class RequirementsAgentBenchmark:
                 "final_completeness": 0,
                 "requirements_complete": False,
                 "success": False,
-                "error": str(e)
+                "error": str(e),
             }
 
     async def run_benchmarks(self) -> None:
@@ -321,7 +327,7 @@ class RequirementsAgentBenchmark:
             result = await self.benchmark_single_turn(
                 custom_agent,
                 f"custom-single-{i}",
-                "I need patients with diabetes mellitus diagnosed in 2024"
+                "I need patients with diabetes mellitus diagnosed in 2024",
             )
             custom_single_results.append(result)
 
@@ -329,7 +335,7 @@ class RequirementsAgentBenchmark:
             result = await self.benchmark_single_turn(
                 langchain_agent,
                 f"langchain-single-{i}",
-                "I need patients with diabetes mellitus diagnosed in 2024"
+                "I need patients with diabetes mellitus diagnosed in 2024",
             )
             langchain_single_results.append(result)
 
@@ -341,29 +347,22 @@ class RequirementsAgentBenchmark:
 
         for i in range(self.iterations):
             self.log(f"Custom agent multi-turn {i+1}/{self.iterations}")
-            result = await self.benchmark_multi_turn_conversation(
-                custom_agent,
-                f"custom-multi-{i}"
-            )
+            result = await self.benchmark_multi_turn_conversation(custom_agent, f"custom-multi-{i}")
             custom_multi_results.append(result)
 
             self.log(f"LangChain agent multi-turn {i+1}/{self.iterations}")
             result = await self.benchmark_multi_turn_conversation(
-                langchain_agent,
-                f"langchain-multi-{i}"
+                langchain_agent, f"langchain-multi-{i}"
             )
             langchain_multi_results.append(result)
 
         # Store results
         self.results = {
-            'custom': {
-                'single_turn': custom_single_results,
-                'multi_turn': custom_multi_results
+            "custom": {"single_turn": custom_single_results, "multi_turn": custom_multi_results},
+            "langchain": {
+                "single_turn": langchain_single_results,
+                "multi_turn": langchain_multi_results,
             },
-            'langchain': {
-                'single_turn': langchain_single_results,
-                'multi_turn': langchain_multi_results
-            }
         }
 
         print()
@@ -372,7 +371,7 @@ class RequirementsAgentBenchmark:
 
     def calculate_statistics(self, results: List[Dict[str, Any]], metric: str) -> Dict[str, float]:
         """Calculate statistics for a metric"""
-        values = [r[metric] for r in results if r.get('success', False)]
+        values = [r[metric] for r in results if r.get("success", False)]
 
         if not values:
             return {"mean": 0, "median": 0, "std": 0, "min": 0, "max": 0}
@@ -382,7 +381,7 @@ class RequirementsAgentBenchmark:
             "median": statistics.median(values),
             "std": statistics.stdev(values) if len(values) > 1 else 0,
             "min": min(values),
-            "max": max(values)
+            "max": max(values),
         }
 
     def print_comparison_table(self) -> None:
@@ -397,29 +396,43 @@ class RequirementsAgentBenchmark:
         print("Single-Turn Conversation Performance:")
         print("-" * 80)
 
-        custom_single = self.results['custom']['single_turn']
-        langchain_single = self.results['langchain']['single_turn']
+        custom_single = self.results["custom"]["single_turn"]
+        langchain_single = self.results["langchain"]["single_turn"]
 
         # Execution time
-        custom_time = self.calculate_statistics(custom_single, 'execution_time')
-        langchain_time = self.calculate_statistics(langchain_single, 'execution_time')
+        custom_time = self.calculate_statistics(custom_single, "execution_time")
+        langchain_time = self.calculate_statistics(langchain_single, "execution_time")
 
         print(f"{'Metric':<30} {'Custom':<20} {'LangChain':<20} {'Winner':<10}")
         print("-" * 80)
-        print(f"{'Execution Time (mean ms)':<30} {custom_time['mean']*1000:<20.2f} {langchain_time['mean']*1000:<20.2f} {self._winner(custom_time['mean'], langchain_time['mean'], lower_better=True):<10}")
-        print(f"{'Execution Time (median ms)':<30} {custom_time['median']*1000:<20.2f} {langchain_time['median']*1000:<20.2f} {self._winner(custom_time['median'], langchain_time['median'], lower_better=True):<10}")
+        print(
+            f"{'Execution Time (mean ms)':<30} {custom_time['mean']*1000:<20.2f} {langchain_time['mean']*1000:<20.2f} {self._winner(custom_time['mean'], langchain_time['mean'], lower_better=True):<10}"
+        )
+        print(
+            f"{'Execution Time (median ms)':<30} {custom_time['median']*1000:<20.2f} {langchain_time['median']*1000:<20.2f} {self._winner(custom_time['median'], langchain_time['median'], lower_better=True):<10}"
+        )
 
         # Memory
-        custom_mem = self.calculate_statistics(custom_single, 'memory_peak')
-        langchain_mem = self.calculate_statistics(langchain_single, 'memory_peak')
+        custom_mem = self.calculate_statistics(custom_single, "memory_peak")
+        langchain_mem = self.calculate_statistics(langchain_single, "memory_peak")
 
-        print(f"{'Peak Memory (mean MB)':<30} {custom_mem['mean']:<20.2f} {langchain_mem['mean']:<20.2f} {self._winner(custom_mem['mean'], langchain_mem['mean'], lower_better=True):<10}")
+        print(
+            f"{'Peak Memory (mean MB)':<30} {custom_mem['mean']:<20.2f} {langchain_mem['mean']:<20.2f} {self._winner(custom_mem['mean'], langchain_mem['mean'], lower_better=True):<10}"
+        )
 
         # Success rate
-        custom_success = sum(1 for r in custom_single if r.get('success', False)) / len(custom_single) * 100
-        langchain_success = sum(1 for r in langchain_single if r.get('success', False)) / len(langchain_single) * 100
+        custom_success = (
+            sum(1 for r in custom_single if r.get("success", False)) / len(custom_single) * 100
+        )
+        langchain_success = (
+            sum(1 for r in langchain_single if r.get("success", False))
+            / len(langchain_single)
+            * 100
+        )
 
-        print(f"{'Success Rate (%)':<30} {custom_success:<20.1f} {langchain_success:<20.1f} {self._winner(custom_success, langchain_success, lower_better=False):<10}")
+        print(
+            f"{'Success Rate (%)':<30} {custom_success:<20.1f} {langchain_success:<20.1f} {self._winner(custom_success, langchain_success, lower_better=False):<10}"
+        )
 
         print()
 
@@ -427,31 +440,47 @@ class RequirementsAgentBenchmark:
         print("Multi-Turn Conversation Performance (3 turns to completion):")
         print("-" * 80)
 
-        custom_multi = self.results['custom']['multi_turn']
-        langchain_multi = self.results['langchain']['multi_turn']
+        custom_multi = self.results["custom"]["multi_turn"]
+        langchain_multi = self.results["langchain"]["multi_turn"]
 
-        custom_time_multi = self.calculate_statistics(custom_multi, 'total_time')
-        langchain_time_multi = self.calculate_statistics(langchain_multi, 'total_time')
+        custom_time_multi = self.calculate_statistics(custom_multi, "total_time")
+        langchain_time_multi = self.calculate_statistics(langchain_multi, "total_time")
 
         print(f"{'Metric':<30} {'Custom':<20} {'LangChain':<20} {'Winner':<10}")
         print("-" * 80)
-        print(f"{'Total Time (mean ms)':<30} {custom_time_multi['mean']*1000:<20.2f} {langchain_time_multi['mean']*1000:<20.2f} {self._winner(custom_time_multi['mean'], langchain_time_multi['mean'], lower_better=True):<10}")
+        print(
+            f"{'Total Time (mean ms)':<30} {custom_time_multi['mean']*1000:<20.2f} {langchain_time_multi['mean']*1000:<20.2f} {self._winner(custom_time_multi['mean'], langchain_time_multi['mean'], lower_better=True):<10}"
+        )
 
-        custom_mem_multi = self.calculate_statistics(custom_multi, 'memory_peak')
-        langchain_mem_multi = self.calculate_statistics(langchain_multi, 'memory_peak')
+        custom_mem_multi = self.calculate_statistics(custom_multi, "memory_peak")
+        langchain_mem_multi = self.calculate_statistics(langchain_multi, "memory_peak")
 
-        print(f"{'Peak Memory (mean MB)':<30} {custom_mem_multi['mean']:<20.2f} {langchain_mem_multi['mean']:<20.2f} {self._winner(custom_mem_multi['mean'], langchain_mem_multi['mean'], lower_better=True):<10}")
+        print(
+            f"{'Peak Memory (mean MB)':<30} {custom_mem_multi['mean']:<20.2f} {langchain_mem_multi['mean']:<20.2f} {self._winner(custom_mem_multi['mean'], langchain_mem_multi['mean'], lower_better=True):<10}"
+        )
 
         # Completion rate
-        custom_complete = sum(1 for r in custom_multi if r.get('requirements_complete', False)) / len(custom_multi) * 100
-        langchain_complete = sum(1 for r in langchain_multi if r.get('requirements_complete', False)) / len(langchain_multi) * 100
+        custom_complete = (
+            sum(1 for r in custom_multi if r.get("requirements_complete", False))
+            / len(custom_multi)
+            * 100
+        )
+        langchain_complete = (
+            sum(1 for r in langchain_multi if r.get("requirements_complete", False))
+            / len(langchain_multi)
+            * 100
+        )
 
-        print(f"{'Completion Rate (%)':<30} {custom_complete:<20.1f} {langchain_complete:<20.1f} {self._winner(custom_complete, langchain_complete, lower_better=False):<10}")
+        print(
+            f"{'Completion Rate (%)':<30} {custom_complete:<20.1f} {langchain_complete:<20.1f} {self._winner(custom_complete, langchain_complete, lower_better=False):<10}"
+        )
 
         print()
         print("=" * 80)
 
-    def _winner(self, custom_value: float, langchain_value: float, lower_better: bool = True) -> str:
+    def _winner(
+        self, custom_value: float, langchain_value: float, lower_better: bool = True
+    ) -> str:
         """Determine winner for a metric"""
         if abs(custom_value - langchain_value) < 0.01:  # Tie within 1%
             return "TIE"
@@ -466,55 +495,80 @@ class RequirementsAgentBenchmark:
         results_dir = Path("benchmarks/results")
         results_dir.mkdir(parents=True, exist_ok=True)
 
-        csv_path = results_dir / f"requirements_agent_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        csv_path = (
+            results_dir
+            / f"requirements_agent_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+        )
 
-        with open(csv_path, 'w', newline='') as f:
+        with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
 
             # Header
-            writer.writerow([
-                'Agent', 'Test', 'Iteration',
-                'Execution Time (ms)', 'Memory Peak (MB)',
-                'Success', 'Completeness Score'
-            ])
+            writer.writerow(
+                [
+                    "Agent",
+                    "Test",
+                    "Iteration",
+                    "Execution Time (ms)",
+                    "Memory Peak (MB)",
+                    "Success",
+                    "Completeness Score",
+                ]
+            )
 
             # Single-turn results
-            for i, result in enumerate(self.results['custom']['single_turn']):
-                writer.writerow([
-                    'Custom', 'Single-Turn', i+1,
-                    result['execution_time'] * 1000,
-                    result['memory_peak'],
-                    result['success'],
-                    result.get('result', {}).get('completeness_score', 0)
-                ])
+            for i, result in enumerate(self.results["custom"]["single_turn"]):
+                writer.writerow(
+                    [
+                        "Custom",
+                        "Single-Turn",
+                        i + 1,
+                        result["execution_time"] * 1000,
+                        result["memory_peak"],
+                        result["success"],
+                        result.get("result", {}).get("completeness_score", 0),
+                    ]
+                )
 
-            for i, result in enumerate(self.results['langchain']['single_turn']):
-                writer.writerow([
-                    'LangChain', 'Single-Turn', i+1,
-                    result['execution_time'] * 1000,
-                    result['memory_peak'],
-                    result['success'],
-                    result.get('result', {}).get('completeness_score', 0)
-                ])
+            for i, result in enumerate(self.results["langchain"]["single_turn"]):
+                writer.writerow(
+                    [
+                        "LangChain",
+                        "Single-Turn",
+                        i + 1,
+                        result["execution_time"] * 1000,
+                        result["memory_peak"],
+                        result["success"],
+                        result.get("result", {}).get("completeness_score", 0),
+                    ]
+                )
 
             # Multi-turn results
-            for i, result in enumerate(self.results['custom']['multi_turn']):
-                writer.writerow([
-                    'Custom', 'Multi-Turn', i+1,
-                    result['total_time'] * 1000,
-                    result['memory_peak'],
-                    result['success'],
-                    result.get('final_completeness', 0)
-                ])
+            for i, result in enumerate(self.results["custom"]["multi_turn"]):
+                writer.writerow(
+                    [
+                        "Custom",
+                        "Multi-Turn",
+                        i + 1,
+                        result["total_time"] * 1000,
+                        result["memory_peak"],
+                        result["success"],
+                        result.get("final_completeness", 0),
+                    ]
+                )
 
-            for i, result in enumerate(self.results['langchain']['multi_turn']):
-                writer.writerow([
-                    'LangChain', 'Multi-Turn', i+1,
-                    result['total_time'] * 1000,
-                    result['memory_peak'],
-                    result['success'],
-                    result.get('final_completeness', 0)
-                ])
+            for i, result in enumerate(self.results["langchain"]["multi_turn"]):
+                writer.writerow(
+                    [
+                        "LangChain",
+                        "Multi-Turn",
+                        i + 1,
+                        result["total_time"] * 1000,
+                        result["memory_peak"],
+                        result["success"],
+                        result.get("final_completeness", 0),
+                    ]
+                )
 
         print(f"Results saved to: {csv_path}")
 
@@ -523,16 +577,13 @@ async def main():
     """Main benchmark execution"""
     import argparse
 
-    parser = argparse.ArgumentParser(description='Benchmark Requirements Agent implementations')
-    parser.add_argument('--iterations', type=int, default=10, help='Number of iterations per test')
-    parser.add_argument('--verbose', action='store_true', help='Verbose output')
+    parser = argparse.ArgumentParser(description="Benchmark Requirements Agent implementations")
+    parser.add_argument("--iterations", type=int, default=10, help="Number of iterations per test")
+    parser.add_argument("--verbose", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
 
-    benchmark = RequirementsAgentBenchmark(
-        iterations=args.iterations,
-        verbose=args.verbose
-    )
+    benchmark = RequirementsAgentBenchmark(iterations=args.iterations, verbose=args.verbose)
 
     # Run benchmarks
     await benchmark.run_benchmarks()

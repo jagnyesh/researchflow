@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class UserIntent(Enum):
     """Types of user intents"""
+
     GREETING = "greeting"
     QUERY = "query"
     STATUS_CHECK = "status_check"
@@ -28,6 +29,7 @@ class UserIntent(Enum):
 
 class ConversationState(Enum):
     """Conversation states"""
+
     INITIAL = "initial"
     GATHERING_REQUIREMENTS = "gathering_requirements"
     SHOWING_FEASIBILITY = "showing_feasibility"
@@ -42,24 +44,38 @@ class ConversationManager:
 
     def __init__(self):
         self.greeting_keywords = [
-            "hi", "hello", "hey", "greetings", "good morning",
-            "good afternoon", "good evening", "howdy"
+            "hi",
+            "hello",
+            "hey",
+            "greetings",
+            "good morning",
+            "good afternoon",
+            "good evening",
+            "howdy",
         ]
         self.confirmation_keywords = [
-            "yes", "yeah", "yep", "sure", "ok", "okay", "proceed",
-            "continue", "go ahead", "confirm"
+            "yes",
+            "yeah",
+            "yep",
+            "sure",
+            "ok",
+            "okay",
+            "proceed",
+            "continue",
+            "go ahead",
+            "confirm",
         ]
-        self.rejection_keywords = [
-            "no", "nope", "cancel", "stop", "don't", "refine"
-        ]
+        self.rejection_keywords = ["no", "nope", "cancel", "stop", "don't", "refine"]
         self.status_keywords = [
-            "status", "where", "what's happening", "progress",
-            "how long", "when", "ready"
+            "status",
+            "where",
+            "what's happening",
+            "progress",
+            "how long",
+            "when",
+            "ready",
         ]
-        self.help_keywords = [
-            "help", "how", "what can you do", "capabilities",
-            "features", "guide"
-        ]
+        self.help_keywords = ["help", "how", "what can you do", "capabilities", "features", "guide"]
 
     def detect_intent(self, user_input: str) -> UserIntent:
         """
@@ -164,9 +180,7 @@ class ConversationManager:
 Need more help? Contact your informatician."""
 
     def format_feasibility_response(
-        self,
-        cohort_size: int,
-        feasibility_data: Dict[str, Any]
+        self, cohort_size: int, feasibility_data: Dict[str, Any]
     ) -> str:
         """
         Format feasibility check results
@@ -200,7 +214,9 @@ Need more help? Contact your informatician."""
         # Time period
         if "time_period" in feasibility_data:
             time_period = feasibility_data["time_period"]
-            response += f"**Time Period:** {time_period.get('start')} to {time_period.get('end')}\n\n"
+            response += (
+                f"**Time Period:** {time_period.get('start')} to {time_period.get('end')}\n\n"
+            )
 
         # Warnings
         if "warnings" in feasibility_data and feasibility_data["warnings"]:
@@ -230,10 +246,7 @@ Need more help? Contact your informatician."""
         return response
 
     def format_approval_status(
-        self,
-        request_id: str,
-        current_state: str,
-        approval_status: Optional[Dict[str, Any]] = None
+        self, request_id: str, current_state: str, approval_status: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Format approval workflow status
@@ -289,11 +302,7 @@ Need more help? Contact your informatician."""
 
         return response
 
-    def format_confirmation_request(
-        self,
-        action: str,
-        details: Dict[str, Any]
-    ) -> str:
+    def format_confirmation_request(self, action: str, details: Dict[str, Any]) -> str:
         """
         Format confirmation request message
 

@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 # Load .env file from project root when this module is imported
 # This ensures ANTHROPIC_API_KEY is available before LLMClient is initialized
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_dotenv_path = os.path.join(_project_root, '.env')
+_dotenv_path = os.path.join(_project_root, ".env")
 load_dotenv(_dotenv_path)
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class LLMClient:
     """
 
     def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-7-sonnet-20250219"):
-        self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model
 
         if not self.api_key:
@@ -44,12 +44,11 @@ class LLMClient:
             # - LANGCHAIN_API_KEY is set
             # - LANGCHAIN_PROJECT is set
             self.client = ChatAnthropic(
-                model=self.model,
-                anthropic_api_key=self.api_key,
-                temperature=0.7,
-                max_tokens=4096
+                model=self.model, anthropic_api_key=self.api_key, temperature=0.7, max_tokens=4096
             )
-            logger.info(f"LLM client initialized with model={self.model} (LangSmith tracing enabled)")
+            logger.info(
+                f"LLM client initialized with model={self.model} (LangSmith tracing enabled)"
+            )
 
     async def complete(
         self,
@@ -57,7 +56,7 @@ class LLMClient:
         model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
-        system: Optional[str] = None
+        system: Optional[str] = None,
     ) -> str:
         """
         Get completion from Claude API via LangChain
@@ -85,7 +84,7 @@ class LLMClient:
                     model=model,
                     anthropic_api_key=self.api_key,
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
                 )
             else:
                 # Update params on existing client
@@ -93,7 +92,7 @@ class LLMClient:
                     model=self.model,
                     anthropic_api_key=self.api_key,
                     temperature=temperature,
-                    max_tokens=max_tokens
+                    max_tokens=max_tokens,
                 )
 
             # Build messages in LangChain format
@@ -101,7 +100,9 @@ class LLMClient:
             if system:
                 messages.append(SystemMessage(content=system))
             else:
-                messages.append(SystemMessage(content="You are a helpful clinical research data specialist."))
+                messages.append(
+                    SystemMessage(content="You are a helpful clinical research data specialist.")
+                )
 
             messages.append(HumanMessage(content=prompt))
 
@@ -121,7 +122,7 @@ class LLMClient:
         prompt: str,
         schema_description: str,
         model: Optional[str] = None,
-        system: Optional[str] = None
+        system: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Extract structured JSON from text using LLM
@@ -142,10 +143,7 @@ class LLMClient:
 Return ONLY valid JSON, no other text."""
 
         response = await self.complete(
-            full_prompt,
-            model=model or self.model,
-            temperature=0.3,
-            system=system
+            full_prompt, model=model or self.model, temperature=0.3, system=system
         )
 
         # Extract JSON from response (handle markdown code blocks)
@@ -165,9 +163,7 @@ Return ONLY valid JSON, no other text."""
             raise
 
     async def extract_requirements(
-        self,
-        conversation_history: list,
-        current_requirements: Dict[str, Any]
+        self, conversation_history: list, current_requirements: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Extract structured requirements from conversation
@@ -267,16 +263,18 @@ Return JSON:
     def _dummy_response(self, prompt: str) -> str:
         """Dummy response when LLM not available (for testing)"""
         if "extract" in prompt.lower() or "json" in prompt.lower():
-            return json.dumps({
-                "extracted_requirements": {
-                    "study_title": "Research Study",
-                    "inclusion_criteria": ["dummy criterion"],
-                    "data_elements": ["clinical_notes"],
-                    "phi_level": "de-identified"
-                },
-                "missing_fields": ["irb_number", "time_period"],
-                "next_question": "What is your IRB number?",
-                "completeness_score": 0.5,
-                "ready_for_submission": False
-            })
+            return json.dumps(
+                {
+                    "extracted_requirements": {
+                        "study_title": "Research Study",
+                        "inclusion_criteria": ["dummy criterion"],
+                        "data_elements": ["clinical_notes"],
+                        "phi_level": "de-identified",
+                    },
+                    "missing_fields": ["irb_number", "time_period"],
+                    "next_question": "What is your IRB number?",
+                    "completeness_score": 0.5,
+                    "ready_for_submission": False,
+                }
+            )
         return "Dummy LLM response"

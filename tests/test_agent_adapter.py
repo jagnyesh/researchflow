@@ -19,13 +19,14 @@ from typing import Dict, Any
 from app.langchain_orchestrator.agent_adapter import (
     LangGraphAgentAdapter,
     create_adapter_for_agent,
-    create_adapters_for_all_agents
+    create_adapters_for_all_agents,
 )
 
 
 # ============================================================================
 # Mock Agent for Testing
 # ============================================================================
+
 
 class MockBaseAgent:
     """Mock agent that simulates BaseAgent interface"""
@@ -46,24 +47,18 @@ class MockBaseAgent:
                 "feasible": True,
                 "feasibility_score": 0.85,
                 "cohort_size": 1500,
-                "sql": "SELECT * FROM patients WHERE..."
+                "sql": "SELECT * FROM patients WHERE...",
             }
         elif task == "extract_data":
             return {
                 "extraction_complete": True,
-                "data_summary": {
-                    "records_extracted": 1500,
-                    "sources": ["Epic", "FHIR"]
-                }
+                "data_summary": {"records_extracted": 1500, "sources": ["Epic", "FHIR"]},
             }
         elif task == "validate_extracted_data":
             return {
                 "passed": True,
                 "overall_status": "passed",
-                "qa_report": {
-                    "completeness": 0.95,
-                    "duplicates": 0
-                }
+                "qa_report": {"completeness": 0.95, "duplicates": 0},
             }
         elif task == "error_task":
             raise Exception("Mock error for testing")
@@ -74,6 +69,7 @@ class MockBaseAgent:
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_agent():
@@ -96,28 +92,25 @@ def sample_state() -> Dict[str, Any]:
         "current_state": "feasibility_validation",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
-
         # Researcher info
         "researcher_request": "Test research request",
         "researcher_info": {
             "name": "Test Researcher",
             "email": "test@example.com",
-            "department": "Research"
+            "department": "Research",
         },
-
         # Requirements
         "requirements": {
             "study_title": "Test Study",
             "inclusion_criteria": ["Age > 18", "Diabetes diagnosis"],
             "exclusion_criteria": ["Pregnant"],
-            "data_elements": ["demographics", "lab_results"]
+            "data_elements": ["demographics", "lab_results"],
         },
         "requirements_complete": True,
         "completeness_score": 0.9,
         "conversation_history": [],
         "requirements_approved": None,
         "requirements_rejection_reason": None,
-
         # Feasibility
         "phenotype_sql": None,
         "feasibility_score": 0.0,
@@ -125,42 +118,37 @@ def sample_state() -> Dict[str, Any]:
         "feasible": False,
         "phenotype_approved": None,
         "phenotype_rejection_reason": None,
-
         # Kickoff
         "meeting_scheduled": False,
         "meeting_details": None,
-
         # Extraction
         "extraction_approved": None,
         "extraction_rejection_reason": None,
         "extraction_complete": False,
         "extracted_data_summary": None,
-
         # QA
         "overall_status": None,
         "qa_report": None,
         "qa_approved": None,
         "qa_rejection_reason": None,
-
         # Delivery
         "delivered": False,
         "delivered_at": None,
         "delivery_location": None,
         "delivery_info": None,
-
         # Error handling
         "error": None,
         "escalation_reason": None,
-
         # Scope change
         "scope_change_requested": False,
-        "scope_approved": None
+        "scope_approved": None,
     }
 
 
 # ============================================================================
 # Tests: Adapter Initialization
 # ============================================================================
+
 
 def test_adapter_initialization(mock_agent):
     """Test adapter initializes correctly with agent"""
@@ -183,6 +171,7 @@ def test_adapter_get_agent_info(adapter):
 # ============================================================================
 # Tests: State-to-Context Conversion
 # ============================================================================
+
 
 def test_state_to_context_basic(adapter, sample_state):
     """Test basic state-to-context conversion"""
@@ -223,10 +212,7 @@ def test_state_to_context_includes_all_phases(adapter, sample_state):
 
 def test_state_to_context_with_partial_state(adapter):
     """Test context conversion with minimal state"""
-    minimal_state = {
-        "request_id": "MIN-001",
-        "current_state": "new_request"
-    }
+    minimal_state = {"request_id": "MIN-001", "current_state": "new_request"}
 
     context = adapter._state_to_context(minimal_state)
 
@@ -240,13 +226,14 @@ def test_state_to_context_with_partial_state(adapter):
 # Tests: Result-to-State Mapping
 # ============================================================================
 
+
 def test_result_to_state_phenotype_agent(adapter):
     """Test mapping phenotype agent results to state"""
     result = {
         "feasible": True,
         "feasibility_score": 0.85,
         "cohort_size": 1500,
-        "sql": "SELECT * FROM patients"
+        "sql": "SELECT * FROM patients",
     }
 
     state_updates = adapter._result_to_state(result, "validate_feasibility")
@@ -260,13 +247,7 @@ def test_result_to_state_phenotype_agent(adapter):
 
 def test_result_to_state_extraction_agent(adapter):
     """Test mapping extraction agent results to state"""
-    result = {
-        "extraction_complete": True,
-        "data_summary": {
-            "records": 1500,
-            "sources": ["Epic"]
-        }
-    }
+    result = {"extraction_complete": True, "data_summary": {"records": 1500, "sources": ["Epic"]}}
 
     state_updates = adapter._result_to_state(result, "extract_data")
 
@@ -277,13 +258,7 @@ def test_result_to_state_extraction_agent(adapter):
 
 def test_result_to_state_qa_agent(adapter):
     """Test mapping QA agent results to state"""
-    result = {
-        "passed": True,
-        "qa_report": {
-            "completeness": 0.95,
-            "duplicates": 0
-        }
-    }
+    result = {"passed": True, "qa_report": {"completeness": 0.95, "duplicates": 0}}
 
     state_updates = adapter._result_to_state(result, "validate_extracted_data")
 
@@ -296,11 +271,8 @@ def test_result_to_state_delivery_agent(adapter):
     """Test mapping delivery agent results to state"""
     result = {
         "delivered": True,
-        "delivery_info": {
-            "location": "s3://bucket/data.csv",
-            "format": "CSV"
-        },
-        "delivery_location": "s3://bucket/data.csv"
+        "delivery_info": {"location": "s3://bucket/data.csv", "format": "CSV"},
+        "delivery_location": "s3://bucket/data.csv",
     }
 
     state_updates = adapter._result_to_state(result, "deliver_data")
@@ -312,9 +284,7 @@ def test_result_to_state_delivery_agent(adapter):
 
 def test_result_to_state_with_error(adapter):
     """Test mapping error results to state"""
-    result = {
-        "error": "Database connection failed"
-    }
+    result = {"error": "Database connection failed"}
 
     state_updates = adapter._result_to_state(result, "any_task")
 
@@ -326,13 +296,11 @@ def test_result_to_state_with_error(adapter):
 # Tests: Execute with State (Integration)
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_execute_with_state_success(adapter, sample_state, mock_agent):
     """Test successful execution with state"""
-    state_updates = await adapter.execute_with_state(
-        "validate_feasibility",
-        sample_state
-    )
+    state_updates = await adapter.execute_with_state("validate_feasibility", sample_state)
 
     # Verify agent was called
     assert mock_agent.last_task == "validate_feasibility"
@@ -348,10 +316,7 @@ async def test_execute_with_state_success(adapter, sample_state, mock_agent):
 @pytest.mark.asyncio
 async def test_execute_with_state_extraction(adapter, sample_state):
     """Test extraction task execution"""
-    state_updates = await adapter.execute_with_state(
-        "extract_data",
-        sample_state
-    )
+    state_updates = await adapter.execute_with_state("extract_data", sample_state)
 
     assert state_updates["extraction_complete"] is True
     assert state_updates["extracted_data_summary"]["records_extracted"] == 1500
@@ -360,10 +325,7 @@ async def test_execute_with_state_extraction(adapter, sample_state):
 @pytest.mark.asyncio
 async def test_execute_with_state_qa(adapter, sample_state):
     """Test QA task execution"""
-    state_updates = await adapter.execute_with_state(
-        "validate_extracted_data",
-        sample_state
-    )
+    state_updates = await adapter.execute_with_state("validate_extracted_data", sample_state)
 
     assert state_updates["overall_status"] == "passed"
     assert state_updates["qa_report"]["completeness"] == 0.95
@@ -372,10 +334,7 @@ async def test_execute_with_state_qa(adapter, sample_state):
 @pytest.mark.asyncio
 async def test_execute_with_state_error_handling(adapter, sample_state):
     """Test error handling in execute_with_state"""
-    state_updates = await adapter.execute_with_state(
-        "error_task",
-        sample_state
-    )
+    state_updates = await adapter.execute_with_state("error_task", sample_state)
 
     # Should return error in state updates, not raise exception
     assert "error" in state_updates
@@ -387,13 +346,11 @@ async def test_execute_with_state_error_handling(adapter, sample_state):
 # Tests: Direct Task Execution
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_execute_task_passthrough(adapter):
     """Test direct task execution (passthrough to agent)"""
-    context = {
-        "request_id": "TEST-001",
-        "requirements": {}
-    }
+    context = {"request_id": "TEST-001", "requirements": {}}
 
     result = await adapter.execute_task("validate_feasibility", context)
 
@@ -407,6 +364,7 @@ async def test_execute_task_passthrough(adapter):
 # ============================================================================
 # Tests: Factory Functions
 # ============================================================================
+
 
 def test_create_adapter_for_agent():
     """Test factory function for single agent"""
@@ -424,9 +382,7 @@ def test_create_adapters_for_all_agents():
     qa = MockBaseAgent("qa")
 
     adapters = create_adapters_for_all_agents(
-        phenotype_agent=phenotype,
-        extraction_agent=extraction,
-        qa_agent=qa
+        phenotype_agent=phenotype, extraction_agent=extraction, qa_agent=qa
     )
 
     assert len(adapters) == 3
@@ -443,9 +399,7 @@ def test_create_adapters_for_all_agents_partial():
     """Test factory with only some agents provided"""
     phenotype = MockBaseAgent("phenotype")
 
-    adapters = create_adapters_for_all_agents(
-        phenotype_agent=phenotype
-    )
+    adapters = create_adapters_for_all_agents(phenotype_agent=phenotype)
 
     assert len(adapters) == 1
     assert "phenotype" in adapters
@@ -456,9 +410,11 @@ def test_create_adapters_for_all_agents_partial():
 # Tests: Edge Cases
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_adapter_with_empty_result(adapter, sample_state):
     """Test adapter handles empty agent results"""
+
     # Mock agent that returns empty dict
     class EmptyAgent:
         async def handle_task(self, task, context):
@@ -480,10 +436,7 @@ async def test_adapter_with_missing_state_fields(adapter):
     }
 
     # Should not raise exception
-    state_updates = await adapter.execute_with_state(
-        "validate_feasibility",
-        incomplete_state
-    )
+    state_updates = await adapter.execute_with_state("validate_feasibility", incomplete_state)
 
     assert state_updates["feasible"] is True
     assert "updated_at" in state_updates
@@ -495,12 +448,8 @@ def test_adapter_state_to_context_preserves_nested_dicts(adapter):
         "request_id": "NESTED-001",
         "requirements": {
             "study_title": "Nested Test",
-            "nested_data": {
-                "level1": {
-                    "level2": "value"
-                }
-            }
-        }
+            "nested_data": {"level1": {"level2": "value"}},
+        },
     }
 
     context = adapter._state_to_context(state)
@@ -511,6 +460,7 @@ def test_adapter_state_to_context_preserves_nested_dicts(adapter):
 # ============================================================================
 # Tests: Alternate Result Formats
 # ============================================================================
+
 
 def test_result_to_state_cohort_size_vs_estimated_cohort_size(adapter):
     """Test adapter handles both cohort_size and estimated_cohort_size"""

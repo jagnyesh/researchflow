@@ -41,15 +41,17 @@ logger = logging.getLogger(__name__)
 # Load environment variables from project root (explicit path)
 # Get project root: /Users/.../FHIR_PROJECT
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-dotenv_path = os.path.join(project_root, '.env')
+dotenv_path = os.path.join(project_root, ".env")
 
 # Load .env file
 load_dotenv(dotenv_path)
 
 # Verify critical environment variables are loaded
-anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 if anthropic_key:
-    print(f"✓ Loaded ANTHROPIC_API_KEY from: {dotenv_path} (key starts with: {anthropic_key[:20]}...)")
+    print(
+        f"✓ Loaded ANTHROPIC_API_KEY from: {dotenv_path} (key starts with: {anthropic_key[:20]}...)"
+    )
 else:
     print(f"⚠️  WARNING: ANTHROPIC_API_KEY not found! Checked: {dotenv_path}")
     print(f"   Query interpretation will fall back to dummy mode (inaccurate results)")
@@ -80,11 +82,12 @@ st.set_page_config(
     page_title="ResearchFlow - Interactive Research Assistant",
     page_icon="🤖",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
 # Custom CSS
-st.markdown("""
+st.markdown(
+    """
 <style>
     .chat-message {
         padding: 1.5rem;
@@ -123,37 +126,39 @@ st.markdown("""
         border-radius: 5px;
     }
 </style>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 
 def initialize_session_state():
     """Initialize session state variables"""
-    if 'messages' not in st.session_state:
+    if "messages" not in st.session_state:
         st.session_state.messages = []
 
     # REMOVED: No longer using conversational agent - direct SQL routing for speed
 
-    if 'feasibility_service' not in st.session_state:
+    if "feasibility_service" not in st.session_state:
         st.session_state.feasibility_service = FeasibilityService()
 
-    if 'query_interpreter' not in st.session_state:
+    if "query_interpreter" not in st.session_state:
         st.session_state.query_interpreter = QueryInterpreter()
 
-    if 'approval_tracker' not in st.session_state:
+    if "approval_tracker" not in st.session_state:
         st.session_state.approval_tracker = ApprovalTracker()
 
     # REMOVED: conversation_state (agent handles this internally)
 
-    if 'pending_feasibility' not in st.session_state:
+    if "pending_feasibility" not in st.session_state:
         st.session_state.pending_feasibility = None
 
-    if 'pending_request_id' not in st.session_state:
+    if "pending_request_id" not in st.session_state:
         st.session_state.pending_request_id = None
 
     # REMOVED: last_query_intent (agent handles intent detection)
 
     # NEW: Session ID for conversation tracking
-    if 'session_id' not in st.session_state:
+    if "session_id" not in st.session_state:
         st.session_state.session_id = f"notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
@@ -170,9 +175,22 @@ async def handle_user_input(user_input: str):
 
     # Detect data query patterns (keywords that indicate SQL execution needed)
     data_query_keywords = [
-        "count", "how many", "patients", "breakdown", "give me",
-        "show me", "find", "list", "filter", "with diabetes", "with hypertension",
-        "male", "female", "age", "condition", "medication"
+        "count",
+        "how many",
+        "patients",
+        "breakdown",
+        "give me",
+        "show me",
+        "find",
+        "list",
+        "filter",
+        "with diabetes",
+        "with hypertension",
+        "male",
+        "female",
+        "age",
+        "condition",
+        "medication",
     ]
 
     # Check if this is a data query
@@ -202,6 +220,7 @@ Try asking: "How many patients with diabetes?" or "Count of female patients, bre
 # REMOVED: Old keyword-based handler functions (greeting, help, status_check, confirmation)
 # Agent now handles all conversational interactions
 
+
 def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
     """
     Format breakdown query results with total and per-dimension counts
@@ -212,37 +231,41 @@ def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
     Returns:
         Formatted markdown string
     """
-    total_count = feasibility_data['estimated_cohort']
-    breakdown_results = feasibility_data.get('breakdown_results', [])
-    group_by_dimensions = feasibility_data.get('group_by_dimensions', [])
+    total_count = feasibility_data["estimated_cohort"]
+    breakdown_results = feasibility_data.get("breakdown_results", [])
+    group_by_dimensions = feasibility_data.get("group_by_dimensions", [])
 
     # Start with header
     response_parts = [
         "## Feasibility Analysis (Breakdown)",
         "",
         f"**Total Cohort Size**: {total_count} patients",
-        ""
+        "",
     ]
 
     # Add breakdown by dimensions
     if breakdown_results:
         # Format dimension names
-        dimension_label = " and ".join([dim.title().replace("_", " ") for dim in group_by_dimensions])
+        dimension_label = " and ".join(
+            [dim.title().replace("_", " ") for dim in group_by_dimensions]
+        )
         response_parts.append(f"**Breakdown by {dimension_label}**:")
         response_parts.append("")
 
         # Add each dimension result
         for result in breakdown_results:
-            dimensions = result.get('dimensions', {})
-            count = result.get('count', 0)
-            percentage = result.get('percentage', 0)
+            dimensions = result.get("dimensions", {})
+            count = result.get("count", 0)
+            percentage = result.get("percentage", 0)
 
             # Format dimension values
             dim_values = []
             for dim_name, dim_value in dimensions.items():
                 if dim_value is not None:
                     # Capitalize and format dimension value
-                    formatted_value = str(dim_value).title() if isinstance(dim_value, str) else str(dim_value)
+                    formatted_value = (
+                        str(dim_value).title() if isinstance(dim_value, str) else str(dim_value)
+                    )
                     dim_values.append(f"{dim_name.replace('_', ' ').title()}: {formatted_value}")
 
             dim_label = ", ".join(dim_values) if dim_values else "Unknown"
@@ -272,16 +295,16 @@ def format_count_distinct_response(feasibility_data: Dict[str, Any]) -> str:
     Returns:
         Formatted markdown string
     """
-    distinct_count = feasibility_data['estimated_cohort']
-    resource_type = feasibility_data.get('resource_type', 'resources')
-    distinct_column = feasibility_data.get('distinct_column', 'unknown')
+    distinct_count = feasibility_data["estimated_cohort"]
+    resource_type = feasibility_data.get("resource_type", "resources")
+    distinct_column = feasibility_data.get("distinct_column", "unknown")
 
     # Start with header
     response_parts = [
         "## Count Distinct Results",
         "",
         f"**Found {distinct_count} distinct {resource_type}** in the database",
-        ""
+        "",
     ]
 
     # Add technical details
@@ -289,7 +312,7 @@ def format_count_distinct_response(feasibility_data: Dict[str, Any]) -> str:
     response_parts.append("")
 
     # Add warnings if present
-    warnings = feasibility_data.get('warnings', [])
+    warnings = feasibility_data.get("warnings", [])
     if warnings:
         response_parts.append("### ⚠️ Notes:")
         for warning in warnings:
@@ -334,7 +357,7 @@ async def handle_query(user_input: str):
 
         st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
         feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
-            query_intent.__dict__ if hasattr(query_intent, '__dict__') else query_intent
+            query_intent.__dict__ if hasattr(query_intent, "__dict__") else query_intent
         )
         st.write(f"✅ Found approximately {feasibility_data['estimated_cohort']} patients")
 
@@ -345,9 +368,9 @@ async def handle_query(user_input: str):
     st.session_state.last_query_intent = query_intent
 
     # Check if this is a count_distinct query
-    is_count_distinct = feasibility_data.get('is_count_distinct_query', False)
+    is_count_distinct = feasibility_data.get("is_count_distinct_query", False)
     # Check if this is a breakdown query
-    is_breakdown = feasibility_data.get('is_breakdown_query', False)
+    is_breakdown = feasibility_data.get("is_breakdown_query", False)
 
     if is_count_distinct:
         # Format count_distinct response
@@ -357,7 +380,7 @@ async def handle_query(user_input: str):
         feasibility_response = format_breakdown_response(feasibility_data)
     else:
         # Format and show feasibility response (simplified - no more conversation_manager)
-        cohort_size = feasibility_data['estimated_cohort']
+        cohort_size = feasibility_data["estimated_cohort"]
         feasibility_response = f"""
 ## Feasibility Analysis
 
@@ -368,10 +391,7 @@ async def handle_query(user_input: str):
 Would you like to proceed with data extraction?
 """
 
-    st.session_state.messages.append({
-        "role": "assistant",
-        "content": feasibility_response
-    })
+    st.session_state.messages.append({"role": "assistant", "content": feasibility_response})
 
 
 async def submit_research_request():
@@ -385,13 +405,25 @@ async def submit_research_request():
         structured_requirements = {
             "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
             "principal_investigator": "Research Notebook User",
-            "inclusion_criteria": getattr(query_intent, 'inclusion_criteria', []) if hasattr(query_intent, 'inclusion_criteria') else [],
-            "exclusion_criteria": getattr(query_intent, 'exclusion_criteria', []) if hasattr(query_intent, 'exclusion_criteria') else [],
-            "data_elements": getattr(query_intent, 'data_elements', []) if hasattr(query_intent, 'data_elements') else [],
-            "time_period": feasibility_data.get('time_period', {}),
-            "estimated_cohort_size": feasibility_data.get('estimated_cohort', 0),
+            "inclusion_criteria": (
+                getattr(query_intent, "inclusion_criteria", [])
+                if hasattr(query_intent, "inclusion_criteria")
+                else []
+            ),
+            "exclusion_criteria": (
+                getattr(query_intent, "exclusion_criteria", [])
+                if hasattr(query_intent, "exclusion_criteria")
+                else []
+            ),
+            "data_elements": (
+                getattr(query_intent, "data_elements", [])
+                if hasattr(query_intent, "data_elements")
+                else []
+            ),
+            "time_period": feasibility_data.get("time_period", {}),
+            "estimated_cohort_size": feasibility_data.get("estimated_cohort", 0),
             "delivery_format": "CSV",
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         # Prepare submission
@@ -404,9 +436,11 @@ async def submit_research_request():
                     "researcher_email": "researcher@hospital.org",
                     "researcher_department": "Clinical Research",
                     "irb_number": "IRB-NOTEBOOK-001",
-                    "initial_request": st.session_state.messages[-2]["content"],  # User's original query
-                    "structured_requirements": structured_requirements  # Pass pre-structured requirements
-                }
+                    "initial_request": st.session_state.messages[-2][
+                        "content"
+                    ],  # User's original query
+                    "structured_requirements": structured_requirements,  # Pass pre-structured requirements
+                },
             )
             response.raise_for_status()
             result = response.json()
@@ -419,8 +453,8 @@ async def submit_research_request():
                 f"http://localhost:8000/research/process/{request_id}",
                 json={
                     "structured_requirements": structured_requirements,
-                    "skip_conversation": True  # Indicate we already have requirements
-                }
+                    "skip_conversation": True,  # Indicate we already have requirements
+                },
             )
             process_response.raise_for_status()
 
@@ -445,17 +479,13 @@ Your data request has been submitted and is now entering the approval workflow:
 
 You can continue using the notebook for other queries while waiting."""
 
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": confirmation_message
-            })
+            st.session_state.messages.append({"role": "assistant", "content": confirmation_message})
 
     except Exception as e:
-        error_message = f"❌ **Error submitting request:** {str(e)}\n\nPlease try again or contact support."
-        st.session_state.messages.append({
-            "role": "assistant",
-            "content": error_message
-        })
+        error_message = (
+            f"❌ **Error submitting request:** {str(e)}\n\nPlease try again or contact support."
+        )
+        st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 
 def render_sidebar():
@@ -524,17 +554,23 @@ def main():
         content = message["content"]
 
         if role == "user":
-            st.markdown(f"""
+            st.markdown(
+                f"""
 <div class="chat-message user-message">
     <strong>👤 You:</strong><br/>
     {content}
 </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
         else:
-            st.markdown(f"""
+            st.markdown(
+                f"""
 <div class="chat-message assistant-message">
     <strong>🤖 ResearchFlow:</strong><br/>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
             st.markdown(content)
 
             # Display SQL expander INSIDE the chat bubble if this is the last message and we have feasibility data
@@ -542,24 +578,32 @@ def main():
             # - Uses sqlonfhir schema (e.g., FROM sqlonfhir.patient_demographics)
             # - Can be copy-pasted and run directly in database tool
             # - Never shows LLM-generated "friendly" SQL
-            if (idx == len(st.session_state.messages) - 1 and
-                st.session_state.pending_feasibility and
-                st.session_state.pending_feasibility.get('generated_sql')):
+            if (
+                idx == len(st.session_state.messages) - 1
+                and st.session_state.pending_feasibility
+                and st.session_state.pending_feasibility.get("generated_sql")
+            ):
 
                 feasibility_data = st.session_state.pending_feasibility
 
                 with st.expander("🔍 View Actual SQL Query (Backend)", expanded=False):
-                    st.code(feasibility_data['generated_sql'], language='sql')
+                    st.code(feasibility_data["generated_sql"], language="sql")
 
                     col1, col2, col3 = st.columns(3)
                     with col1:
-                        st.metric("Execution Time", f"{feasibility_data.get('execution_time_ms', 0):.1f} ms")
+                        st.metric(
+                            "Execution Time",
+                            f"{feasibility_data.get('execution_time_ms', 0):.1f} ms",
+                        )
                     with col2:
-                        st.metric("Query Type", "JOIN" if feasibility_data.get('used_join_query') else "Single View")
+                        st.metric(
+                            "Query Type",
+                            "JOIN" if feasibility_data.get("used_join_query") else "Single View",
+                        )
                     with col3:
-                        st.metric("Result Count", feasibility_data['estimated_cohort'])
+                        st.metric("Result Count", feasibility_data["estimated_cohort"])
 
-                    if feasibility_data.get('filter_summary'):
+                    if feasibility_data.get("filter_summary"):
                         st.info(f"**Filters Applied:** {feasibility_data['filter_summary']}")
 
             st.markdown("</div>", unsafe_allow_html=True)
@@ -568,7 +612,7 @@ def main():
     user_input = st.chat_input("Ask about patient data, check status, or get help...")
 
     # Handle example query from sidebar
-    if 'example_query' in st.session_state:
+    if "example_query" in st.session_state:
         user_input = st.session_state.example_query
         del st.session_state.example_query
 

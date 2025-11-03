@@ -7,4 +7,4 @@ FHIR resources into tabular format.
 
 from .view_definition_manager import ViewDefinitionManager
 
-__all__ = ['ViewDefinitionManager']
+__all__ = ["ViewDefinitionManager"]

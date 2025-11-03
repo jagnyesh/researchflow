@@ -31,6 +31,7 @@ from app.cache.redis_client import RedisClient
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 async def redis_client():
     """Create RedisClient instance for testing"""
@@ -58,10 +59,7 @@ def sample_patient():
         "id": "test-patient-001",
         "gender": "male",
         "birthDate": "1980-01-15",
-        "name": [{
-            "family": "Test",
-            "given": ["John"]
-        }]
+        "name": [{"family": "Test", "given": ["John"]}],
     }
 
 
@@ -71,18 +69,18 @@ def sample_condition():
     return {
         "resourceType": "Condition",
         "id": "test-condition-001",
-        "subject": {
-            "reference": "Patient/test-patient-001"
-        },
+        "subject": {"reference": "Patient/test-patient-001"},
         "code": {
-            "coding": [{
-                "system": "http://snomed.info/sct",
-                "code": "73211009",
-                "display": "Diabetes mellitus"
-            }],
-            "text": "Diabetes mellitus"
+            "coding": [
+                {
+                    "system": "http://snomed.info/sct",
+                    "code": "73211009",
+                    "display": "Diabetes mellitus",
+                }
+            ],
+            "text": "Diabetes mellitus",
         },
-        "onsetDateTime": "2023-01-15"
+        "onsetDateTime": "2023-01-15",
     }
 
 
@@ -90,12 +88,13 @@ def sample_condition():
 # Test 1: Connection Management
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_connect_disconnect():
     """Test Redis connection and disconnection"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: Connection Management")
-    print("="*60)
+    print("=" * 60)
 
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
     client = RedisClient(redis_url=redis_url)
@@ -117,27 +116,27 @@ async def test_connect_disconnect():
 # Test 2: Set and Get FHIR Resource
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_set_and_get_fhir_resource(redis_client, sample_patient):
     """Test setting and retrieving a FHIR resource"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Set and Get FHIR Resource")
-    print("="*60)
+    print("=" * 60)
 
     # Set resource
     success = await redis_client.set_fhir_resource(
         resource_type="Patient",
         resource_id="test-patient-001",
         resource_data=sample_patient,
-        ttl_hours=1
+        ttl_hours=1,
     )
     assert success, "❌ Failed to set FHIR resource"
     print("✓ Successfully cached Patient resource")
 
     # Get resource
     retrieved = await redis_client.get_fhir_resource(
-        resource_type="Patient",
-        resource_id="test-patient-001"
+        resource_type="Patient", resource_id="test-patient-001"
     )
     assert retrieved is not None, "❌ Failed to retrieve FHIR resource"
     assert retrieved["id"] == "test-patient-001", "❌ Retrieved wrong resource"
@@ -151,16 +150,19 @@ async def test_set_and_get_fhir_resource(redis_client, sample_patient):
 # Test 3: Scan Recent Resources
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_scan_recent_resources(redis_client, sample_patient, sample_condition):
     """Test scanning for recent resources of a specific type"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Scan Recent Resources")
-    print("="*60)
+    print("=" * 60)
 
     # Cache multiple resources
     await redis_client.set_fhir_resource("Patient", "patient-001", sample_patient)
-    await redis_client.set_fhir_resource("Patient", "patient-002", {**sample_patient, "id": "patient-002"})
+    await redis_client.set_fhir_resource(
+        "Patient", "patient-002", {**sample_patient, "id": "patient-002"}
+    )
     await redis_client.set_fhir_resource("Condition", "condition-001", sample_condition)
 
     print("✓ Cached 2 Patients and 1 Condition")
@@ -182,12 +184,13 @@ async def test_scan_recent_resources(redis_client, sample_patient, sample_condit
 # Test 4: Scan with Time Filter
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_scan_with_time_filter(redis_client, sample_patient):
     """Test scanning resources with 'since' time filter"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Scan with Time Filter")
-    print("="*60)
+    print("=" * 60)
 
     # Cache a resource
     await redis_client.set_fhir_resource("Patient", "old-patient", sample_patient)
@@ -199,15 +202,14 @@ async def test_scan_with_time_filter(redis_client, sample_patient):
     cutoff_time = datetime.utcnow()
 
     # Cache another resource
-    await redis_client.set_fhir_resource("Patient", "new-patient", {**sample_patient, "id": "new-patient"})
+    await redis_client.set_fhir_resource(
+        "Patient", "new-patient", {**sample_patient, "id": "new-patient"}
+    )
 
     print("✓ Cached resources before and after cutoff time")
 
     # Scan for resources since cutoff (should only get new-patient)
-    recent = await redis_client.scan_recent_resources(
-        resource_type="Patient",
-        since=cutoff_time
-    )
+    recent = await redis_client.scan_recent_resources(resource_type="Patient", since=cutoff_time)
 
     # Should only find the new patient
     assert len(recent) == 1, f"❌ Expected 1 recent patient, found {len(recent)}"
@@ -221,19 +223,20 @@ async def test_scan_with_time_filter(redis_client, sample_patient):
 # Test 5: TTL Expiration
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_ttl_expiration(redis_client, sample_patient):
     """Test that resources expire after TTL"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: TTL Expiration")
-    print("="*60)
+    print("=" * 60)
 
     # Set resource with very short TTL (2 seconds)
     await redis_client.set_fhir_resource(
         resource_type="Patient",
         resource_id="expiring-patient",
         resource_data=sample_patient,
-        ttl_hours=2/3600  # 2 seconds
+        ttl_hours=2 / 3600,  # 2 seconds
     )
     print("✓ Cached resource with 2-second TTL")
 
@@ -258,12 +261,13 @@ async def test_ttl_expiration(redis_client, sample_patient):
 # Test 6: Delete Resource
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_delete_resource(redis_client, sample_patient):
     """Test deleting a cached resource"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 6: Delete Resource")
-    print("="*60)
+    print("=" * 60)
 
     # Cache resource
     await redis_client.set_fhir_resource("Patient", "deleteme", sample_patient)
@@ -290,12 +294,13 @@ async def test_delete_resource(redis_client, sample_patient):
 # Test 7: Multiple Resource Types
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_multiple_resource_types(redis_client, sample_patient, sample_condition):
     """Test caching different FHIR resource types"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 7: Multiple Resource Types")
-    print("="*60)
+    print("=" * 60)
 
     # Cache different resource types
     resources = {
@@ -305,14 +310,12 @@ async def test_multiple_resource_types(redis_client, sample_patient, sample_cond
             "resourceType": "Observation",
             "id": "obs-001",
             "code": {"text": "HbA1c"},
-            "valueQuantity": {"value": 6.5}
-        }
+            "valueQuantity": {"value": 6.5},
+        },
     }
 
     for resource_type, resource in resources.items():
-        await redis_client.set_fhir_resource(
-            resource_type, resource["id"], resource
-        )
+        await redis_client.set_fhir_resource(resource_type, resource["id"], resource)
 
     print(f"✓ Cached {len(resources)} different resource types")
 
@@ -329,12 +332,13 @@ async def test_multiple_resource_types(redis_client, sample_patient, sample_cond
 # Test 8: Error Handling - Non-existent Resource
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_get_nonexistent_resource(redis_client):
     """Test retrieving a resource that doesn't exist"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 8: Get Non-existent Resource")
-    print("="*60)
+    print("=" * 60)
 
     # Try to get resource that doesn't exist
     result = await redis_client.get_fhir_resource("Patient", "does-not-exist")
@@ -348,19 +352,18 @@ async def test_get_nonexistent_resource(redis_client):
 # Test 9: Flush All (Cleanup)
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_flush_all(redis_client, sample_patient):
     """Test flushing all cached data"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 9: Flush All")
-    print("="*60)
+    print("=" * 60)
 
     # Cache multiple resources
     for i in range(5):
         await redis_client.set_fhir_resource(
-            "Patient",
-            f"patient-{i}",
-            {**sample_patient, "id": f"patient-{i}"}
+            "Patient", f"patient-{i}", {**sample_patient, "id": f"patient-{i}"}
         )
 
     print("✓ Cached 5 Patient resources")
@@ -376,7 +379,9 @@ async def test_flush_all(redis_client, sample_patient):
 
     # Verify all gone
     patients_after = await redis_client.scan_recent_resources("Patient")
-    assert len(patients_after) == 0, f"❌ Expected 0 patients after flush, found {len(patients_after)}"
+    assert (
+        len(patients_after) == 0
+    ), f"❌ Expected 0 patients after flush, found {len(patients_after)}"
     print("✓ All resources successfully removed")
 
     print("\n✅ TEST PASSED")

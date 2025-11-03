@@ -24,10 +24,12 @@ def load_view_definition(name: str) -> dict:
     """Load ViewDefinition from JSON file"""
     path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
-        'app', 'sql_on_fhir', 'view_definitions',
-        f'{name}.json'
+        "app",
+        "sql_on_fhir",
+        "view_definitions",
+        f"{name}.json",
     )
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         return json.load(f)
 
 
@@ -46,7 +48,7 @@ async def main():
         print(f"  Cache TTL: {runner.cache_ttl_seconds}s")
 
         # Load ViewDefinition
-        view_def = load_view_definition('patient_simple')
+        view_def = load_view_definition("patient_simple")
         print(f"\n✓ Loaded ViewDefinition: {view_def['name']}")
 
         # Test 1: Execute ViewDefinition
@@ -73,7 +75,7 @@ async def main():
         print("TEST 2: execute() with search parameters")
         print("-" * 80)
 
-        search_params = {'gender': 'male'}
+        search_params = {"gender": "male"}
         start = datetime.now()
         male_results = await runner.execute(view_def, search_params=search_params, max_resources=5)
         execution_time = (datetime.now() - start).total_seconds() * 1000
@@ -117,8 +119,8 @@ async def main():
         print(f"  Execution time: {count_time:.1f}ms")
 
         # Count with search params
-        female_count = await runner.execute_count(view_def, search_params={'gender': 'female'})
-        male_count = await runner.execute_count(view_def, search_params={'gender': 'male'})
+        female_count = await runner.execute_count(view_def, search_params={"gender": "female"})
+        male_count = await runner.execute_count(view_def, search_params={"gender": "male"})
 
         print(f"\n  Counts by gender:")
         print(f"    Female: {female_count}")
@@ -173,6 +175,7 @@ async def main():
     except Exception as e:
         print(f"\n✗ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

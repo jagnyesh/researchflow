@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # State Schema
 # ============================================================================
 
+
 class FullWorkflowState(TypedDict):
     """
     Complete state schema for ResearchFlow workflow
@@ -42,6 +43,7 @@ class FullWorkflowState(TypedDict):
     This replaces the manual state tracking in custom workflow_engine.py
     LangGraph enforces this schema via TypedDict.
     """
+
     # ===== Request Metadata =====
     request_id: str
     current_state: str
@@ -103,6 +105,7 @@ class FullWorkflowState(TypedDict):
 # Full Workflow Class
 # ============================================================================
 
+
 class FullWorkflow:
     """
     Complete 23-state workflow using LangGraph
@@ -140,7 +143,9 @@ class FullWorkflow:
 
             # Get HAPI FHIR database URL from environment
             # Default uses asyncpg for async connections
-            hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql+asyncpg://hapi:hapi@localhost:5433/hapi")
+            hapi_db_url = os.getenv(
+                "HAPI_DB_URL", "postgresql+asyncpg://hapi:hapi@localhost:5433/hapi"  # pragma: allowlist secret
+            )
             healthcare_db_url = os.getenv("HEALTHCARE_DB_URL")
 
             logger.info(f"[FullWorkflow] HAPI DB URL: {hapi_db_url}")
@@ -148,7 +153,9 @@ class FullWorkflow:
 
             # Initialize agents with appropriate database connections
             self.phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
-            self.extraction_agent = DataExtractionAgent(database_url=healthcare_db_url or hapi_db_url)
+            self.extraction_agent = DataExtractionAgent(
+                database_url=healthcare_db_url or hapi_db_url
+            )
             self.qa_agent = QualityAssuranceAgent()
         else:
             logger.info("[FullWorkflow] Initializing with STUB VALUES (test mode)")
@@ -222,10 +229,7 @@ class FullWorkflow:
         graph.add_conditional_edges(
             "requirements_gathering",
             self._route_after_requirements_gathering,
-            {
-                "requirements_review": "requirements_review",
-                "wait_for_input": END
-            }
+            {"requirements_review": "requirements_review", "wait_for_input": END},
         )
 
         # 2. After requirements_review (approval gate)
@@ -237,8 +241,8 @@ class FullWorkflow:
             {
                 "feasibility_validation": "feasibility_validation",
                 "requirements_gathering": "requirements_gathering",
-                "wait_for_approval": END
-            }
+                "wait_for_approval": END,
+            },
         )
 
         # 3. After feasibility_validation
@@ -247,10 +251,7 @@ class FullWorkflow:
         graph.add_conditional_edges(
             "feasibility_validation",
             self._route_after_feasibility_validation,
-            {
-                "phenotype_review": "phenotype_review",
-                "not_feasible": "not_feasible"
-            }
+            {"phenotype_review": "phenotype_review", "not_feasible": "not_feasible"},
         )
 
         # 4. After phenotype_review (approval gate)
@@ -262,8 +263,8 @@ class FullWorkflow:
             {
                 "schedule_kickoff": "schedule_kickoff",
                 "feasibility_validation": "feasibility_validation",
-                "wait_for_approval": END
-            }
+                "wait_for_approval": END,
+            },
         )
 
         # 5. After schedule_kickoff
@@ -279,8 +280,8 @@ class FullWorkflow:
             {
                 "data_extraction": "data_extraction",
                 "human_review": "human_review",
-                "wait_for_approval": END
-            }
+                "wait_for_approval": END,
+            },
         )
 
         # 7. After data_extraction
@@ -293,10 +294,7 @@ class FullWorkflow:
         graph.add_conditional_edges(
             "qa_validation",
             self._route_after_qa_validation,
-            {
-                "qa_review": "qa_review",
-                "qa_failed": "qa_failed"
-            }
+            {"qa_review": "qa_review", "qa_failed": "qa_failed"},
         )
 
         # 9. After qa_review (approval gate)
@@ -308,8 +306,8 @@ class FullWorkflow:
             {
                 "data_delivery": "data_delivery",
                 "data_extraction": "data_extraction",
-                "wait_for_approval": END
-            }
+                "wait_for_approval": END,
+            },
         )
 
         # 10. After data_delivery
@@ -374,9 +372,13 @@ class FullWorkflow:
 
         # Check if requirements are already marked as complete (from agent execution)
         if state.get("requirements_complete", False):
-            logger.info(f"[FullWorkflow] Requirements already complete (score: {state.get('completeness_score', 0):.1%})")
+            logger.info(
+                f"[FullWorkflow] Requirements already complete (score: {state.get('completeness_score', 0):.1%})"
+            )
         else:
-            logger.info(f"[FullWorkflow] Requirements incomplete (score: {state.get('completeness_score', 0):.1%})")
+            logger.info(
+                f"[FullWorkflow] Requirements incomplete (score: {state.get('completeness_score', 0):.1%})"
+            )
 
         return state
 
@@ -422,13 +424,12 @@ class FullWorkflow:
                 context = {
                     "request_id": state["request_id"],
                     "requirements": state["requirements"],
-                    "researcher_info": state["researcher_info"]
+                    "researcher_info": state["researcher_info"],
                 }
 
                 # Execute agent task (async call - non-blocking)
                 result = await self.phenotype_agent.execute_task(
-                    task="validate_feasibility",
-                    context=context
+                    task="validate_feasibility", context=context
                 )
 
                 # Update state from agent result
@@ -437,7 +438,9 @@ class FullWorkflow:
                 state["phenotype_sql"] = result.get("phenotype_sql")
                 state["feasibility_score"] = result.get("feasibility_score", 0.0)
 
-                logger.info(f"[FullWorkflow] PhenotypeAgent result: feasible={state['feasible']}, cohort={state['estimated_cohort_size']}")
+                logger.info(
+                    f"[FullWorkflow] PhenotypeAgent result: feasible={state['feasible']}, cohort={state['estimated_cohort_size']}"
+                )
 
             except Exception as e:
                 logger.error(f"[FullWorkflow] PhenotypeAgent failed: {e}")
@@ -456,7 +459,9 @@ class FullWorkflow:
             state["phenotype_sql"] = "SELECT * FROM Patient WHERE ..."
             state["feasibility_score"] = 0.95
 
-        logger.info(f"[FullWorkflow] Feasibility AFTER: {state.get('feasible', False)} (cohort: {state.get('estimated_cohort_size', 0)})")
+        logger.info(
+            f"[FullWorkflow] Feasibility AFTER: {state.get('feasible', False)} (cohort: {state.get('estimated_cohort_size', 0)})"
+        )
 
         return state
 
@@ -528,20 +533,21 @@ class FullWorkflow:
                     "request_id": state["request_id"],
                     "phenotype_sql": state["phenotype_sql"],
                     "requirements": state["requirements"],
-                    "phi_level": state["requirements"].get("phi_level", "safe_harbor")
+                    "phi_level": state["requirements"].get("phi_level", "safe_harbor"),
                 }
 
                 # Execute agent task (async call - non-blocking)
                 result = await self.extraction_agent.execute_task(
-                    task="extract_data",
-                    context=context
+                    task="extract_data", context=context
                 )
 
                 # Update state from agent result
                 state["extraction_complete"] = result.get("extraction_complete", False)
                 state["extracted_data_summary"] = result.get("data_summary", {})
 
-                logger.info(f"[FullWorkflow] ExtractionAgent result: complete={state['extraction_complete']}")
+                logger.info(
+                    f"[FullWorkflow] ExtractionAgent result: complete={state['extraction_complete']}"
+                )
 
             except Exception as e:
                 logger.error(f"[FullWorkflow] ExtractionAgent failed: {e}")
@@ -555,10 +561,12 @@ class FullWorkflow:
             state["extracted_data_summary"] = {
                 "total_patients": 150,
                 "total_records": 5000,
-                "phi_removed": True
+                "phi_removed": True,
             }
 
-        logger.info(f"[FullWorkflow] Extraction complete: {state.get('extraction_complete', False)}")
+        logger.info(
+            f"[FullWorkflow] Extraction complete: {state.get('extraction_complete', False)}"
+        )
 
         return state
 
@@ -582,14 +590,11 @@ class FullWorkflow:
                 context = {
                     "request_id": state["request_id"],
                     "extracted_data_summary": state.get("extracted_data_summary", {}),
-                    "requirements": state["requirements"]
+                    "requirements": state["requirements"],
                 }
 
                 # Execute agent task (async call - non-blocking)
-                result = await self.qa_agent.execute_task(
-                    task="validate_quality",
-                    context=context
-                )
+                result = await self.qa_agent.execute_task(task="validate_quality", context=context)
 
                 # Update state from agent result
                 state["overall_status"] = result.get("overall_status", "unknown")
@@ -600,10 +605,7 @@ class FullWorkflow:
             except Exception as e:
                 logger.error(f"[FullWorkflow] QAAgent failed: {e}")
                 state["overall_status"] = "failed"
-                state["qa_report"] = {
-                    "overall_status": "failed",
-                    "error": str(e)
-                }
+                state["qa_report"] = {"overall_status": "failed", "error": str(e)}
                 state["error"] = f"QA agent error: {str(e)}"
 
         else:
@@ -615,8 +617,8 @@ class FullWorkflow:
                 "checks": {
                     "completeness": {"passed": True, "score": 1.0},
                     "duplicates": {"passed": True, "duplicates_found": 0},
-                    "phi_scrubbing": {"passed": True, "phi_found": 0}
-                }
+                    "phi_scrubbing": {"passed": True, "phi_found": 0},
+                },
             }
 
         logger.info(f"[FullWorkflow] QA status: {state.get('overall_status', 'unknown')}")
@@ -755,7 +757,9 @@ class FullWorkflow:
             "not_feasible" if not feasible (terminal)
         """
         feasible_value = state.get("feasible", False)
-        logger.info(f"[FullWorkflow] Routing after feasibility_validation: feasible={feasible_value}, cohort_size={state.get('estimated_cohort_size')}")
+        logger.info(
+            f"[FullWorkflow] Routing after feasibility_validation: feasible={feasible_value}, cohort_size={state.get('estimated_cohort_size')}"
+        )
 
         if feasible_value:
             logger.info(f"[FullWorkflow] Feasible → phenotype_review")
@@ -852,12 +856,10 @@ class FullWorkflow:
         run_type="chain",
         name="ResearchFlow_FullWorkflow",
         tags=["workflow", "langgraph", "research", "production"],
-        metadata={"version": "1.0.0", "total_states": 23, "sprint": "5"}
+        metadata={"version": "1.0.0", "total_states": 23, "sprint": "5"},
     )
     async def run(
-        self,
-        initial_state: FullWorkflowState,
-        config: Optional[RunnableConfig] = None
+        self, initial_state: FullWorkflowState, config: Optional[RunnableConfig] = None
     ) -> FullWorkflowState:
         """
         Run the workflow from initial state to completion (or approval gate)
@@ -880,9 +882,11 @@ class FullWorkflow:
                     "request_id": initial_state.get("request_id"),
                     "initial_state": initial_state.get("current_state"),
                     "researcher": initial_state.get("researcher_name"),
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 },
-                tags=["e2e-test"] if "E2E" in initial_state.get("request_id", "") else ["production"]
+                tags=(
+                    ["e2e-test"] if "E2E" in initial_state.get("request_id", "") else ["production"]
+                ),
             )
 
         # Run the compiled graph with tracing

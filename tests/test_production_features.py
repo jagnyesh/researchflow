@@ -24,6 +24,7 @@ from app.langchain_orchestrator.langchain_base_agent import LangChainBaseAgentMi
 
 class TransientError(Exception):
     """Simulated transient error for retry testing"""
+
     pass
 
 
@@ -37,9 +38,9 @@ async def test_retry_logic_success_after_retry():
     - Exponential backoff is applied (2^retry_count seconds)
     - Task succeeds after retry
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST: Retry Logic - Success After Retry")
-    print("="*80)
+    print("=" * 80)
 
     agent = LangChainRequirementsAgent()
     attempt_count = 0
@@ -62,16 +63,14 @@ async def test_retry_logic_success_after_retry():
 
     def custom_should_retry(error, context):
         if isinstance(error, TransientError):
-            return context.get('retry_count', 0) < agent.max_retries
+            return context.get("retry_count", 0) < agent.max_retries
         return original_should_retry(error, context)
 
     agent.should_retry = custom_should_retry
 
     # Execute with production features
     context = {"request_id": "TEST-RETRY-001"}
-    result = await agent.execute_with_production_features(
-        "test_task", context, failing_task
-    )
+    result = await agent.execute_with_production_features("test_task", context, failing_task)
 
     elapsed = time.time() - start_time
 
@@ -86,7 +85,7 @@ async def test_retry_logic_success_after_retry():
     assert elapsed >= 1.0, f"Should have waited ~1s for retry, but elapsed {elapsed:.2f}s"
 
     print("\n  ✅ TEST PASSED: Retry logic works correctly")
-    print("="*80)
+    print("=" * 80)
 
 
 @pytest.mark.asyncio
@@ -98,9 +97,9 @@ async def test_retry_logic_max_retries_exceeded():
     - Agent retries up to max_retries (3)
     - After max retries, escalation occurs
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST: Retry Logic - Max Retries Exceeded")
-    print("="*80)
+    print("=" * 80)
 
     agent = LangChainRequirementsAgent()
     attempt_count = 0
@@ -116,7 +115,7 @@ async def test_retry_logic_max_retries_exceeded():
 
     def custom_should_retry(error, context):
         if isinstance(error, TransientError):
-            return context.get('retry_count', 0) < agent.max_retries
+            return context.get("retry_count", 0) < agent.max_retries
         return original_should_retry(error, context)
 
     agent.should_retry = custom_should_retry
@@ -128,9 +127,7 @@ async def test_retry_logic_max_retries_exceeded():
     context = {"request_id": "TEST-RETRY-002"}
 
     with pytest.raises(TransientError):
-        await agent.execute_with_production_features(
-            "test_task", context, always_failing_task
-        )
+        await agent.execute_with_production_features("test_task", context, always_failing_task)
 
     print(f"\n  ✓ Total attempts: {attempt_count}")
     print(f"  ✓ Escalation called: {agent.escalate_to_human.called}")
@@ -140,7 +137,7 @@ async def test_retry_logic_max_retries_exceeded():
     assert agent.escalate_to_human.called, "Should have escalated to human after max retries"
 
     print("\n  ✅ TEST PASSED: Max retries enforced correctly")
-    print("="*80)
+    print("=" * 80)
 
 
 @pytest.mark.asyncio
@@ -153,9 +150,9 @@ async def test_state_management():
     - Changes to WORKING during task
     - Returns to IDLE after completion
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST: State Management")
-    print("="*80)
+    print("=" * 80)
 
     agent = LangChainRequirementsAgent()
     states_observed = []
@@ -171,9 +168,7 @@ async def test_state_management():
     states_observed.append(("initial", agent.state))
 
     context = {"request_id": "TEST-STATE-001"}
-    await agent.execute_with_production_features(
-        "test_task", context, task_with_state_tracking
-    )
+    await agent.execute_with_production_features("test_task", context, task_with_state_tracking)
 
     print(f"  Final state: {agent.state.value}")
     assert agent.state == AgentState.IDLE, "Agent should return to IDLE after completion"
@@ -185,7 +180,7 @@ async def test_state_management():
     assert states_observed[2][1] == AgentState.IDLE, "Should return to IDLE"
 
     print("\n  ✅ TEST PASSED: State management works correctly")
-    print("="*80)
+    print("=" * 80)
 
 
 @pytest.mark.asyncio
@@ -197,9 +192,9 @@ async def test_task_history_tracking():
     - Task execution is recorded in task_history
     - History includes timestamps, status, and results
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST: Task History Tracking")
-    print("="*80)
+    print("=" * 80)
 
     agent = LangChainRequirementsAgent()
 
@@ -230,7 +225,7 @@ async def test_task_history_tracking():
     assert "completed_at" in history[0], "Task should have completed_at timestamp"
 
     print("\n  ✅ TEST PASSED: Task history tracking works correctly")
-    print("="*80)
+    print("=" * 80)
 
 
 @pytest.mark.asyncio
@@ -242,9 +237,9 @@ async def test_database_persistence_mock():
     - _save_execution_to_db is called with correct data
     - AgentExecution record would be created with all fields
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("TEST: Database Persistence (Mocked)")
-    print("="*80)
+    print("=" * 80)
 
     agent = LangChainRequirementsAgent()
     saved_executions = []
@@ -276,7 +271,7 @@ async def test_database_persistence_mock():
     assert "completed_at" in execution, "Completion time should be recorded"
 
     print("\n  ✅ TEST PASSED: Database persistence logic works correctly")
-    print("="*80)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

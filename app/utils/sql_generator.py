@@ -15,11 +15,7 @@ class SQLGenerator:
     Generate SQL queries from structured phenotype requirements
     """
 
-    def generate_phenotype_sql(
-        self,
-        requirements: Dict[str, Any],
-        count_only: bool = False
-    ) -> str:
+    def generate_phenotype_sql(self, requirements: Dict[str, Any], count_only: bool = False) -> str:
         """
         Generate SQL-on-FHIR query from requirements
 
@@ -30,9 +26,9 @@ class SQLGenerator:
         Returns:
             SQL query string
         """
-        inclusion = requirements.get('inclusion_criteria', [])
-        exclusion = requirements.get('exclusion_criteria', [])
-        time_period = requirements.get('time_period', {})
+        inclusion = requirements.get("inclusion_criteria", [])
+        exclusion = requirements.get("exclusion_criteria", [])
+        time_period = requirements.get("time_period", {})
 
         # Build base patient query
         if count_only:
@@ -48,24 +44,18 @@ class SQLGenerator:
 
         # Add inclusion criteria
         if inclusion:
-            inclusion_conditions = self._build_criteria_conditions(
-                inclusion,
-                include=True
-            )
+            inclusion_conditions = self._build_criteria_conditions(inclusion, include=True)
             if inclusion_conditions:
                 where_clauses.extend(inclusion_conditions)
 
         # Add exclusion criteria
         if exclusion:
-            exclusion_conditions = self._build_criteria_conditions(
-                exclusion,
-                include=False
-            )
+            exclusion_conditions = self._build_criteria_conditions(exclusion, include=False)
             if exclusion_conditions:
                 where_clauses.extend(exclusion_conditions)
 
         # Add time period filter if specified
-        if time_period.get('start') or time_period.get('end'):
+        if time_period.get("start") or time_period.get("end"):
             time_conditions = self._build_time_conditions(time_period)
             if time_conditions:
                 where_clauses.extend(time_conditions)
@@ -80,11 +70,7 @@ class SQLGenerator:
         logger.debug(f"Generated SQL:\n{sql}")
         return sql
 
-    def _build_criteria_conditions(
-        self,
-        criteria: List[Dict],
-        include: bool = True
-    ) -> List[str]:
+    def _build_criteria_conditions(self, criteria: List[Dict], include: bool = True) -> List[str]:
         """
         Build SQL conditions from criteria
 
@@ -98,31 +84,25 @@ class SQLGenerator:
         conditions = []
 
         for criterion in criteria:
-            concepts = criterion.get('concepts', [])
+            concepts = criterion.get("concepts", [])
 
             for concept in concepts:
-                concept_type = concept.get('type')
-                term = concept.get('term')
+                concept_type = concept.get("type")
+                term = concept.get("term")
 
-                if concept_type == 'condition':
+                if concept_type == "condition":
                     # Build condition query
-                    condition = self._build_condition_clause(
-                        term,
-                        include
-                    )
+                    condition = self._build_condition_clause(term, include)
                     if condition:
                         conditions.append(condition)
 
-                elif concept_type == 'demographic':
+                elif concept_type == "demographic":
                     # Build demographic query
-                    condition = self._build_demographic_clause(
-                        term,
-                        concept.get('details', '')
-                    )
+                    condition = self._build_demographic_clause(term, concept.get("details", ""))
                     if condition:
                         conditions.append(condition)
 
-                elif concept_type == 'lab':
+                elif concept_type == "lab":
                     # Build lab value query
                     condition = self._build_lab_clause(term, include)
                     if condition:
@@ -130,11 +110,7 @@ class SQLGenerator:
 
         return conditions
 
-    def _build_condition_clause(
-        self,
-        condition_term: str,
-        include: bool
-    ) -> str:
+    def _build_condition_clause(self, condition_term: str, include: bool) -> str:
         """Build SQL for condition/diagnosis criterion"""
         # Simplified: In production, would use ICD-10/SNOMED codes
         operator = "EXISTS" if include else "NOT EXISTS"
@@ -145,25 +121,21 @@ class SQLGenerator:
         AND LOWER(c.code_display) LIKE LOWER('%{condition_term}%')
     )"""
 
-    def _build_demographic_clause(
-        self,
-        term: str,
-        details: str
-    ) -> str:
+    def _build_demographic_clause(self, term: str, details: str) -> str:
         """Build SQL for demographic criterion"""
         # Parse age criteria
-        if 'age' in term.lower():
-            if '>' in details:
-                age = details.split('>')[1].strip()
+        if "age" in term.lower():
+            if ">" in details:
+                age = details.split(">")[1].strip()
                 return f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthDate)) > {age}"
-            elif '<' in details:
-                age = details.split('<')[1].strip()
+            elif "<" in details:
+                age = details.split("<")[1].strip()
                 return f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthDate)) < {age}"
 
         # Parse gender
-        if 'gender' in term.lower() or term.lower() in ['male', 'female']:
+        if "gender" in term.lower() or term.lower() in ["male", "female"]:
             gender = term.lower()
-            if gender in ['male', 'female']:
+            if gender in ["male", "female"]:
                 return f"p.gender = '{gender}'"
 
         return ""
@@ -182,23 +154,15 @@ class SQLGenerator:
         """Build time period filter conditions"""
         conditions = []
 
-        if time_period.get('start'):
-            conditions.append(
-                f"p.lastUpdated >= '{time_period['start']}'"
-            )
+        if time_period.get("start"):
+            conditions.append(f"p.lastUpdated >= '{time_period['start']}'")
 
-        if time_period.get('end'):
-            conditions.append(
-                f"p.lastUpdated <= '{time_period['end']}'"
-            )
+        if time_period.get("end"):
+            conditions.append(f"p.lastUpdated <= '{time_period['end']}'")
 
         return conditions
 
-    def generate_data_availability_query(
-        self,
-        data_element: str,
-        time_period: Dict
-    ) -> str:
+    def generate_data_availability_query(self, data_element: str, time_period: Dict) -> str:
         """
         Generate query to check data availability
 
@@ -209,21 +173,21 @@ class SQLGenerator:
         Returns:
             SQL query to check availability
         """
-        if data_element == 'clinical_notes':
-            table = 'document_reference'
-            date_field = 'date'
-        elif data_element == 'lab_results':
-            table = 'observation'
-            date_field = 'effectiveDateTime'
-        elif data_element == 'medications':
-            table = 'medication_request'
-            date_field = 'authoredOn'
+        if data_element == "clinical_notes":
+            table = "document_reference"
+            date_field = "date"
+        elif data_element == "lab_results":
+            table = "observation"
+            date_field = "effectiveDateTime"
+        elif data_element == "medications":
+            table = "medication_request"
+            date_field = "authoredOn"
         else:
-            table = 'observation'
-            date_field = 'effectiveDateTime'
+            table = "observation"
+            date_field = "effectiveDateTime"
 
         time_filter = ""
-        if time_period.get('start') and time_period.get('end'):
+        if time_period.get("start") and time_period.get("end"):
             time_filter = f"""
             AND {date_field} BETWEEN '{time_period['start']}'
                 AND '{time_period['end']}'"""

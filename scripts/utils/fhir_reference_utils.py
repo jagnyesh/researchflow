@@ -24,7 +24,7 @@ class FHIRReferenceUtils:
     """Utilities for working with FHIR references"""
 
     # FHIR reference pattern: ResourceType/id
-    REFERENCE_PATTERN = re.compile(r'^([A-Z][a-zA-Z]+)/(.+)$')
+    REFERENCE_PATTERN = re.compile(r"^([A-Z][a-zA-Z]+)/(.+)$")
 
     @staticmethod
     def extract_id(reference: Optional[str]) -> Optional[str]:
@@ -49,7 +49,7 @@ class FHIRReferenceUtils:
             return None
 
         # Try to split on '/'
-        parts = reference.split('/')
+        parts = reference.split("/")
         if len(parts) == 2:
             return parts[1]
 
@@ -73,7 +73,7 @@ class FHIRReferenceUtils:
         if not reference:
             return None
 
-        parts = reference.split('/')
+        parts = reference.split("/")
         if len(parts) == 2:
             return parts[0]
 
@@ -206,6 +206,7 @@ $$ LANGUAGE plpgsql IMMUTABLE;
 
 # Convenience functions for direct use
 
+
 def extract_patient_id_from_reference(reference: Optional[str]) -> Optional[str]:
     """
     Extract patient ID from FHIR Patient reference
@@ -221,7 +222,7 @@ def extract_patient_id_from_reference(reference: Optional[str]) -> Optional[str]
         "12345"
     """
     parsed = FHIRReferenceUtils.parse_reference(reference)
-    if parsed and parsed[0] == 'Patient':
+    if parsed and parsed[0] == "Patient":
         return parsed[1]
     return None
 
@@ -254,7 +255,7 @@ SQL_DUAL_COLUMN_TEMPLATE = """
 def generate_dual_column_sql(
     source_expression: str,
     reference_column_name: str = "patient_ref",
-    id_column_name: str = "patient_id"
+    id_column_name: str = "patient_id",
 ) -> str:
     """
     Generate SQL for dual column (reference + extracted ID)

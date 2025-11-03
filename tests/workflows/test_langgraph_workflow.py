@@ -16,16 +16,14 @@ import pytest
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock
 
-from app.langchain_orchestrator.langgraph_workflow import (
-    FullWorkflow,
-    FullWorkflowState
-)
+from app.langchain_orchestrator.langgraph_workflow import FullWorkflow, FullWorkflowState
 from app.langchain_orchestrator.persistence import WorkflowPersistence
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_state() -> FullWorkflowState:
@@ -38,15 +36,13 @@ def sample_state() -> FullWorkflowState:
         "current_state": "new_request",
         "created_at": now,
         "updated_at": now,
-
         # Researcher info
         "researcher_request": "I need diabetes patients for my study",
         "researcher_info": {
             "name": "Dr. Test",
             "email": "test@example.com",
-            "department": "Endocrinology"
+            "department": "Endocrinology",
         },
-
         # Requirements phase
         "requirements": {},
         "conversation_history": [],
@@ -54,7 +50,6 @@ def sample_state() -> FullWorkflowState:
         "requirements_complete": False,
         "requirements_approved": None,
         "requirements_rejection_reason": None,
-
         # Feasibility phase
         "phenotype_sql": None,
         "feasibility_score": 0.0,
@@ -62,34 +57,28 @@ def sample_state() -> FullWorkflowState:
         "feasible": False,
         "phenotype_approved": None,
         "phenotype_rejection_reason": None,
-
         # Kickoff phase
         "meeting_scheduled": False,
         "meeting_details": None,
-
         # Extraction phase
         "extraction_approved": None,
         "extraction_rejection_reason": None,
         "extraction_complete": False,
         "extracted_data_summary": None,
-
         # QA phase
         "overall_status": None,
         "qa_report": None,
         "qa_approved": None,
         "qa_rejection_reason": None,
-
         # Delivery phase
         "delivered": False,
         "delivery_info": None,
-
         # Error handling
         "error": None,
         "escalation_reason": None,
-
         # Scope change
         "scope_change_requested": False,
-        "scope_approved": None
+        "scope_approved": None,
     }
 
 
@@ -102,6 +91,7 @@ def workflow():
 # ============================================================================
 # Test: Graph Construction
 # ============================================================================
+
 
 class TestGraphConstruction:
     """Test workflow graph structure"""
@@ -132,7 +122,7 @@ class TestGraphConstruction:
             "complete",
             "not_feasible",
             "qa_failed",
-            "human_review"
+            "human_review",
         ]
 
         for expected_node in expected_nodes:
@@ -148,6 +138,7 @@ class TestGraphConstruction:
 # ============================================================================
 # Test: Individual Node Handlers
 # ============================================================================
+
 
 class TestNodeHandlers:
     """Test individual state handler functions"""
@@ -182,7 +173,7 @@ class TestNodeHandlers:
         """Test feasibility_validation node handler"""
         sample_state["requirements"] = {
             "inclusion_criteria": [{"description": "diabetes"}],
-            "data_elements": ["demographics", "lab_results"]
+            "data_elements": ["demographics", "lab_results"],
         }
         sample_state["feasible"] = True
         sample_state["estimated_cohort_size"] = 100
@@ -216,6 +207,7 @@ class TestNodeHandlers:
 # ============================================================================
 # Test: Conditional Routing
 # ============================================================================
+
 
 class TestConditionalRouting:
     """Test routing functions"""
@@ -297,6 +289,7 @@ class TestConditionalRouting:
 # Test: Workflow Execution
 # ============================================================================
 
+
 class TestWorkflowExecution:
     """Test end-to-end workflow execution"""
 
@@ -330,7 +323,7 @@ class TestWorkflowExecution:
         sample_state["requirements"] = {
             "study_title": "Test Study",
             "inclusion_criteria": [{"description": "diabetes"}],
-            "data_elements": ["demographics"]
+            "data_elements": ["demographics"],
         }
 
         # Approve requirements
@@ -402,6 +395,7 @@ class TestWorkflowExecution:
 # Test: State Persistence
 # ============================================================================
 
+
 class TestStatePersistence:
     """Test workflow state persistence"""
 
@@ -445,7 +439,7 @@ class TestStatePersistence:
             "error": None,
             "escalation_reason": None,
             "scope_change_requested": False,
-            "scope_approved": None
+            "scope_approved": None,
         }
 
         assert state["request_id"] == "REQ-TEST-002"
@@ -495,7 +489,7 @@ class TestStatePersistence:
             "error": None,
             "escalation_reason": None,
             "scope_change_requested": False,
-            "scope_approved": None
+            "scope_approved": None,
         }
 
         # Verify state structure
@@ -508,6 +502,7 @@ class TestStatePersistence:
 # ============================================================================
 # Test: State Schema Validation
 # ============================================================================
+
 
 class TestStateSchema:
     """Test TypedDict state schema"""
@@ -532,7 +527,7 @@ class TestStateSchema:
             "extraction_complete",
             "overall_status",
             "delivered",
-            "error"
+            "error",
         ]
 
         for field in required_fields:
@@ -542,6 +537,7 @@ class TestStateSchema:
 # ============================================================================
 # Test: Error Handling
 # ============================================================================
+
 
 class TestErrorHandling:
     """Test error handling in workflow"""

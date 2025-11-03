@@ -34,7 +34,7 @@ from app.agents.calendar_agent import CalendarAgent
 from app.langchain_orchestrator.langchain_agents import (
     LangChainRequirementsAgent,
     LangChainPhenotypeAgent,
-    LangChainCalendarAgent
+    LangChainCalendarAgent,
 )
 
 
@@ -58,7 +58,7 @@ class AgentComparisonResult:
             "success": self.success,
             "output_keys": self.output_keys,
             "error": self.error,
-            "result": self.result
+            "result": self.result,
         }
 
 
@@ -114,12 +114,7 @@ class AgentComparisonHarness:
         return self._exp_calendar
 
     async def run_agent(
-        self,
-        agent,
-        task_name: str,
-        context: Dict[str, Any],
-        agent_type: str,
-        agent_name: str
+        self, agent, task_name: str, context: Dict[str, Any], agent_type: str, agent_name: str
     ) -> AgentComparisonResult:
         """Run a single agent method and capture metrics"""
         result = AgentComparisonResult(agent_type, agent_name)
@@ -145,13 +140,12 @@ class AgentComparisonHarness:
         return result
 
     async def compare_requirements_agents(
-        self,
-        test_context: Dict[str, Any]
+        self, test_context: Dict[str, Any]
     ) -> Dict[str, AgentComparisonResult]:
         """Compare Requirements agents"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("COMPARING REQUIREMENTS AGENTS")
-        print("="*80)
+        print("=" * 80)
 
         # Run production agent
         print("\n[1/2] Running PRODUCTION Requirements Agent...")
@@ -160,7 +154,7 @@ class AgentComparisonHarness:
             "gather_requirements",
             test_context,
             "production",
-            "RequirementsAgent"
+            "RequirementsAgent",
         )
         print(f"  ✓ Completed in {prod_result.execution_time:.2f}s")
         if prod_result.success:
@@ -175,7 +169,7 @@ class AgentComparisonHarness:
             "gather_requirements",
             test_context,
             "experimental",
-            "LangChainRequirementsAgent"
+            "LangChainRequirementsAgent",
         )
         print(f"  ✓ Completed in {exp_result.execution_time:.2f}s")
         if exp_result.success:
@@ -186,19 +180,15 @@ class AgentComparisonHarness:
         # Compare
         self._print_comparison(prod_result, exp_result)
 
-        return {
-            "production": prod_result,
-            "experimental": exp_result
-        }
+        return {"production": prod_result, "experimental": exp_result}
 
     async def compare_phenotype_agents(
-        self,
-        test_context: Dict[str, Any]
+        self, test_context: Dict[str, Any]
     ) -> Dict[str, AgentComparisonResult]:
         """Compare Phenotype agents"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("COMPARING PHENOTYPE AGENTS")
-        print("="*80)
+        print("=" * 80)
 
         # Run production agent
         print("\n[1/2] Running PRODUCTION Phenotype Agent...")
@@ -207,7 +197,7 @@ class AgentComparisonHarness:
             "validate_feasibility",
             test_context,
             "production",
-            "PhenotypeValidationAgent"
+            "PhenotypeValidationAgent",
         )
         print(f"  ✓ Completed in {prod_result.execution_time:.2f}s")
         if prod_result.success:
@@ -222,7 +212,7 @@ class AgentComparisonHarness:
             "validate_feasibility",
             test_context,
             "experimental",
-            "LangChainPhenotypeAgent"
+            "LangChainPhenotypeAgent",
         )
         print(f"  ✓ Completed in {exp_result.execution_time:.2f}s")
         if exp_result.success:
@@ -233,19 +223,15 @@ class AgentComparisonHarness:
         # Compare
         self._print_comparison(prod_result, exp_result)
 
-        return {
-            "production": prod_result,
-            "experimental": exp_result
-        }
+        return {"production": prod_result, "experimental": exp_result}
 
     async def compare_calendar_agents(
-        self,
-        test_context: Dict[str, Any]
+        self, test_context: Dict[str, Any]
     ) -> Dict[str, AgentComparisonResult]:
         """Compare Calendar agents"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("COMPARING CALENDAR AGENTS")
-        print("="*80)
+        print("=" * 80)
 
         # Run production agent
         print("\n[1/2] Running PRODUCTION Calendar Agent...")
@@ -254,7 +240,7 @@ class AgentComparisonHarness:
             "schedule_kickoff_meeting",
             test_context,
             "production",
-            "CalendarAgent"
+            "CalendarAgent",
         )
         print(f"  ✓ Completed in {prod_result.execution_time:.2f}s")
         if prod_result.success:
@@ -269,7 +255,7 @@ class AgentComparisonHarness:
             "schedule_kickoff_meeting",
             test_context,
             "experimental",
-            "LangChainCalendarAgent"
+            "LangChainCalendarAgent",
         )
         print(f"  ✓ Completed in {exp_result.execution_time:.2f}s")
         if exp_result.success:
@@ -280,16 +266,13 @@ class AgentComparisonHarness:
         # Compare
         self._print_comparison(prod_result, exp_result)
 
-        return {
-            "production": prod_result,
-            "experimental": exp_result
-        }
+        return {"production": prod_result, "experimental": exp_result}
 
     def _print_comparison(self, prod: AgentComparisonResult, exp: AgentComparisonResult):
         """Print comparison summary"""
-        print("\n" + "-"*80)
+        print("\n" + "-" * 80)
         print("COMPARISON SUMMARY")
-        print("-"*80)
+        print("-" * 80)
 
         # Success rate
         print(f"\nSuccess Rate:")
@@ -321,12 +304,13 @@ class AgentComparisonHarness:
             if exp_only:
                 print(f"  Experimental only: {sorted(exp_only)}")
 
-        print("-"*80)
+        print("-" * 80)
 
 
 # ============================================================================
 # TEST FIXTURES
 # ============================================================================
+
 
 @pytest.fixture
 def harness():
@@ -343,15 +327,15 @@ def requirements_test_context():
         "researcher_info": {
             "name": "Dr. Test Researcher",
             "email": "test@hospital.edu",
-            "irb_number": "IRB-TEST-001"
+            "irb_number": "IRB-TEST-001",
         },
         "conversation_history": [
             {
                 "role": "user",
-                "content": "I need data for heart failure patients with diabetes admitted in 2024"
+                "content": "I need data for heart failure patients with diabetes admitted in 2024",
             }
         ],
-        "current_requirements": {}
+        "current_requirements": {},
     }
 
 
@@ -363,13 +347,10 @@ def phenotype_test_context():
         "requirements": {
             "inclusion_criteria": [
                 {"type": "condition", "code": "I50", "description": "Heart failure"},
-                {"type": "condition", "code": "E11", "description": "Type 2 diabetes"}
+                {"type": "condition", "code": "E11", "description": "Type 2 diabetes"},
             ],
-            "time_period": {
-                "start": "2024-01-01",
-                "end": "2024-12-31"
-            }
-        }
+            "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
+        },
     }
 
 
@@ -380,18 +361,16 @@ def calendar_test_context():
         "request_id": "TEST-REQ-003",
         "requirements": {
             "study_title": "Heart Failure and Diabetes Study",
-            "principal_investigator": "Dr. Test Researcher"
+            "principal_investigator": "Dr. Test Researcher",
         },
-        "feasibility_report": {
-            "estimated_cohort": 250,
-            "feasibility_score": 0.85
-        }
+        "feasibility_report": {"estimated_cohort": 250, "feasibility_score": 0.85},
     }
 
 
 # ============================================================================
 # TESTS
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_requirements_agents_comparison(harness, requirements_test_context):
@@ -400,7 +379,9 @@ async def test_requirements_agents_comparison(harness, requirements_test_context
 
     # Both should succeed
     assert results["production"].success, f"Production agent failed: {results['production'].error}"
-    assert results["experimental"].success, f"Experimental agent failed: {results['experimental'].error}"
+    assert results[
+        "experimental"
+    ].success, f"Experimental agent failed: {results['experimental'].error}"
 
     # Both should return dict
     assert isinstance(results["production"].result, dict)
@@ -408,8 +389,9 @@ async def test_requirements_agents_comparison(harness, requirements_test_context
 
     # Performance check (experimental should be within 2x of production)
     # Note: We're lenient here because experimental has @traceable overhead
-    assert results["experimental"].execution_time < results["production"].execution_time * 2.0, \
-        "Experimental agent is more than 2x slower than production"
+    assert (
+        results["experimental"].execution_time < results["production"].execution_time * 2.0
+    ), "Experimental agent is more than 2x slower than production"
 
 
 @pytest.mark.asyncio
@@ -419,15 +401,23 @@ async def test_phenotype_agents_comparison(harness, phenotype_test_context):
 
     # Both should succeed
     assert results["production"].success, f"Production agent failed: {results['production'].error}"
-    assert results["experimental"].success, f"Experimental agent failed: {results['experimental'].error}"
+    assert results[
+        "experimental"
+    ].success, f"Experimental agent failed: {results['experimental'].error}"
 
     # Both should return dict
     assert isinstance(results["production"].result, dict)
     assert isinstance(results["experimental"].result, dict)
 
     # Both should have SQL query
-    assert "sql_query" in results["production"].result or "approval_data" in results["production"].result
-    assert "sql_query" in results["experimental"].result or "approval_data" in results["experimental"].result
+    assert (
+        "sql_query" in results["production"].result
+        or "approval_data" in results["production"].result
+    )
+    assert (
+        "sql_query" in results["experimental"].result
+        or "approval_data" in results["experimental"].result
+    )
 
 
 @pytest.mark.asyncio
@@ -437,7 +427,9 @@ async def test_calendar_agents_comparison(harness, calendar_test_context):
 
     # Both should succeed
     assert results["production"].success, f"Production agent failed: {results['production'].error}"
-    assert results["experimental"].success, f"Experimental agent failed: {results['experimental'].error}"
+    assert results[
+        "experimental"
+    ].success, f"Experimental agent failed: {results['experimental'].error}"
 
     # Both should return dict
     assert isinstance(results["production"].result, dict)
@@ -449,16 +441,20 @@ async def test_calendar_agents_comparison(harness, calendar_test_context):
 
 
 @pytest.mark.asyncio
-async def test_full_comparison_suite(harness, requirements_test_context, phenotype_test_context, calendar_test_context):
+async def test_full_comparison_suite(
+    harness, requirements_test_context, phenotype_test_context, calendar_test_context
+):
     """Run full suite of comparisons"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("FULL AGENT COMPARISON SUITE")
-    print("="*80)
+    print("=" * 80)
 
     all_results = {}
 
     # Requirements
-    all_results["requirements"] = await harness.compare_requirements_agents(requirements_test_context)
+    all_results["requirements"] = await harness.compare_requirements_agents(
+        requirements_test_context
+    )
 
     # Phenotype
     all_results["phenotype"] = await harness.compare_phenotype_agents(phenotype_test_context)
@@ -467,9 +463,9 @@ async def test_full_comparison_suite(harness, requirements_test_context, phenoty
     all_results["calendar"] = await harness.compare_calendar_agents(calendar_test_context)
 
     # Final summary
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("FINAL SUMMARY")
-    print("="*80)
+    print("=" * 80)
 
     for agent_name, results in all_results.items():
         prod = results["production"]
@@ -486,18 +482,22 @@ async def test_full_comparison_suite(harness, requirements_test_context, phenoty
             else:
                 print(f"  Performance:  Production {1/speedup:.2f}x faster")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
 
     # Write results to file
     results_file = "test_agent_comparison_results.json"
     with open(results_file, "w") as f:
-        json.dump({
-            agent_name: {
-                "production": results["production"].to_dict(),
-                "experimental": results["experimental"].to_dict()
-            }
-            for agent_name, results in all_results.items()
-        }, f, indent=2)
+        json.dump(
+            {
+                agent_name: {
+                    "production": results["production"].to_dict(),
+                    "experimental": results["experimental"].to_dict(),
+                }
+                for agent_name, results in all_results.items()
+            },
+            f,
+            indent=2,
+        )
 
     print(f"\nResults written to: {results_file}")
 

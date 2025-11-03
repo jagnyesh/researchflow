@@ -74,7 +74,7 @@ class ApprovalBridge:
         "phenotype_approved": "phenotype_sql",
         "extraction_approved": "extraction",
         "qa_approved": "qa",
-        "scope_approved": "scope_change"
+        "scope_approved": "scope_change",
     }
 
     APPROVAL_TYPE_TO_STATE = {
@@ -82,7 +82,7 @@ class ApprovalBridge:
         "phenotype_sql": "phenotype_approved",
         "extraction": "extraction_approved",
         "qa": "qa_approved",
-        "scope_change": "scope_approved"
+        "scope_change": "scope_approved",
     }
 
     def __init__(self, database_url: str = "sqlite+aiosqlite:///./dev.db"):
@@ -104,7 +104,7 @@ class ApprovalBridge:
         request_id: str,
         approval_type: str,
         state: Dict[str, Any],
-        submitted_by: str = "langgraph_workflow"
+        submitted_by: str = "langgraph_workflow",
     ) -> Optional[int]:
         """
         Create approval request in database when agent requests human review.
@@ -133,7 +133,7 @@ class ApprovalBridge:
                 select(Approval).where(
                     Approval.request_id == request_id,
                     Approval.approval_type == approval_type,
-                    Approval.status == "pending"
+                    Approval.status == "pending",
                 )
             )
             existing = result.scalar_one_or_none()
@@ -154,7 +154,7 @@ class ApprovalBridge:
                 submitted_at=datetime.now(),
                 submitted_by=submitted_by,
                 approval_data=approval_data,
-                status="pending"
+                status="pending",
             )
 
             session.add(approval)
@@ -169,10 +169,7 @@ class ApprovalBridge:
             return approval.id
 
     async def sync_approval_to_state(
-        self,
-        request_id: str,
-        approval_type: str,
-        state: Dict[str, Any]
+        self, request_id: str, approval_type: str, state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Sync approval decision from database to LangGraph state.
@@ -202,10 +199,7 @@ class ApprovalBridge:
             # Get latest approval for this type
             result = await session.execute(
                 select(Approval)
-                .where(
-                    Approval.request_id == request_id,
-                    Approval.approval_type == approval_type
-                )
+                .where(Approval.request_id == request_id, Approval.approval_type == approval_type)
                 .order_by(Approval.created_at.desc())
                 .limit(1)
             )
@@ -214,8 +208,7 @@ class ApprovalBridge:
             if not approval:
                 # No approval record yet, keep state as None
                 logger.debug(
-                    f"[ApprovalBridge] No approval record found: "
-                    f"{request_id} / {approval_type}"
+                    f"[ApprovalBridge] No approval record found: " f"{request_id} / {approval_type}"
                 )
                 return state
 
@@ -262,9 +255,7 @@ class ApprovalBridge:
             return state
 
     async def sync_all_approvals_to_state(
-        self,
-        request_id: str,
-        state: Dict[str, Any]
+        self, request_id: str, state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Sync ALL approval types for a request.
@@ -289,7 +280,7 @@ class ApprovalBridge:
         status: str,
         reviewed_by: str,
         review_notes: Optional[str] = None,
-        modifications: Optional[Dict[str, Any]] = None
+        modifications: Optional[Dict[str, Any]] = None,
     ) -> bool:
         """
         Update approval record with review decision.
@@ -318,9 +309,7 @@ class ApprovalBridge:
             ```
         """
         async with self.async_session_maker() as session:
-            result = await session.execute(
-                select(Approval).where(Approval.id == approval_id)
-            )
+            result = await session.execute(select(Approval).where(Approval.id == approval_id))
             approval = result.scalar_one_or_none()
 
             if not approval:
@@ -342,10 +331,7 @@ class ApprovalBridge:
 
             return True
 
-    async def get_pending_approvals(
-        self,
-        request_id: Optional[str] = None
-    ) -> list[Dict[str, Any]]:
+    async def get_pending_approvals(self, request_id: Optional[str] = None) -> list[Dict[str, Any]]:
         """
         Get all pending approvals, optionally filtered by request.
 
@@ -376,21 +362,17 @@ class ApprovalBridge:
                     "submitted_at": a.submitted_at.isoformat() if a.submitted_at else None,
                     "submitted_by": a.submitted_by,
                     "approval_data": a.approval_data,
-                    "timeout_at": a.timeout_at.isoformat() if a.timeout_at else None
+                    "timeout_at": a.timeout_at.isoformat() if a.timeout_at else None,
                 }
                 for a in approvals
             ]
 
-    def _extract_approval_data(
-        self,
-        approval_type: str,
-        state: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _extract_approval_data(self, approval_type: str, state: Dict[str, Any]) -> Dict[str, Any]:
         """Extract relevant data for approval based on type"""
         if approval_type == "requirements":
             return {
                 "requirements": state.get("requirements", {}),
-                "completeness_score": state.get("completeness_score", 0.0)
+                "completeness_score": state.get("completeness_score", 0.0),
             }
 
         elif approval_type == "phenotype_sql":
@@ -398,35 +380,32 @@ class ApprovalBridge:
                 "phenotype_sql": state.get("phenotype_sql"),
                 "feasibility_score": state.get("feasibility_score", 0.0),
                 "estimated_cohort_size": state.get("estimated_cohort_size"),
-                "requirements": state.get("requirements", {})
+                "requirements": state.get("requirements", {}),
             }
 
         elif approval_type == "extraction":
             return {
                 "phenotype_sql": state.get("phenotype_sql"),
-                "estimated_cohort_size": state.get("estimated_cohort_size")
+                "estimated_cohort_size": state.get("estimated_cohort_size"),
             }
 
         elif approval_type == "qa":
             return {
                 "qa_report": state.get("qa_report", {}),
-                "overall_status": state.get("overall_status")
+                "overall_status": state.get("overall_status"),
             }
 
         elif approval_type == "scope_change":
             return {
                 "original_requirements": state.get("requirements", {}),
-                "requested_changes": state.get("scope_change_reason", "Not specified")
+                "requested_changes": state.get("scope_change_reason", "Not specified"),
             }
 
         else:
             return {}
 
     def _apply_modifications(
-        self,
-        state: Dict[str, Any],
-        approval_type: str,
-        modifications: Dict[str, Any]
+        self, state: Dict[str, Any], approval_type: str, modifications: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Apply reviewer modifications to state"""
         if approval_type == "phenotype_sql" and "phenotype_sql" in modifications:
@@ -449,11 +428,12 @@ class ApprovalBridge:
 # Helper Functions
 # ============================================================================
 
+
 async def create_approval_from_state(
     request_id: str,
     approval_type: str,
     state: Dict[str, Any],
-    database_url: str = "sqlite+aiosqlite:///./dev.db"
+    database_url: str = "sqlite+aiosqlite:///./dev.db",
 ) -> Optional[int]:
     """
     Convenience function to create approval request.
@@ -486,7 +466,7 @@ async def check_approval_status(
     request_id: str,
     approval_type: str,
     state: Dict[str, Any],
-    database_url: str = "sqlite+aiosqlite:///./dev.db"
+    database_url: str = "sqlite+aiosqlite:///./dev.db",
 ) -> Dict[str, Any]:
     """
     Convenience function to check and sync approval status.

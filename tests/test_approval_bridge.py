@@ -23,7 +23,7 @@ from sqlalchemy import select
 from app.langchain_orchestrator.approval_bridge import (
     ApprovalBridge,
     create_approval_from_state,
-    check_approval_status
+    check_approval_status,
 )
 from app.database.models import Base, Approval, ResearchRequest
 
@@ -32,13 +32,11 @@ from app.database.models import Base, Approval, ResearchRequest
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 async def test_engine():
     """Create in-memory SQLite engine for testing"""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        echo=False
-    )
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 
     # Create tables
     async with engine.begin() as conn:
@@ -52,9 +50,7 @@ async def test_engine():
 @pytest.fixture
 async def test_session(test_engine):
     """Create test database session"""
-    async_session_maker = sessionmaker(
-        test_engine, class_=AsyncSession, expire_on_commit=False
-    )
+    async_session_maker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
 
     async with async_session_maker() as session:
         yield session
@@ -87,7 +83,7 @@ async def sample_request(test_session):
         initial_request="Test research request for diabetes patients",
         current_state="feasibility_validation",
         created_at=datetime.now(),
-        updated_at=datetime.now()
+        updated_at=datetime.now(),
     )
 
     test_session.add(request)
@@ -105,18 +101,16 @@ def sample_state() -> Dict[str, Any]:
         "current_state": "feasibility_validation",
         "created_at": datetime.now().isoformat(),
         "updated_at": datetime.now().isoformat(),
-
         # Requirements
         "requirements": {
             "study_title": "Test Study",
             "inclusion_criteria": ["Age > 18", "Diabetes diagnosis"],
             "exclusion_criteria": ["Pregnant"],
-            "data_elements": ["demographics", "lab_results"]
+            "data_elements": ["demographics", "lab_results"],
         },
         "completeness_score": 0.9,
         "requirements_approved": None,
         "requirements_rejection_reason": None,
-
         # Phenotype
         "phenotype_sql": "SELECT * FROM patients WHERE age > 18",
         "feasibility_score": 0.85,
@@ -124,30 +118,25 @@ def sample_state() -> Dict[str, Any]:
         "feasible": True,
         "phenotype_approved": None,
         "phenotype_rejection_reason": None,
-
         # Extraction
         "extraction_approved": None,
         "extraction_rejection_reason": None,
         "extraction_complete": False,
-
         # QA
         "qa_approved": None,
         "qa_rejection_reason": None,
-        "qa_report": {
-            "completeness": 0.95,
-            "duplicates": 0
-        },
+        "qa_report": {"completeness": 0.95, "duplicates": 0},
         "overall_status": "passed",
-
         # Scope change
         "scope_approved": None,
-        "scope_change_reason": None
+        "scope_change_reason": None,
     }
 
 
 # ============================================================================
 # Tests: Bridge Initialization
 # ============================================================================
+
 
 def test_bridge_initialization():
     """Test bridge initializes with database URL"""
@@ -184,6 +173,7 @@ def test_bridge_approval_type_to_state_mapping():
 # Tests: Create Approval Request
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_create_approval_request_new(bridge, sample_request, sample_state):
     """Test creating new approval request"""
@@ -191,7 +181,7 @@ async def test_create_approval_request_new(bridge, sample_request, sample_state)
         request_id="TEST-REQ-001",
         approval_type="phenotype_sql",
         state=sample_state,
-        submitted_by="langgraph_workflow"
+        submitted_by="langgraph_workflow",
     )
 
     assert approval_id is not None
@@ -199,9 +189,7 @@ async def test_create_approval_request_new(bridge, sample_request, sample_state)
 
     # Verify approval was created in database
     async with bridge.async_session_maker() as session:
-        result = await session.execute(
-            select(Approval).where(Approval.id == approval_id)
-        )
+        result = await session.execute(select(Approval).where(Approval.id == approval_id))
         approval = result.scalar_one_or_none()
 
         assert approval is not None
@@ -217,16 +205,12 @@ async def test_create_approval_request_duplicate(bridge, sample_request, sample_
     """Test creating duplicate approval request returns existing ID"""
     # Create first approval
     approval_id_1 = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
 
     # Try to create duplicate
     approval_id_2 = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
 
     # Should return same ID
@@ -236,8 +220,7 @@ async def test_create_approval_request_duplicate(bridge, sample_request, sample_
     async with bridge.async_session_maker() as session:
         result = await session.execute(
             select(Approval).where(
-                Approval.request_id == "TEST-REQ-001",
-                Approval.approval_type == "requirements"
+                Approval.request_id == "TEST-REQ-001", Approval.approval_type == "requirements"
             )
         )
         approvals = result.scalars().all()
@@ -248,21 +231,15 @@ async def test_create_approval_request_duplicate(bridge, sample_request, sample_
 async def test_create_approval_request_different_types(bridge, sample_request, sample_state):
     """Test creating multiple approval requests of different types"""
     approval_id_req = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
 
     approval_id_pheno = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     approval_id_qa = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="qa",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="qa", state=sample_state
     )
 
     # All should be different
@@ -317,13 +294,12 @@ async def test_extract_approval_data_qa(bridge, sample_state):
 # Tests: Sync Approval to State
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_sync_approval_to_state_no_approval(bridge, sample_state):
     """Test syncing when no approval record exists"""
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # State should be unchanged (approval flag remains None)
@@ -335,9 +311,7 @@ async def test_sync_approval_to_state_approved(bridge, sample_request, sample_st
     """Test syncing approved status to state"""
     # Create approval request
     approval_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Update approval to approved
@@ -345,14 +319,12 @@ async def test_sync_approval_to_state_approved(bridge, sample_request, sample_st
         approval_id=approval_id,
         status="approved",
         reviewed_by="admin@example.com",
-        review_notes="SQL looks good"
+        review_notes="SQL looks good",
     )
 
     # Sync to state
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     assert updated_state["phenotype_approved"] is True
@@ -365,9 +337,7 @@ async def test_sync_approval_to_state_rejected(bridge, sample_request, sample_st
     """Test syncing rejected status to state"""
     # Create approval request
     approval_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
 
     # Update approval to rejected
@@ -375,14 +345,12 @@ async def test_sync_approval_to_state_rejected(bridge, sample_request, sample_st
         approval_id=approval_id,
         status="rejected",
         reviewed_by="admin@example.com",
-        review_notes="Criteria too broad"
+        review_notes="Criteria too broad",
     )
 
     # Sync to state
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
 
     assert updated_state["requirements_approved"] is False
@@ -395,16 +363,12 @@ async def test_sync_approval_to_state_pending(bridge, sample_request, sample_sta
     """Test syncing pending status to state (should remain None)"""
     # Create approval request (defaults to pending)
     await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="extraction",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="extraction", state=sample_state
     )
 
     # Sync to state
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="extraction",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="extraction", state=sample_state
     )
 
     # Approval flag should remain None (not approved yet)
@@ -416,29 +380,23 @@ async def test_sync_approval_to_state_modified(bridge, sample_request, sample_st
     """Test syncing modified status to state"""
     # Create approval request
     approval_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Update approval with modifications
-    modifications = {
-        "phenotype_sql": "SELECT * FROM patients WHERE age > 21"  # Modified SQL
-    }
+    modifications = {"phenotype_sql": "SELECT * FROM patients WHERE age > 21"}  # Modified SQL
 
     await bridge.update_approval_status(
         approval_id=approval_id,
         status="modified",
         reviewed_by="admin@example.com",
         review_notes="Changed age threshold to 21",
-        modifications=modifications
+        modifications=modifications,
     )
 
     # Sync to state
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     assert updated_state["phenotype_approved"] is True
@@ -450,29 +408,27 @@ async def test_sync_approval_to_state_modified(bridge, sample_request, sample_st
 # Tests: Sync All Approvals
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_sync_all_approvals_to_state(bridge, sample_request, sample_state):
     """Test syncing all approval types at once"""
     # Create multiple approvals
     req_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
     pheno_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Approve requirements, reject phenotype
     await bridge.update_approval_status(req_id, "approved", "admin@example.com")
-    await bridge.update_approval_status(pheno_id, "rejected", "admin@example.com", "SQL too complex")
+    await bridge.update_approval_status(
+        pheno_id, "rejected", "admin@example.com", "SQL too complex"
+    )
 
     # Sync all
     updated_state = await bridge.sync_all_approvals_to_state(
-        request_id="TEST-REQ-001",
-        state=sample_state
+        request_id="TEST-REQ-001", state=sample_state
     )
 
     assert updated_state["requirements_approved"] is True
@@ -484,29 +440,26 @@ async def test_sync_all_approvals_to_state(bridge, sample_request, sample_state)
 # Tests: Update Approval Status
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_update_approval_status_approved(bridge, sample_request, sample_state):
     """Test updating approval to approved status"""
     approval_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="qa",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="qa", state=sample_state
     )
 
     success = await bridge.update_approval_status(
         approval_id=approval_id,
         status="approved",
         reviewed_by="qa_admin@example.com",
-        review_notes="QA checks passed"
+        review_notes="QA checks passed",
     )
 
     assert success is True
 
     # Verify in database
     async with bridge.async_session_maker() as session:
-        result = await session.execute(
-            select(Approval).where(Approval.id == approval_id)
-        )
+        result = await session.execute(select(Approval).where(Approval.id == approval_id))
         approval = result.scalar_one_or_none()
 
         assert approval.status == "approved"
@@ -519,9 +472,7 @@ async def test_update_approval_status_approved(bridge, sample_request, sample_st
 async def test_update_approval_status_not_found(bridge):
     """Test updating non-existent approval returns False"""
     success = await bridge.update_approval_status(
-        approval_id=99999,
-        status="approved",
-        reviewed_by="admin@example.com"
+        approval_id=99999, status="approved", reviewed_by="admin@example.com"
     )
 
     assert success is False
@@ -530,6 +481,7 @@ async def test_update_approval_status_not_found(bridge):
 # ============================================================================
 # Tests: Get Pending Approvals
 # ============================================================================
+
 
 @pytest.mark.asyncio
 async def test_get_pending_approvals_empty(bridge):
@@ -544,14 +496,10 @@ async def test_get_pending_approvals_single_request(bridge, sample_request, samp
     """Test getting pending approvals for a single request"""
     # Create two pending approvals
     await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
     await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Get pending approvals
@@ -568,14 +516,10 @@ async def test_get_pending_approvals_excludes_approved(bridge, sample_request, s
     """Test that get_pending_approvals excludes approved/rejected"""
     # Create two approvals
     pending_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="requirements",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="requirements", state=sample_state
     )
     approved_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Approve one
@@ -603,28 +547,22 @@ async def test_get_pending_approvals_excludes_approved(bridge, sample_request, s
 # Tests: Edge Cases
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_sync_approval_with_missing_state_fields(bridge, sample_request):
     """Test syncing approval when state has missing fields"""
-    minimal_state = {
-        "request_id": "TEST-REQ-001",
-        "phenotype_approved": None
-    }
+    minimal_state = {"request_id": "TEST-REQ-001", "phenotype_approved": None}
 
     # Create and approve
     approval_id = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=minimal_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=minimal_state
     )
 
     await bridge.update_approval_status(approval_id, "approved", "admin@example.com")
 
     # Sync to minimal state
     updated_state = await bridge.sync_approval_to_state(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=minimal_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=minimal_state
     )
 
     # Should still update the flag
@@ -634,13 +572,9 @@ async def test_sync_approval_with_missing_state_fields(bridge, sample_request):
 @pytest.mark.asyncio
 async def test_apply_modifications_phenotype_sql(bridge):
     """Test applying modifications for phenotype_sql"""
-    state = {
-        "phenotype_sql": "SELECT * FROM patients"
-    }
+    state = {"phenotype_sql": "SELECT * FROM patients"}
 
-    modifications = {
-        "phenotype_sql": "SELECT * FROM patients WHERE age > 21"
-    }
+    modifications = {"phenotype_sql": "SELECT * FROM patients WHERE age > 21"}
 
     updated_state = bridge._apply_modifications(state, "phenotype_sql", modifications)
 
@@ -650,18 +584,9 @@ async def test_apply_modifications_phenotype_sql(bridge):
 @pytest.mark.asyncio
 async def test_apply_modifications_requirements(bridge):
     """Test applying modifications for requirements"""
-    state = {
-        "requirements": {
-            "study_title": "Original Title"
-        }
-    }
+    state = {"requirements": {"study_title": "Original Title"}}
 
-    modifications = {
-        "requirements": {
-            "study_title": "Modified Title",
-            "new_field": "value"
-        }
-    }
+    modifications = {"requirements": {"study_title": "Modified Title", "new_field": "value"}}
 
     updated_state = bridge._apply_modifications(state, "requirements", modifications)
 
@@ -670,22 +595,20 @@ async def test_apply_modifications_requirements(bridge):
 
 
 @pytest.mark.asyncio
-async def test_multiple_approval_requests_same_type_after_resolution(bridge, sample_request, sample_state):
+async def test_multiple_approval_requests_same_type_after_resolution(
+    bridge, sample_request, sample_state
+):
     """Test creating new approval after previous one was resolved"""
     # Create and approve first request
     approval_id_1 = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     await bridge.update_approval_status(approval_id_1, "approved", "admin@example.com")
 
     # Create second request (after first was approved)
     approval_id_2 = await bridge.create_approval_request(
-        request_id="TEST-REQ-001",
-        approval_type="phenotype_sql",
-        state=sample_state
+        request_id="TEST-REQ-001", approval_type="phenotype_sql", state=sample_state
     )
 
     # Should create new approval (not return existing)
@@ -695,8 +618,7 @@ async def test_multiple_approval_requests_same_type_after_resolution(bridge, sam
     async with bridge.async_session_maker() as session:
         result = await session.execute(
             select(Approval).where(
-                Approval.request_id == "TEST-REQ-001",
-                Approval.approval_type == "phenotype_sql"
+                Approval.request_id == "TEST-REQ-001", Approval.approval_type == "phenotype_sql"
             )
         )
         approvals = result.scalars().all()

@@ -18,12 +18,7 @@ from app.orchestrator.orchestrator import ResearchRequestOrchestrator
 from app.agents.requirements_agent import RequirementsAgent
 from app.agents.phenotype_agent import PhenotypeValidationAgent
 from app.database import get_db_session, init_db
-from app.database.models import (
-    ResearchRequest,
-    AgentExecution,
-    Approval,
-    AuditLog
-)
+from app.database.models import ResearchRequest, AgentExecution, Approval, AuditLog
 
 
 @pytest.fixture
@@ -32,8 +27,8 @@ async def orchestrator():
     orch = ResearchRequestOrchestrator()
 
     # Register agents
-    orch.register_agent('requirements_agent', RequirementsAgent())
-    orch.register_agent('phenotype_agent', PhenotypeValidationAgent())
+    orch.register_agent("requirements_agent", RequirementsAgent())
+    orch.register_agent("phenotype_agent", PhenotypeValidationAgent())
 
     return orch
 
@@ -42,12 +37,12 @@ async def orchestrator():
 async def sample_request():
     """Create a sample research request"""
     return {
-        'researcher_request': 'I need female patients over 50 with diabetes',
-        'researcher_info': {
-            'name': 'Dr. Test',
-            'email': 'test@hospital.org',
-            'department': 'Cardiology'
-        }
+        "researcher_request": "I need female patients over 50 with diabetes",
+        "researcher_info": {
+            "name": "Dr. Test",
+            "email": "test@hospital.org",
+            "department": "Cardiology",
+        },
     }
 
 
@@ -59,8 +54,7 @@ class TestAgentHandoffMonitoring:
         """Test that agent executions are tracked in database"""
         # Submit request
         request_id = await orchestrator.process_new_request(
-            sample_request['researcher_request'],
-            sample_request['researcher_info']
+            sample_request["researcher_request"], sample_request["researcher_info"]
         )
 
         # Wait for agent to complete
@@ -81,7 +75,7 @@ class TestAgentHandoffMonitoring:
             assert execution.agent_id is not None
             assert execution.task is not None
             assert execution.started_at is not None
-            assert execution.status in ['success', 'failed', 'pending']
+            assert execution.status in ["success", "failed", "pending"]
 
             print(f"✓ Agent execution tracked: {execution.agent_id}.{execution.task}")
 
@@ -89,8 +83,7 @@ class TestAgentHandoffMonitoring:
     async def test_agent_handoff_sequence(self, orchestrator, sample_request):
         """Test that agents are invoked in correct sequence"""
         request_id = await orchestrator.process_new_request(
-            sample_request['researcher_request'],
-            sample_request['researcher_info']
+            sample_request["researcher_request"], sample_request["researcher_info"]
         )
 
         # Wait for workflow to progress
@@ -101,27 +94,26 @@ class TestAgentHandoffMonitoring:
         assert status is not None
 
         # Verify agents_involved list shows handoff sequence
-        agents_involved = status.get('agents_involved', [])
+        agents_involved = status.get("agents_involved", [])
         assert len(agents_involved) > 0, "No agents involved in workflow"
 
         # First agent should be requirements_agent
-        assert agents_involved[0]['agent'] == 'requirements_agent'
-        assert agents_involved[0]['task'] == 'gather_requirements'
+        assert agents_involved[0]["agent"] == "requirements_agent"
+        assert agents_involved[0]["task"] == "gather_requirements"
 
         print(f"✓ Agent handoff sequence:")
         for i, agent in enumerate(agents_involved):
-            print(f"  {i+1}. {agent['agent']}.{agent['task']} (from: {agent.get('from_agent', 'N/A')})")
+            print(
+                f"  {i+1}. {agent['agent']}.{agent['task']} (from: {agent.get('from_agent', 'N/A')})"
+            )
 
     @pytest.mark.asyncio
     async def test_approval_workflow_handoff(self, orchestrator):
         """Test that workflow pauses at approval gates"""
         # Create request with pre-structured requirements (will trigger approval)
         request_id = await orchestrator.process_new_request(
-            researcher_request='I need diabetes patients',
-            researcher_info={
-                'name': 'Dr. Test',
-                'email': 'test@hospital.org'
-            }
+            researcher_request="I need diabetes patients",
+            researcher_info={"name": "Dr. Test", "email": "test@hospital.org"},
         )
 
         # Wait for requirements agent to complete
@@ -136,8 +128,8 @@ class TestAgentHandoffMonitoring:
 
             if len(approvals) > 0:
                 approval = approvals[0]
-                assert approval.approval_type in ['requirements', 'phenotype_sql']
-                assert approval.status == 'pending'
+                assert approval.approval_type in ["requirements", "phenotype_sql"]
+                assert approval.status == "pending"
 
                 print(f"✓ Approval gate triggered: {approval.approval_type}")
                 print(f"  - Status: {approval.status}")
@@ -145,7 +137,10 @@ class TestAgentHandoffMonitoring:
 
                 # Verify workflow state is at approval state
                 status = await orchestrator.get_request_status(request_id)
-                assert 'review' in status['current_state'].lower() or 'approval' in status['current_state'].lower()
+                assert (
+                    "review" in status["current_state"].lower()
+                    or "approval" in status["current_state"].lower()
+                )
                 print(f"  - Workflow state: {status['current_state']}")
             else:
                 print("⚠ No approval created (requirements may be incomplete)")
@@ -154,8 +149,7 @@ class TestAgentHandoffMonitoring:
     async def test_audit_log_tracking(self, orchestrator, sample_request):
         """Test that all agent activities are logged to audit trail"""
         request_id = await orchestrator.process_new_request(
-            sample_request['researcher_request'],
-            sample_request['researcher_info']
+            sample_request["researcher_request"], sample_request["researcher_info"]
         )
 
         await asyncio.sleep(2)
@@ -173,22 +167,21 @@ class TestAgentHandoffMonitoring:
 
             # Verify key events are logged
             event_types = [log.event_type for log in logs]
-            assert 'request_created' in event_types
-            assert 'agent_started' in event_types or 'state_changed' in event_types
+            assert "request_created" in event_types
+            assert "agent_started" in event_types or "state_changed" in event_types
 
             print(f"✓ Audit trail has {len(logs)} events:")
             for log in logs[:5]:  # Show first 5
-                print(f"  - [{log.timestamp.strftime('%H:%M:%S')}] {log.event_type} (agent: {log.agent_id or 'system'})")
+                print(
+                    f"  - [{log.timestamp.strftime('%H:%M:%S')}] {log.event_type} (agent: {log.agent_id or 'system'})"
+                )
 
     @pytest.mark.asyncio
     async def test_handoff_with_context_passing(self, orchestrator):
         """Test that context is properly passed between agents"""
         request_id = await orchestrator.process_new_request(
-            researcher_request='I need patients with Type 2 Diabetes',
-            researcher_info={
-                'name': 'Dr. Test',
-                'email': 'test@hospital.org'
-            }
+            researcher_request="I need patients with Type 2 Diabetes",
+            researcher_info={"name": "Dr. Test", "email": "test@hospital.org"},
         )
 
         await asyncio.sleep(2)
@@ -196,14 +189,14 @@ class TestAgentHandoffMonitoring:
         # Get status and verify context is preserved
         status = await orchestrator.get_request_status(request_id)
 
-        agents_involved = status.get('agents_involved', [])
+        agents_involved = status.get("agents_involved", [])
 
         # Check that each agent received request_id
         for agent in agents_involved:
             # Context should be tracked (though not fully visible for security)
-            assert 'agent' in agent
-            assert 'task' in agent
-            assert 'timestamp' in agent
+            assert "agent" in agent
+            assert "task" in agent
+            assert "timestamp" in agent
 
         print(f"✓ Context passed through {len(agents_involved)} agent(s)")
 
@@ -212,11 +205,8 @@ class TestAgentHandoffMonitoring:
         """Test that failed agent handoffs are properly tracked"""
         # Create request that might fail
         request_id = await orchestrator.process_new_request(
-            researcher_request='',  # Empty request - might cause issues
-            researcher_info={
-                'name': 'Dr. Test',
-                'email': 'test@hospital.org'
-            }
+            researcher_request="",  # Empty request - might cause issues
+            researcher_info={"name": "Dr. Test", "email": "test@hospital.org"},
         )
 
         await asyncio.sleep(2)
@@ -224,18 +214,17 @@ class TestAgentHandoffMonitoring:
         # Check if error was tracked
         async with get_db_session() as session:
             result = await session.execute(
-                select(AgentExecution)
-                .where(AgentExecution.request_id == request_id)
+                select(AgentExecution).where(AgentExecution.request_id == request_id)
             )
             executions = result.scalars().all()
 
             # Check for failed or retrying executions
             statuses = [exec.status for exec in executions]
 
-            if 'failed' in statuses or 'retrying' in statuses:
+            if "failed" in statuses or "retrying" in statuses:
                 print("✓ Failed handoff detected and tracked")
                 for exec in executions:
-                    if exec.status in ['failed', 'retrying']:
+                    if exec.status in ["failed", "retrying"]:
                         print(f"  - Agent: {exec.agent_id}")
                         print(f"  - Error: {exec.error}")
                         print(f"  - Retry count: {exec.retry_count}")
@@ -249,11 +238,8 @@ class TestAgentHandoffMonitoring:
         request_ids = []
         for i in range(3):
             request_id = await orchestrator.process_new_request(
-                researcher_request=f'Test request {i+1}',
-                researcher_info={
-                    'name': f'Dr. Test {i+1}',
-                    'email': f'test{i+1}@hospital.org'
-                }
+                researcher_request=f"Test request {i+1}",
+                researcher_info={"name": f"Dr. Test {i+1}", "email": f"test{i+1}@hospital.org"},
             )
             request_ids.append(request_id)
 
@@ -263,7 +249,7 @@ class TestAgentHandoffMonitoring:
         for request_id in request_ids:
             status = await orchestrator.get_request_status(request_id)
             assert status is not None
-            assert len(status.get('agents_involved', [])) > 0
+            assert len(status.get("agents_involved", [])) > 0
 
         print(f"✓ {len(request_ids)} concurrent requests processed successfully")
 
@@ -277,8 +263,7 @@ class TestAgentHandoffDiagnostics:
         async with get_db_session() as session:
             # Find requests that haven't completed and have no recent activity
             result = await session.execute(
-                select(ResearchRequest)
-                .where(ResearchRequest.completed_at.is_(None))
+                select(ResearchRequest).where(ResearchRequest.completed_at.is_(None))
             )
             active_requests = result.scalars().all()
 
@@ -308,16 +293,16 @@ class TestAgentHandoffDiagnostics:
                     print(f"  Status: {last_execution.status}")
 
                     if time_since_activity.total_seconds() > 300:  # 5 minutes
-                        print(f"  ⚠️ STALLED - No activity in {time_since_activity.total_seconds()/60:.1f} minutes")
+                        print(
+                            f"  ⚠️ STALLED - No activity in {time_since_activity.total_seconds()/60:.1f} minutes"
+                        )
 
     @pytest.mark.asyncio
     async def test_diagnose_approval_bottlenecks(self):
         """Check for approval bottlenecks"""
         async with get_db_session() as session:
             result = await session.execute(
-                select(Approval)
-                .where(Approval.status == 'pending')
-                .order_by(Approval.submitted_at)
+                select(Approval).where(Approval.status == "pending").order_by(Approval.submitted_at)
             )
             pending_approvals = result.scalars().all()
 
@@ -387,7 +372,11 @@ async def monitor_request_handoffs(request_id: str):
         print(f"\n🔄 Agent Handoff Sequence ({len(executions)} executions):")
         for i, execution in enumerate(executions):
             duration = execution.duration_seconds or 0
-            status_emoji = "✓" if execution.status == "success" else "✗" if execution.status == "failed" else "⏳"
+            status_emoji = (
+                "✓"
+                if execution.status == "success"
+                else "✗" if execution.status == "failed" else "⏳"
+            )
 
             print(f"{i+1}. {status_emoji} {execution.agent_id}.{execution.task}")
             print(f"   Started: {execution.started_at.strftime('%H:%M:%S')}")
@@ -412,13 +401,13 @@ async def monitor_request_handoffs(request_id: str):
                 print(f"  - {approval.approval_type}: {approval.status}")
                 print(f"    Submitted: {approval.submitted_at.strftime('%H:%M:%S')}")
                 if approval.reviewed_at:
-                    print(f"    Reviewed: {approval.reviewed_at.strftime('%H:%M:%S')} by {approval.reviewed_by}")
+                    print(
+                        f"    Reviewed: {approval.reviewed_at.strftime('%H:%M:%S')} by {approval.reviewed_by}"
+                    )
 
         # Get audit logs
         log_result = await session.execute(
-            select(AuditLog)
-            .where(AuditLog.request_id == request_id)
-            .order_by(AuditLog.timestamp)
+            select(AuditLog).where(AuditLog.request_id == request_id).order_by(AuditLog.timestamp)
         )
         logs = log_result.scalars().all()
 
@@ -439,4 +428,4 @@ if __name__ == "__main__":
     else:
         print("Running full diagnostic...")
         asyncio.run(init_db())
-        pytest.main([__file__, '-v', '-k', 'diagnose'])
+        pytest.main([__file__, "-v", "-k", "diagnose"])

@@ -37,7 +37,7 @@ from app.agents import (
     CalendarAgent,
     DataExtractionAgent,
     QualityAssuranceAgent,
-    DeliveryAgent
+    DeliveryAgent,
 )
 from app.database import get_engine
 
@@ -54,7 +54,7 @@ def run_async(coroutine):
 
 def initialize_orchestrator():
     """Initialize orchestrator with all agents"""
-    if 'orchestrator' not in st.session_state:
+    if "orchestrator" not in st.session_state:
         # Ensure database engine is initialized for current event loop
         # This prevents "Queue is bound to a different event loop" errors
         get_engine()
@@ -64,12 +64,14 @@ def initialize_orchestrator():
         hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
 
         # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
-        orchestrator.register_agent('requirements_agent', RequirementsAgent())
-        orchestrator.register_agent('phenotype_agent', PhenotypeValidationAgent(database_url=hapi_db_url))
-        orchestrator.register_agent('calendar_agent', CalendarAgent())
-        orchestrator.register_agent('extraction_agent', DataExtractionAgent())
-        orchestrator.register_agent('qa_agent', QualityAssuranceAgent())
-        orchestrator.register_agent('delivery_agent', DeliveryAgent())
+        orchestrator.register_agent("requirements_agent", RequirementsAgent())
+        orchestrator.register_agent(
+            "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
+        )
+        orchestrator.register_agent("calendar_agent", CalendarAgent())
+        orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+        orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
+        orchestrator.register_agent("delivery_agent", DeliveryAgent())
 
         st.session_state.orchestrator = orchestrator
 
@@ -77,9 +79,7 @@ def initialize_orchestrator():
 def main():
     """Main researcher portal application"""
     st.set_page_config(
-        page_title="ResearchFlow - Data Request Portal",
-        page_icon="🔬",
-        layout="wide"
+        page_title="ResearchFlow - Data Request Portal", page_icon="🔬", layout="wide"
     )
 
     # Initialize orchestrator
@@ -93,7 +93,7 @@ def main():
     with st.sidebar:
         st.header("📊 My Requests")
 
-        if 'user_requests' not in st.session_state:
+        if "user_requests" not in st.session_state:
             st.session_state.user_requests = []
 
         if st.session_state.user_requests:
@@ -123,10 +123,12 @@ def show_new_request_form():
     """Display new request submission form"""
     st.header("Submit New Data Request")
 
-    st.markdown("""
+    st.markdown(
+        """
     Describe your research data needs in natural language. Our AI assistant will help you
     define your requirements through a conversational interface.
-    """)
+    """
+    )
 
     # Researcher information
     with st.form("researcher_info"):
@@ -146,7 +148,7 @@ def show_new_request_form():
         request_text = st.text_area(
             "Describe your data needs *",
             placeholder="Example: I need clinical notes and lab results for heart failure patients admitted in 2024 who had a prior diabetes diagnosis.",
-            height=100
+            height=100,
         )
 
         # Inclusion/Exclusion Criteria
@@ -158,7 +160,7 @@ def show_new_request_form():
                 "Inclusion Criteria",
                 placeholder="Example:\n- Age >= 18 years\n- Diagnosed with diabetes\n- Admitted in 2024",
                 height=100,
-                help="Enter criteria for patient inclusion (one per line)"
+                help="Enter criteria for patient inclusion (one per line)",
             )
 
         with col2:
@@ -166,7 +168,7 @@ def show_new_request_form():
                 "Exclusion Criteria",
                 placeholder="Example:\n- Pregnant patients\n- Age < 18 years",
                 height=100,
-                help="Enter criteria for patient exclusion (one per line)"
+                help="Enter criteria for patient exclusion (one per line)",
             )
 
         # Time Period
@@ -174,15 +176,11 @@ def show_new_request_form():
         col1, col2 = st.columns(2)
         with col1:
             start_date = st.date_input(
-                "Start Date",
-                value=None,
-                help="Start date for data collection period"
+                "Start Date", value=None, help="Start date for data collection period"
             )
         with col2:
             end_date = st.date_input(
-                "End Date",
-                value=None,
-                help="End date for data collection period"
+                "End Date", value=None, help="End date for data collection period"
             )
 
         # Data Elements
@@ -198,10 +196,10 @@ def show_new_request_form():
                 "Vital Signs (BP, HR, temperature)",
                 "Clinical Notes",
                 "Imaging Reports",
-                "Encounter Data (visits, admissions)"
+                "Encounter Data (visits, admissions)",
             ],
             default=["Demographics (age, gender, race)"],
-            help="Select all data types you need for your study"
+            help="Select all data types you need for your study",
         )
 
         # PHI Level
@@ -211,10 +209,10 @@ def show_new_request_form():
             options=[
                 "De-identified (HIPAA Safe Harbor)",
                 "Limited Dataset (dates allowed)",
-                "Identified (full PHI)"
+                "Identified (full PHI)",
             ],
             index=0,
-            help="Select the level of patient identifiers needed for your study"
+            help="Select the level of patient identifiers needed for your study",
         )
 
         submit = st.form_submit_button("Submit Request", type="primary")
@@ -230,12 +228,20 @@ def show_new_request_form():
                         phi_level_map = {
                             "De-identified (HIPAA Safe Harbor)": "de-identified",
                             "Limited Dataset (dates allowed)": "limited_dataset",
-                            "Identified (full PHI)": "identified"
+                            "Identified (full PHI)": "identified",
                         }
 
                         # Parse inclusion/exclusion criteria (split by newlines, filter empty)
-                        inclusion_list = [c.strip() for c in inclusion_criteria.split('\n') if c.strip()] if inclusion_criteria else []
-                        exclusion_list = [c.strip() for c in exclusion_criteria.split('\n') if c.strip()] if exclusion_criteria else []
+                        inclusion_list = (
+                            [c.strip() for c in inclusion_criteria.split("\n") if c.strip()]
+                            if inclusion_criteria
+                            else []
+                        )
+                        exclusion_list = (
+                            [c.strip() for c in exclusion_criteria.split("\n") if c.strip()]
+                            if exclusion_criteria
+                            else []
+                        )
 
                         # Build structured requirements (will be passed to Requirements Agent)
                         structured_requirements = {
@@ -244,9 +250,9 @@ def show_new_request_form():
                             "data_elements": data_elements if data_elements else ["demographics"],
                             "time_period": {
                                 "start": start_date.isoformat() if start_date else None,
-                                "end": end_date.isoformat() if end_date else None
+                                "end": end_date.isoformat() if end_date else None,
                             },
-                            "phi_level": phi_level_map.get(phi_level, "de-identified")
+                            "phi_level": phi_level_map.get(phi_level, "de-identified"),
                         }
 
                         researcher_info = {
@@ -254,7 +260,7 @@ def show_new_request_form():
                             "email": email,
                             "department": department,
                             "irb_number": irb_number,
-                            "structured_requirements": structured_requirements  # Pass form data
+                            "structured_requirements": structured_requirements,  # Pass form data
                         }
 
                         # Create async event loop to submit request with timeout protection
@@ -265,17 +271,19 @@ def show_new_request_form():
                                     st.session_state.orchestrator.process_new_request(
                                         researcher_request=request_text,
                                         researcher_info=researcher_info,
-                                        from_formal_portal=True  # NEW: Enable form-based validation
+                                        from_formal_portal=True,  # NEW: Enable form-based validation
                                     ),
-                                    timeout=120.0  # 2 minute timeout
+                                    timeout=120.0,  # 2 minute timeout
                                 )
                             )
                         except asyncio.TimeoutError:
-                            st.error("❌ Request processing timed out after 2 minutes. Please try again or contact support if the issue persists.")
+                            st.error(
+                                "❌ Request processing timed out after 2 minutes. Please try again or contact support if the issue persists."
+                            )
                             return
 
                         # Add to session state
-                        if 'user_requests' not in st.session_state:
+                        if "user_requests" not in st.session_state:
                             st.session_state.user_requests = []
                         st.session_state.user_requests.append(request_id)
 
@@ -291,7 +299,7 @@ def show_new_request_form():
 
 def show_request_details():
     """Display detailed information about a request"""
-    if 'selected_request' not in st.session_state:
+    if "selected_request" not in st.session_state:
         st.info("Select a request from the sidebar to view details")
         return
 
@@ -308,11 +316,11 @@ def show_request_details():
     # Status overview
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Status", status['current_state'])
+        st.metric("Status", status["current_state"])
     with col2:
-        st.metric("Current Agent", status.get('current_agent', 'None'))
+        st.metric("Current Agent", status.get("current_agent", "None"))
     with col3:
-        started = datetime.fromisoformat(status['started_at'])
+        started = datetime.fromisoformat(status["started_at"])
         duration = datetime.now() - started
         st.metric("Duration", f"{duration.seconds // 60} min")
 
@@ -327,12 +335,12 @@ def show_request_details():
         "data_extraction",
         "qa_validation",
         "data_delivery",
-        "delivered"
+        "delivered",
     ]
 
     current_idx = -1
-    if status['current_state'] in workflow_states:
-        current_idx = workflow_states.index(status['current_state'])
+    if status["current_state"] in workflow_states:
+        current_idx = workflow_states.index(status["current_state"])
 
     progress = (current_idx + 1) / len(workflow_states) if current_idx >= 0 else 0
     st.progress(progress)
@@ -340,11 +348,11 @@ def show_request_details():
     # State history
     st.subheader("📊 Agent Activity")
 
-    if status.get('agents_involved'):
-        for activity in reversed(status['agents_involved']):
-            agent_name = activity['agent'].replace('_', ' ').title()
-            task_name = activity['task'].replace('_', ' ').title()
-            timestamp = activity['timestamp'][:19]
+    if status.get("agents_involved"):
+        for activity in reversed(status["agents_involved"]):
+            agent_name = activity["agent"].replace("_", " ").title()
+            task_name = activity["task"].replace("_", " ").title()
+            timestamp = activity["timestamp"][:19]
 
             st.markdown(f"**{timestamp}** - {agent_name}: {task_name}")
     else:
@@ -352,7 +360,7 @@ def show_request_details():
 
     # Researcher info
     st.subheader("👤 Researcher Information")
-    researcher = status.get('researcher_info', {})
+    researcher = status.get("researcher_info", {})
     st.write(f"**Name:** {researcher.get('name', 'N/A')}")
     st.write(f"**Email:** {researcher.get('email', 'N/A')}")
     st.write(f"**IRB:** {researcher.get('irb_number', 'N/A')}")

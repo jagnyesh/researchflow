@@ -30,12 +30,12 @@ from app.utils.multi_llm_client import MultiLLMClient
 load_dotenv()
 
 # Color codes
-GREEN = '\033[92m'
-YELLOW = '\033[93m'
-RED = '\033[91m'
-BLUE = '\033[94m'
-CYAN = '\033[96m'
-RESET = '\033[0m'
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BLUE = "\033[94m"
+CYAN = "\033[96m"
+RESET = "\033[0m"
 
 
 def print_header(text):
@@ -85,9 +85,8 @@ Create a structured agenda with:
 
 Keep it professional and concise.""",
         "max_tokens": 500,
-        "expected_keywords": ["agenda", "study", "data", "cohort", "discussion"]
+        "expected_keywords": ["agenda", "study", "data", "cohort", "discussion"],
     },
-
     "delivery_notification": {
         "description": "Generate delivery notification email",
         "prompt": """Generate a professional email notification to a researcher that their data request is ready.
@@ -108,9 +107,8 @@ The email should:
 
 Keep it concise and professional.""",
         "max_tokens": 400,
-        "expected_keywords": ["ready", "download", "data", "request", "review"]
+        "expected_keywords": ["ready", "download", "data", "request", "review"],
     },
-
     "delivery_citation": {
         "description": "Generate citation information",
         "prompt": """Generate professional citation information for a clinical research data extract.
@@ -129,8 +127,8 @@ Create a professional citation block that includes:
 
 Keep it concise and professional.""",
         "max_tokens": 300,
-        "expected_keywords": ["data", "extracted", "study", "research", "citation"]
-    }
+        "expected_keywords": ["data", "extracted", "study", "research", "citation"],
+    },
 }
 
 
@@ -138,15 +136,12 @@ Keep it concise and professional.""",
 PRICING = {
     "claude": {"input": 3.00, "output": 15.00},
     "openai": {"input": 2.50, "output": 10.00},
-    "ollama": {"input": 0.00, "output": 0.00}
+    "ollama": {"input": 0.00, "output": 0.00},
 }
 
 
 async def test_provider(
-    provider: str,
-    model: str,
-    test_case: Dict[str, Any],
-    task_type: str
+    provider: str, model: str, test_case: Dict[str, Any], task_type: str
 ) -> Dict[str, Any]:
     """
     Test a specific provider with a test case
@@ -155,12 +150,12 @@ async def test_provider(
         Dict with test results including response, timing, tokens, etc.
     """
     # Configure environment for this provider
-    original_provider = os.getenv('SECONDARY_LLM_PROVIDER')
-    original_model = os.getenv('SECONDARY_LLM_MODEL')
+    original_provider = os.getenv("SECONDARY_LLM_PROVIDER")
+    original_model = os.getenv("SECONDARY_LLM_MODEL")
 
-    os.environ['SECONDARY_LLM_PROVIDER'] = provider
+    os.environ["SECONDARY_LLM_PROVIDER"] = provider
     if model:
-        os.environ['SECONDARY_LLM_MODEL'] = model
+        os.environ["SECONDARY_LLM_MODEL"] = model
 
     # Create client
     client = MultiLLMClient()
@@ -174,7 +169,7 @@ async def test_provider(
             prompt=test_case["prompt"],
             task_type=task_type,
             max_tokens=test_case["max_tokens"],
-            temperature=0.7
+            temperature=0.7,
         )
         end_time = time.time()
 
@@ -184,13 +179,14 @@ async def test_provider(
 
         # Calculate cost
         provider_key = provider if provider != "anthropic" else "claude"
-        cost = (
-            (input_tokens / 1_000_000) * PRICING[provider_key]["input"] +
-            (output_tokens / 1_000_000) * PRICING[provider_key]["output"]
-        )
+        cost = (input_tokens / 1_000_000) * PRICING[provider_key]["input"] + (
+            output_tokens / 1_000_000
+        ) * PRICING[provider_key]["output"]
 
         # Check for expected keywords
-        keywords_found = sum(1 for kw in test_case["expected_keywords"] if kw.lower() in response.lower())
+        keywords_found = sum(
+            1 for kw in test_case["expected_keywords"] if kw.lower() in response.lower()
+        )
         quality_score = (keywords_found / len(test_case["expected_keywords"])) * 100
 
         result = {
@@ -202,7 +198,7 @@ async def test_provider(
             "total_tokens": input_tokens + output_tokens,
             "cost": cost,
             "quality_score": quality_score,
-            "error": None
+            "error": None,
         }
 
     except Exception as e:
@@ -216,14 +212,14 @@ async def test_provider(
             "total_tokens": 0,
             "cost": 0.0,
             "quality_score": 0.0,
-            "error": str(e)
+            "error": str(e),
         }
 
     # Restore original environment
     if original_provider:
-        os.environ['SECONDARY_LLM_PROVIDER'] = original_provider
+        os.environ["SECONDARY_LLM_PROVIDER"] = original_provider
     if original_model:
-        os.environ['SECONDARY_LLM_MODEL'] = original_model
+        os.environ["SECONDARY_LLM_MODEL"] = original_model
 
     return result
 
@@ -244,7 +240,7 @@ async def run_all_tests():
     test_configs = [
         {"provider": "anthropic", "model": None, "name": "Claude 3.5 Sonnet"},
         {"provider": "openai", "model": "gpt-4o", "name": "OpenAI GPT-4o"},
-        {"provider": "ollama", "model": "llama3:8b", "name": "Ollama Llama 3 8B"}
+        {"provider": "ollama", "model": "llama3:8b", "name": "Ollama Llama 3 8B"},
     ]
 
     test_num = 0
@@ -264,7 +260,7 @@ async def run_all_tests():
                 provider=config["provider"],
                 model=config["model"],
                 test_case=test_case,
-                task_type=task_type
+                task_type=task_type,
             )
 
             results[test_name][config["name"]] = result
@@ -273,11 +269,13 @@ async def run_all_tests():
             if result["success"]:
                 print(f"{GREEN}✓ Success{RESET}")
                 print(f"  Response Time: {result['response_time']:.2f}s")
-                print(f"  Tokens: {result['total_tokens']} ({result['input_tokens']} in, {result['output_tokens']} out)")
+                print(
+                    f"  Tokens: {result['total_tokens']} ({result['input_tokens']} in, {result['output_tokens']} out)"
+                )
                 print(f"  Cost: ${result['cost']:.6f}")
                 print(f"  Quality Score: {result['quality_score']:.0f}%")
                 print(f"\n  {CYAN}Response Preview:{RESET}")
-                preview = result["response"][:200].replace('\n', ' ')
+                preview = result["response"][:200].replace("\n", " ")
                 print(f"  {preview}...\n")
             else:
                 print(f"{RED}✗ Failed{RESET}")
@@ -302,7 +300,7 @@ def generate_comparison_report(results: Dict[str, Any]):
                     "total_time": 0,
                     "total_tokens": 0,
                     "total_cost": 0,
-                    "avg_quality": 0
+                    "avg_quality": 0,
                 }
 
             stats = provider_stats[provider_name]
@@ -320,11 +318,13 @@ def generate_comparison_report(results: Dict[str, Any]):
 
     for provider_name, stats in provider_stats.items():
         print(f"\n{BLUE}{provider_name}:{RESET}")
-        print(f"  Success Rate: {stats['successful_tests']}/{stats['total_tests']} ({stats['successful_tests']/stats['total_tests']*100:.0f}%)")
+        print(
+            f"  Success Rate: {stats['successful_tests']}/{stats['total_tests']} ({stats['successful_tests']/stats['total_tests']*100:.0f}%)"
+        )
 
-        if stats['successful_tests'] > 0:
-            avg_time = stats['total_time'] / stats['successful_tests']
-            avg_quality = stats['avg_quality'] / stats['successful_tests']
+        if stats["successful_tests"] > 0:
+            avg_time = stats["total_time"] / stats["successful_tests"]
+            avg_quality = stats["avg_quality"] / stats["successful_tests"]
 
             print(f"  Avg Response Time: {avg_time:.2f}s")
             print(f"  Total Tokens: {stats['total_tokens']}")
@@ -335,9 +335,9 @@ def generate_comparison_report(results: Dict[str, Any]):
     print_header("COST ANALYSIS (100 requests/month)")
 
     for provider_name, stats in provider_stats.items():
-        if stats['successful_tests'] > 0:
-            avg_cost = stats['total_cost'] / stats['successful_tests']
-            monthly_cost = avg_cost * 100 * (stats['total_tests'] / stats['successful_tests'])
+        if stats["successful_tests"] > 0:
+            avg_cost = stats["total_cost"] / stats["successful_tests"]
+            monthly_cost = avg_cost * 100 * (stats["total_tests"] / stats["successful_tests"])
             annual_cost = monthly_cost * 12
 
             print(f"\n{CYAN}{provider_name}:{RESET}")
@@ -347,8 +347,14 @@ def generate_comparison_report(results: Dict[str, Any]):
 
     # Savings comparison
     if len(provider_stats) > 1:
-        costs = {name: (stats['total_cost'] / stats['successful_tests'] * 100 * 3) if stats['successful_tests'] > 0 else 0
-                for name, stats in provider_stats.items()}
+        costs = {
+            name: (
+                (stats["total_cost"] / stats["successful_tests"] * 100 * 3)
+                if stats["successful_tests"] > 0
+                else 0
+            )
+            for name, stats in provider_stats.items()
+        }
 
         baseline = max(costs.values())
         print(f"\n{YELLOW}Potential Savings (vs most expensive):{RESET}\n")
@@ -363,9 +369,11 @@ def generate_comparison_report(results: Dict[str, Any]):
     print_header("RECOMMENDATIONS")
 
     # Find best provider for each metric
-    best_speed = min(provider_stats.items(), key=lambda x: x[1]['total_time'] / max(x[1]['successful_tests'], 1))
-    best_cost = min(provider_stats.items(), key=lambda x: x[1]['total_cost'])
-    best_quality = max(provider_stats.items(), key=lambda x: x[1]['avg_quality'])
+    best_speed = min(
+        provider_stats.items(), key=lambda x: x[1]["total_time"] / max(x[1]["successful_tests"], 1)
+    )
+    best_cost = min(provider_stats.items(), key=lambda x: x[1]["total_cost"])
+    best_quality = max(provider_stats.items(), key=lambda x: x[1]["avg_quality"])
 
     print(f"{GREEN}Best for Speed:{RESET} {best_speed[0]}")
     print(f"{GREEN}Best for Cost:{RESET} {best_cost[0]}")
@@ -382,7 +390,7 @@ def save_results(results: Dict[str, Any]):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"multi_provider_test_results_{timestamp}.json"
 
-    with open(filename, 'w') as f:
+    with open(filename, "w") as f:
         json.dump(results, f, indent=2, default=str)
 
     print(f"{GREEN}✓ Results saved to: {filename}{RESET}\n")
@@ -408,6 +416,7 @@ async def main():
     except Exception as e:
         print(f"\n{RED}Error during testing: {str(e)}{RESET}\n")
         import traceback
+
         traceback.print_exc()
         return 1
 

@@ -35,17 +35,15 @@ class Text2SQLTester:
 
     async def run_test(self, user_query: str):
         """Run complete Text-to-SQL flow"""
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("TEXT-TO-SQL FLOW TEST")
-        print("="*80)
+        print("=" * 80)
         print(f"\n📝 User Query: {user_query}\n")
 
         # PHASE 1: Simulate conversation (in production, this is multi-turn)
         print("PHASE 1: LLM Conversation (Simulated)")
         print("-" * 80)
-        conversation_history = [
-            {"role": "user", "content": user_query}
-        ]
+        conversation_history = [{"role": "user", "content": user_query}]
         print(f"✓ Conversation started")
         print(f"  Messages: {len(conversation_history)}\n")
 
@@ -67,8 +65,8 @@ class Text2SQLTester:
 
         # Extract concepts from inclusion criteria
         print("✓ Concepts extracted and embedded in criteria:")
-        for criterion in structured_requirements.get('inclusion_criteria', []):
-            for concept in criterion.get('concepts', []):
+        for criterion in structured_requirements.get("inclusion_criteria", []):
+            for concept in criterion.get("concepts", []):
                 print(f"  - {concept['term']} ({concept['type']}): {concept['details']}")
 
         print()
@@ -78,8 +76,7 @@ class Text2SQLTester:
         print("-" * 80)
 
         sql = self.sql_generator.generate_phenotype_sql(
-            requirements=structured_requirements,
-            count_only=True  # Based on "count of" in query
+            requirements=structured_requirements, count_only=True  # Based on "count of" in query
         )
 
         print("✓ SQL Generated:")
@@ -95,7 +92,7 @@ class Text2SQLTester:
         # Wait for user confirmation
         response = input("⚠️  Execute this SQL? (yes/no): ").strip().lower()
 
-        if response != 'yes':
+        if response != "yes":
             print("❌ Execution cancelled by user")
             return None
 
@@ -121,6 +118,7 @@ class Text2SQLTester:
         except Exception as e:
             print(f"❌ SQL Execution Failed: {e}")
             import traceback
+
             traceback.print_exc()
             return None
 
@@ -143,89 +141,102 @@ class Text2SQLTester:
             "exclusion_criteria": [],
             "data_elements": ["patient_demographics"],
             "time_period": {},  # Empty dict, not None
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         # Parse gender - SQL generator expects criteria with concepts
         if "female" in query_lower:
-            requirements["inclusion_criteria"].append({
-                "text": "female patients",
-                "concepts": [{
-                    "term": "female",
-                    "type": "demographic",
-                    "details": "female patients"
-                }]
-            })
+            requirements["inclusion_criteria"].append(
+                {
+                    "text": "female patients",
+                    "concepts": [
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
+                }
+            )
         elif "male" in query_lower:
-            requirements["inclusion_criteria"].append({
-                "text": "male patients",
-                "concepts": [{
-                    "term": "male",
-                    "type": "demographic",
-                    "details": "male patients"
-                }]
-            })
+            requirements["inclusion_criteria"].append(
+                {
+                    "text": "male patients",
+                    "concepts": [
+                        {"term": "male", "type": "demographic", "details": "male patients"}
+                    ],
+                }
+            )
 
         # Parse age range
         if "between" in query_lower and "age" in query_lower:
             # Extract "between 20 and 30"
             import re
+
             age_match = re.search(r"between.*?(\d+)\s+and\s+(\d+)", query_lower)
             if age_match:
                 min_age = int(age_match.group(1))
                 max_age = int(age_match.group(2))
-                requirements["inclusion_criteria"].append({
-                    "text": f"age between {min_age} and {max_age}",
-                    "concepts": [{
-                        "term": "age",
-                        "type": "demographic",
-                        "details": f"between {min_age} and {max_age}"
-                    }]
-                })
+                requirements["inclusion_criteria"].append(
+                    {
+                        "text": f"age between {min_age} and {max_age}",
+                        "concepts": [
+                            {
+                                "term": "age",
+                                "type": "demographic",
+                                "details": f"between {min_age} and {max_age}",
+                            }
+                        ],
+                    }
+                )
         elif "over" in query_lower or "above" in query_lower:
             age_match = re.search(r"(?:over|above)\s+(\d+)", query_lower)
             if age_match:
                 age = int(age_match.group(1))
-                requirements["inclusion_criteria"].append({
-                    "text": f"age over {age}",
-                    "concepts": [{
-                        "term": "age",
-                        "type": "demographic",
-                        "details": f"over {age}"
-                    }]
-                })
+                requirements["inclusion_criteria"].append(
+                    {
+                        "text": f"age over {age}",
+                        "concepts": [
+                            {"term": "age", "type": "demographic", "details": f"over {age}"}
+                        ],
+                    }
+                )
         elif "under" in query_lower or "below" in query_lower:
             age_match = re.search(r"(?:under|below)\s+(\d+)", query_lower)
             if age_match:
                 age = int(age_match.group(1))
-                requirements["inclusion_criteria"].append({
-                    "text": f"age under {age}",
-                    "concepts": [{
-                        "term": "age",
-                        "type": "demographic",
-                        "details": f"under {age}"
-                    }]
-                })
+                requirements["inclusion_criteria"].append(
+                    {
+                        "text": f"age under {age}",
+                        "concepts": [
+                            {"term": "age", "type": "demographic", "details": f"under {age}"}
+                        ],
+                    }
+                )
 
         # Parse conditions
         if "diabetes" in query_lower or "diabetic" in query_lower:
-            requirements["inclusion_criteria"].append({
-                "text": "patients with diabetes",
-                "concepts": [{
-                    "term": "diabetes",
-                    "type": "condition",
-                    "details": "diabetes mellitus (any type)"
-                }]
-            })
+            requirements["inclusion_criteria"].append(
+                {
+                    "text": "patients with diabetes",
+                    "concepts": [
+                        {
+                            "term": "diabetes",
+                            "type": "condition",
+                            "details": "diabetes mellitus (any type)",
+                        }
+                    ],
+                }
+            )
         if "hypertension" in query_lower or "high blood pressure" in query_lower:
-            requirements["inclusion_criteria"].append({
-                "text": "patients with hypertension",
-                "concepts": [{
-                    "term": "hypertension",
-                    "type": "condition",
-                    "details": "essential hypertension"
-                }]
-            })
+            requirements["inclusion_criteria"].append(
+                {
+                    "text": "patients with hypertension",
+                    "concepts": [
+                        {
+                            "term": "hypertension",
+                            "type": "condition",
+                            "details": "essential hypertension",
+                        }
+                    ],
+                }
+            )
 
         return requirements
 
@@ -243,34 +254,22 @@ class Text2SQLTester:
             return {
                 "term": "diabetes",
                 "type": "condition",
-                "details": "diabetes mellitus (any type)"
+                "details": "diabetes mellitus (any type)",
             }
         elif "female" in criterion_lower or "male" in criterion_lower:
-            return {
-                "term": criterion.split()[0],
-                "type": "demographic",
-                "details": criterion
-            }
+            return {"term": criterion.split()[0], "type": "demographic", "details": criterion}
         elif "age" in criterion_lower:
-            return {
-                "term": "age",
-                "type": "demographic",
-                "details": criterion
-            }
+            return {"term": "age", "type": "demographic", "details": criterion}
         else:
-            return {
-                "term": criterion,
-                "type": "unknown",
-                "details": criterion
-            }
+            return {"term": criterion, "type": "unknown", "details": criterion}
 
 
 async def main():
     """Main entry point"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("ResearchFlow Text-to-SQL Flow Tester")
     print("Following: docs/TEXT_TO_SQL_FLOW.md")
-    print("="*80)
+    print("=" * 80)
 
     # Test query
     test_query = "count of all female patients between the age of 20 and 30 with diabetes"
@@ -283,13 +282,13 @@ async def main():
     results = await tester.run_test(test_query)
 
     if results is not None:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("✅ TEST COMPLETE")
-        print("="*80)
+        print("=" * 80)
     else:
-        print("\n" + "="*80)
+        print("\n" + "=" * 80)
         print("❌ TEST FAILED OR CANCELLED")
-        print("="*80)
+        print("=" * 80)
 
 
 if __name__ == "__main__":

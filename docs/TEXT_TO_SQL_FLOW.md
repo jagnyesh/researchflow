@@ -38,152 +38,152 @@ The flow involves 5 distinct phases:
 
 ```
 
- RESEARCHER INPUT 
- "I need patients with diabetes who are over 65 and have HbA1c > 7.5" 
+ RESEARCHER INPUT
+ "I need patients with diabetes who are over 65 and have HbA1c > 7.5"
 
- PHASE 1: LLM CONVERSATION (Requirements Agent) 
+ PHASE 1: LLM CONVERSATION (Requirements Agent)
 
- File: app/agents/requirements_agent.py 
+ File: app/agents/requirements_agent.py
 
- Multi-turn conversation: 
- • User: "I need diabetic patients over 65..." 
- • Agent: "What IRB number should I use?" 
- • User: "IRB-2024-12345" 
- • Agent: "What time period?" 
- • User: "January 2020 to December 2023" 
+ Multi-turn conversation:
+ • User: "I need diabetic patients over 65..."
+ • Agent: "What IRB number should I use?"
+ • User: "IRB-2024-12345"
+ • Agent: "What time period?"
+ • User: "January 2020 to December 2023"
 
- Conversation stored as: 
- [{role: "user", content: "..."}, {role: "assistant", content: "..."}] 
+ Conversation stored as:
+ [{role: "user", content: "..."}, {role: "assistant", content: "..."}]
 
  llm_client.extract_requirements(conversation_history, ...)
 
- PHASE 2: STRUCTURED EXTRACTION (LLM → JSON) 
+ PHASE 2: STRUCTURED EXTRACTION (LLM → JSON)
 
- File: app/utils/llm_client.py::extract_requirements() 
+ File: app/utils/llm_client.py::extract_requirements()
 
- LLM analyzes conversation and outputs STRUCTURED JSON: 
+ LLM analyzes conversation and outputs STRUCTURED JSON:
 
- { 
- "extracted_requirements": { 
- "study_title": "Diabetes HbA1c Study", 
- "irb_number": "IRB-2024-12345", 
- "inclusion_criteria": [ 
- "patients with diabetes", 
- "age over 65", 
- "HbA1c > 7.5" 
- ], 
- "time_period": {"start": "2020-01-01", "end": "2023-12-31"}, 
- "data_elements": ["demographics", "lab_results"], 
- "phi_level": "de-identified" 
- }, 
- "completeness_score": 0.85, 
- "ready_for_submission": true 
- } 
+ {
+ "extracted_requirements": {
+ "study_title": "Diabetes HbA1c Study",
+ "irb_number": "IRB-2024-12345",
+ "inclusion_criteria": [
+ "patients with diabetes",
+ "age over 65",
+ "HbA1c > 7.5"
+ ],
+ "time_period": {"start": "2020-01-01", "end": "2023-12-31"},
+ "data_elements": ["demographics", "lab_results"],
+ "phi_level": "de-identified"
+ },
+ "completeness_score": 0.85,
+ "ready_for_submission": true
+ }
 
- [x] JSON is validated and parsed 
- [x] NOT raw SQL - still in semantic form 
+ [x] JSON is validated and parsed
+ [x] NOT raw SQL - still in semantic form
 
  requirements_agent._criteria_to_structured()
 
- PHASE 3: MEDICAL CONCEPT EXTRACTION 
+ PHASE 3: MEDICAL CONCEPT EXTRACTION
 
- File: app/utils/llm_client.py::extract_medical_concepts() 
+ File: app/utils/llm_client.py::extract_medical_concepts()
 
- For each criterion, LLM extracts medical concepts: 
+ For each criterion, LLM extracts medical concepts:
 
- Input: "patients with diabetes" 
- Output: { 
- "concepts": [ 
- { 
- "term": "diabetes", 
- "type": "condition", 
- "details": "diabetes mellitus (any type)" 
- } 
- ] 
- } 
+ Input: "patients with diabetes"
+ Output: {
+ "concepts": [
+ {
+ "term": "diabetes",
+ "type": "condition",
+ "details": "diabetes mellitus (any type)"
+ }
+ ]
+ }
 
- Input: "age over 65" 
- Output: { 
- "concepts": [ 
- { 
- "term": "age", 
- "type": "demographic", 
- "details": "> 65" 
- } 
- ] 
- } 
+ Input: "age over 65"
+ Output: {
+ "concepts": [
+ {
+ "term": "age",
+ "type": "demographic",
+ "details": "> 65"
+ }
+ ]
+ }
 
- WARNING: Currently: No terminology validation (concepts might be wrong) 
- [x] Future: Validate against SNOMED/LOINC via terminology server 
+ WARNING: Currently: No terminology validation (concepts might be wrong)
+ [x] Future: Validate against SNOMED/LOINC via terminology server
 
  Structured requirements passed to Phenotype Agent
  orchestrator.route_task(agent="phenotype_agent", ...)
 
- PHASE 4: TEMPLATE-BASED SQL GENERATION 
+ PHASE 4: TEMPLATE-BASED SQL GENERATION
 
- File: app/utils/sql_generator.py::generate_phenotype_sql() 
+ File: app/utils/sql_generator.py::generate_phenotype_sql()
 
- [x] DETERMINISTIC SQL construction (NOT LLM-generated!) 
+ [x] DETERMINISTIC SQL construction (NOT LLM-generated!)
 
- Process: 
- 1. Build SELECT clause (count_only or full) 
- 2. Build FROM clause (patient table + joins) 
- 3. Build WHERE clauses from structured criteria: 
- • Inclusion criteria → EXISTS subqueries 
- • Exclusion criteria → NOT EXISTS subqueries 
- • Demographics → direct WHERE conditions 
- • Time periods → date range filters 
- 4. Combine with AND logic 
+ Process:
+ 1. Build SELECT clause (count_only or full)
+ 2. Build FROM clause (patient table + joins)
+ 3. Build WHERE clauses from structured criteria:
+ • Inclusion criteria → EXISTS subqueries
+ • Exclusion criteria → NOT EXISTS subqueries
+ • Demographics → direct WHERE conditions
+ • Time periods → date range filters
+ 4. Combine with AND logic
 
- Generated SQL: 
- ```sql 
- SELECT DISTINCT 
- p.id as patient_id, 
- p.birthDate, 
- p.gender 
- FROM patient p 
- WHERE EXISTS ( 
- SELECT 1 FROM condition c 
- WHERE c.patient_id = p.id 
- AND LOWER(c.code_display) LIKE LOWER('%diabetes%') 
- ) 
- AND EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthDate)) > 65 
- AND EXISTS ( 
- SELECT 1 FROM observation o 
- WHERE o.patient_id = p.id 
- AND LOWER(o.code_display) LIKE LOWER('%hba1c%') 
- AND o.value > 7.5 
- ) 
- AND p.lastUpdated BETWEEN '2020-01-01' AND '2023-12-31' 
- ``` 
+ Generated SQL:
+ ```sql
+ SELECT DISTINCT
+ p.id as patient_id,
+ p.birthDate,
+ p.gender
+ FROM patient p
+ WHERE EXISTS (
+ SELECT 1 FROM condition c
+ WHERE c.patient_id = p.id
+ AND LOWER(c.code_display) LIKE LOWER('%diabetes%')
+ )
+ AND EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthDate)) > 65
+ AND EXISTS (
+ SELECT 1 FROM observation o
+ WHERE o.patient_id = p.id
+ AND LOWER(o.code_display) LIKE LOWER('%hba1c%')
+ AND o.value > 7.5
+ )
+ AND p.lastUpdated BETWEEN '2020-01-01' AND '2023-12-31'
+ ```
 
- Security: 
- • Template-based construction prevents SQL injection 
- • No direct string interpolation from user input 
- • Parameters are validated before use 
+ Security:
+ • Template-based construction prevents SQL injection
+ • No direct string interpolation from user input
+ • Parameters are validated before use
 
  sql_adapter.execute_sql(sql)
 
- PHASE 5: QUERY EXECUTION 
+ PHASE 5: QUERY EXECUTION
 
- File: app/adapters/sql_on_fhir.py::execute_sql() 
+ File: app/adapters/sql_on_fhir.py::execute_sql()
 
- Sandboxed execution: 
- 1. Validate: Only SELECT queries allowed 
- 2. Execute on async database connection 
- 3. Return results as list of dicts 
+ Sandboxed execution:
+ 1. Validate: Only SELECT queries allowed
+ 2. Execute on async database connection
+ 3. Return results as list of dicts
 
- Results: [ 
- {"patient_id": "123", "birthDate": "1955-03-15", "gender": "male"}, 
+ Results: [
+ {"patient_id": "123", "birthDate": "1955-03-15", "gender": "male"},
  {"patient_id": "456", "birthDate": "1950-07-22", "gender": "female"},
- ... 
- ] 
+ ...
+ ]
 
- WARNING: Current limitations: 
- • No query cost estimation 
- • No timeout enforcement 
- • No audit logging 
- [x] Future: Add all security controls from Phase 1 roadmap 
+ WARNING: Current limitations:
+ • No query cost estimation
+ • No timeout enforcement
+ • No audit logging
+ [x] Future: Add all security controls from Phase 1 roadmap
 
 ```
 

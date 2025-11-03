@@ -42,7 +42,7 @@ class MultiLLMClient:
         self,
         anthropic_api_key: Optional[str] = None,
         secondary_provider: Optional[str] = None,
-        enable_fallback: bool = True
+        enable_fallback: bool = True,
     ):
         """
         Initialize multi-provider LLM client
@@ -56,9 +56,13 @@ class MultiLLMClient:
         self.claude_client = LLMClient(api_key=anthropic_api_key)
 
         # Get configuration
-        self.secondary_provider = secondary_provider or os.getenv('SECONDARY_LLM_PROVIDER', 'anthropic')
-        self.enable_fallback = enable_fallback and os.getenv('ENABLE_LLM_FALLBACK', 'true').lower() == 'true'
-        self.secondary_model = os.getenv('SECONDARY_LLM_MODEL', '')
+        self.secondary_provider = secondary_provider or os.getenv(
+            "SECONDARY_LLM_PROVIDER", "anthropic"
+        )
+        self.enable_fallback = (
+            enable_fallback and os.getenv("ENABLE_LLM_FALLBACK", "true").lower() == "true"
+        )
+        self.secondary_model = os.getenv("SECONDARY_LLM_MODEL", "")
 
         # Initialize AI Suite client for secondary provider
         self.aisuite_client = None
@@ -71,7 +75,7 @@ class MultiLLMClient:
 
     def _init_aisuite(self):
         """Initialize AI Suite client if secondary provider is configured"""
-        if self.secondary_provider == 'anthropic':
+        if self.secondary_provider == "anthropic":
             # Use Claude client directly, no need for AI Suite
             logger.info("Secondary provider is Anthropic - using Claude client directly")
             return
@@ -80,13 +84,13 @@ class MultiLLMClient:
             import aisuite
 
             # Validate provider configuration
-            if self.secondary_provider == 'openai':
-                if not os.getenv('OPENAI_API_KEY'):
+            if self.secondary_provider == "openai":
+                if not os.getenv("OPENAI_API_KEY"):
                     logger.warning("OPENAI_API_KEY not set - falling back to Claude")
-                    self.secondary_provider = 'anthropic'
+                    self.secondary_provider = "anthropic"
                     return
-            elif self.secondary_provider == 'ollama':
-                ollama_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+            elif self.secondary_provider == "ollama":
+                ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
                 logger.info(f"Using Ollama at {ollama_url}")
 
             self.aisuite_client = aisuite.Client()
@@ -94,10 +98,10 @@ class MultiLLMClient:
 
         except ImportError:
             logger.warning("aisuite not installed - falling back to Claude for all tasks")
-            self.secondary_provider = 'anthropic'
+            self.secondary_provider = "anthropic"
         except Exception as e:
             logger.error(f"Failed to initialize AI Suite: {str(e)} - falling back to Claude")
-            self.secondary_provider = 'anthropic'
+            self.secondary_provider = "anthropic"
 
     def _get_model_identifier(self, task_type: str) -> str:
         """
@@ -114,12 +118,12 @@ class MultiLLMClient:
             return "anthropic:claude-3-7-sonnet-20250219"
 
         # Non-critical tasks use secondary provider
-        if self.secondary_provider == 'anthropic':
+        if self.secondary_provider == "anthropic":
             return "anthropic:claude-3-7-sonnet-20250219"
-        elif self.secondary_provider == 'openai':
+        elif self.secondary_provider == "openai":
             model = self.secondary_model or "gpt-4o"
             return f"openai:{model}"
-        elif self.secondary_provider == 'ollama':
+        elif self.secondary_provider == "ollama":
             model = self.secondary_model or "llama3"
             return f"ollama:{model}"
         else:
@@ -133,7 +137,7 @@ class MultiLLMClient:
         model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
-        system: Optional[str] = None
+        system: Optional[str] = None,
     ) -> str:
         """
         Get completion from appropriate LLM provider
@@ -151,9 +155,9 @@ class MultiLLMClient:
         """
         # Determine which provider to use
         use_secondary = (
-            task_type in NON_CRITICAL_TASK_TYPES and
-            self.secondary_provider != 'anthropic' and
-            self.aisuite_client is not None
+            task_type in NON_CRITICAL_TASK_TYPES
+            and self.secondary_provider != "anthropic"
+            and self.aisuite_client is not None
         )
 
         # Critical tasks always use Claude client
@@ -164,7 +168,7 @@ class MultiLLMClient:
                 model=model or "claude-3-7-sonnet-20250219",
                 max_tokens=max_tokens,
                 temperature=temperature,
-                system=system
+                system=system,
             )
 
         # Non-critical tasks use secondary provider with fallback
@@ -178,10 +182,7 @@ class MultiLLMClient:
                 messages.insert(0, {"role": "system", "content": system})
 
             response = self.aisuite_client.chat.completions.create(
-                model=model_id,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
+                model=model_id, messages=messages, temperature=temperature, max_tokens=max_tokens
             )
 
             response_text = response.choices[0].message.content
@@ -199,7 +200,7 @@ class MultiLLMClient:
                     model="claude-3-7-sonnet-20250219",
                     max_tokens=max_tokens,
                     temperature=temperature,
-                    system=system
+                    system=system,
                 )
             else:
                 raise
@@ -210,7 +211,7 @@ class MultiLLMClient:
         schema_description: str,
         task_type: str = "general",
         model: Optional[str] = None,
-        system: Optional[str] = None
+        system: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Extract structured JSON from text using LLM
@@ -226,12 +227,12 @@ class MultiLLMClient:
             Parsed JSON object
         """
         # For critical tasks or when secondary is Claude, use Claude client directly
-        if task_type in CRITICAL_TASK_TYPES or self.secondary_provider == 'anthropic':
+        if task_type in CRITICAL_TASK_TYPES or self.secondary_provider == "anthropic":
             return await self.claude_client.extract_structured_json(
                 prompt=prompt,
                 schema_description=schema_description,
                 model=model or "claude-3-7-sonnet-20250219",
-                system=system
+                system=system,
             )
 
         # For non-critical tasks, use complete() and parse JSON
@@ -242,11 +243,7 @@ class MultiLLMClient:
 Return ONLY valid JSON, no other text."""
 
         response = await self.complete(
-            prompt=full_prompt,
-            task_type=task_type,
-            model=model,
-            temperature=0.3,
-            system=system
+            prompt=full_prompt, task_type=task_type, model=model, temperature=0.3, system=system
         )
 
         # Parse JSON (same logic as LLMClient)
@@ -270,9 +267,7 @@ Return ONLY valid JSON, no other text."""
     # Wrapper methods that delegate to Claude client for backward compatibility
 
     async def extract_requirements(
-        self,
-        conversation_history: list,
-        current_requirements: Dict[str, Any]
+        self, conversation_history: list, current_requirements: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Extract structured requirements from conversation
@@ -282,8 +277,7 @@ Return ONLY valid JSON, no other text."""
         """
         logger.debug("Extracting requirements using Claude (critical task)")
         return await self.claude_client.extract_requirements(
-            conversation_history=conversation_history,
-            current_requirements=current_requirements
+            conversation_history=conversation_history, current_requirements=current_requirements
         )
 
     async def extract_medical_concepts(self, criterion: str) -> Dict[str, Any]:

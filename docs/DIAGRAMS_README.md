@@ -238,4 +238,4 @@ If you modify the code, update corresponding diagrams:
 
 ---
 
-Enjoy visualizing ResearchFlow! 
+Enjoy visualizing ResearchFlow!

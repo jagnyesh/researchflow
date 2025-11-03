@@ -26,11 +26,7 @@ def test_viewdef(viewdef_path: str):
 
     # Generate SQL
     try:
-        query = builder.build_query(
-            view_def,
-            search_params={"gender": "female"},
-            limit=5
-        )
+        query = builder.build_query(view_def, search_params={"gender": "female"}, limit=5)
 
         print("✅ SQL Generation Successful!")
         print(f"Resource: {query.resource_type}")
@@ -44,6 +40,7 @@ def test_viewdef(viewdef_path: str):
         print(f"❌ SQL Generation Failed!")
         print(f"Error: {e}")
         import traceback
+
         traceback.print_exc()
 
 

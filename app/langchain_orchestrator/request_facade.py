@@ -68,10 +68,7 @@ class LangGraphRequestFacade:
 
         # Initialize LangGraph workflow with checkpointer
         checkpointer = get_checkpointer() if use_persistence else None
-        self.workflow = FullWorkflow(
-            use_real_agents=use_real_agents,
-            checkpointer=checkpointer
-        )
+        self.workflow = FullWorkflow(use_real_agents=use_real_agents, checkpointer=checkpointer)
 
         # Initialize approval bridge for human-in-the-loop workflow
         self.approval_bridge = ApprovalBridge()
@@ -100,9 +97,7 @@ class LangGraphRequestFacade:
         logger.debug(f"[LangGraphRequestFacade] Registered agent: {agent_id} (for compatibility)")
 
     async def process_new_request(
-        self,
-        researcher_request: str,
-        researcher_info: Dict[str, Any]
+        self, researcher_request: str, researcher_info: Dict[str, Any]
     ) -> str:
         """
         Main entry point for new research data request.
@@ -137,18 +132,15 @@ class LangGraphRequestFacade:
         async with get_db_session() as session:
             research_request = ResearchRequest(
                 id=request_id,
-                researcher_name=researcher_info.get('name', 'Unknown'),
-                researcher_email=researcher_info.get('email', ''),
-                researcher_department=researcher_info.get('department'),
-                irb_number=researcher_info.get('irb_number'),
+                researcher_name=researcher_info.get("name", "Unknown"),
+                researcher_email=researcher_info.get("email", ""),
+                researcher_department=researcher_info.get("department"),
+                irb_number=researcher_info.get("irb_number"),
                 initial_request=researcher_request,
                 current_state="new_request",
                 current_agent=None,
                 agents_involved=[],
-                state_history=[{
-                    'state': 'new_request',
-                    'timestamp': datetime.now().isoformat()
-                }]
+                state_history=[{"state": "new_request", "timestamp": datetime.now().isoformat()}],
             )
             session.add(research_request)
             await session.flush()
@@ -158,12 +150,12 @@ class LangGraphRequestFacade:
                 request_id=request_id,
                 event_type="request_created",
                 event_data={
-                    'researcher_name': researcher_info.get('name'),
-                    'initial_request': researcher_request,
-                    'orchestrator': 'LangGraphRequestFacade'
+                    "researcher_name": researcher_info.get("name"),
+                    "initial_request": researcher_request,
+                    "orchestrator": "LangGraphRequestFacade",
                 },
-                triggered_by='facade',
-                severity='info'
+                triggered_by="facade",
+                severity="info",
             )
             session.add(audit_entry)
             await session.commit()
@@ -180,10 +172,7 @@ class LangGraphRequestFacade:
         return request_id
 
     async def _run_workflow(
-        self,
-        request_id: str,
-        researcher_request: str,
-        researcher_info: Dict[str, Any]
+        self, request_id: str, researcher_request: str, researcher_info: Dict[str, Any]
     ):
         """
         Run LangGraph workflow for a request (internal method).
@@ -205,11 +194,9 @@ class LangGraphRequestFacade:
                 "current_state": "new_request",
                 "created_at": datetime.now().isoformat(),
                 "updated_at": datetime.now().isoformat(),
-
                 # Researcher info
                 "researcher_request": researcher_request,
                 "researcher_info": researcher_info,
-
                 # Requirements (to be filled by workflow)
                 "requirements": {},
                 "requirements_complete": False,
@@ -217,7 +204,6 @@ class LangGraphRequestFacade:
                 "conversation_history": [],
                 "requirements_approved": None,
                 "requirements_rejection_reason": None,
-
                 # Feasibility (to be filled by workflow)
                 "phenotype_sql": None,
                 "feasibility_score": 0.0,
@@ -225,49 +211,37 @@ class LangGraphRequestFacade:
                 "feasible": False,
                 "phenotype_approved": None,
                 "phenotype_rejection_reason": None,
-
                 # Kickoff (to be filled by workflow)
                 "meeting_scheduled": False,
                 "meeting_details": None,
-
                 # Extraction (to be filled by workflow)
                 "extraction_approved": None,
                 "extraction_rejection_reason": None,
                 "extraction_complete": False,
                 "extracted_data_summary": None,
-
                 # QA (to be filled by workflow)
                 "overall_status": None,
                 "qa_report": None,
                 "qa_approved": None,
                 "qa_rejection_reason": None,
-
                 # Delivery (to be filled by workflow)
                 "delivered": False,
                 "delivered_at": None,
                 "delivery_location": None,
                 "delivery_info": None,
-
                 # Error handling
                 "error": None,
                 "escalation_reason": None,
-
                 # Scope change
                 "scope_change_requested": False,
-                "scope_approved": None
+                "scope_approved": None,
             }
 
             # Configure LangGraph execution
-            config = {
-                "configurable": {"thread_id": request_id},
-                "recursion_limit": 50
-            }
+            config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
 
             # Invoke LangGraph workflow
-            final_state = await self.workflow.compiled_graph.ainvoke(
-                initial_state,
-                config=config
-            )
+            final_state = await self.workflow.compiled_graph.ainvoke(initial_state, config=config)
 
             logger.info(
                 f"[LangGraphRequestFacade] Workflow completed for {request_id}, "
@@ -279,8 +253,7 @@ class LangGraphRequestFacade:
 
         except Exception as e:
             logger.error(
-                f"[LangGraphRequestFacade] Workflow failed for {request_id}: {e}",
-                exc_info=True
+                f"[LangGraphRequestFacade] Workflow failed for {request_id}: {e}", exc_info=True
             )
 
             # Update database with error
@@ -294,11 +267,7 @@ class LangGraphRequestFacade:
                     req.error_message = str(e)
                     await session.commit()
 
-    async def _update_request_from_state(
-        self,
-        request_id: str,
-        state: Dict[str, Any]
-    ):
+    async def _update_request_from_state(self, request_id: str, state: Dict[str, Any]):
         """
         Update ResearchRequest database record from LangGraph state.
 
@@ -321,20 +290,15 @@ class LangGraphRequestFacade:
                 # Update state history if changed
                 if state.get("current_state") and state["current_state"] != req.current_state:
                     state_history = req.state_history or []
-                    state_history.append({
-                        'state': state["current_state"],
-                        'timestamp': datetime.now().isoformat()
-                    })
+                    state_history.append(
+                        {"state": state["current_state"], "timestamp": datetime.now().isoformat()}
+                    )
                     req.state_history = state_history
 
                 await session.commit()
 
     async def route_task(
-        self,
-        agent_id: str,
-        task: str,
-        context: Dict[str, Any],
-        from_agent: str = None
+        self, agent_id: str, task: str, context: Dict[str, Any], from_agent: str = None
     ):
         """
         Route task to agent (for API compatibility).
@@ -364,7 +328,7 @@ class LangGraphRequestFacade:
         reviewer: str,
         decision: str,
         notes: Optional[str] = None,
-        modifications: Optional[Dict[str, Any]] = None
+        modifications: Optional[Dict[str, Any]] = None,
     ):
         """
         Process approval response and continue workflow.
@@ -398,11 +362,7 @@ class LangGraphRequestFacade:
         )
 
         # Map decision to status
-        status_map = {
-            "approve": "approved",
-            "reject": "rejected",
-            "modify": "modified"
-        }
+        status_map = {"approve": "approved", "reject": "rejected", "modify": "modified"}
         status = status_map.get(decision, "approved")
 
         # Update approval in database using approval bridge
@@ -411,7 +371,7 @@ class LangGraphRequestFacade:
             status=status,
             reviewed_by=reviewer,
             review_notes=notes,
-            modifications=modifications
+            modifications=modifications,
         )
 
         if not success:
@@ -421,9 +381,8 @@ class LangGraphRequestFacade:
         # Get approval to find request_id
         async with get_db_session() as session:
             from app.database.models import Approval
-            result = await session.execute(
-                select(Approval).where(Approval.id == approval_id)
-            )
+
+            result = await session.execute(select(Approval).where(Approval.id == approval_id))
             approval = result.scalar_one_or_none()
 
             if not approval:
@@ -459,16 +418,12 @@ class LangGraphRequestFacade:
             )
 
             # Configure LangGraph execution with thread_id for checkpointing
-            config = {
-                "configurable": {"thread_id": request_id},
-                "recursion_limit": 50
-            }
+            config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
 
             # Resume workflow from checkpoint
             # LangGraph will load the saved state and continue from approval gate
             final_state = await self.workflow.compiled_graph.ainvoke(
-                None,  # State loaded from checkpoint
-                config=config
+                None, config=config  # State loaded from checkpoint
             )
 
             logger.info(
@@ -482,7 +437,7 @@ class LangGraphRequestFacade:
         except Exception as e:
             logger.error(
                 f"[LangGraphRequestFacade] Failed to resume workflow for {request_id}: {e}",
-                exc_info=True
+                exc_info=True,
             )
 
     async def get_request_status(self, request_id: str) -> Optional[Dict[str, Any]]:
@@ -514,19 +469,23 @@ class LangGraphRequestFacade:
                 return None
 
             return {
-                'request_id': request_id,
-                'current_state': research_request.current_state,
-                'current_agent': research_request.current_agent,
-                'started_at': research_request.created_at.isoformat(),
-                'completed_at': research_request.completed_at.isoformat() if research_request.completed_at else None,
-                'agents_involved': research_request.agents_involved,
-                'state_history': research_request.state_history,
-                'researcher_info': {
-                    'name': research_request.researcher_name,
-                    'email': research_request.researcher_email,
-                    'department': research_request.researcher_department,
-                    'irb_number': research_request.irb_number
-                }
+                "request_id": request_id,
+                "current_state": research_request.current_state,
+                "current_agent": research_request.current_agent,
+                "started_at": research_request.created_at.isoformat(),
+                "completed_at": (
+                    research_request.completed_at.isoformat()
+                    if research_request.completed_at
+                    else None
+                ),
+                "agents_involved": research_request.agents_involved,
+                "state_history": research_request.state_history,
+                "researcher_info": {
+                    "name": research_request.researcher_name,
+                    "email": research_request.researcher_email,
+                    "department": research_request.researcher_department,
+                    "irb_number": research_request.irb_number,
+                },
             }
 
     async def get_all_active_requests(self) -> list:
@@ -555,10 +514,9 @@ class LangGraphRequestFacade:
             active_requests = result.scalars().all()
 
             # Use asyncio.gather to properly await all status requests
-            statuses = await asyncio.gather(*[
-                self.get_request_status(req.id)
-                for req in active_requests
-            ])
+            statuses = await asyncio.gather(
+                *[self.get_request_status(req.id) for req in active_requests]
+            )
             return statuses
 
     def get_agent_metrics(self, agent_id: str = None) -> Dict[str, Any]:
@@ -591,9 +549,9 @@ class LangGraphRequestFacade:
 # Helper Functions
 # ============================================================================
 
+
 def create_langgraph_facade(
-    use_real_agents: bool = True,
-    use_persistence: bool = True
+    use_real_agents: bool = True, use_persistence: bool = True
 ) -> LangGraphRequestFacade:
     """
     Factory function to create facade instance.
@@ -617,10 +575,7 @@ def create_langgraph_facade(
         request_id = await orchestrator.process_new_request(...)
         ```
     """
-    return LangGraphRequestFacade(
-        use_real_agents=use_real_agents,
-        use_persistence=use_persistence
-    )
+    return LangGraphRequestFacade(use_real_agents=use_real_agents, use_persistence=use_persistence)
 
 
 # ============================================================================

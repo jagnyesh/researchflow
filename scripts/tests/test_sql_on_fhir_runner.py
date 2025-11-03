@@ -122,8 +122,7 @@ async def list_view_definitions(manager: ViewDefinitionManager):
 
             # Count columns
             total_columns = sum(
-                len(select_elem.get("column", []))
-                for select_elem in view_def.get("select", [])
+                len(select_elem.get("column", [])) for select_elem in view_def.get("select", [])
             )
 
             print(f"  • {name}")
@@ -142,7 +141,7 @@ async def execute_view_definition(
     manager: ViewDefinitionManager,
     view_name: str,
     max_resources: int = 20,
-    search_params: dict = None
+    search_params: dict = None,
 ):
     """Execute a ViewDefinition and display results"""
     print_section(f"3. Executing ViewDefinition: {view_name}")
@@ -165,9 +164,7 @@ async def execute_view_definition(
         start_time = datetime.now()
 
         results = await runner.execute(
-            view_def,
-            search_params=search_params,
-            max_resources=max_resources
+            view_def, search_params=search_params, max_resources=max_resources
         )
 
         elapsed = (datetime.now() - start_time).total_seconds()
@@ -214,11 +211,7 @@ async def execute_view_definition(
                 table_data.append(table_row)
 
             # Print table without maxcolwidths to avoid wrapping issues
-            print(tabulate(
-                table_data,
-                headers=display_columns,
-                tablefmt="grid"
-            ))
+            print(tabulate(table_data, headers=display_columns, tablefmt="grid"))
 
         # Show detailed view of first row
         if len(results) > 0:
@@ -242,6 +235,7 @@ async def execute_view_definition(
     except Exception as e:
         print(f"✗ Execution failed: {e}")
         import traceback
+
         traceback.print_exc()
         return None
 
@@ -271,9 +265,7 @@ async def main(view_name: str = None, max_resources: int = 20, search_params: di
         # Execute ViewDefinition(s)
         if view_name:
             # Execute specific ViewDefinition
-            await execute_view_definition(
-                runner, manager, view_name, max_resources, search_params
-            )
+            await execute_view_definition(runner, manager, view_name, max_resources, search_params)
         else:
             # Execute default ViewDefinition
             default_view = "patient_demographics"
@@ -299,6 +291,7 @@ async def main(view_name: str = None, max_resources: int = 20, search_params: di
     except Exception as e:
         print(f"\n\n✗ Unexpected error: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
     finally:
@@ -314,19 +307,19 @@ if __name__ == "__main__":
         "--view",
         type=str,
         default=None,
-        help="ViewDefinition name to execute (default: patient_demographics)"
+        help="ViewDefinition name to execute (default: patient_demographics)",
     )
     parser.add_argument(
         "--max-resources",
         type=int,
         default=20,
-        help="Maximum number of resources to process (default: 20)"
+        help="Maximum number of resources to process (default: 20)",
     )
     parser.add_argument(
         "--gender",
         type=str,
         choices=["male", "female"],
-        help="Filter by gender (for Patient resources)"
+        help="Filter by gender (for Patient resources)",
     )
 
     args = parser.parse_args()
@@ -341,7 +334,7 @@ if __name__ == "__main__":
         main(
             view_name=args.view,
             max_resources=args.max_resources,
-            search_params=search_params if search_params else None
+            search_params=search_params if search_params else None,
         )
     )
 

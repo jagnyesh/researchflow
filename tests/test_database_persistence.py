@@ -23,7 +23,7 @@ from app.database import (
     ResearchRequest,
     AuditLog,
     RequirementsData,
-    FeasibilityReport
+    FeasibilityReport,
 )
 from app.orchestrator.workflow_engine import WorkflowState
 
@@ -85,10 +85,9 @@ async def test_create_research_request():
             current_state=WorkflowState.NEW_REQUEST.value,
             current_agent=None,
             agents_involved=[],
-            state_history=[{
-                'state': WorkflowState.NEW_REQUEST.value,
-                'timestamp': datetime.now().isoformat()
-            }]
+            state_history=[
+                {"state": WorkflowState.NEW_REQUEST.value, "timestamp": datetime.now().isoformat()}
+            ],
         )
 
         session.add(request)
@@ -122,7 +121,7 @@ async def test_create_audit_log():
             researcher_name="Dr. Test",
             researcher_email="test@example.com",
             initial_request="Test request",
-            current_state=WorkflowState.NEW_REQUEST.value
+            current_state=WorkflowState.NEW_REQUEST.value,
         )
         session.add(request)
         await session.flush()
@@ -131,12 +130,9 @@ async def test_create_audit_log():
         audit_entry = AuditLog(
             request_id="REQ-20251009-TEST002",
             event_type="request_created",
-            event_data={
-                'researcher_name': 'Dr. Test',
-                'initial_request': 'Test request'
-            },
-            triggered_by='orchestrator',
-            severity='info'
+            event_data={"researcher_name": "Dr. Test", "initial_request": "Test request"},
+            triggered_by="orchestrator",
+            severity="info",
         )
         session.add(audit_entry)
         await session.commit()
@@ -151,7 +147,7 @@ async def test_create_audit_log():
         assert logs[0].event_type == "request_created"
         assert logs[0].triggered_by == "orchestrator"
         assert logs[0].severity == "info"
-        assert logs[0].event_data['researcher_name'] == 'Dr. Test'
+        assert logs[0].event_data["researcher_name"] == "Dr. Test"
 
 
 @pytest.mark.asyncio
@@ -167,10 +163,9 @@ async def test_update_research_request_state():
             researcher_email="test@example.com",
             initial_request="Test request",
             current_state=WorkflowState.NEW_REQUEST.value,
-            state_history=[{
-                'state': WorkflowState.NEW_REQUEST.value,
-                'timestamp': datetime.now().isoformat()
-            }]
+            state_history=[
+                {"state": WorkflowState.NEW_REQUEST.value, "timestamp": datetime.now().isoformat()}
+            ],
         )
         session.add(request)
         await session.commit()
@@ -188,14 +183,16 @@ async def test_update_research_request_state():
 
         # Append to state_history
         state_history = request.state_history or []
-        state_history.append({
-            'state': WorkflowState.REQUIREMENTS_GATHERING.value,
-            'timestamp': datetime.now().isoformat()
-        })
+        state_history.append(
+            {
+                "state": WorkflowState.REQUIREMENTS_GATHERING.value,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
         request.state_history = state_history
 
         # Mark JSON column as modified so SQLAlchemy persists it
-        attributes.flag_modified(request, 'state_history')
+        attributes.flag_modified(request, "state_history")
 
         await session.commit()
 
@@ -209,7 +206,7 @@ async def test_update_research_request_state():
         assert request.current_state == WorkflowState.REQUIREMENTS_GATHERING.value
         assert request.current_agent == "requirements_agent"
         assert len(request.state_history) == 2
-        assert request.state_history[1]['state'] == WorkflowState.REQUIREMENTS_GATHERING.value
+        assert request.state_history[1]["state"] == WorkflowState.REQUIREMENTS_GATHERING.value
 
 
 @pytest.mark.asyncio
@@ -229,7 +226,7 @@ async def test_query_active_requests():
             researcher_email="test@example.com",
             initial_request="Completed request",
             current_state=WorkflowState.DELIVERED.value,
-            completed_at=datetime.now()
+            completed_at=datetime.now(),
         )
         session.add(completed_request)
 
@@ -241,7 +238,7 @@ async def test_query_active_requests():
                 researcher_email=f"test{i}@example.com",
                 initial_request=f"Active request {i}",
                 current_state=WorkflowState.REQUIREMENTS_GATHERING.value,
-                completed_at=None  # Not completed
+                completed_at=None,  # Not completed
             )
             session.add(active_request)
 
@@ -272,7 +269,7 @@ async def test_audit_log_querying():
             researcher_name="Dr. Test",
             researcher_email="test@example.com",
             initial_request="Test request",
-            current_state=WorkflowState.NEW_REQUEST.value
+            current_state=WorkflowState.NEW_REQUEST.value,
         )
         session.add(request)
         await session.flush()
@@ -282,7 +279,7 @@ async def test_audit_log_querying():
             ("request_created", "orchestrator", "info"),
             ("agent_started", "requirements_agent", "info"),
             ("state_changed", "requirements_agent", "info"),
-            ("workflow_error", "requirements_agent", "error")
+            ("workflow_error", "requirements_agent", "error"),
         ]
 
         for event_type, triggered_by, severity in events:
@@ -291,7 +288,7 @@ async def test_audit_log_querying():
                 event_type=event_type,
                 triggered_by=triggered_by,
                 severity=severity,
-                event_data={"test": "data"}
+                event_data={"test": "data"},
             )
             session.add(audit_entry)
 
@@ -309,8 +306,7 @@ async def test_audit_log_querying():
     async with get_db_session() as session:
         result = await session.execute(
             select(AuditLog).where(
-                AuditLog.request_id == "REQ-20251009-AUDIT",
-                AuditLog.severity == "error"
+                AuditLog.request_id == "REQ-20251009-AUDIT", AuditLog.severity == "error"
             )
         )
         error_logs = result.scalars().all()
@@ -334,10 +330,9 @@ async def test_complete_workflow_lifecycle():
             initial_request="Test workflow",
             current_state=WorkflowState.NEW_REQUEST.value,
             agents_involved=[],
-            state_history=[{
-                'state': WorkflowState.NEW_REQUEST.value,
-                'timestamp': datetime.now().isoformat()
-            }]
+            state_history=[
+                {"state": WorkflowState.NEW_REQUEST.value, "timestamp": datetime.now().isoformat()}
+            ],
         )
         session.add(request)
 
@@ -346,7 +341,7 @@ async def test_complete_workflow_lifecycle():
             request_id=request_id,
             event_type="request_created",
             triggered_by="orchestrator",
-            severity="info"
+            severity="info",
         )
         session.add(audit)
         await session.commit()
@@ -362,21 +357,25 @@ async def test_complete_workflow_lifecycle():
         request.current_agent = "requirements_agent"
 
         agents_involved = request.agents_involved or []
-        agents_involved.append({
-            'agent': 'requirements_agent',
-            'task': 'gather_requirements',
-            'timestamp': datetime.now().isoformat()
-        })
+        agents_involved.append(
+            {
+                "agent": "requirements_agent",
+                "task": "gather_requirements",
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
         request.agents_involved = agents_involved
-        attributes.flag_modified(request, 'agents_involved')
+        attributes.flag_modified(request, "agents_involved")
 
         state_history = request.state_history or []
-        state_history.append({
-            'state': WorkflowState.REQUIREMENTS_GATHERING.value,
-            'timestamp': datetime.now().isoformat()
-        })
+        state_history.append(
+            {
+                "state": WorkflowState.REQUIREMENTS_GATHERING.value,
+                "timestamp": datetime.now().isoformat(),
+            }
+        )
         request.state_history = state_history
-        attributes.flag_modified(request, 'state_history')
+        attributes.flag_modified(request, "state_history")
 
         # Log state change
         audit = AuditLog(
@@ -384,7 +383,7 @@ async def test_complete_workflow_lifecycle():
             event_type="state_changed",
             agent_id="requirements_agent",
             triggered_by="requirements_agent",
-            severity="info"
+            severity="info",
         )
         session.add(audit)
         await session.commit()
@@ -401,12 +400,11 @@ async def test_complete_workflow_lifecycle():
         request.final_state = WorkflowState.DELIVERED.value
 
         state_history = request.state_history or []
-        state_history.append({
-            'state': WorkflowState.DELIVERED.value,
-            'timestamp': datetime.now().isoformat()
-        })
+        state_history.append(
+            {"state": WorkflowState.DELIVERED.value, "timestamp": datetime.now().isoformat()}
+        )
         request.state_history = state_history
-        attributes.flag_modified(request, 'state_history')
+        attributes.flag_modified(request, "state_history")
 
         # Log completion
         audit = AuditLog(
@@ -414,9 +412,7 @@ async def test_complete_workflow_lifecycle():
             event_type="workflow_completed",
             triggered_by="orchestrator",
             severity="info",
-            event_data={
-                'final_state': WorkflowState.DELIVERED.value
-            }
+            event_data={"final_state": WorkflowState.DELIVERED.value},
         )
         session.add(audit)
         await session.commit()
@@ -435,9 +431,7 @@ async def test_complete_workflow_lifecycle():
         assert len(request.agents_involved) == 1
 
         # Verify audit trail
-        result = await session.execute(
-            select(AuditLog).where(AuditLog.request_id == request_id)
-        )
+        result = await session.execute(select(AuditLog).where(AuditLog.request_id == request_id))
         audit_logs = result.scalars().all()
 
         assert len(audit_logs) == 3
@@ -460,7 +454,7 @@ async def test_session_rollback_on_error():
                 researcher_name="Dr. Test",
                 researcher_email="test@example.com",
                 initial_request="Test request",
-                current_state=WorkflowState.NEW_REQUEST.value
+                current_state=WorkflowState.NEW_REQUEST.value,
             )
             session.add(request)
             await session.flush()
@@ -485,6 +479,7 @@ async def test_multiple_concurrent_sessions():
     """
     Test that multiple concurrent database sessions work correctly
     """
+
     async def create_request(request_id: str):
         """Create a request in its own session"""
         async with get_db_session() as session:
@@ -493,7 +488,7 @@ async def test_multiple_concurrent_sessions():
                 researcher_name=f"Dr. Test {request_id}",
                 researcher_email=f"test{request_id}@example.com",
                 initial_request=f"Test request {request_id}",
-                current_state=WorkflowState.NEW_REQUEST.value
+                current_state=WorkflowState.NEW_REQUEST.value,
             )
             session.add(request)
             await session.commit()
@@ -502,15 +497,13 @@ async def test_multiple_concurrent_sessions():
     await asyncio.gather(
         create_request("REQ-CONCURRENT-1"),
         create_request("REQ-CONCURRENT-2"),
-        create_request("REQ-CONCURRENT-3")
+        create_request("REQ-CONCURRENT-3"),
     )
 
     # Verify all were created
     async with get_db_session() as session:
         result = await session.execute(
-            select(ResearchRequest).where(
-                ResearchRequest.id.like("REQ-CONCURRENT-%")
-            )
+            select(ResearchRequest).where(ResearchRequest.id.like("REQ-CONCURRENT-%"))
         )
         requests = result.scalars().all()
 

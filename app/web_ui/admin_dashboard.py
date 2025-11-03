@@ -40,7 +40,7 @@ from app.agents import (
     CalendarAgent,
     DataExtractionAgent,
     QualityAssuranceAgent,
-    DeliveryAgent
+    DeliveryAgent,
 )
 from app.database import get_db_session, get_engine
 from app.database.models import AgentExecution
@@ -59,7 +59,7 @@ def run_async(coroutine):
 
 def initialize_orchestrator():
     """Initialize orchestrator with all agents"""
-    if 'orchestrator' not in st.session_state:
+    if "orchestrator" not in st.session_state:
         # Ensure database engine is initialized for current event loop
         # This prevents "Queue is bound to a different event loop" errors
         get_engine()
@@ -69,23 +69,21 @@ def initialize_orchestrator():
         hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
 
         # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
-        orchestrator.register_agent('requirements_agent', RequirementsAgent())
-        orchestrator.register_agent('phenotype_agent', PhenotypeValidationAgent(database_url=hapi_db_url))
-        orchestrator.register_agent('calendar_agent', CalendarAgent())
-        orchestrator.register_agent('extraction_agent', DataExtractionAgent())
-        orchestrator.register_agent('qa_agent', QualityAssuranceAgent())
-        orchestrator.register_agent('delivery_agent', DeliveryAgent())
+        orchestrator.register_agent("requirements_agent", RequirementsAgent())
+        orchestrator.register_agent(
+            "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
+        )
+        orchestrator.register_agent("calendar_agent", CalendarAgent())
+        orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+        orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
+        orchestrator.register_agent("delivery_agent", DeliveryAgent())
 
         st.session_state.orchestrator = orchestrator
 
 
 def main():
     """Main admin dashboard application"""
-    st.set_page_config(
-        page_title="ResearchFlow - Admin Dashboard",
-        page_icon="⚙️",
-        layout="wide"
-    )
+    st.set_page_config(page_title="ResearchFlow - Admin Dashboard", page_icon="⚙️", layout="wide")
 
     # Initialize orchestrator
     initialize_orchestrator()
@@ -106,7 +104,7 @@ def main():
             options=[5, 10, 30, 60],
             format_func=lambda x: f"{x}s",
             key="refresh_interval",
-            disabled=not auto_refresh
+            disabled=not auto_refresh,
         )
 
     with col3:
@@ -114,20 +112,22 @@ def main():
             st.rerun()
 
     with col4:
-        if 'last_refresh' in st.session_state:
+        if "last_refresh" in st.session_state:
             st.caption(f"Last updated: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
 
     # Update last refresh time
     st.session_state.last_refresh = datetime.now()
 
     # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📊 Overview",
-        "🤖 Agent Metrics",
-        "✋ Pending Approvals",
-        "🚨 Escalations",
-        "📈 Analytics"
-    ])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        [
+            "📊 Overview",
+            "🤖 Agent Metrics",
+            "✋ Pending Approvals",
+            "🚨 Escalations",
+            "📈 Analytics",
+        ]
+    )
 
     with tab1:
         show_overview()
@@ -164,15 +164,17 @@ def show_overview():
         st.metric("Total Requests", len(requests))
 
     with col2:
-        in_progress = len([r for r in requests if r['current_state'] not in ['delivered', 'complete', 'failed']])
+        in_progress = len(
+            [r for r in requests if r["current_state"] not in ["delivered", "complete", "failed"]]
+        )
         st.metric("In Progress", in_progress)
 
     with col3:
-        completed = len([r for r in requests if r['current_state'] in ['delivered', 'complete']])
+        completed = len([r for r in requests if r["current_state"] in ["delivered", "complete"]])
         st.metric("Completed", completed)
 
     with col4:
-        failed = len([r for r in requests if r['current_state'] == 'failed'])
+        failed = len([r for r in requests if r["current_state"] == "failed"])
         st.metric("Failed/Escalated", failed, delta=-failed if failed > 0 else None)
 
     # Recent requests
@@ -181,13 +183,15 @@ def show_overview():
     if requests:
         df_data = []
         for req in requests[:10]:  # Show last 10
-            df_data.append({
-                "Request ID": req['request_id'][:16] + "...",
-                "Researcher": req['researcher_info'].get('name', 'N/A'),
-                "Status": req['current_state'],
-                "Current Agent": req.get('current_agent', 'None'),
-                "Started": req['started_at'][:19]
-            })
+            df_data.append(
+                {
+                    "Request ID": req["request_id"][:16] + "...",
+                    "Researcher": req["researcher_info"].get("name", "N/A"),
+                    "Status": req["current_state"],
+                    "Current Agent": req.get("current_agent", "None"),
+                    "Started": req["started_at"][:19],
+                }
+            )
 
         df = pd.DataFrame(df_data)
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -214,18 +218,16 @@ def show_agent_metrics():
             metrics_by_agent = {}
             for agent_id in registered_agents:
                 metrics_by_agent[agent_id] = {
-                    'total_tasks': 0,
-                    'successful_tasks': 0,
-                    'failed_tasks': 0,
-                    'durations': [],
-                    'state': 'idle'
+                    "total_tasks": 0,
+                    "successful_tasks": 0,
+                    "failed_tasks": 0,
+                    "durations": [],
+                    "state": "idle",
                 }
 
             # Get all agent executions
             result = await session.execute(
-                select(AgentExecution).order_by(
-                    AgentExecution.started_at.desc()
-                )
+                select(AgentExecution).order_by(AgentExecution.started_at.desc())
             )
             all_executions = result.scalars().all()
 
@@ -235,28 +237,28 @@ def show_agent_metrics():
 
                 # Only count executions from registered agents
                 if agent_id in metrics_by_agent:
-                    metrics_by_agent[agent_id]['total_tasks'] += 1
+                    metrics_by_agent[agent_id]["total_tasks"] += 1
 
-                    if execution.status == 'success':
-                        metrics_by_agent[agent_id]['successful_tasks'] += 1
-                    elif execution.status == 'failed':
-                        metrics_by_agent[agent_id]['failed_tasks'] += 1
+                    if execution.status == "success":
+                        metrics_by_agent[agent_id]["successful_tasks"] += 1
+                    elif execution.status == "failed":
+                        metrics_by_agent[agent_id]["failed_tasks"] += 1
 
                     if execution.completed_at and execution.started_at:
-                        duration = (
-                            execution.completed_at - execution.started_at
-                        ).total_seconds()
-                        metrics_by_agent[agent_id]['durations'].append(duration)
+                        duration = (execution.completed_at - execution.started_at).total_seconds()
+                        metrics_by_agent[agent_id]["durations"].append(duration)
 
             # Calculate success rate and avg duration for all agents
             for agent_id, metrics in metrics_by_agent.items():
-                metrics['success_rate'] = (
-                    metrics['successful_tasks'] / metrics['total_tasks']
-                    if metrics['total_tasks'] > 0 else 0
+                metrics["success_rate"] = (
+                    metrics["successful_tasks"] / metrics["total_tasks"]
+                    if metrics["total_tasks"] > 0
+                    else 0
                 )
-                metrics['avg_duration_seconds'] = (
-                    sum(metrics['durations']) / len(metrics['durations'])
-                    if metrics['durations'] else 0
+                metrics["avg_duration_seconds"] = (
+                    sum(metrics["durations"]) / len(metrics["durations"])
+                    if metrics["durations"]
+                    else 0
                 )
 
             return metrics_by_agent
@@ -270,16 +272,18 @@ def show_agent_metrics():
     # Create metrics table
     metrics_data = []
     for agent_id, metrics in all_metrics.items():
-        agent_name = agent_id.replace('_', ' ').title()
-        metrics_data.append({
-            "Agent": agent_name,
-            "State": metrics['state'],
-            "Total Tasks": metrics['total_tasks'],
-            "Successful": metrics['successful_tasks'],
-            "Failed": metrics['failed_tasks'],
-            "Success Rate": f"{metrics['success_rate']:.1%}",
-            "Avg Duration (s)": f"{metrics['avg_duration_seconds']:.1f}"
-        })
+        agent_name = agent_id.replace("_", " ").title()
+        metrics_data.append(
+            {
+                "Agent": agent_name,
+                "State": metrics["state"],
+                "Total Tasks": metrics["total_tasks"],
+                "Successful": metrics["successful_tasks"],
+                "Failed": metrics["failed_tasks"],
+                "Success Rate": f"{metrics['success_rate']:.1%}",
+                "Avg Duration (s)": f"{metrics['avg_duration_seconds']:.1f}",
+            }
+        )
 
     df = pd.DataFrame(metrics_data)
     st.dataframe(df, use_container_width=True, hide_index=True)
@@ -290,19 +294,11 @@ def show_agent_metrics():
     cols = st.columns(3)
     for idx, (agent_id, metrics) in enumerate(all_metrics.items()):
         with cols[idx % 3]:
-            agent_name = agent_id.replace('_', ' ').title()
-            status = metrics['state']
-            status_emoji = (
-                "🟢" if status == "idle"
-                else "🔵" if status == "working"
-                else "🔴"
-            )
+            agent_name = agent_id.replace("_", " ").title()
+            status = metrics["state"]
+            status_emoji = "🟢" if status == "idle" else "🔵" if status == "working" else "🔴"
 
-            st.metric(
-                f"{status_emoji} {agent_name}",
-                status,
-                f"{metrics['total_tasks']} tasks"
-            )
+            st.metric(f"{status_emoji} {agent_name}", status, f"{metrics['total_tasks']} tasks")
 
 
 def show_pending_approvals():
@@ -316,14 +312,12 @@ def show_pending_approvals():
         approval_type_filter = st.selectbox(
             "Filter by Type",
             ["All", "Requirements", "Phenotype SQL", "Extraction", "QA", "Scope Change"],
-            key="approval_type_filter"
+            key="approval_type_filter",
         )
 
     with col2:
         reviewer_email = st.text_input(
-            "Your Email",
-            placeholder="informatician@hospital.org",
-            key="reviewer_email"
+            "Your Email", placeholder="informatician@hospital.org", key="reviewer_email"
         )
 
     # Fetch pending approvals from database
@@ -335,7 +329,7 @@ def show_pending_approvals():
             "Phenotype SQL": "phenotype_sql",
             "Extraction": "extraction",
             "QA": "qa",
-            "Scope Change": "scope_change"
+            "Scope Change": "scope_change",
         }
 
         approval_type_param = type_map[approval_type_filter]
@@ -360,7 +354,7 @@ def show_pending_approvals():
                 "submitted_at": approval.submitted_at.isoformat(),
                 "submitted_by": approval.submitted_by,
                 "timeout_at": approval.timeout_at.isoformat() if approval.timeout_at else None,
-                "approval_data": approval.approval_data
+                "approval_data": approval.approval_data,
             }
             for approval in approvals_db
         ]
@@ -374,15 +368,21 @@ def show_pending_approvals():
             st.metric("Total Pending", len(approvals))
 
         with col2:
-            sql_approvals = len([a for a in approvals if a.get('approval_type') == 'phenotype_sql'])
-            st.metric("🔴 SQL Reviews", sql_approvals, help="CRITICAL - SQL must be approved before execution")
+            sql_approvals = len([a for a in approvals if a.get("approval_type") == "phenotype_sql"])
+            st.metric(
+                "🔴 SQL Reviews",
+                sql_approvals,
+                help="CRITICAL - SQL must be approved before execution",
+            )
 
         with col3:
-            req_approvals = len([a for a in approvals if a.get('approval_type') == 'requirements'])
+            req_approvals = len([a for a in approvals if a.get("approval_type") == "requirements"])
             st.metric("Requirements", req_approvals)
 
         with col4:
-            scope_approvals = len([a for a in approvals if a.get('approval_type') == 'scope_change'])
+            scope_approvals = len(
+                [a for a in approvals if a.get("approval_type") == "scope_change"]
+            )
             st.metric("Scope Changes", scope_approvals)
 
         # Display approvals
@@ -397,23 +397,24 @@ def show_pending_approvals():
     except Exception as e:
         st.error(f"Error fetching approvals: {str(e)}")
         import traceback
+
         st.code(traceback.format_exc())
 
 
 def display_approval_card(approval, reviewer_email):
     """Display a single approval card with all details and action buttons"""
-    approval_id = approval['id']
-    approval_type = approval['approval_type']
-    request_id = approval['request_id']
-    submitted_at = approval['submitted_at']
-    submitted_by = approval.get('submitted_by', 'Unknown')
-    timeout_at = approval.get('timeout_at')
-    approval_data = approval.get('approval_data', {})
+    approval_id = approval["id"]
+    approval_type = approval["approval_type"]
+    request_id = approval["request_id"]
+    submitted_at = approval["submitted_at"]
+    submitted_by = approval.get("submitted_by", "Unknown")
+    timeout_at = approval.get("timeout_at")
+    approval_data = approval.get("approval_data", {})
 
     # Determine urgency based on timeout
     urgency = "🟢 Normal"
     if timeout_at:
-        timeout_dt = datetime.fromisoformat(timeout_at.replace('Z', '+00:00'))
+        timeout_dt = datetime.fromisoformat(timeout_at.replace("Z", "+00:00"))
         time_remaining = timeout_dt - datetime.now()
         hours_remaining = time_remaining.total_seconds() / 3600
 
@@ -428,7 +429,7 @@ def display_approval_card(approval, reviewer_email):
         "phenotype_sql": "🔴",  # Red circle for critical SQL
         "extraction": "📊",
         "qa": "✓",
-        "scope_change": "🔄"
+        "scope_change": "🔄",
     }
 
     type_label_map = {
@@ -436,14 +437,17 @@ def display_approval_card(approval, reviewer_email):
         "phenotype_sql": "SQL REVIEW (CRITICAL)",
         "extraction": "Extraction Approval",
         "qa": "QA Review",
-        "scope_change": "Scope Change"
+        "scope_change": "Scope Change",
     }
 
     emoji = type_emoji_map.get(approval_type, "📋")
     label = type_label_map.get(approval_type, approval_type.title())
 
     # Create expander with urgency indicator
-    with st.expander(f"{emoji} {label} - {request_id[:20]}... | {urgency}", expanded=(approval_type == "phenotype_sql")):
+    with st.expander(
+        f"{emoji} {label} - {request_id[:20]}... | {urgency}",
+        expanded=(approval_type == "phenotype_sql"),
+    ):
         # Header info
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -482,31 +486,39 @@ def display_approval_card(approval, reviewer_email):
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            if st.button("✅ Approve", key=f"approve_{approval_id}", type="primary", use_container_width=True):
+            if st.button(
+                "✅ Approve", key=f"approve_{approval_id}", type="primary", use_container_width=True
+            ):
                 if not reviewer_email:
                     st.error("Please enter your email address")
                 else:
                     handle_approval_response(approval_id, "approve", reviewer_email, "", {})
 
         with col2:
-            if st.button("✏️ Modify & Approve", key=f"modify_{approval_id}", use_container_width=True):
-                st.session_state[f'show_modify_{approval_id}'] = True
+            if st.button(
+                "✏️ Modify & Approve", key=f"modify_{approval_id}", use_container_width=True
+            ):
+                st.session_state[f"show_modify_{approval_id}"] = True
 
         with col3:
             if st.button("❌ Reject", key=f"reject_{approval_id}", use_container_width=True):
-                st.session_state[f'show_reject_{approval_id}'] = True
+                st.session_state[f"show_reject_{approval_id}"] = True
 
         # Modification interface
-        if st.session_state.get(f'show_modify_{approval_id}', False):
+        if st.session_state.get(f"show_modify_{approval_id}", False):
             st.subheader("Approve with Modifications")
-            notes = st.text_area("Notes", placeholder="Explain your modifications...", key=f"modify_notes_{approval_id}")
+            notes = st.text_area(
+                "Notes",
+                placeholder="Explain your modifications...",
+                key=f"modify_notes_{approval_id}",
+            )
 
             if approval_type == "phenotype_sql":
                 modified_sql = st.text_area(
                     "Modified SQL Query",
-                    value=approval_data.get('sql_query', ''),
+                    value=approval_data.get("sql_query", ""),
                     height=200,
-                    key=f"modified_sql_{approval_id}"
+                    key=f"modified_sql_{approval_id}",
                 )
                 modifications = {"sql_query": modified_sql}
             else:
@@ -516,26 +528,32 @@ def display_approval_card(approval, reviewer_email):
                 if not reviewer_email:
                     st.error("Please enter your email address")
                 else:
-                    handle_approval_response(approval_id, "modify", reviewer_email, notes, modifications)
-                    st.session_state[f'show_modify_{approval_id}'] = False
+                    handle_approval_response(
+                        approval_id, "modify", reviewer_email, notes, modifications
+                    )
+                    st.session_state[f"show_modify_{approval_id}"] = False
 
         # Rejection interface
-        if st.session_state.get(f'show_reject_{approval_id}', False):
+        if st.session_state.get(f"show_reject_{approval_id}", False):
             st.subheader("Reject Approval")
             reject_reason = st.text_area(
                 "Reason for Rejection",
                 placeholder="Explain why this is being rejected and what needs to be fixed...",
-                key=f"reject_reason_{approval_id}"
+                key=f"reject_reason_{approval_id}",
             )
 
-            if st.button("Confirm Rejection", key=f"confirm_reject_{approval_id}", type="secondary"):
+            if st.button(
+                "Confirm Rejection", key=f"confirm_reject_{approval_id}", type="secondary"
+            ):
                 if not reviewer_email:
                     st.error("Please enter your email address")
                 elif not reject_reason:
                     st.error("Please provide a reason for rejection")
                 else:
-                    handle_approval_response(approval_id, "reject", reviewer_email, reject_reason, {})
-                    st.session_state[f'show_reject_{approval_id}'] = False
+                    handle_approval_response(
+                        approval_id, "reject", reviewer_email, reject_reason, {}
+                    )
+                    st.session_state[f"show_reject_{approval_id}"] = False
 
 
 def display_sql_approval(data):
@@ -545,53 +563,53 @@ def display_sql_approval(data):
     st.subheader("📋 Research Request")
 
     # Display original request text
-    initial_request = data.get('initial_request', '')
+    initial_request = data.get("initial_request", "")
     if initial_request:
         st.info(f"**Original Request**: {initial_request}")
     else:
         st.info("**Original Request**: Not available")
 
     # Display structured requirements
-    requirements = data.get('structured_requirements', {})
+    requirements = data.get("structured_requirements", {})
     if requirements:
         with st.expander("📊 Structured Requirements", expanded=True):
             # Display inclusion criteria
-            inclusion = requirements.get('inclusion_criteria', [])
+            inclusion = requirements.get("inclusion_criteria", [])
             if inclusion:
                 st.markdown("**Inclusion Criteria:**")
                 for criterion in inclusion:
                     # Handle both string and dict formats
                     if isinstance(criterion, dict):
-                        criterion_text = criterion.get('description', str(criterion))
+                        criterion_text = criterion.get("description", str(criterion))
                     else:
                         criterion_text = str(criterion)
                     st.markdown(f"• {criterion_text}")
 
             # Display exclusion criteria
-            exclusion = requirements.get('exclusion_criteria', [])
+            exclusion = requirements.get("exclusion_criteria", [])
             if exclusion:
                 st.markdown("**Exclusion Criteria:**")
                 for criterion in exclusion:
                     if isinstance(criterion, dict):
-                        criterion_text = criterion.get('description', str(criterion))
+                        criterion_text = criterion.get("description", str(criterion))
                     else:
                         criterion_text = str(criterion)
                     st.markdown(f"• {criterion_text}")
 
             # Display data elements
-            data_elements = requirements.get('data_elements', [])
+            data_elements = requirements.get("data_elements", [])
             if data_elements:
                 st.markdown(f"**Data Elements**: {', '.join(str(elem) for elem in data_elements)}")
 
             # Display time period
-            time_period = requirements.get('time_period', {})
+            time_period = requirements.get("time_period", {})
             if time_period and isinstance(time_period, dict):
-                start = time_period.get('start', 'N/A')
-                end = time_period.get('end', 'N/A')
+                start = time_period.get("start", "N/A")
+                end = time_period.get("end", "N/A")
                 st.markdown(f"**Time Period**: {start} to {end}")
 
             # Display PHI level
-            phi_level = requirements.get('phi_level', 'N/A')
+            phi_level = requirements.get("phi_level", "N/A")
             st.markdown(f"**PHI Level**: {phi_level}")
 
     st.divider()
@@ -599,7 +617,8 @@ def display_sql_approval(data):
     # SQL Query Review Section
     st.subheader("🔴 CRITICAL: SQL Query Review")
 
-    st.warning("""
+    st.warning(
+        """
     **IMPORTANT:** This SQL query will execute against the production FHIR database if approved.
     Please verify:
     - SQL syntax is correct
@@ -607,30 +626,31 @@ def display_sql_approval(data):
     - Cohort size is reasonable
     - No sensitive fields are exposed
     - Joins and selections are accurate
-    """)
+    """
+    )
 
     # SQL Query
-    sql_query = data.get('sql_query', 'N/A')
-    st.code(sql_query, language='sql')
+    sql_query = data.get("sql_query", "N/A")
+    st.code(sql_query, language="sql")
 
     # Metrics
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        cohort = data.get('estimated_cohort', 'Unknown')
+        cohort = data.get("estimated_cohort", "Unknown")
         st.metric("Estimated Cohort", cohort)
 
     with col2:
-        feasibility = data.get('feasibility_score', 0)
+        feasibility = data.get("feasibility_score", 0)
         st.metric("Feasibility Score", f"{feasibility:.2f}")
 
     with col3:
-        availability = data.get('data_availability', {}).get('overall_availability', 0)
+        availability = data.get("data_availability", {}).get("overall_availability", 0)
         st.metric("Data Availability", f"{availability:.1%}")
 
     # Auto-Feasibility Assessment (informational, not decision gate)
-    auto_assessment = data.get('auto_feasibility_assessment', 'unknown')
-    if auto_assessment == 'not_feasible':
+    auto_assessment = data.get("auto_feasibility_assessment", "unknown")
+    if auto_assessment == "not_feasible":
         st.error(
             "🔴 **Auto-Assessment: Low Cohort Size Detected**\n\n"
             "The automated feasibility check detected a small cohort size. "
@@ -639,18 +659,18 @@ def display_sql_approval(data):
             "- Whether the SQL query accurately represents the research intent\n"
             "- Whether this cohort size is acceptable for the study design"
         )
-    elif auto_assessment == 'feasible':
+    elif auto_assessment == "feasible":
         st.success("✅ **Auto-Assessment: Adequate Cohort Size**")
 
     # Warnings
-    warnings = data.get('warnings', [])
+    warnings = data.get("warnings", [])
     if warnings:
         st.warning("⚠️ **Warnings:**")
         for warning in warnings:
             st.write(f"- {warning.get('message', warning)}")
 
     # Recommendations
-    recommendations = data.get('recommendations', [])
+    recommendations = data.get("recommendations", [])
     if recommendations:
         st.info("💡 **Recommendations:**")
         for rec in recommendations:
@@ -661,32 +681,32 @@ def display_requirements_approval(data):
     """Display requirements approval details"""
     st.subheader("📄 Requirements Review")
 
-    structured_reqs = data.get('structured_requirements', {})
-    completeness = data.get('completeness_score', 0)
+    structured_reqs = data.get("structured_requirements", {})
+    completeness = data.get("completeness_score", 0)
 
     # Completeness score
     st.metric("Completeness Score", f"{completeness:.1%}")
 
     # Study details
-    if 'study_title' in structured_reqs:
+    if "study_title" in structured_reqs:
         st.write(f"**Study Title:** {structured_reqs['study_title']}")
 
     # Inclusion criteria
-    inclusion = structured_reqs.get('inclusion_criteria', [])
+    inclusion = structured_reqs.get("inclusion_criteria", [])
     if inclusion:
         st.write("**Inclusion Criteria:**")
         for criterion in inclusion:
             st.write(f"- {criterion}")
 
     # Exclusion criteria
-    exclusion = structured_reqs.get('exclusion_criteria', [])
+    exclusion = structured_reqs.get("exclusion_criteria", [])
     if exclusion:
         st.write("**Exclusion Criteria:**")
         for criterion in exclusion:
             st.write(f"- {criterion}")
 
     # Data elements
-    elements = structured_reqs.get('data_elements', [])
+    elements = structured_reqs.get("data_elements", [])
     if elements:
         st.write(f"**Data Elements:** {', '.join(elements)}")
 
@@ -700,9 +720,9 @@ def display_scope_change_approval(data):
     """Display scope change approval with impact analysis"""
     st.subheader("🔄 Scope Change Request")
 
-    requested_changes = data.get('requested_changes', {})
-    reason = data.get('reason', 'N/A')
-    impact = data.get('impact_analysis', {})
+    requested_changes = data.get("requested_changes", {})
+    reason = data.get("reason", "N/A")
+    impact = data.get("impact_analysis", {})
 
     # Reason
     st.write(f"**Reason:** {reason}")
@@ -716,7 +736,7 @@ def display_scope_change_approval(data):
     # Impact analysis
     st.subheader("📊 Impact Analysis")
 
-    severity = impact.get('severity', 'unknown')
+    severity = impact.get("severity", "unknown")
     severity_color = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(severity, "⚪")
 
     col1, col2, col3 = st.columns(3)
@@ -725,19 +745,19 @@ def display_scope_change_approval(data):
         st.metric("Severity", f"{severity_color} {severity.title()}")
 
     with col2:
-        requires_rework = impact.get('requires_rework', False)
+        requires_rework = impact.get("requires_rework", False)
         st.metric("Requires Rework", "Yes" if requires_rework else "No")
 
     with col3:
-        delay = impact.get('estimated_delay_hours', 0)
+        delay = impact.get("estimated_delay_hours", 0)
         st.metric("Estimated Delay", f"{delay}h")
 
     # Restart point
-    if impact.get('restart_from_state'):
+    if impact.get("restart_from_state"):
         st.warning(f"⚠️ **Workflow will restart from:** `{impact['restart_from_state']}`")
 
     # Affected components
-    affected = impact.get('affected_components', [])
+    affected = impact.get("affected_components", [])
     if affected:
         st.write(f"**Affected Components:** {', '.join(affected)}")
 
@@ -761,30 +781,17 @@ def display_extraction_approval(data):
 def handle_approval_response(approval_id, decision, reviewer, notes, modifications):
     """Handle approval response (approve/reject/modify) using direct database access"""
     try:
+
         async def process_approval():
             async with get_db_session() as session:
                 approval_service = ApprovalService(session)
 
                 if decision == "approve":
-                    await approval_service.approve(
-                        approval_id,
-                        reviewer,
-                        notes,
-                        modifications
-                    )
+                    await approval_service.approve(approval_id, reviewer, notes, modifications)
                 elif decision == "reject":
-                    await approval_service.reject(
-                        approval_id,
-                        reviewer,
-                        notes or "Rejected"
-                    )
+                    await approval_service.reject(approval_id, reviewer, notes or "Rejected")
                 elif decision == "modify":
-                    await approval_service.modify(
-                        approval_id,
-                        reviewer,
-                        modifications,
-                        notes
-                    )
+                    await approval_service.modify(approval_id, reviewer, modifications, notes)
                 else:
                     raise ValueError(f"Invalid decision: {decision}")
 
@@ -793,9 +800,13 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
         if decision == "approve":
             st.success(f"✅ Approval {approval_id} approved! Workflow will continue automatically.")
         elif decision == "reject":
-            st.error(f"❌ Approval {approval_id} rejected. Request will return to originating agent.")
+            st.error(
+                f"❌ Approval {approval_id} rejected. Request will return to originating agent."
+            )
         elif decision == "modify":
-            st.success(f"✏️ Approval {approval_id} approved with modifications. Workflow will continue with your changes.")
+            st.success(
+                f"✏️ Approval {approval_id} approved with modifications. Workflow will continue with your changes."
+            )
 
         # Trigger refresh after 2 seconds
         time.sleep(2)
@@ -804,6 +815,7 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
     except Exception as e:
         st.error(f"Error processing approval: {str(e)}")
         import traceback
+
         st.code(traceback.format_exc())
 
 
@@ -811,13 +823,15 @@ def show_escalations():
     """Display escalations requiring human review"""
     st.header("🚨 Escalations & Human Review Queue")
 
-    st.info("""
+    st.info(
+        """
     **Note:** Escalations will appear here when:
     - Agents encounter errors after max retries
     - Data quality checks fail critically
     - Requests are not feasible
     - Complex decisions require human judgment
-    """)
+    """
+    )
 
     # Mock escalation data for demonstration
     st.subheader("Pending Reviews")
@@ -852,14 +866,16 @@ def show_analytics():
     st.subheader("Request Volume Trends")
 
     # Mock data for demonstration
-    dates = pd.date_range(start=datetime.now() - timedelta(days=30), end=datetime.now(), freq='D')
-    volume_data = pd.DataFrame({
-        'Date': dates,
-        'Submitted': [i % 5 + 2 for i in range(len(dates))],
-        'Completed': [i % 4 + 1 for i in range(len(dates))]
-    })
+    dates = pd.date_range(start=datetime.now() - timedelta(days=30), end=datetime.now(), freq="D")
+    volume_data = pd.DataFrame(
+        {
+            "Date": dates,
+            "Submitted": [i % 5 + 2 for i in range(len(dates))],
+            "Completed": [i % 4 + 1 for i in range(len(dates))],
+        }
+    )
 
-    st.line_chart(volume_data.set_index('Date'))
+    st.line_chart(volume_data.set_index("Date"))
 
     # ROI Metrics
     st.subheader("💰 ROI Analysis")
@@ -881,12 +897,14 @@ def show_analytics():
     # Most requested data elements
     st.subheader("Most Requested Data Elements")
 
-    element_data = pd.DataFrame({
-        'Element': ['Clinical Notes', 'Lab Results', 'Medications', 'Diagnoses', 'Procedures'],
-        'Requests': [45, 38, 32, 28, 15]
-    })
+    element_data = pd.DataFrame(
+        {
+            "Element": ["Clinical Notes", "Lab Results", "Medications", "Diagnoses", "Procedures"],
+            "Requests": [45, 38, 32, 28, 15],
+        }
+    )
 
-    st.bar_chart(element_data.set_index('Element'))
+    st.bar_chart(element_data.set_index("Element"))
 
 
 if __name__ == "__main__":

@@ -37,18 +37,14 @@ class FHIRClient:
             base_url: FHIR server base URL (e.g., http://localhost:8081/fhir)
                      If not provided, uses FHIR_SERVER_URL environment variable
         """
-        self.base_url = base_url or os.getenv(
-            "FHIR_SERVER_URL",
-            "http://localhost:8081/fhir"
-        )
+        self.base_url = base_url or os.getenv("FHIR_SERVER_URL", "http://localhost:8081/fhir")
 
         # Remove trailing slash if present
-        self.base_url = self.base_url.rstrip('/')
+        self.base_url = self.base_url.rstrip("/")
 
         # Initialize HTTP client with connection pooling
         self.client = httpx.AsyncClient(
-            timeout=30.0,
-            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            timeout=30.0, limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
         logger.info(f"Initialized FHIR client with base URL: {self.base_url}")
@@ -57,15 +53,12 @@ class FHIRClient:
         """Close HTTP client and cleanup resources"""
         await self.client.aclose()
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def search(
         self,
         resource_type: str,
         params: Optional[Dict[str, Any]] = None,
-        max_results: Optional[int] = None
+        max_results: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for FHIR resources
@@ -95,7 +88,9 @@ class FHIRClient:
 
         while next_url:
             try:
-                response = await self.client.get(next_url, params=search_params if next_url == url else None)
+                response = await self.client.get(
+                    next_url, params=search_params if next_url == url else None
+                )
                 response.raise_for_status()
 
                 bundle = response.json()
@@ -136,10 +131,7 @@ class FHIRClient:
         logger.info(f"Search complete: retrieved {len(all_resources)} {resource_type} resources")
         return all_resources
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def read(self, resource_type: str, resource_id: str) -> Dict[str, Any]:
         """
         Read a specific FHIR resource by ID
@@ -173,10 +165,7 @@ class FHIRClient:
             logger.error(f"Error reading {resource_type}/{resource_id}: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def create(self, resource: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a new FHIR resource
@@ -214,10 +203,7 @@ class FHIRClient:
             logger.error(f"Error creating {resource_type}: {e}")
             raise
 
-    @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10)
-    )
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def batch(self, bundle: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute a batch or transaction bundle

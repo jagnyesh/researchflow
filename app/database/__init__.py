@@ -20,7 +20,7 @@ from .models import (
     Escalation,
     DataDelivery,
     AuditLog,
-    Approval
+    Approval,
 )
 
 # Database configuration
@@ -52,16 +52,12 @@ def get_engine():
     loop_id = id(loop)
 
     # Initialize engines dict if not exists
-    if not hasattr(_thread_local, 'engines'):
+    if not hasattr(_thread_local, "engines"):
         _thread_local.engines = {}
 
     # Create engine for this loop if not exists
     if loop_id not in _thread_local.engines:
-        _thread_local.engines[loop_id] = create_async_engine(
-            DATABASE_URL,
-            echo=False,
-            future=True
-        )
+        _thread_local.engines[loop_id] = create_async_engine(DATABASE_URL, echo=False, future=True)
 
     return _thread_local.engines[loop_id]
 
@@ -74,11 +70,7 @@ def get_session_factory():
         sessionmaker: Session factory bound to current event loop's engine
     """
     engine = get_engine()
-    return sessionmaker(
-        engine,
-        class_=AsyncSession,
-        expire_on_commit=False
-    )
+    return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
 def reset_engine():
@@ -91,7 +83,7 @@ def reset_engine():
         loop = asyncio.get_event_loop()
         loop_id = id(loop)
 
-        if hasattr(_thread_local, 'engines') and loop_id in _thread_local.engines:
+        if hasattr(_thread_local, "engines") and loop_id in _thread_local.engines:
             # Close existing engine
             # Note: We don't await dispose() here as this is a sync function
             # The engine will be garbage collected

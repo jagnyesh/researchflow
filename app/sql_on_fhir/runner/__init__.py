@@ -22,9 +22,9 @@ from .materialized_view_runner import MaterializedViewRunner
 from .hybrid_runner import HybridRunner
 
 __all__ = [
-    'InMemoryRunner',
-    'PostgresRunner',
-    'MaterializedViewRunner',
-    'HybridRunner',
-    'create_postgres_runner'
+    "InMemoryRunner",
+    "PostgresRunner",
+    "MaterializedViewRunner",
+    "HybridRunner",
+    "create_postgres_runner",
 ]
