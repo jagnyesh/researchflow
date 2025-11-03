@@ -13,43 +13,17 @@ ResearchFlow automates clinical research data requests from natural language to 
 
 ---
 
-## The Problem
+## The Experiment
 
-Clinical research data requests are **critically slow and resource-intensive**:
+**The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
 
-- **2-4 week turnaround time** for typical data requests
-- **~50% administrative overhead** - scheduling, routing, status tracking (automatable but time-consuming)
-- **~50% expert validation required** - SQL queries, phenotype definitions, data quality checks (must be human-validated)
-- **Manual, error-prone processes** - no standardization, frequent communication delays
-- **High cost** - expert time spent on coordination instead of technical work
+As a biomedical informatician supporting clinical research, I observed that ~50% of work was administrative coordination (scheduling, routing, status tracking) handled by non-techincal staff, while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality) which required years of domain experience in healthcare data.
 
-As a biomedical informatician, I observed this pattern repeatedly: half my time was administrative coordination that didn't require expertise, while the other half was critical technical validation that absolutely required domain knowledge.
+**The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
+- **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
+- **Humans must validate:** All technical decisions requiring domain expertise (SQL queries, computations, data quality)
 
-## The Solution
-
-ResearchFlow implements **AI for coordination, humans for expertise**:
-
-### AI Agents Handle Administrative Work
-- **Requirements extraction** - Conversational interface to structured criteria
-- **Meeting scheduling** - Automatic kickoff meeting coordination
-- **Workflow routing** - 6-agent pipeline with 23-state orchestration
-- **Status tracking** - Real-time progress monitoring and notifications
-- **Data packaging** - Automated delivery and documentation
-
-### Humans Validate Technical Decisions
-- **SQL review** - Every query approved by informatician before execution
-- **Phenotype definitions** - Medical accuracy validated by domain experts
-- **Data quality** - QA results reviewed before delivery
-- **Authorization gates** - 5 mandatory approval checkpoints with audit trails
-
-### Lambda Architecture for Performance
-- **Batch layer** - Materialized views (10-100x speedup)
-- **Speed layer** - Redis cache (<1 minute data freshness)
-- **Serving layer** - Smart merge of batch + speed results
-
-### The Meta-Experiment
-
-ResearchFlow itself was built using **agentic AI coding** (Claude Code) to prove the concept: AI building AI that knows where humans are essential. This demonstrates sustainable AI architecture for regulated technical domains where safety and compliance are non-negotiable.
+**The Result:** A multi-agent system demonstrating sustainable AI architecture for regulated technical domains.
 
 ---
 
@@ -58,7 +32,6 @@ ResearchFlow itself was built using **agentic AI coding** (Claude Code) to prove
 - [Architecture](#architecture)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
-- [Tech Stack](#tech-stack)
 - [Performance](#performance)
 - [Human-in-Loop Safety](#human-in-loop-safety)
 - [Current Status](#current-status)
@@ -111,8 +84,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│      (Workflow Engine | 23 States | A2A Protocol)     │
-│         LangGraph StateGraph (75% migrated)           │
+│      (Workflow Engine | 20 States | A2A Protocol)     │
 └────────────────────┬──────────────────────────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -121,8 +93,6 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 ┌──────────┐  ┌────────────┐  ┌────────────┐
 │Requirements│ │ Phenotype  │  │  Calendar  │
 │   Agent   │─→│   Agent    │─→│   Agent    │
-│ (6 prod +  │  │            │  │            │
-│ 6 exptl)   │  │            │  │            │
 └──────────┘  └────────────┘  └────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -143,30 +113,6 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 | **Extraction** | Multi-source data retrieval | Data fetching | Authorization |
 | **QA** | Quality validation | Automated checks | Quality approval |
 | **Delivery** | Data packaging & distribution | Packaging | Final approval |
-
-### LangGraph Orchestration (Sprint 6.5 - 75% Complete)
-
-ResearchFlow is migrating from a custom orchestrator to **LangGraph** for improved maintainability and observability:
-
-**Migration Strategy:**
-- **Current**: Custom imperative orchestrator (`app/orchestrator/`)
-- **Target**: LangGraph declarative state machine (StateGraph)
-- **Approach**: Facade pattern preserves UI compatibility during migration
-- **Status**: Core workflow functional, UI integration pending
-
-**Completed Components:**
-- ✅ **Agent Adapter** (`agent_adapter.py`, 400 LOC, 24/24 tests) - BaseAgent compatibility layer
-- ✅ **Approval Bridge** (`approval_bridge.py`, 500 LOC, 24/24 tests) - Approval workflow sync
-- ✅ **Request Facade** (`request_facade.py`, 700 LOC) - UI compatibility interface
-- ✅ **Persistence** (`persistence.py`, 92 LOC) - AsyncSqliteSaver checkpointer
-
-**Benefits:**
-- Declarative workflow definition (easier to understand and modify)
-- Built-in checkpointing and state persistence
-- LangSmith observability at workflow level
-- Community-supported orchestration framework
-
-See **[docs/sprints/SPRINT_06_5_LANGGRAPH_MIGRATION.md](docs/sprints/SPRINT_06_5_LANGGRAPH_MIGRATION.md)** for technical details.
 
 ---
 
@@ -271,105 +217,27 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 ---
 
-## Tech Stack
-
-ResearchFlow is built with production-quality frameworks organized by architectural layer:
-
-### Backend
-
-- **FastAPI** - High-performance async API framework
-- **PostgreSQL** - Primary FHIR data store (HAPI FHIR backend)
-- **Redis** - Speed layer cache for Lambda Architecture
-- **asyncpg** - Async PostgreSQL driver for high-throughput queries
-- **SQLAlchemy** - ORM for request tracking and checkpointing
-
-### AI/LLM Layer
-
-- **LangChain** - Agent framework and prompt management
-- **LangGraph** - Workflow orchestration (StateGraph with 23 states)
-- **Claude API** - Primary LLM for critical medical NLP tasks
-- **LangSmith** - Complete observability and workflow tracing
-- **Multi-Provider Support** - OpenAI, Ollama fallback for non-critical tasks
-- **AI Suite** - Intelligent routing based on task criticality
-
-### FHIR Analytics
-
-- **HAPI FHIR** - Full-featured FHIR R4 server
-- **SQL-on-FHIR v2** - Standards-compliant ViewDefinitions
-- **Lambda Architecture** - Batch (materialized views) + Speed (Redis) + Serving (HybridRunner)
-- **PostgreSQL FHIR** - Native FHIR resource storage with SQL queries
-
-### Frontend
-
-- **Streamlit** - Three web interfaces (Researcher Portal, Admin Dashboard, Research Notebook)
-- **Plotly** - Interactive visualizations for cohort exploration
-- **Pandas** - Data manipulation and analysis
-
-### Testing & Quality
-
-- **pytest** - Primary test framework (85%+ coverage)
-- **pytest-asyncio** - Async test support for FastAPI/asyncpg
-- **pytest-cov** - Code coverage reporting
-- **LangSmith Tracing** - Production observability and debugging
-- **Docker Compose** - Isolated E2E test environments
-
-### Development Tools
-
-- **black** - Code formatting
-- **flake8** - Linting
-- **mypy** - Static type checking
-- **pre-commit** - Git hooks for quality gates
-
----
-
 ## Performance
 
 ### Experimental Benchmarks
 
-| Metric | Before | After | Improvement | Source |
-|--------|--------|-------|-------------|--------|
-| **Simple COUNT Query** | 50-100ms | 5-10ms | **10x faster** | Sprint 4.5 |
-| **Complex JOIN Query** | 200-500ms | 10-20ms | **25x faster** | Sprint 4.5 |
-| **Real Diabetes Query** | 500+ms | 91.3ms | **5.5x faster** | Sprint 4.5 |
-| **Repeated Query Execution** | 116.2s | 0.101s | **1151x faster** | Sprint 4 |
-| **Workflow Turnaround** | 2-3 weeks | 4-8 hours | **95% faster** | Operational |
-| **LLM Costs (multi-provider)** | $750/month | $295/month | **60% reduction** | Operational |
-| **Cache Hit Rate** | 0% | 95% | N/A | Sprint 5.5 |
+| Metric | Before | After | Improvement |
+|--------|--------|-------|-------------|
+| Repeated Query Execution | 116.2s | 0.101s | **1151x faster** |
+| Workflow Turnaround | 2-3 weeks | 4-8 hours | **95% faster** |
+| LLM Costs (multi-provider) | $750/month | $295/month | **60% reduction** |
+| Cache Hit Rate | 0% | 95% | N/A |
 
-### Lambda Architecture Performance (Sprint 4.5 & 5.5)
+### Lambda Architecture Performance
 
-**Batch Layer** (Materialized Views - Sprint 4.5):
-| Operation | Before (SQL-on-FHIR) | After (Materialized View) | Speedup |
-|-----------|---------------------|---------------------------|---------|
-| Simple COUNT | 50-100ms | 5-10ms | **10x** |
-| Complex JOIN (2+ views) | 200-500ms | 10-20ms | **25x** |
-| Real Query (diabetes + age + gender) | 500ms | 91.3ms | **5.5x** |
-| Repeated Execution (100 runs) | 116.2s | 0.101s | **1151x** |
+| Layer | Metric | Performance |
+|-------|--------|-------------|
+| **Batch** | Materialized view query | 5-15ms |
+| **Speed** | Real-time data latency | <1 minute |
+| **Cache** | Repeated query speedup | **1151x faster** |
+| **Overall** | Historical data speedup | **10-100x faster** |
 
-**Speed Layer** (Redis Cache - Sprint 5.5):
-| Operation | Performance | Details |
-|-----------|-------------|---------|
-| Cache lookup | <10ms | 95% hit rate |
-| Real-time data latency | <1 minute | FHIRSubscriptionService |
-| TTL duration | 24 hours | Recent updates only |
-| Deduplication | Automatic | Speed layer wins conflicts |
-
-**Serving Layer** (HybridRunner - Sprint 4.5):
-| Operation | Performance | Details |
-|-----------|-------------|---------|
-| Batch + Speed merge | 15-30ms | Intelligent routing |
-| View existence check | Cached | First-run detection |
-| Fallback to SQL | Automatic | When views unavailable |
-| Statistics tracking | Per-query | Performance metrics |
-
-**Overall Architecture:**
-- **Average query time**: 15ms (with 95% cache hit rate)
-- **Test environment**: 105 patients, 423 conditions (Synthea FHIR data)
-- **Test coverage**: 29/29 Lambda Architecture tests passing (100%)
-
-See **[docs/sprints/SPRINT_04_5_MATERIALIZED_VIEWS.md](docs/sprints/SPRINT_04_5_MATERIALIZED_VIEWS.md)** and **[docs/sprints/SPRINT_05_5_SPEED_LAYER.md](docs/sprints/SPRINT_05_5_SPEED_LAYER.md)** for detailed performance analysis.
-
-**Note:** These benchmarks are from experimental implementation with synthetic data. Performance will vary based on data volume, infrastructure, and query complexity.
+**Note:** These benchmarks are from experimental implementation. Performance will vary based on data volume and infrastructure.
 
 ---
 
@@ -563,36 +431,6 @@ pytest tests/e2e/
 - 📐 **[Gap Analysis & Roadmap](docs/GAP_ANALYSIS_AND_ROADMAP.md)** - Development status (44.44% complete)
 - 🧪 **[Testing Guide](docs/SQL_ON_FHIR_TESTING_GUIDE.md)** - Test data setup and execution
 
-### Sprint Documentation
-
-ResearchFlow development is tracked through detailed sprint documentation (8/18 complete, 44.44%):
-
-**Phase 0: LangChain Evaluation (Complete)**
-- 📋 **[Sprint 1: Requirements Agent](docs/sprints/SPRINT_01_REQUIREMENTS_AGENT.md)** - Prototype comparison (15/15 tests)
-- 📋 **[Sprint 2: Simple Workflow](docs/sprints/SPRINT_02_SIMPLE_WORKFLOW.md)** - StateGraph proof of concept (15/15 tests)
-- 📋 **[Sprint 3: Full Workflow](docs/sprints/SPRINT_03_FULL_WORKFLOW.md)** - 23-state implementation (28/28 tests)
-- 📋 **[Sprint 4: Decision](docs/sprints/SPRINT_04_DECISION.md)** - Performance benchmarking (MIGRATE decision)
-
-**Phase 0.5: Data Architecture Foundation (Complete)**
-- 📋 **[Sprint 4.5: Materialized Views](docs/sprints/SPRINT_04_5_MATERIALIZED_VIEWS.md)** - Lambda batch layer (10-100x speedup)
-- 📋 **[Sprint 5.5: Speed Layer](docs/sprints/SPRINT_05_5_SPEED_LAYER.md)** - Redis cache implementation (29/29 tests)
-
-**Phase 1: Foundation Hardening (In Progress)**
-- 📋 **[Sprint 5: LangSmith Observability](docs/sprints/SPRINT_05_LANGSMITH_OBSERVABILITY.md)** - Complete instrumentation (~4 hours)
-- 📋 **[Sprint 6.5: LangGraph Migration](docs/sprints/SPRINT_06_5_LANGGRAPH_MIGRATION.md)** - 75% complete (1,600+ LOC, 48/48 tests)
-- 📋 **[Sprint 6.6: Agent Comparison](docs/sprints/SPRINT_06_6_LANGCHAIN_AGENT_COMPARISON.md)** - Phase 2 parallel testing
-- 📋 **[Sprint 6: Security Baseline](docs/sprints/SPRINT_06_SECURITY_BASELINE.md)** - Planning phase (not started)
-
-**Testing & Architecture**
-- 🧪 **[E2E Testing Report](docs/sprints/E2E_TESTING_REPORT.md)** - Testing infrastructure & Docker PostgreSQL
-- 🧪 **[Phase 2 Parallel Testing](docs/sprints/PHASE_2_PARALLEL_TESTING_PLAN.md)** - Side-by-side agent comparison
-- 🏗️ **[Terminology Hybrid Architecture](docs/sprints/TERMINOLOGY_HYBRID_ARCHITECTURE.md)** - Production terminology service plan
-
-**Progress Tracking**
-- 📊 **[Sprint Tracker](docs/sprints/SPRINT_TRACKER.md)** - Complete 18-sprint roadmap with status
-
-See `docs/sprints/` directory for all sprint documentation.
-
 ### All Documentation
 
 See **[docs/README.md](docs/README.md)** for comprehensive documentation index organized by role:
@@ -610,13 +448,13 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 | Metric | Value |
 |--------|-------|
 | **Lines of Code** | 15,000+ (generated with agentic AI coding) |
-| **AI Agents** | 6 production + 6 experimental (LangChain) |
-| **Database Tables** | 8 tables + checkpoints (LangGraph) |
-| **Workflow States** | 23 states (15 main + 5 approval gates + 3 terminal) |
+| **AI Agents** | 6 specialized agents |
+| **Database Tables** | 8 tables |
+| **Workflow States** | 20 states (LangGraph FSM) |
 | **API Endpoints** | 25+ REST endpoints |
 | **Test Coverage** | 85%+ across core modules |
-| **Test Files** | 48+ comprehensive test files |
-| **Documentation** | 60+ markdown files + 14 sprint docs |
+| **Test Files** | 42 comprehensive test files |
+| **Documentation** | 60+ markdown files |
 
 ### Experimental Achievements
 
@@ -629,81 +467,42 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 ### Roadmap
 
-**Sprint Progress: 8/18 Complete (44.44%)**
+**Completed (Sprint 5.5 - Lambda Architecture)**
+- ✅ Complete Lambda Architecture (Batch + Speed + Serving)
+- ✅ Redis speed layer with <1 minute latency
+- ✅ HybridRunner serving layer with intelligent merging
+- ✅ 29 comprehensive tests (100% pass rate)
+- ✅ LangSmith observability integration
 
-**Phase 0: LangChain Evaluation (Complete)**
-- ✅ Sprint 0: Setup & Foundation
-- ✅ Sprint 1: Requirements Agent Prototype (15/15 tests)
-- ✅ Sprint 2: Simple StateGraph Workflow (15/15 tests)
-- ✅ Sprint 3: Full 23-State Workflow (28/28 tests)
-- ✅ Sprint 4: Performance Benchmarking (3-55x faster, MIGRATE decision)
+**Current (Sprint 6 - Security Baseline)**
+- 🔄 JWT authentication & RBAC authorization
+- 🔄 SQL injection prevention & input validation
+- 🔄 PHI audit logging & encryption
+- 🔄 HIPAA compliance checklist
 
-**Phase 0.5: Data Architecture Foundation (Complete)**
-- ✅ Sprint 4.5: Lambda Batch Layer - Materialized Views (10-100x speedup, 22/22 tests)
-- ✅ Sprint 5.5: Lambda Speed Layer - Redis Cache (29/29 tests, <10ms latency)
+**Planned (Sprint 7-18)**
+- 📅 MCP Tools Integration (terminology servers, calendar APIs)
+- 📅 Advanced analytics dashboard
+- 📅 Multi-tenant support
+- 🔮 Machine learning for cohort optimization
+- 🔮 Real-time collaboration features
 
-**Phase 1: Foundation Hardening (In Progress - 37.5% complete)**
-- ✅ Sprint 5: LangSmith Observability (~4 hours, all 6 agents instrumented)
-- 🔄 Sprint 6.5: LangGraph Migration (75% complete, 1,600+ LOC, 48/48 tests)
-  - ✅ Agent adapter layer (400 lines, 24/24 tests)
-  - ✅ Approval bridge (500 lines, 24/24 tests)
-  - ✅ Request facade (700 lines)
-  - ⏳ UI integration pending
-- 🔄 Sprint 6.6: LangChain Agent Migration (Phase 2 complete)
-  - ✅ Requirements Agent: 100% success rate (30/30), approved for Phase 3
-  - ⚠️ Calendar Agent: Blocked by test infrastructure (0/20)
-- ⏳ Sprint 6: Security Baseline (Planning phase, not yet started)
-  - JWT authentication & RBAC authorization
-  - SQL injection prevention & input validation
-  - PHI audit logging & encryption at rest/in-transit
-  - HIPAA compliance checklist
-
-**Phase 2-4: Planned (Sprint 7-18)**
-- 📅 Sprint 7-8: Terminology Service (hybrid architecture, SNOMED CT/LOINC/RxNorm)
-- 📅 Sprint 9-10: MCP Tools Integration (real calendar APIs, external systems)
-- 📅 Sprint 11-18: Advanced analytics, multi-tenant support, ML optimization
-
-See **[docs/sprints/SPRINT_TRACKER.md](docs/sprints/SPRINT_TRACKER.md)** for detailed progress tracking and **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for complete 8-month implementation plan.
+See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for complete 8-month implementation plan.
 
 ---
 
 ## Known Limitations
 
-**This is experimental software with active development. Known limitations:**
+**This is experimental software. Known limitations include:**
 
-### Critical Technical Issues
-
-- ⚠️ **Pydantic v2 Migration**: FastAPI server blocked by Pydantic version conflict (LangChain requires v2, legacy code requires v1)
-  - **Workaround**: Direct LangGraph testing bypasses FastAPI layer
-  - **Resolution**: Migrate `app/` code to Pydantic v2 compatibility
-  - **Impact**: Core workflow functions, API endpoints affected
-
-- ⚠️ **Terminology Service**: Limited to 6 hardcoded conditions (diabetes, hypertension, asthma, COPD, hyperlipidemia, heart failure)
-  - **Impact**: Queries for unmapped conditions fall back to text search (less accurate)
-  - **Blocker**: Production requires hybrid terminology service (Redis + PostgreSQL + FHIR Terminology Server)
-  - **Plan**: See [docs/sprints/TERMINOLOGY_HYBRID_ARCHITECTURE.md](docs/sprints/TERMINOLOGY_HYBRID_ARCHITECTURE.md)
-
-- ⚠️ **LangGraph Migration**: 75% complete, UI integration pending
-  - **Status**: Core workflow functional, approval gates working
-  - **Pending**: Streamlit UI feature flag integration
-
-### Security (Sprint 6 - Planned, NOT Implemented)
-
-- ✋ **No authentication**: JWT auth + RBAC planned but not yet implemented
-- ✋ **No encryption**: PHI encryption at rest/in-transit not yet implemented
-- ✋ **SQL injection vulnerability**: Parameterized queries not yet hardened
-- ✋ **No audit logging**: Comprehensive PHI audit trail planned
-- ✋ **HIPAA compliance**: Full compliance checklist in planning phase
-
-**Status**: Security hardening is in planning phase (Sprint 6). This system is NOT production-ready for clinical deployment.
-
-### Testing & Deployment
-
+- ✋ **Not production-ready**: Requires security hardening before clinical deployment
 - ✋ **Limited testing**: Tested with synthetic data only (Synthea FHIR generator)
 - ✋ **Single institution**: Not tested across multiple healthcare systems
-- ✋ **Manual refresh**: Materialized views require manual/cron refresh (auto-refresh in Sprint 5.5)
+- ✋ **Manual refresh**: Materialized views require manual/cron refresh
+- ✋ **No encryption**: PHI encryption not yet implemented
+- ✋ **Basic authentication**: JWT authentication not yet production-hardened
 
-**⚠️ For demonstration and learning purposes only. DO NOT use with real patient data without proper security review, HIPAA compliance validation, and institutional approval.**
+**For demonstration and learning purposes only. Do not use with real patient data without proper security review.**
 
 ---
 
@@ -836,14 +635,6 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 
 ---
 
-## Contact
-
-**Questions & Issues:**
-- Use [GitHub Issues](https://github.com/yourusername/researchflow/issues) for bug reports, feature requests, and technical questions
-
-**Collaboration Inquiries:**
-- Email: [your.email@example.com](mailto:your.email@example.com) for research partnerships, institutional deployments, or contributions
-
----
+For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
 
 **ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs. 🤖🏥
