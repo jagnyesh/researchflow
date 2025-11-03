@@ -91,11 +91,13 @@ class PhenotypeValidationAgent(BaseAgent):
 
         logger.info(f"[{self.agent_id}] Validating feasibility for {request_id}")
 
-        # Step 1: Generate phenotype SQL
-        phenotype_sql = self.sql_generator.generate_phenotype_sql(requirements, count_only=True)
+        # Step 1: Generate phenotype SQL (with parameters for security)
+        phenotype_sql, sql_params = self.sql_generator.generate_phenotype_sql(
+            requirements, count_only=True
+        )
 
         # Step 2: Estimate cohort size
-        estimated_count = await self._estimate_cohort_size(phenotype_sql, requirements)
+        estimated_count = await self._estimate_cohort_size(phenotype_sql, sql_params, requirements)
 
         # Step 3: Check data availability
         data_availability = await self._check_data_availability(
@@ -107,8 +109,8 @@ class PhenotypeValidationAgent(BaseAgent):
             estimated_count, data_availability, requirements
         )
 
-        # Step 5: Generate full SQL (not count-only)
-        full_phenotype_sql = self.sql_generator.generate_phenotype_sql(
+        # Step 5: Generate full SQL (not count-only) with parameters
+        full_phenotype_sql, full_sql_params = self.sql_generator.generate_phenotype_sql(
             requirements, count_only=False
         )
 
@@ -211,13 +213,14 @@ class PhenotypeValidationAgent(BaseAgent):
         }
 
     async def _estimate_cohort_size(
-        self, count_sql: str, requirements: Dict[str, Any] = None
+        self, count_sql: str, sql_params: Dict[str, Any], requirements: Dict[str, Any] = None
     ) -> int:
         """
         Execute COUNT query to estimate cohort size using ViewDefinitions or legacy SQL
 
         Args:
             count_sql: SQL query with COUNT(*) (used only if use_view_definitions=False)
+            sql_params: SQL parameters dict for parameterized query (security)
             requirements: Structured requirements for filtering (used with ViewDefinitions)
 
         Returns:
@@ -265,9 +268,9 @@ class PhenotypeValidationAgent(BaseAgent):
                 return count
 
             else:
-                # Use legacy SQL approach
+                # Use legacy SQL approach with parameterized query (security)
                 logger.info(f"[{self.agent_id}] Using legacy SQL to estimate cohort size")
-                result = await self.sql_adapter.execute_sql(count_sql)
+                result = await self.sql_adapter.execute_sql(count_sql, sql_params)
 
                 if result and len(result) > 0:
                     count = result[0].get("patient_count", 0)
@@ -682,13 +685,13 @@ class PhenotypeValidationAgent(BaseAgent):
 
         for element in data_elements:
             try:
-                # Generate availability check query
-                availability_sql = self.sql_generator.generate_data_availability_query(
-                    element, time_period
+                # Generate availability check query with parameters (security)
+                availability_sql, availability_params = (
+                    self.sql_generator.generate_data_availability_query(element, time_period)
                 )
 
-                # Execute query
-                result = await self.sql_adapter.execute_sql(availability_sql)
+                # Execute parameterized query
+                result = await self.sql_adapter.execute_sql(availability_sql, availability_params)
 
                 if result and len(result) > 0:
                     row = result[0]

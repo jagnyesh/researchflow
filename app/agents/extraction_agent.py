@@ -140,12 +140,23 @@ class DataExtractionAgent(BaseAgent):
         if not patient_ids:
             return []
 
-        # Build patient ID list for SQL
-        patient_id_list = "'" + "','".join(str(pid) for pid in patient_ids[:1000]) + "'"
+        # Limit to 1000 patient IDs for performance
+        limited_patient_ids = patient_ids[:1000]
+
+        # Build parameterized IN clause with individual placeholders
+        # SQLAlchemy uses :param_name format for named parameters
+        patient_id_params = {f"pid_{i}": str(pid) for i, pid in enumerate(limited_patient_ids)}
+        patient_id_placeholders = ", ".join(
+            f":{param_name}" for param_name in patient_id_params.keys()
+        )
+
+        # Initialize query parameters dict
+        params = patient_id_params.copy()
 
         # Generate extraction query based on data element type
+        # Note: f-strings used only for structure, all data in params dict
         if data_element == "clinical_notes":
-            sql = f"""
+            sql = f"""  # nosec B608  # noqa: S608
                 SELECT
                     patient_id,
                     note_id,
@@ -153,10 +164,10 @@ class DataExtractionAgent(BaseAgent):
                     note_type,
                     note_text
                 FROM document_reference
-                WHERE patient_id IN ({patient_id_list})
+                WHERE patient_id IN ({patient_id_placeholders})
             """
         elif data_element == "lab_results":
-            sql = f"""
+            sql = f"""  # nosec B608
                 SELECT
                     patient_id,
                     observation_id,
@@ -166,11 +177,11 @@ class DataExtractionAgent(BaseAgent):
                     unit,
                     effectiveDateTime
                 FROM observation
-                WHERE patient_id IN ({patient_id_list})
+                WHERE patient_id IN ({patient_id_placeholders})
                 AND category = 'laboratory'
             """
         elif data_element == "medications":
-            sql = f"""
+            sql = f"""  # nosec B608
                 SELECT
                     patient_id,
                     medication_id,
@@ -178,24 +189,26 @@ class DataExtractionAgent(BaseAgent):
                     authoredOn,
                     status
                 FROM medication_request
-                WHERE patient_id IN ({patient_id_list})
+                WHERE patient_id IN ({patient_id_placeholders})
             """
         else:
             # Generic query
-            sql = f"""
+            sql = f"""  # nosec B608
                 SELECT *
                 FROM observation
-                WHERE patient_id IN ({patient_id_list})
+                WHERE patient_id IN ({patient_id_placeholders})
                 LIMIT 1000
             """
 
-        # Add time period filter if specified
+        # Add time period filter if specified (parameterized)
         if time_period.get("start") and time_period.get("end"):
             # Note: This is simplified - in production would handle different date fields
-            sql += f" AND date BETWEEN '{time_period['start']}' AND '{time_period['end']}'"
+            sql += " AND date BETWEEN :date_start AND :date_end"
+            params["date_start"] = time_period["start"]
+            params["date_end"] = time_period["end"]
 
         try:
-            result = await self.sql_adapter.execute_sql(sql)
+            result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:
             logger.warning(f"[{self.agent_id}] Extraction query failed: {str(e)}")
