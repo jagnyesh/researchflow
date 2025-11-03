@@ -542,6 +542,14 @@ class InMemoryRunner:
 
         Returns:
             Cache key (MD5 hash)
+
+        Security Note:
+            MD5 is used here for NON-CRYPTOGRAPHIC purposes only (cache key generation).
+            This is an acceptable use case because:
+            - Not used for password hashing or authentication
+            - Not used for integrity verification of security-sensitive data
+            - Fast hash function suitable for creating unique cache identifiers
+            - Collision resistance not critical for cache keys (worst case: cache miss)
         """
         # Create unique key from all parameters
         key_components = {
@@ -551,13 +559,15 @@ class InMemoryRunner:
             "max_resources": max_resources,
             # Include critical parts of ViewDefinition that affect results
             "where_clauses": view_definition.get("where", []),
-            "select_hash": hashlib.md5(
+            # MD5 for cache key generation only (non-cryptographic use)
+            "select_hash": hashlib.md5(  # nosec B324
                 json.dumps(view_definition.get("select", []), sort_keys=True).encode()
             ).hexdigest(),
         }
 
         key_string = json.dumps(key_components, sort_keys=True)
-        cache_key = hashlib.md5(key_string.encode()).hexdigest()
+        # MD5 for cache key generation only (non-cryptographic use)
+        cache_key = hashlib.md5(key_string.encode()).hexdigest()  # nosec B324
 
         return cache_key
 
