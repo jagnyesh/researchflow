@@ -6,8 +6,10 @@ Executes data extraction from clinical data warehouse using multi-source orchest
 
 from typing import Dict, Any
 import logging
+import pandas as pd
 from .base_agent import BaseAgent
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
+from ..services.file_storage import FileStorageService
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +30,7 @@ class DataExtractionAgent(BaseAgent):
     def __init__(self, orchestrator=None, database_url: str = None):
         super().__init__(agent_id="extraction_agent", orchestrator=orchestrator)
         self.sql_adapter = SQLonFHIRAdapter(database_url)
+        self.file_storage = FileStorageService()
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data extraction task"""
@@ -82,9 +85,9 @@ class DataExtractionAgent(BaseAgent):
         if phi_level != "identified":
             extraction_results = await self._deidentify_data(extraction_results, phi_level)
 
-        # Step 4: Format data according to preferences
+        # Step 4: Format data according to preferences (generate CSV files)
         delivery_format = requirements.get("delivery_format", "CSV")
-        formatted_data = await self._format_data(extraction_results, delivery_format)
+        formatted_data = await self._format_data(extraction_results, delivery_format, request_id)
 
         # Step 5: Package data with metadata
         data_package = {
@@ -156,7 +159,8 @@ class DataExtractionAgent(BaseAgent):
         # Generate extraction query based on data element type
         # Note: f-strings used only for structure, all data in params dict
         if data_element == "clinical_notes":
-            sql = f"""  # nosec B608  # noqa: S608
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
                 SELECT
                     patient_id,
                     note_id,
@@ -167,7 +171,8 @@ class DataExtractionAgent(BaseAgent):
                 WHERE patient_id IN ({patient_id_placeholders})
             """
         elif data_element == "lab_results":
-            sql = f"""  # nosec B608
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
                 SELECT
                     patient_id,
                     observation_id,
@@ -181,7 +186,8 @@ class DataExtractionAgent(BaseAgent):
                 AND category = 'laboratory'
             """
         elif data_element == "medications":
-            sql = f"""  # nosec B608
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
                 SELECT
                     patient_id,
                     medication_id,
@@ -193,7 +199,8 @@ class DataExtractionAgent(BaseAgent):
             """
         else:
             # Generic query
-            sql = f"""  # nosec B608
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
                 SELECT *
                 FROM observation
                 WHERE patient_id IN ({patient_id_placeholders})
@@ -249,41 +256,112 @@ class DataExtractionAgent(BaseAgent):
 
         return data
 
-    async def _format_data(self, data: Dict, format_type: str) -> Dict:
+    async def _format_data(self, data: Dict, format_type: str, request_id: str = None) -> Dict:
         """
-        Format data according to delivery preference
+        Format data according to delivery preference and generate actual files
 
         Args:
             data: Extraction results dict
             format_type: CSV, FHIR, or REDCap
+            request_id: Research request ID for file storage
 
         Returns:
-            Formatted data dict
+            Formatted data dict with file_paths
         """
-        # TODO: Implement formatters for different types
-        # For now, return as-is with format metadata
+        formatted = {"format": format_type, "data": data, "files": [], "file_paths": []}
 
-        formatted = {"format": format_type, "data": data, "files": []}
+        if format_type == "CSV" and request_id:
+            # Generate actual CSV files
+            logger.info(f"[{self.agent_id}] Generating CSV files for request {request_id}")
 
-        if format_type == "CSV":
-            # In production: Convert to CSV files
-            for element_name, records in data.items():
-                formatted["files"].append(
-                    {"filename": f"{element_name}.csv", "record_count": len(records)}
+            try:
+                # Create individual CSVs for each data element
+                for element_name, records in data.items():
+                    if not records:
+                        logger.warning(f"[{self.agent_id}] No records for {element_name}, skipping")
+                        continue
+
+                    # Convert to DataFrame
+                    df = pd.DataFrame(records)
+
+                    # Save CSV
+                    filename = f"{element_name}.csv"
+                    file_path = self.file_storage.save_csv(
+                        request_id=request_id, filename=filename, dataframe=df
+                    )
+
+                    formatted["files"].append(
+                        {
+                            "filename": filename,
+                            "record_count": len(records),
+                            "column_count": len(df.columns),
+                        }
+                    )
+                    formatted["file_paths"].append(file_path)
+
+                    logger.info(
+                        f"[{self.agent_id}] Generated {filename}: "
+                        f"{len(records)} rows, {len(df.columns)} columns"
+                    )
+
+                # Create combined master CSV with all data
+                all_records = []
+                for element_name, records in data.items():
+                    # Add data_element column to identify source
+                    for record in records:
+                        record_copy = record.copy()
+                        record_copy["data_element"] = element_name
+                        all_records.append(record_copy)
+
+                if all_records:
+                    master_df = pd.DataFrame(all_records)
+                    master_filename = "all_data_combined.csv"
+                    master_path = self.file_storage.save_csv(
+                        request_id=request_id, filename=master_filename, dataframe=master_df
+                    )
+                    formatted["files"].append(
+                        {
+                            "filename": master_filename,
+                            "record_count": len(all_records),
+                            "column_count": len(master_df.columns),
+                        }
+                    )
+                    formatted["file_paths"].append(master_path)
+
+                logger.info(
+                    f"[{self.agent_id}] CSV generation complete: "
+                    f"{len(formatted['files'])} files created"
                 )
 
+            except Exception as e:
+                logger.error(f"[{self.agent_id}] CSV generation failed: {str(e)}")
+                # Return metadata even if file generation fails
+                for element_name, records in data.items():
+                    formatted["files"].append(
+                        {"filename": f"{element_name}.csv", "record_count": len(records)}
+                    )
+
         elif format_type == "FHIR":
-            # In production: Convert to FHIR Bundle
+            # TODO: In production, convert to FHIR Bundle
             formatted["files"].append({"filename": "fhir_bundle.json", "resource_type": "Bundle"})
+            logger.warning(f"[{self.agent_id}] FHIR format not yet implemented")
 
         elif format_type == "REDCap":
-            # In production: Format for REDCap import
+            # TODO: In production, format for REDCap import
             formatted["files"].append(
                 {
                     "filename": "redcap_import.csv",
                     "record_count": sum(len(records) for records in data.values()),
                 }
             )
+            logger.warning(f"[{self.agent_id}] REDCap format not yet implemented")
+
+        else:
+            # Default: just return metadata
+            for element_name, records in data.items():
+                formatted["files"].append(
+                    {"filename": f"{element_name}.csv", "record_count": len(records)}
+                )
 
         return formatted
 

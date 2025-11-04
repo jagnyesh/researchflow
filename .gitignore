@@ -171,6 +171,14 @@ local_data/
 temp/
 tmp/
 
+# Exception: keep data/deliveries directory structure
+!data/
+!data/deliveries/
+!data/deliveries/.gitkeep
+# But exclude actual delivery files
+data/deliveries/*
+!data/deliveries/.gitkeep
+
 # Instance folder
 instance/
 

@@ -7,9 +7,12 @@ Uses MultiLLMClient for generating personalized notifications and documentation.
 
 from typing import Dict, Any
 import logging
+import json
 from datetime import datetime
 from .base_agent import BaseAgent
 from ..utils.multi_llm_client import MultiLLMClient
+from ..services.file_storage import FileStorageService
+from ..database import get_db_session, DataDelivery
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ class DeliveryAgent(BaseAgent):
     def __init__(self, orchestrator=None):
         super().__init__(agent_id="delivery_agent", orchestrator=orchestrator)
         self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
+        self.file_storage = FileStorageService()
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute delivery task"""
@@ -245,21 +249,144 @@ Please cite as:
 
     async def _upload_to_secure_storage(self, package: Dict, request_id: str) -> str:
         """
-        Upload data package to secure storage
+        Save data package metadata files to local storage
 
-        In production: Upload to S3, Azure Blob, or secure file share
-        For now: Return simulated location
+        Saves:
+        - data_dictionary.txt: Field descriptions
+        - qa_report.txt: Quality assurance summary
+        - README.txt: Package documentation
+        - extraction_metadata.json: Full metadata
+
+        CSV data files are already saved by ExtractionAgent.
+
+        Args:
+            package: Data package with documentation
+            request_id: Research request ID
+
+        Returns:
+            Local storage path
         """
-        # TODO: Implement actual file upload
-        # storage_client = self._get_storage_client()
-        # location = await storage_client.upload(package, request_id)
+        try:
+            # Prepare metadata files
+            metadata_files = {}
 
-        # Simulated location
-        location = f"s3://research-data-bucket/{request_id}/data_package.zip"
+            # 1. Data Dictionary (human-readable)
+            data_dict_content = self._format_data_dictionary_text(
+                package["documentation"]["data_dictionary"]
+            )
+            metadata_files["data_dictionary.txt"] = data_dict_content
 
-        logger.info(f"[{self.agent_id}] Package uploaded to {location}")
+            # 2. QA Report (human-readable summary)
+            qa_content = self._format_qa_report_text(package["documentation"]["qa_summary"])
+            metadata_files["qa_report.txt"] = qa_content
 
-        return location
+            # 3. README with citation and extraction methods
+            readme_content = self._format_readme_text(package["documentation"])
+            metadata_files["README.txt"] = readme_content
+
+            # 4. Full metadata as JSON
+            metadata_json = json.dumps(package["metadata"], indent=2)
+            metadata_files["extraction_metadata.json"] = metadata_json
+
+            # Save all metadata files
+            for filename, content in metadata_files.items():
+                self.file_storage.save_text_file(request_id, filename, content)
+
+            # Return local storage location
+            location = self.file_storage._get_request_directory(request_id)
+
+            logger.info(
+                f"[{self.agent_id}] Package metadata saved to {location} "
+                f"({len(metadata_files)} files)"
+            )
+
+            return str(location)
+
+        except Exception as e:
+            logger.error(f"[{self.agent_id}] Failed to save package metadata: {str(e)}")
+            # Return fallback location
+            return f"/data/deliveries/{request_id}"
+
+    def _format_data_dictionary_text(self, data_dict: Dict) -> str:
+        """Format data dictionary as human-readable text"""
+        lines = ["=" * 80, "DATA DICTIONARY", "=" * 80, ""]
+
+        for element_name, element_info in data_dict.items():
+            lines.append(f"\n{element_name.upper().replace('_', ' ')}")
+            lines.append("-" * 40)
+            lines.append(f"Description: {element_info.get('description', 'N/A')}")
+            lines.append(f"Record Count: {element_info.get('record_count', 0)}")
+            lines.append("\nFields:")
+
+            fields = element_info.get("fields", {})
+            for field_name, field_info in fields.items():
+                lines.append(f"  • {field_name}")
+                lines.append(f"    - Type: {field_info.get('type', 'unknown')}")
+                lines.append(f"    - Description: {field_info.get('description', 'N/A')}")
+                lines.append("")
+
+        return "\n".join(lines)
+
+    def _format_qa_report_text(self, qa_summary: Dict) -> str:
+        """Format QA report as human-readable text"""
+        lines = ["=" * 80, "QUALITY ASSURANCE REPORT", "=" * 80, ""]
+
+        lines.append(f"Overall Status: {qa_summary.get('status', 'Unknown')}")
+        lines.append(f"Checks Performed: {qa_summary.get('checks_performed', 0)}")
+        lines.append(f"Checks Passed: {qa_summary.get('checks_passed', 0)}")
+        lines.append("")
+
+        warnings = qa_summary.get("warnings", [])
+        if warnings:
+            lines.append("WARNINGS:")
+            for warning in warnings:
+                lines.append(f"  • {warning}")
+        else:
+            lines.append("No warnings detected.")
+
+        lines.append("")
+        lines.append("=" * 80)
+
+        return "\n".join(lines)
+
+    def _format_readme_text(self, documentation: Dict) -> str:
+        """Format README with citation and extraction info"""
+        lines = ["=" * 80, "DATA PACKAGE README", "=" * 80, ""]
+
+        # Citation
+        lines.append("CITATION INFORMATION:")
+        lines.append("-" * 40)
+        lines.append(documentation.get("citation_info", "N/A"))
+        lines.append("")
+
+        # Extraction Methods
+        lines.append("EXTRACTION METHODS:")
+        lines.append("-" * 40)
+        methods = documentation.get("extraction_methods", {})
+
+        cohort_def = methods.get("cohort_definition", {})
+        lines.append("Cohort Definition:")
+        lines.append(f"  Inclusion Criteria: {cohort_def.get('inclusion_criteria', 'N/A')}")
+        lines.append(f"  Exclusion Criteria: {cohort_def.get('exclusion_criteria', 'N/A')}")
+        lines.append(f"  Time Period: {cohort_def.get('time_period', 'N/A')}")
+        lines.append("")
+
+        lines.append(f"Data Sources: {', '.join(methods.get('data_sources', []))}")
+        lines.append(f"Extraction Date: {methods.get('extraction_date', 'N/A')}")
+        lines.append(f"De-identification: {methods.get('deidentification_method', 'N/A')}")
+        lines.append("")
+
+        lines.append("FILES IN THIS PACKAGE:")
+        lines.append("-" * 40)
+        lines.append("  • data_dictionary.txt - Field descriptions")
+        lines.append("  • qa_report.txt - Quality assurance summary")
+        lines.append("  • extraction_metadata.json - Full metadata")
+        lines.append("  • *.csv - Data files")
+        lines.append("")
+
+        lines.append("=" * 80)
+
+        return "\n".join(lines)
 
     async def _send_notification(self, recipient: str, email: str, delivery_info: Dict):
         """
@@ -331,10 +458,52 @@ Research Data Services
         logger.debug(f"Email content:\n{message}")
 
     async def _log_delivery(self, request_id: str, location: str, package: Dict):
-        """Log delivery for audit trail"""
-        # TODO: Implement database logging using DataDelivery model
-        logger.info(f"[{self.agent_id}] Delivery logged: {request_id} -> {location}")
-        logger.debug(
-            f"Delivered {package['metadata']['cohort_size']} patients, "
-            f"{len(package['metadata']['data_elements'])} data elements"
-        )
+        """
+        Log delivery to database for audit trail
+
+        Saves DataDelivery record with:
+        - File list
+        - Cohort size
+        - Data elements
+        - QA report
+        - Data dictionary
+        """
+        try:
+            # Get file list from storage
+            files = self.file_storage.list_files(request_id)
+            file_list = [f["filename"] for f in files]
+
+            async with get_db_session() as session:
+                # Create DataDelivery record
+                delivery = DataDelivery(
+                    request_id=request_id,
+                    delivery_location=location,
+                    delivery_format=package["metadata"].get("delivery_format", "CSV"),
+                    cohort_size=package["metadata"].get("cohort_size", 0),
+                    data_elements=package["metadata"].get("data_elements", []),
+                    file_list=file_list,
+                    delivery_metadata=package["metadata"],
+                    data_dictionary=package["documentation"].get("data_dictionary", {}),
+                    qa_report=package["documentation"].get("qa_summary", {}),
+                    notification_sent=True,
+                )
+
+                session.add(delivery)
+                await session.commit()
+
+                logger.info(
+                    f"[{self.agent_id}] Delivery logged to database: {request_id} -> {location}"
+                )
+                logger.info(
+                    f"[{self.agent_id}] Delivered {len(file_list)} files, "
+                    f"{package['metadata']['cohort_size']} patients, "
+                    f"{len(package['metadata']['data_elements'])} data elements"
+                )
+
+        except Exception as e:
+            logger.error(f"[{self.agent_id}] Failed to log delivery to database: {str(e)}")
+            # Don't fail the delivery if logging fails
+            logger.debug(
+                f"Delivered {package['metadata']['cohort_size']} patients, "
+                f"{len(package['metadata']['data_elements'])} data elements"
+            )
