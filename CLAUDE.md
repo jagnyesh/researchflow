@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Core Components
 - **6 Specialized AI Agents**: Requirements, Phenotype, Calendar, Extraction, QA, Delivery
-- **Dual Orchestration**: Custom orchestrator (production) + LangGraph workflow (migration target, 75% complete) 🆕
+- **Dual Orchestration**: Custom orchestrator (production) + LangGraph workflow (**100% complete** - ready for rollout) 🆕
 - **Lambda Architecture**: Batch layer (materialized views) + Speed layer (Redis) + Serving layer (hybrid runner) 🆕
 - **Multi-Provider LLM Integration**: Claude API (primary) with optional secondary providers (OpenAI, Ollama) for non-critical tasks
 - **SQL-on-FHIR**: Automated phenotype SQL generation and execution (v1 + v2)
@@ -282,11 +282,20 @@ ResearchFlow uses 6 autonomous AI agents coordinated by a central orchestrator:
 - Transition rules based on agent results
 - States: new_request → requirements_gathering → feasibility_validation → schedule_kickoff → data_extraction → qa_validation → data_delivery → delivered → complete
 
-### LangGraph Architecture Migration (Sprints 6.5 + 6.6) 🆕
+### LangGraph Architecture Migration (Sprints 6.5 + 6.6 + 6.7) 🆕
 
-**Status**: 75% complete (Phases 1-3.1 done, Phases 3.2-5 remaining)
+**Status**: ✅ **100% COMPLETE** - Ready for production rollout
 
-ResearchFlow is migrating from custom imperative orchestrator to LangGraph declarative state machine for improved observability, durability, and maintainability.
+ResearchFlow has completed migration from custom imperative orchestrator to LangGraph declarative state machine, achieving improved observability, durability, and maintainability.
+
+**Migration Phases** (All Complete):
+- ✅ Phase 1: Critical Bug Fixes & Persistence (100%)
+- ✅ Phase 2: Agent & Approval Bridges (100%)
+- ✅ Phase 3.1: Request Facade (100%)
+- ✅ Phase 3.2: UI Integration with Feature Flags (100%) 🆕
+- ✅ Phase 3.3: Integration & E2E Testing (100%) 🆕
+- ✅ Phase 4: Data Migration Script & Deployment Guide (100%) 🆕
+- 🔄 Phase 5: Production Rollout & Cleanup (Pending - after 100% production deployment)
 
 **Dual Orchestration Systems**:
 1. **Custom Orchestrator** (Production): `app/orchestrator/orchestrator.py`
@@ -580,6 +589,8 @@ Tests use pytest with async support (`pytest-asyncio`).
 - `tests/test_simple_workflow.py` - Simple 3-state workflow
 - `tests/test_langgraph_workflow.py` - Full 23-state workflow
 - `tests/e2e/test_langgraph_workflow_e2e.py` - End-to-end tests
+- `tests/integration/test_request_facade.py` - Facade integration (13 tests, 350+ lines) 🆕
+- `tests/e2e/test_ui_with_langgraph.py` - UI E2E tests (7 tests, 400+ lines) 🆕
 
 **Security Tests:** 🆕
 - SQL injection prevention tests (manual testing completed)
@@ -613,7 +624,10 @@ bandit -r app/
 **Completed:**
 - ✅ All 6 agents implemented (BaseAgent-based)
 - ✅ Custom orchestrator + workflow engine (15-state FSM)
-- ✅ **LangGraph migration (75% complete - Phases 1-3.1 done)** 🆕
+- ✅ **LangGraph migration (100% COMPLETE - ready for rollout)** 🆕
+  - ✅ **Phase 3.2: UI integration with feature flags** 🆕
+  - ✅ **Phase 3.3: 20 integration & E2E tests (837 lines)** 🆕
+  - ✅ **Phase 4: Migration script + deployment guide (1,450+ lines)** 🆕
 - ✅ **LangChain agent implementations** 🆕
 - ✅ **Checkpointer-based persistence (AsyncSqliteSaver)** 🆕
 - ✅ LLM integration (Claude API primary)
@@ -634,10 +648,10 @@ bandit -r app/
 - ✅ Complete documentation (120+ docs including 20 sprint reports)
 
 **Production TODOs:**
-- [ ] **Complete LangGraph migration (Phases 3.2-5)** 🆕
-  - [ ] Streamlit UI integration with feature flag
-  - [ ] Gradual rollout (10% → 50% → 100%)
-  - [ ] Archive custom orchestrator to `app/legacy/`
+- [ ] **LangGraph Production Rollout (Phase 5)** 🆕
+  - [ ] Gradual rollout (10% → 25% → 50% → 100%) - see `docs/LANGGRAPH_MIGRATION_GUIDE.md`
+  - [ ] Production monitoring via LangSmith
+  - [ ] Archive custom orchestrator to `app/legacy/` (after 100% rollout)
 - [ ] **Security enhancements** 🆕
   - [ ] Comprehensive security-specific tests
   - [ ] Penetration testing
@@ -666,6 +680,13 @@ bandit -r app/
 - `docs/DIAGRAMS_README.md` - How to view architecture diagrams
 
 **Implementation Guides:**
+- `docs/LANGGRAPH_MIGRATION_GUIDE.md` - **Complete migration guide (500+ lines)** 🆕
+  - Pre-migration checklist
+  - Phase-by-phase deployment (5 phases)
+  - Rollout strategy (10% → 100%)
+  - Rollback procedures (< 5 min emergency)
+  - Monitoring & validation (LangSmith + SQL queries)
+  - Troubleshooting guide
 - `docs/MATERIALIZED_VIEWS.md` - Materialized views quick start 🆕
 - `docs/REFERENTIAL_INTEGRITY.md` - Dual column design 🆕
 - `docs/AUTO_REFRESH_SETUP.md` - Cron setup for batch layer 🆕
