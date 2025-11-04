@@ -21,6 +21,7 @@ nest_asyncio.apply(_streamlit_loop)
 
 # NOW safe to import modules that create database connections
 import streamlit as st
+import httpx
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -51,6 +52,73 @@ def run_async(coroutine):
     database operations use the same loop.
     """
     return _streamlit_loop.run_until_complete(coroutine)
+
+
+def get_status_badge(state: str) -> str:
+    """Get colored status badge for request state"""
+    state_colors = {
+        "delivered": "🟢",
+        "complete": "🟢",
+        "data_delivery": "🟡",
+        "qa_validation": "🟡",
+        "data_extraction": "🟡",
+        "feasibility_validation": "🔵",
+        "requirements_gathering": "🔵",
+        "failed": "🔴",
+        "not_feasible": "🔴",
+    }
+    return state_colors.get(state.lower(), "⚪")
+
+
+def check_delivery_status(request_id: str) -> dict:
+    """
+    Check if data is delivered for a request
+
+    Returns dict with:
+        - delivered: bool
+        - files: list of file dicts
+        - cohort_size: int
+        - delivery_location: str
+    """
+    try:
+        # Call delivery API endpoint
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        response = httpx.get(f"{api_url}/research/{request_id}/delivery", timeout=10.0)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"delivered": False, "files": []}
+    except Exception as e:
+        st.error(f"Error checking delivery status: {str(e)}")
+        return {"delivered": False, "files": []}
+
+
+def download_file(request_id: str, filename: str = None):
+    """Download file(s) from delivered request"""
+    try:
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+        if filename:
+            # Download specific file
+            url = f"{api_url}/research/{request_id}/download/{filename}"
+        else:
+            # Download full ZIP package
+            url = f"{api_url}/research/{request_id}/download"
+            filename = f"{request_id}_data_package.zip"
+
+        response = httpx.get(url, timeout=60.0)
+
+        if response.status_code == 200:
+            # Return file content for st.download_button
+            return response.content, filename
+        else:
+            st.error(f"Download failed: {response.status_code} - {response.text}")
+            return None, None
+
+    except Exception as e:
+        st.error(f"Download error: {str(e)}")
+        return None, None
 
 
 def initialize_orchestrator():
@@ -117,12 +185,28 @@ def main():
             for req_id in st.session_state.user_requests:
                 status = run_async(st.session_state.orchestrator.get_request_status(req_id))
                 if status:
-                    with st.expander(f"Request #{req_id[:8]}..."):
-                        st.write(f"**Status:** {status['current_state']}")
+                    # Get status badge
+                    badge = get_status_badge(status["current_state"])
+                    request_label = f"{badge} Request #{req_id[:8]}..."
+
+                    with st.expander(request_label):
+                        # Status with badge
+                        st.write(f"**Status:** {status['current_state'].replace('_', ' ').title()}")
                         st.write(f"**Started:** {status['started_at'][:19]}")
+
+                        # Show cohort size if delivered
+                        delivery_info = check_delivery_status(req_id)
+                        if delivery_info.get("delivered"):
+                            st.write(
+                                f"**Cohort Size:** {delivery_info.get('cohort_size', 'N/A')} patients"
+                            )
+                            st.write(
+                                f"**Files:** {len(delivery_info.get('files', []))} files ready"
+                            )
 
                         if st.button("View Details", key=f"view_{req_id}"):
                             st.session_state.selected_request = req_id
+                            st.rerun()  # Force refresh to show details tab
         else:
             st.info("No requests yet. Submit a new request below!")
 
@@ -381,6 +465,107 @@ def show_request_details():
     st.write(f"**Name:** {researcher.get('name', 'N/A')}")
     st.write(f"**Email:** {researcher.get('email', 'N/A')}")
     st.write(f"**IRB:** {researcher.get('irb_number', 'N/A')}")
+
+    # Data Delivery Section
+    st.subheader("📦 Data Delivery")
+
+    delivery_info = check_delivery_status(request_id)
+
+    if delivery_info.get("delivered"):
+        st.success("✅ Your data is ready for download!")
+
+        # Delivery metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Cohort Size", f"{delivery_info.get('cohort_size', 0):,}")
+        with col2:
+            st.metric("Data Elements", len(delivery_info.get("data_elements", [])))
+        with col3:
+            st.metric("Files Available", len(delivery_info.get("files", [])))
+
+        st.markdown("---")
+
+        # Download options
+        st.markdown("### 📥 Download Options")
+
+        # Option 1: Download all as ZIP
+        st.markdown("**Option 1: Download Complete Package (ZIP)**")
+        st.caption("Includes all data files, data dictionary, QA report, and documentation")
+
+        if st.button(
+            "📦 Download Complete Package (ZIP)", type="primary", use_container_width=True
+        ):
+            with st.spinner("Preparing download..."):
+                file_content, filename = download_file(request_id)
+                if file_content:
+                    st.download_button(
+                        label="💾 Click here to save ZIP file",
+                        data=file_content,
+                        file_name=filename,
+                        mime="application/zip",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                    st.success(f"✅ Ready to download: {filename}")
+
+        st.markdown("---")
+
+        # Option 2: Download individual files
+        st.markdown("**Option 2: Download Individual Files**")
+
+        files = delivery_info.get("files", [])
+        if files:
+            for file_info in files:
+                filename = file_info.get("filename", "unknown.csv")
+                file_size = file_info.get("size_mb", 0)
+
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"📄 **{filename}** ({file_size:.2f} MB)")
+                with col2:
+                    if st.button("Download", key=f"dl_{filename}", use_container_width=True):
+                        with st.spinner(f"Downloading {filename}..."):
+                            file_content, _ = download_file(request_id, filename)
+                            if file_content:
+                                st.download_button(
+                                    label=f"💾 Save {filename}",
+                                    data=file_content,
+                                    file_name=filename,
+                                    mime="text/csv" if filename.endswith(".csv") else "text/plain",
+                                    key=f"save_{filename}",
+                                    use_container_width=True,
+                                )
+        else:
+            st.info("No files available for download")
+
+        # QA Summary
+        if delivery_info.get("qa_report_summary"):
+            st.markdown("---")
+            st.markdown("### ✅ Quality Assurance Summary")
+            qa_summary = delivery_info["qa_report_summary"]
+            st.json(qa_summary)
+
+    else:
+        # Not yet delivered
+        current_state = status["current_state"]
+        if current_state in ["delivered", "complete"]:
+            st.warning("⏳ Data delivery is being prepared. Please check back in a few moments.")
+        elif current_state in ["data_extraction", "qa_validation", "data_delivery"]:
+            st.info(
+                f"🔄 Your request is being processed. Current stage: {current_state.replace('_', ' ').title()}"
+            )
+            st.caption("You'll be able to download your data once processing is complete.")
+        elif current_state == "failed":
+            st.error("❌ Request failed. Please contact support for assistance.")
+        elif current_state == "not_feasible":
+            st.warning(
+                "⚠️ Request was determined to be not feasible. Please review the feedback and submit a new request."
+            )
+        else:
+            st.info(f"📋 Request is in progress: {current_state.replace('_', ' ').title()}")
+            st.caption(
+                "Data download will be available once the request is completed and delivered."
+            )
 
 
 if __name__ == "__main__":
