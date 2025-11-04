@@ -1,10 +1,14 @@
-# CLAUDE.md Update Checklist (2025-10-28)
+# CLAUDE.md Update Checklist
+
+**Last Updated**: 2025-11-03
+**Original Created**: 2025-10-28
+**Status**: ✅ COMPLETE (Sprints 4.5-7 documented)
 
 This checklist documents changes that should be reflected in CLAUDE.md based on recent development.
 
-## Changes to Document
+## Changes Documented
 
-### ✅ 1. Lambda Architecture Implementation (MAJOR)
+### ✅ 1. Lambda Architecture Implementation (MAJOR) - **COMPLETE**
 
 **Section to Update**: Add new section after "Architecture"
 
@@ -38,7 +42,7 @@ ResearchFlow implements a complete Lambda Architecture for FHIR data:
 - Complete AWS HealthLake functional equivalence
 ```
 
-### ✅ 2. Project Structure Updates
+### ✅ 2. Project Structure Updates - **COMPLETE**
 
 **Section to Update**: "Project Structure" - Add new directories
 
@@ -89,7 +93,7 @@ FHIR_PROJECT/
 │       └── SPRINT_05_5_SPEED_LAYER.md           # Speed layer sprint
 ```
 
-### ✅ 3. Environment Variables
+### ✅ 3. Environment Variables - **COMPLETE**
 
 **Section to Update**: "Environment Variables" - Add Lambda Architecture vars
 
@@ -106,7 +110,7 @@ FHIR_PROJECT/
 - `LANGCHAIN_ENDPOINT`: LangSmith endpoint (default: `https://api.smith.langchain.com`)
 ```
 
-### ✅ 4. Implementation Status
+### ✅ 4. Implementation Status - **COMPLETE**
 
 **Section to Update**: "Implementation Status" - Update completions
 
@@ -139,7 +143,7 @@ FHIR_PROJECT/
 - [ ] Email notification service
 ```
 
-### ✅ 5. Testing Section
+### ✅ 5. Testing Section - **COMPLETE**
 
 **Section to Update**: "Testing" - Add new test files
 
@@ -177,7 +181,7 @@ pytest tests/test_hybrid_runner_speed_integration.py -v
 ```
 ```
 
-### ✅ 6. Documentation Section
+### ✅ 6. Documentation Section - **COMPLETE**
 
 **Section to Update**: "Documentation" - Add new docs
 
@@ -211,7 +215,7 @@ pytest tests/test_hybrid_runner_speed_integration.py -v
   - `SPRINT_05_5_SPEED_LAYER.md` - Speed layer implementation 🆕
 ```
 
-### ✅ 7. Quick Start Updates
+### ✅ 7. Quick Start Updates - **COMPLETE**
 
 **Section to Update**: "Quick Start" - Add Lambda Architecture setup
 
@@ -254,20 +258,26 @@ make test
 
 ---
 
-## Update Priority
+## Update Status
 
-### 🔴 **HIGH PRIORITY** (Do Before Next Major Commit):
-1. ✅ Lambda Architecture section
-2. ✅ Project Structure (new directories)
-3. ✅ Environment Variables (Redis, LangSmith)
-4. ✅ Implementation Status (completions)
+### ✅ **COMPLETED** (2025-11-03):
+1. ✅ Lambda Architecture section - **DONE** (Sprint 4.5 + 5.5)
+2. ✅ Project Structure (new directories) - **DONE**
+3. ✅ Environment Variables (Redis, LangSmith, LangGraph) - **DONE**
+4. ✅ Implementation Status (completions) - **DONE**
+5. ✅ Documentation section (new docs) - **DONE**
+6. ✅ Testing section (new tests) - **DONE**
+7. ✅ Quick Start (Redis setup, pre-commit hooks) - **DONE**
+8. ✅ **LangGraph Migration section** - **DONE** (Sprint 6.5 + 6.6) 🆕
+9. ✅ **Security Hardening section** - **DONE** (Sprint 7) 🆕
+10. ✅ Core Components expansion - **DONE**
 
-### 🟡 **MEDIUM PRIORITY** (Can wait):
-5. ✅ Documentation section (new docs)
-6. ✅ Testing section (new tests)
-
-### 🟢 **LOW PRIORITY** (Nice to have):
-7. ✅ Quick Start (Redis setup)
+### 📊 **Impact Summary**:
+- **Lines Added**: 376 new lines (335 → 711 lines, +112% growth)
+- **Sprints Documented**: 6 sprints (4.5, 5, 5.5, 6.5, 6.6, 7)
+- **Features Documented**: 15+ major features
+- **Time Period**: 2025-10-28 to 2025-11-03 (6 days)
+- **Commit**: 6732cfb (2025-11-03)
 
 ---
 
@@ -318,6 +328,45 @@ git add CLAUDE.md
 
 ---
 
+## Additional Updates (Since Checklist Creation)
+
+### 🆕 8. LangGraph/LangChain Migration (Sprint 6.5 + 6.6) - **COMPLETE**
+
+**Added**: Comprehensive LangGraph architecture section (~120 lines)
+
+**Content**:
+- Dual orchestration systems (custom vs LangGraph)
+- Migration status (75% complete)
+- Architecture diagram (ASCII art)
+- Key files (1,600 lines): langgraph_workflow.py, agent_adapter.py, approval_bridge.py, request_facade.py
+- Testing: 48 tests, 100% passing
+- Migration roadmap (5 phases)
+- Environment variables: USE_LANGGRAPH_WORKFLOW, LANGGRAPH_ROLLOUT_PCT
+
+**Why Not in Original Checklist**: Sprint 6.5 started 2025-10-30 (2 days after checklist created)
+
+---
+
+### 🆕 9. Security Hardening (Sprint 7) - **COMPLETE**
+
+**Added**: Comprehensive Security Hardening section (~100 lines)
+
+**Content**:
+- 30 SQL injection vulnerabilities eliminated
+- Parameterized SQL pattern (before/after code examples)
+- Pre-commit hooks (4 hooks: detect-secrets, bandit, black, pre-commit-hooks)
+- GitHub Actions security scanning (4 jobs: secrets, dependencies, code, CodeQL)
+- Secret exposure remediation
+- Files modified: sql_on_fhir.py, sql_generator.py, extraction_agent.py, phenotype_agent.py
+- Setup instructions for pre-commit hooks
+- Bandit results: 63 warnings → 0 warnings
+
+**Why Not in Original Checklist**: Sprint 7 completed 2025-11-03 (6 days after checklist created)
+
+---
+
 **Created**: 2025-10-28
-**Sprint**: 5.5 (Speed Layer)
-**Next Review**: Before merging feature branch to main
+**Updated**: 2025-11-03
+**Sprint Coverage**: 4.5, 5, 5.5, 6.5, 6.6, 7
+**Status**: ✅ COMPLETE
+**Next Review**: After Sprint 8 completion
