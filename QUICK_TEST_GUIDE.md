@@ -4,6 +4,30 @@
 
 ---
 
+## 📋 Portal Comparison
+
+ResearchFlow has **two portals** with different purposes:
+
+| Feature | **Exploratory Portal** (Port 8503) | **Formal Portal** (Port 8501) |
+|---------|-----------------------------------|------------------------------|
+| **Purpose** | Fast feasibility checks | Full data extraction workflow |
+| **Speed** | Instant (SQL-on-FHIR) | 1-24 hours (approval required) |
+| **Conversational AI** | ✅ Natural language queries | ✅ Form-based + conversational |
+| **Cohort Counts** | ✅ Real-time estimates | ✅ Validated counts |
+| **SQL Generation** | ✅ Automatic | ✅ Informatician-reviewed |
+| **Data Extraction** | ❌ Not available | ✅ Full extraction |
+| **Approval Workflow** | ❌ No approvals | ✅ Multi-stage approvals |
+| **QA Validation** | ❌ Not applicable | ✅ Automated + manual QA |
+| **Data Delivery** | ❌ Counts only | ✅ Secure file delivery |
+| **Audit Trail** | ❌ Limited | ✅ Complete audit log |
+| **Use Case** | "How many patients?" | "Give me the data" |
+
+**Workflow:**
+1. **Start with Exploratory Portal** → Get instant feasibility checks
+2. **Move to Formal Portal** → Submit for full data extraction (when ready)
+
+---
+
 ## 🚀 Quick Start (5 minutes)
 
 ### 1. Start Services & Portals
@@ -32,7 +56,7 @@ Keep this open in a separate browser tab to watch traces in real-time.
 
 ### Test Case: Diabetes + Hypertension Study
 
-**Enter this query**:
+**Step 1: Enter this query**:
 ```
 Find female patients over 50 years old with type 2 diabetes
 and hypertension who had a hospital admission in 2023
@@ -40,17 +64,22 @@ and hypertension who had a hospital admission in 2023
 
 **What to Observe**:
 
-1. **Requirements Gathering** (AI extracts needs):
+1. **Intent Detection** (Conversational AI):
+   - ✅ Should detect intent as `QUERY`
+   - ✅ Should route to SQL execution
+   - **LangSmith**: Look for `ConversationManager.detect_intent` trace
+
+2. **Requirements Gathering** (AI extracts needs):
    - ✅ Should parse: "female", "age > 50", "diabetes", "hypertension", "admission 2023"
    - ✅ Should structure requirements correctly
-   - **LangSmith**: Look for `QueryInterpreter` or `RequirementsAgent` trace
+   - **LangSmith**: Look for `QueryInterpreter` trace
 
-2. **Feasibility Analysis** (AI provides counts):
+3. **Feasibility Analysis** (AI provides counts):
    - ✅ Should show estimated cohort size (e.g., "~50 patients")
-   - ✅ Should calculate feasibility score (0.0-1.0)
+   - ✅ Should show "Next Steps" with "proceed" instruction
    - **LangSmith**: Look for `FeasibilityService` trace
 
-3. **SQL Generation** (AI builds SQL-on-FHIR v2):
+4. **SQL Generation** (AI builds SQL-on-FHIR v2):
    - ✅ Should generate SQL with:
      - `WHERE p.gender = 'female'`
      - `WHERE age > 50`
@@ -58,6 +87,24 @@ and hypertension who had a hospital admission in 2023
      - `WHERE condition codes IN (hypertension codes)`
      - `WHERE encounter date BETWEEN 2023-01-01 AND 2023-12-31`
    - **LangSmith**: Look for SQL generation trace with query text
+
+**Step 2: Test Conversational Follow-Up**:
+
+Type: `proceed` or `proceed with data extraction`
+
+**Expected Behavior**:
+- ✅ Should detect intent as `CONFIRMATION`
+- ✅ Should recognize conversation state as `AWAITING_CONFIRMATION`
+- ✅ Should provide instructions to use Formal Portal (http://localhost:8501)
+- ✅ Should NOT give generic response "I can help you query patient data..."
+- **LangSmith**: Look for intent detection trace showing `CONFIRMATION`
+
+**Step 3: Test Other Intents**:
+
+Try these:
+- `help` → Should show help message
+- `hello` → Should show introduction
+- `what's my status?` → Should show status message
 
 ### LangSmith Verification
 
@@ -267,12 +314,20 @@ AND start_time > today
 
 After running both tests, verify:
 
-### Exploratory Portal
+### Exploratory Portal - Conversational AI
+- [ ] **Intent Detection**: "proceed" recognized as `CONFIRMATION` (not generic response)
+- [ ] **Greeting**: "hello" shows introduction message
+- [ ] **Help**: "help" shows help message
+- [ ] **Status Check**: "status" shows status message
+- [ ] **Conversation State**: Portal tracks state (INITIAL → AWAITING_CONFIRMATION)
+- [ ] **Portal Routing**: "proceed" directs to Formal Portal (not data extraction)
+
+### Exploratory Portal - Feasibility
 - [ ] Query interpreted correctly
 - [ ] Feasibility score shown
 - [ ] SQL generated and displayed
 - [ ] Query executes without error
-- [ ] LangSmith shows 3 traces (interpret, feasibility, SQL)
+- [ ] LangSmith shows traces (intent, interpret, feasibility, SQL)
 
 ### Formal Portal
 - [ ] Form submission successful

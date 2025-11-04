@@ -59,12 +59,10 @@ else:
 # Add parent directory to path
 sys.path.insert(0, project_root)
 
-# REMOVED: from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
+from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
 from app.services.query_interpreter import QueryInterpreter
 from app.components.approval_tracker import ApprovalTracker
-
-# REMOVED: No longer using LangChainRequirementsAgent - direct SQL routing for speed
 
 
 def run_async(coroutine):
@@ -136,7 +134,13 @@ def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # REMOVED: No longer using conversational agent - direct SQL routing for speed
+    # Conversation manager for intent detection
+    if "conversation_manager" not in st.session_state:
+        st.session_state.conversation_manager = ConversationManager()
+
+    # Conversation state tracking
+    if "conversation_state" not in st.session_state:
+        st.session_state.conversation_state = ConversationState.INITIAL
 
     if "feasibility_service" not in st.session_state:
         st.session_state.feasibility_service = FeasibilityService()
@@ -147,78 +151,102 @@ def initialize_session_state():
     if "approval_tracker" not in st.session_state:
         st.session_state.approval_tracker = ApprovalTracker()
 
-    # REMOVED: conversation_state (agent handles this internally)
-
     if "pending_feasibility" not in st.session_state:
         st.session_state.pending_feasibility = None
 
     if "pending_request_id" not in st.session_state:
         st.session_state.pending_request_id = None
 
-    # REMOVED: last_query_intent (agent handles intent detection)
+    if "last_query_intent" not in st.session_state:
+        st.session_state.last_query_intent = None
 
-    # NEW: Session ID for conversation tracking
+    # Session ID for conversation tracking
     if "session_id" not in st.session_state:
         st.session_state.session_id = f"notebook_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
 
 async def handle_user_input(user_input: str):
     """
-    Handle user input with direct SQL execution for data queries
+    Handle user input with conversational AI and intent detection
 
     EXPLORATORY MODE:
-    - Direct routing to SQL execution for data queries
-    - Quick analytics for pre-approved researchers
-    - NO conversational delays
+    - Conversational AI with intent detection
+    - Quick feasibility checks (SQL-on-FHIR)
+    - Routes to formal portal for full extraction
     """
-    user_input_lower = user_input.lower()
+    # Detect intent using ConversationManager
+    intent = st.session_state.conversation_manager.detect_intent(user_input)
 
-    # Detect data query patterns (keywords that indicate SQL execution needed)
-    data_query_keywords = [
-        "count",
-        "how many",
-        "patients",
-        "breakdown",
-        "give me",
-        "show me",
-        "find",
-        "list",
-        "filter",
-        "with diabetes",
-        "with hypertension",
-        "male",
-        "female",
-        "age",
-        "condition",
-        "medication",
-    ]
+    # Route based on intent
+    if intent == UserIntent.GREETING:
+        # User greeted us
+        response = st.session_state.conversation_manager.get_introduction()
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        st.session_state.conversation_state = ConversationState.INITIAL
 
-    # Check if this is a data query
-    is_data_query = any(keyword in user_input_lower for keyword in data_query_keywords)
+    elif intent == UserIntent.HELP:
+        # User needs help
+        response = st.session_state.conversation_manager.get_help_message()
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
-    if is_data_query:
-        # Direct route to SQL execution
-        await handle_query(user_input)
-    else:
-        # Handle non-data queries (greetings, help, etc.)
-        if any(word in user_input_lower for word in ["hello", "hi", "hey"]):
-            response = "Hello! I'm ResearchFlow, your AI research assistant. Ask me about patient data and I'll help you analyze it."
-        elif any(word in user_input_lower for word in ["help", "what can you do"]):
-            response = """I can help you with:
-- Counting patients with specific conditions
-- Filtering patients by demographics (age, gender)
-- Breaking down results by dimensions (gender, age group)
-- Checking data availability
+    elif intent == UserIntent.CONFIRMATION:
+        # User confirmed something - check what they're confirming
+        if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
+            # User confirmed feasibility results - direct to formal portal
+            if st.session_state.conversation_manager.is_confirmation(user_input):
+                response = """### ✅ Great! Let's move to the Formal Portal
 
-Try asking: "How many patients with diabetes?" or "Count of female patients, breakdown by age group" """
+**Next Steps:**
+1. Open the **Formal Request Portal** at http://localhost:8501
+2. Fill out the complete research request form
+3. Your feasibility results will help inform the request
+
+**What the Formal Portal Provides:**
+- Full approval workflow with informaticians
+- Data extraction and QA validation
+- Secure data delivery
+- Complete audit trail
+
+*The Exploratory Portal is designed for fast feasibility checks only. Full data extraction requires the formal approval workflow.*"""
+            else:
+                # User rejected - offer to refine
+                response = "No problem! Would you like to refine your search criteria? Just tell me what you'd like to change."
+                st.session_state.conversation_state = ConversationState.INITIAL
+
+            st.session_state.messages.append({"role": "assistant", "content": response})
         else:
-            response = "I can help you query patient data. Try asking about patient counts, conditions, or filtering by demographics."
+            # No pending confirmation
+            response = "I'm not sure what you're confirming. Could you ask a specific question about patient data?"
+            st.session_state.messages.append({"role": "assistant", "content": response})
+
+    elif intent == UserIntent.STATUS_CHECK:
+        # User checking status
+        if st.session_state.pending_request_id:
+            response = f"""### Request Status
+
+**Request ID:** {st.session_state.pending_request_id}
+
+Check detailed status in the **Formal Request Portal** at http://localhost:8501
+
+*Tip: The Exploratory Portal is for feasibility checks only. Full request tracking is in the Formal Portal.*"""
+        else:
+            response = "You don't have any pending requests. Ask me a question about patient data to get started!"
 
         st.session_state.messages.append({"role": "assistant", "content": response})
 
+    elif intent == UserIntent.QUERY:
+        # Data query - route to SQL execution
+        await handle_query(user_input)
 
-# REMOVED: Old keyword-based handler functions (greeting, help, status_check, confirmation)
-# Agent now handles all conversational interactions
+    else:
+        # Unknown intent - provide guidance
+        response = """I can help you with:
+- **Data queries**: "How many patients with diabetes?"
+- **Status checks**: "What's my request status?"
+- **Help**: "What can you do?"
+
+Try asking a question about patient data!"""
+        st.session_state.messages.append({"role": "assistant", "content": response})
 
 
 def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
@@ -280,7 +308,11 @@ def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
         response_parts.append("⚠️ Small cohort size - consider broadening criteria.")
 
     response_parts.append("")
-    response_parts.append("Would you like to proceed with data extraction?")
+    response_parts.append("**Next Steps:**")
+    response_parts.append(
+        '- Type **"proceed"** to submit to the Formal Portal for full data extraction'
+    )
+    response_parts.append("- Or ask another question to refine your search")
 
     return "\n".join(response_parts)
 
@@ -379,7 +411,7 @@ async def handle_query(user_input: str):
         # Format breakdown response
         feasibility_response = format_breakdown_response(feasibility_data)
     else:
-        # Format and show feasibility response (simplified - no more conversation_manager)
+        # Format and show feasibility response with portal routing
         cohort_size = feasibility_data["estimated_cohort"]
         feasibility_response = f"""
 ## Feasibility Analysis
@@ -388,10 +420,15 @@ async def handle_query(user_input: str):
 
 {"✅ This appears to be a good cohort size for your study." if cohort_size >= 30 else "⚠️ Small cohort size - consider broadening criteria."}
 
-Would you like to proceed with data extraction?
+**Next Steps:**
+- Type **"proceed"** to submit to the Formal Portal for full data extraction
+- Or ask another question to refine your search
 """
 
     st.session_state.messages.append({"role": "assistant", "content": feasibility_response})
+
+    # Set conversation state to awaiting confirmation
+    st.session_state.conversation_state = ConversationState.AWAITING_CONFIRMATION
 
 
 async def submit_research_request():
@@ -491,18 +528,20 @@ You can continue using the notebook for other queries while waiting."""
 def render_sidebar():
     """Render sidebar"""
     with st.sidebar:
-        st.header("🤖 ResearchFlow")
+        st.header("🔍 Exploratory Portal")
+        st.caption("Fast feasibility checks")
+
+        # Portal info
+        st.info(
+            "**🚀 Need Full Data Extraction?**\n\nUse the [Formal Portal](http://localhost:8501) for:\n- Complete approval workflow\n- Data extraction & QA\n- Secure delivery"
+        )
 
         # Session info
         st.metric("Messages", len(st.session_state.messages))
 
-        # REMOVED: Conversation state display (agent handles this internally)
-
         # Pending request
         if st.session_state.pending_request_id:
             st.metric("Active Request", st.session_state.pending_request_id)
-
-            # REMOVED: Status check button (function removed, agent handles status conversationally)
 
         # Quick actions
         st.markdown("---")
@@ -513,7 +552,7 @@ def render_sidebar():
             st.session_state.pending_feasibility = None
             st.session_state.pending_request_id = None
             st.session_state.last_query_intent = None
-            # REMOVED: No agent to clear (using direct SQL routing)
+            st.session_state.conversation_state = ConversationState.INITIAL
             st.rerun()
 
         # Example queries
@@ -529,11 +568,16 @@ def render_sidebar():
                 st.session_state.example_query = example
                 st.rerun()
 
-        # System info
+        # Portal capabilities
         st.markdown("---")
-        st.caption("**Two-Stage Workflow:**")
-        st.caption("1️⃣ Feasibility (SQL-on-FHIR)")
-        st.caption("2️⃣ Extraction (Orchestrator)")
+        st.caption("**Exploratory Portal:**")
+        st.caption("✅ Instant cohort counts")
+        st.caption("✅ Natural language queries")
+        st.caption("✅ SQL-on-FHIR execution")
+        st.caption("")
+        st.caption("**Formal Portal:**")
+        st.caption("🔐 Full approval workflow")
+        st.caption("📦 Data extraction & delivery")
 
 
 def main():
@@ -542,8 +586,10 @@ def main():
     initialize_session_state()
 
     # Header
-    st.title("🤖 ResearchFlow - AI Research Assistant")
-    st.caption("Ask questions naturally, get approved data extractions")
+    st.title("🔍 ResearchFlow - Exploratory Portal")
+    st.caption(
+        "**Fast Feasibility Checks** • Ask questions, get instant cohort counts • For full data extraction, use the Formal Portal"
+    )
 
     # Sidebar
     render_sidebar()
