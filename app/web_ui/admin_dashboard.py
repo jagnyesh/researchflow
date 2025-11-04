@@ -198,8 +198,8 @@ def show_requests_sidebar():
         filtered_requests = [
             r
             for r in filtered_requests
-            if search_term.lower() in r.get("id", "").lower()
-            or search_term.lower() in r.get("researcher_name", "").lower()
+            if search_term.lower() in r.get("request_id", "").lower()
+            or search_term.lower() in r.get("researcher_info", {}).get("name", "").lower()
         ]
     if status_filter:
         filtered_requests = [
@@ -212,19 +212,20 @@ def show_requests_sidebar():
 
     # Display requests
     if filtered_requests:
-        for req in filtered_requests:
+        for idx, req in enumerate(filtered_requests):
             badge = get_status_badge(req.get("current_state", ""))
-            req_id = req.get("id", "Unknown")
+            req_id = req.get("request_id", "Unknown")
             req_short = req_id[:12] + "..." if len(req_id) > 12 else req_id
 
             with st.expander(f"{badge} {req_short}"):
-                st.write(f"**Researcher:** {req.get('researcher_name', 'N/A')}")
+                researcher_name = req.get("researcher_info", {}).get("name", "N/A")
+                st.write(f"**Researcher:** {researcher_name}")
                 st.write(f"**Status:** {req.get('current_state', 'N/A').replace('_', ' ').title()}")
 
-                created_at = req.get("created_at", "")
-                if created_at:
+                started_at = req.get("started_at", "")
+                if started_at:
                     st.write(
-                        f"**Started:** {created_at[:19] if isinstance(created_at, str) else created_at}"
+                        f"**Started:** {started_at[:19] if isinstance(started_at, str) else started_at}"
                     )
 
                 # Check delivery
@@ -233,7 +234,7 @@ def show_requests_sidebar():
                     st.write(f"**Cohort:** {delivery.get('cohort_size', 0):,} patients")
                     st.write(f"**Files:** {len(delivery.get('files', []))} ready")
 
-                if st.button("View Details", key=f"view_{req_id}"):
+                if st.button("View Details", key=f"view_{idx}_{req_id}"):
                     st.session_state.selected_request = req_id
 
         # Check if modal should be shown
