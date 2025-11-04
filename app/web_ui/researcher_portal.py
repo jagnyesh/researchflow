@@ -121,6 +121,91 @@ def download_file(request_id: str, filename: str = None):
         return None, None
 
 
+@st.dialog("Request Details", width="large")
+def show_request_details_modal(request_id: str):
+    """Show request details in a modal dialog"""
+
+    status = run_async(st.session_state.orchestrator.get_request_status(request_id))
+
+    if not status:
+        st.error(f"Request not found: {request_id}")
+        return
+
+    # Header
+    st.subheader(f"Request: {request_id}")
+
+    # Metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        badge = get_status_badge(status["current_state"])
+        st.metric("Status", f"{badge} {status['current_state'].replace('_', ' ').title()}")
+    with col2:
+        st.metric("Current Agent", status.get("current_agent", "None").replace("_", " ").title())
+    with col3:
+        try:
+            started = datetime.fromisoformat(status["started_at"])
+            duration = datetime.now() - started
+            st.metric("Duration", f"{duration.seconds // 60} min")
+        except:
+            st.metric("Duration", "N/A")
+
+    st.markdown("---")
+
+    # Researcher Info
+    st.markdown("### 👤 Researcher Information")
+    researcher = status.get("researcher_info", {})
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Name:** {researcher.get('name', 'N/A')}")
+        st.write(f"**Email:** {researcher.get('email', 'N/A')}")
+    with col2:
+        st.write(f"**Department:** {researcher.get('department', 'N/A')}")
+        st.write(f"**IRB Number:** {researcher.get('irb_number', 'N/A')}")
+
+    st.markdown("---")
+
+    # Workflow Timeline
+    st.markdown("### 📊 Workflow Timeline")
+    if status.get("agents_involved"):
+        for activity in reversed(status["agents_involved"][-10:]):  # Last 10 activities
+            agent = activity.get("agent", "").replace("_", " ").title()
+            task = activity.get("task", "").replace("_", " ").title()
+            timestamp = activity.get("timestamp", "")[:19] if activity.get("timestamp") else "N/A"
+            st.markdown(f"**{timestamp}** - {agent}: {task}")
+    else:
+        st.info("No agent activity yet")
+
+    st.markdown("---")
+
+    # Data Delivery Status
+    st.markdown("### 📦 Data Delivery")
+    delivery_info = check_delivery_status(request_id)
+
+    if delivery_info.get("delivered"):
+        st.success("✅ Data ready for download!")
+
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Cohort Size", f"{delivery_info.get('cohort_size', 0):,}")
+        with col2:
+            st.metric("Data Elements", len(delivery_info.get("data_elements", [])))
+        with col3:
+            st.metric("Files", len(delivery_info.get("files", [])))
+
+        st.info("💡 Go to the 'Request Details' tab to download your data files")
+    else:
+        current_state = status["current_state"]
+        st.info(
+            f"Data not yet delivered. Current status: {current_state.replace('_', ' ').title()}"
+        )
+
+    # Close button
+    if st.button("Close", type="secondary", use_container_width=True):
+        del st.session_state.modal_request
+        st.rerun()
+
+
 def initialize_orchestrator():
     """Initialize orchestrator with all agents"""
     if "orchestrator" not in st.session_state:
@@ -205,8 +290,11 @@ def main():
                             )
 
                         if st.button("View Details", key=f"view_{req_id}"):
-                            st.session_state.selected_request = req_id
-                            st.rerun()  # Force refresh to show details tab
+                            st.session_state.modal_request = req_id
+
+            # Show modal if a request was clicked (after loop, still inside if block)
+            if st.session_state.get("modal_request"):
+                show_request_details_modal(st.session_state.modal_request)
         else:
             st.info("No requests yet. Submit a new request below!")
 
