@@ -352,6 +352,94 @@ async def execute_view_definition_get(
     return await execute_view_definition(request)
 
 
+class CountRequest(BaseModel):
+    """Request to count resources matching a ViewDefinition"""
+
+    view_name: str = Field(..., description="Name of the ViewDefinition to count")
+    search_params: Optional[Dict[str, Any]] = Field(
+        None, description="FHIR search parameters to filter resources"
+    )
+
+
+class CountResponse(BaseModel):
+    """Response from count query"""
+
+    view_name: str
+    resource_type: str
+    count: int
+    generated_sql: Optional[str] = None  # SQL COUNT query that was executed
+
+
+@router.post("/count", response_model=CountResponse)
+async def count_resources(request: CountRequest):
+    """
+    Count resources matching a ViewDefinition without fetching data
+
+    This endpoint uses SELECT COUNT(*) queries for accurate counts without
+    fetching rows. Much faster than execute + len(rows) for large datasets.
+
+    Runner selection is controlled by VIEWDEF_RUNNER environment variable:
+    - 'hybrid': Uses materialized views when available
+    - 'materialized': Counts from pre-computed views
+    - 'postgres': Executes COUNT(*) query
+    - 'in_memory': Falls back to execute + count
+
+    Args:
+        request: Count request with view_name and search_params
+
+    Returns:
+        Actual count from database
+
+    Example:
+        POST /analytics/count
+        {
+            "view_name": "patient_demographics",
+            "search_params": {"gender": "female"}
+        }
+    """
+    try:
+        # Load ViewDefinition
+        manager = ViewDefinitionManager()
+        view_def = manager.load(request.view_name)
+
+        # Create runner based on environment configuration
+        runner, cleanup = await create_runner()
+
+        try:
+            logger.info(
+                f"Counting resources for ViewDefinition '{request.view_name}' "
+                f"with params: {request.search_params}"
+            )
+
+            # Use execute_count() method for accurate COUNT(*) queries
+            count = await runner.execute_count(view_def, search_params=request.search_params)
+
+            # Get generated SQL (if available)
+            generated_sql = None
+            if hasattr(runner, "get_last_executed_sql"):
+                generated_sql = runner.get_last_executed_sql()
+
+            logger.info(f"ViewDefinition '{request.view_name}' count: {count}")
+
+            return CountResponse(
+                view_name=request.view_name,
+                resource_type=view_def.get("resource"),
+                count=count,
+                generated_sql=generated_sql,
+            )
+
+        finally:
+            await cleanup()
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
+        )
+    except Exception as e:
+        logger.error(f"Error counting resources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/query")
 async def execute_custom_query(
     view_names: List[str] = Query(..., description="ViewDefinitions to execute"),

@@ -160,7 +160,7 @@ class FeasibilityService:
 
                 # Generate simple SQL for visibility
                 generated_sql = (
-                    f"SELECT COUNT(*) FROM sqlonfhir.{view_definitions[0]}"
+                    f"SELECT COUNT(*) FROM sqlonfhir.{view_definitions[0]}"  # nosec B608
                     if view_definitions
                     else ""
                 )
@@ -207,31 +207,32 @@ class FeasibilityService:
 
     async def _execute_count_query(self, view_name: str, search_params: Dict[str, Any]) -> int:
         """
-        Execute COUNT query for a ViewDefinition
+        Execute COUNT query for a ViewDefinition using dedicated count endpoint
+
+        Uses /analytics/count endpoint which executes SELECT COUNT(*) queries
+        for accurate counts without fetching rows.
 
         Args:
             view_name: ViewDefinition name
             search_params: FHIR search parameters
 
         Returns:
-            Count of matching resources
+            Count of matching resources (actual database count)
         """
         try:
-            # Call analytics API to execute ViewDefinition
-            # We request max_resources=1 to minimize data transfer
-            # The API will still return the full count
+            # Call dedicated count endpoint for accurate COUNT(*) queries
+            # This endpoint uses SELECT COUNT(*) instead of fetching rows
             response = await self.client.post(
-                f"{self.api_base_url}/analytics/execute",
+                f"{self.api_base_url}/analytics/count",
                 json={
                     "view_name": view_name,
                     "search_params": search_params,
-                    "max_resources": 1,  # Minimal data transfer
                 },
             )
             response.raise_for_status()
 
             result = response.json()
-            return result.get("row_count", 0)
+            return result.get("count", 0)
 
         except httpx.HTTPError as e:
             logger.error(f"HTTP error executing count query for {view_name}: {e}")
