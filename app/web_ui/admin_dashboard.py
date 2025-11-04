@@ -22,6 +22,7 @@ nest_asyncio.apply(_streamlit_loop)
 # NOW safe to import modules that create database connections
 import streamlit as st
 import pandas as pd
+import httpx
 from datetime import datetime, timedelta
 import time
 from dotenv import load_dotenv
@@ -56,6 +57,73 @@ def run_async(coroutine):
     database operations use the same loop.
     """
     return _streamlit_loop.run_until_complete(coroutine)
+
+
+def get_status_badge(state: str) -> str:
+    """Get colored status badge for request state"""
+    state_colors = {
+        "delivered": "🟢",
+        "complete": "🟢",
+        "data_delivery": "🟡",
+        "qa_validation": "🟡",
+        "data_extraction": "🟡",
+        "feasibility_validation": "🔵",
+        "requirements_gathering": "🔵",
+        "failed": "🔴",
+        "not_feasible": "🔴",
+    }
+    return state_colors.get(state.lower(), "⚪")
+
+
+def check_delivery_status(request_id: str) -> dict:
+    """
+    Check if data is delivered for a request
+
+    Returns dict with:
+        - delivered: bool
+        - files: list of file dicts
+        - cohort_size: int
+        - delivery_location: str
+    """
+    try:
+        # Call delivery API endpoint
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        response = httpx.get(f"{api_url}/research/{request_id}/delivery", timeout=10.0)
+
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return {"delivered": False, "files": []}
+    except Exception as e:
+        st.error(f"Error checking delivery status: {str(e)}")
+        return {"delivered": False, "files": []}
+
+
+def download_file(request_id: str, filename: str = None):
+    """Download file(s) from delivered request"""
+    try:
+        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+        if filename:
+            # Download specific file
+            url = f"{api_url}/research/{request_id}/download/{filename}"
+        else:
+            # Download full ZIP package
+            url = f"{api_url}/research/{request_id}/download"
+            filename = f"{request_id}_data_package.zip"
+
+        response = httpx.get(url, timeout=60.0)
+
+        if response.status_code == 200:
+            # Return file content for st.download_button
+            return response.content, filename
+        else:
+            st.error(f"Download failed: {response.status_code} - {response.text}")
+            return None, None
+
+    except Exception as e:
+        st.error(f"Download error: {str(e)}")
+        return None, None
 
 
 def initialize_orchestrator():
@@ -98,6 +166,235 @@ def initialize_orchestrator():
         st.session_state.orchestrator = orchestrator
 
 
+def show_requests_sidebar():
+    """Show all submitted requests in sidebar"""
+    st.header("📋 All Requests")
+
+    # Get all requests
+    requests = run_async(st.session_state.orchestrator.get_all_active_requests())
+
+    # Search box
+    search_term = st.text_input(
+        "🔍 Search", key="search_requests", placeholder="Search by ID or researcher"
+    )
+
+    # Status filter
+    all_statuses = [
+        "delivered",
+        "complete",
+        "in_progress",
+        "data_extraction",
+        "qa_validation",
+        "failed",
+        "not_feasible",
+    ]
+    status_filter = st.multiselect(
+        "Filter by Status", options=all_statuses, default=[], key="status_filter"
+    )
+
+    # Filter requests
+    filtered_requests = requests
+    if search_term:
+        filtered_requests = [
+            r
+            for r in filtered_requests
+            if search_term.lower() in r.get("id", "").lower()
+            or search_term.lower() in r.get("researcher_name", "").lower()
+        ]
+    if status_filter:
+        filtered_requests = [
+            r
+            for r in filtered_requests
+            if r.get("current_state", "").lower() in [s.lower() for s in status_filter]
+        ]
+
+    st.caption(f"Showing {len(filtered_requests)} of {len(requests)} requests")
+
+    # Display requests
+    if filtered_requests:
+        for req in filtered_requests:
+            badge = get_status_badge(req.get("current_state", ""))
+            req_id = req.get("id", "Unknown")
+            req_short = req_id[:12] + "..." if len(req_id) > 12 else req_id
+
+            with st.expander(f"{badge} {req_short}"):
+                st.write(f"**Researcher:** {req.get('researcher_name', 'N/A')}")
+                st.write(f"**Status:** {req.get('current_state', 'N/A').replace('_', ' ').title()}")
+
+                created_at = req.get("created_at", "")
+                if created_at:
+                    st.write(
+                        f"**Started:** {created_at[:19] if isinstance(created_at, str) else created_at}"
+                    )
+
+                # Check delivery
+                delivery = check_delivery_status(req_id)
+                if delivery.get("delivered"):
+                    st.write(f"**Cohort:** {delivery.get('cohort_size', 0):,} patients")
+                    st.write(f"**Files:** {len(delivery.get('files', []))} ready")
+
+                if st.button("View Details", key=f"view_{req_id}"):
+                    st.session_state.selected_request = req_id
+
+        # Check if modal should be shown
+        if st.session_state.get("selected_request"):
+            show_request_details_modal(st.session_state.selected_request)
+    else:
+        st.info("No requests match the filters")
+
+
+@st.dialog("Request Details", width="large")
+def show_request_details_modal(request_id: str):
+    """Show detailed request information in modal"""
+
+    # Get request status
+    status = run_async(st.session_state.orchestrator.get_request_status(request_id))
+
+    if not status:
+        st.error(f"Request not found: {request_id}")
+        return
+
+    # Header
+    st.subheader(f"Request: {request_id}")
+
+    # Metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Status", status.get("current_state", "N/A").replace("_", " ").title())
+    with col2:
+        st.metric("Current Agent", status.get("current_agent", "None").replace("_", " ").title())
+    with col3:
+        started = status.get("started_at", "")
+        if started:
+            try:
+                started_dt = datetime.fromisoformat(started)
+                duration = datetime.now() - started_dt
+                st.metric("Duration", f"{duration.seconds // 60} min")
+            except:
+                st.metric("Duration", "N/A")
+
+    st.markdown("---")
+
+    # Researcher Info
+    st.markdown("### 👤 Researcher Information")
+    researcher = status.get("researcher_info", {})
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Name:** {researcher.get('name', 'N/A')}")
+        st.write(f"**Email:** {researcher.get('email', 'N/A')}")
+    with col2:
+        st.write(f"**Department:** {researcher.get('department', 'N/A')}")
+        st.write(f"**IRB Number:** {researcher.get('irb_number', 'N/A')}")
+
+    st.markdown("---")
+
+    # Workflow Timeline
+    st.markdown("### 📊 Workflow Timeline")
+    if status.get("agents_involved"):
+        for activity in reversed(status["agents_involved"][-10:]):  # Show last 10
+            agent = activity.get("agent", "").replace("_", " ").title()
+            task = activity.get("task", "").replace("_", " ").title()
+            timestamp = activity.get("timestamp", "")[:19] if activity.get("timestamp") else "N/A"
+            st.markdown(f"**{timestamp}** - {agent}: {task}")
+    else:
+        st.info("No agent activity yet")
+
+    st.markdown("---")
+
+    # Download Section
+    show_download_section(request_id)
+
+    # Close button
+    if st.button("Close", type="secondary", use_container_width=True):
+        del st.session_state.selected_request
+        st.rerun()
+
+
+def show_download_section(request_id: str):
+    """Show download options in modal"""
+    st.markdown("### 📦 Data Delivery")
+
+    delivery_info = check_delivery_status(request_id)
+
+    if delivery_info.get("delivered"):
+        st.success("✅ Data ready for download")
+
+        # Metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Cohort Size", f"{delivery_info.get('cohort_size', 0):,}")
+        with col2:
+            st.metric("Data Elements", len(delivery_info.get("data_elements", [])))
+        with col3:
+            st.metric("Files", len(delivery_info.get("files", [])))
+
+        st.markdown("---")
+
+        # Download ZIP
+        st.markdown("**Download Complete Package (ZIP)**")
+        st.caption("Includes all data files, data dictionary, QA report, and documentation")
+
+        if st.button(
+            "📦 Download ZIP", type="primary", use_container_width=True, key=f"dl_zip_{request_id}"
+        ):
+            with st.spinner("Preparing download..."):
+                file_content, filename = download_file(request_id)
+                if file_content:
+                    st.download_button(
+                        label="💾 Save ZIP File",
+                        data=file_content,
+                        file_name=filename,
+                        mime="application/zip",
+                        type="primary",
+                        use_container_width=True,
+                        key=f"save_zip_{request_id}",
+                    )
+                    st.success(f"✅ Ready to download: {filename}")
+
+        st.markdown("---")
+
+        # Individual files
+        st.markdown("**Individual Files**")
+        files = delivery_info.get("files", [])
+        if files:
+            for idx, file_info in enumerate(files):
+                filename = file_info.get("filename", "unknown")
+                size_mb = file_info.get("size_mb", 0)
+
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.write(f"📄 {filename} ({size_mb:.2f} MB)")
+                with col2:
+                    if st.button(
+                        "Download", key=f"dl_admin_{request_id}_{idx}", use_container_width=True
+                    ):
+                        with st.spinner(f"Downloading {filename}..."):
+                            file_content, _ = download_file(request_id, filename)
+                            if file_content:
+                                st.download_button(
+                                    label=f"💾 Save",
+                                    data=file_content,
+                                    file_name=filename,
+                                    mime="text/csv" if filename.endswith(".csv") else "text/plain",
+                                    key=f"save_admin_{request_id}_{idx}",
+                                    use_container_width=True,
+                                )
+        else:
+            st.info("No files available")
+
+        # QA Summary
+        if delivery_info.get("qa_report_summary"):
+            st.markdown("---")
+            st.markdown("**Quality Assurance Summary**")
+            st.json(delivery_info["qa_report_summary"])
+
+    else:
+        current_state = delivery_info.get("current_state", "unknown")
+        st.info(
+            f"Data not yet delivered. Current status: {current_state.replace('_', ' ').title()}"
+        )
+
+
 def main():
     """Main admin dashboard application"""
     st.set_page_config(page_title="ResearchFlow - Admin Dashboard", page_icon="⚙️", layout="wide")
@@ -135,31 +432,40 @@ def main():
     # Update last refresh time
     st.session_state.last_refresh = datetime.now()
 
-    # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(
-        [
-            "📊 Overview",
-            "🤖 Agent Metrics",
-            "✋ Pending Approvals",
-            "🚨 Escalations",
-            "📈 Analytics",
-        ]
-    )
+    # Main layout: Sidebar + Main Area
+    col_sidebar, col_main = st.columns([1, 3])
 
-    with tab1:
-        show_overview()
+    # Sidebar with request list
+    with col_sidebar:
+        show_requests_sidebar()
 
-    with tab2:
-        show_agent_metrics()
+    # Main area with tabs
+    with col_main:
+        # Tabs
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+            [
+                "📊 Overview",
+                "🤖 Agent Metrics",
+                "✋ Pending Approvals",
+                "🚨 Escalations",
+                "📈 Analytics",
+            ]
+        )
 
-    with tab3:
-        show_pending_approvals()
+        with tab1:
+            show_overview()
 
-    with tab4:
-        show_escalations()
+        with tab2:
+            show_agent_metrics()
 
-    with tab5:
-        show_analytics()
+        with tab3:
+            show_pending_approvals()
+
+        with tab4:
+            show_escalations()
+
+        with tab5:
+            show_analytics()
 
     # Auto-refresh logic
     if auto_refresh:
