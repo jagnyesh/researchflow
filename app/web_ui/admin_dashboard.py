@@ -34,6 +34,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from app.orchestrator import ResearchRequestOrchestrator
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 from app.agents import (
     RequirementsAgent,
     PhenotypeValidationAgent,
@@ -63,20 +64,36 @@ def initialize_orchestrator():
         # Ensure database engine is initialized for current event loop
         # This prevents "Queue is bound to a different event loop" errors
         get_engine()
-        orchestrator = ResearchRequestOrchestrator()
 
-        # Get HAPI FHIR database URL from environment
-        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+        # ====================================================================
+        # LangGraph Migration Feature Flag (Sprint 6.5 + 6.6)
+        # ====================================================================
+        # Check if LangGraph workflow is enabled via environment variable
+        use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
 
-        # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
-        orchestrator.register_agent("requirements_agent", RequirementsAgent())
-        orchestrator.register_agent(
-            "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
-        )
-        orchestrator.register_agent("calendar_agent", CalendarAgent())
-        orchestrator.register_agent("extraction_agent", DataExtractionAgent())
-        orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
-        orchestrator.register_agent("delivery_agent", DeliveryAgent())
+        if use_langgraph:
+            # Use new LangGraph declarative orchestrator
+            st.caption("🆕 Using LangGraph Orchestrator (Beta)")
+            orchestrator = LangGraphRequestFacade(
+                use_real_agents=True,  # Use production agents
+                use_persistence=True,  # Enable checkpointing
+            )
+        else:
+            # Use legacy custom orchestrator (default)
+            orchestrator = ResearchRequestOrchestrator()
+
+            # Get HAPI FHIR database URL from environment
+            hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+
+            # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
+            orchestrator.register_agent("requirements_agent", RequirementsAgent())
+            orchestrator.register_agent(
+                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
+            )
+            orchestrator.register_agent("calendar_agent", CalendarAgent())
+            orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+            orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
+            orchestrator.register_agent("delivery_agent", DeliveryAgent())
 
         st.session_state.orchestrator = orchestrator
 
