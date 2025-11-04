@@ -8,10 +8,21 @@ services:
       - DATABASE_URL=postgresql+asyncpg://researchflow:researchflow@db:5432/researchflow
       - A2A_JWT_SECRET=supersecret
       - FHIR_SERVER_URL=http://hapi-fhir:8080/fhir
+      # Redis Speed Layer
+      - REDIS_URL=redis://redis:6379/0
+      - USE_SPEED_LAYER=true
+      # LangGraph Migration (Sprint 6.5 + 6.6)
+      - USE_LANGGRAPH_WORKFLOW=false
+      - LANGGRAPH_ROLLOUT_PCT=0
+      # LangSmith Observability (optional - add your key)
+      - LANGCHAIN_TRACING_V2=false
+      - LANGCHAIN_PROJECT=researchflow-production
     depends_on:
       db:
         condition: service_healthy
       hapi-fhir:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   db:
