@@ -3,7 +3,7 @@ uvicorn[standard]==0.22.0
 httpx
 sqlalchemy[asyncio]
 asyncpg==0.28.0
-aiosqlite==0.19.0
+aiosqlite>=0.20  # Required by langgraph-checkpoint-sqlite
 pydantic
 python-jose==3.3.0
 pytest
@@ -36,6 +36,7 @@ langchain-core>=0.3.17  # Required by langchain-anthropic
 langchain-community>=0.3.5
 langchain-anthropic>=0.3.0
 langgraph>=0.2.45
+langgraph-checkpoint-sqlite>=3.0.0  # Required for LangGraph persistence
 langsmith>=0.1.142  # For tracing and debugging
 
 # Lambda Speed Layer dependencies (Sprint 5.5)

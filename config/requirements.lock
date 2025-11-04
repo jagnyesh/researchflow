@@ -6,8 +6,10 @@ aiohttp==3.13.2
     # via langchain-community
 aiosignal==1.4.0
     # via aiohttp
-aiosqlite==0.19.0
-    # via -r config/requirements.txt
+aiosqlite==0.21.0
+    # via
+    #   -r config/requirements.txt
+    #   langgraph-checkpoint-sqlite
 aisuite==0.1.11
     # via -r config/requirements.txt
 alembic==1.17.1
@@ -153,7 +155,10 @@ langgraph==1.0.2
 langgraph-checkpoint==3.0.0
     # via
     #   langgraph
+    #   langgraph-checkpoint-sqlite
     #   langgraph-prebuilt
+langgraph-checkpoint-sqlite==3.0.0
+    # via -r config/requirements.txt
 langgraph-prebuilt==1.0.2
     # via langgraph
 langgraph-sdk==0.2.9
@@ -315,6 +320,8 @@ sqlalchemy==2.0.44
     #   alembic
     #   langchain-classic
     #   langchain-community
+sqlite-vec==0.1.6
+    # via langgraph-checkpoint-sqlite
 starlette==0.49.3
     # via fastapi
 streamlit==1.51.0
@@ -337,6 +344,7 @@ tqdm==4.67.1
 typing-extensions==4.15.0
     # via
     #   aiosignal
+    #   aiosqlite
     #   alembic
     #   altair
     #   anthropic
