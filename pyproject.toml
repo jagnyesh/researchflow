@@ -1,10 +1,16 @@
+[project]
+name = "researchflow"
+version = "0.1.0"
+description = "AI-powered clinical research data automation platform"
+requires-python = ">=3.11,<3.13"  # Python 3.11.x only (asyncpg incompatible with 3.13)
+
 [tool.bandit]
 exclude_dirs = ["tests", "*/test_*.py", "*_test.py"]
 skips = ["B101", "B601"]  # B101: assert_used (ok in tests), B601: paramiko (not used)
 
 [tool.black]
 line-length = 100
-target-version = ['py310']
+target-version = ['py311']
 exclude = '''
 /(
     \.eggs

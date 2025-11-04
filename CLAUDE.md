@@ -24,7 +24,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Setup
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r config/requirements.txt
+
+# Install dependencies (UV - recommended for speed and reproducibility) 🆕
+uv pip sync config/requirements.lock  # Install from lockfile (exact versions)
+# OR: uv pip install -r config/requirements.txt  # Install latest compatible versions
+
+# Legacy pip workflow (slower, no lockfile)
+# pip install -r config/requirements.txt
 
 # Add API keys to .env
 cp config/.env.example .env
@@ -36,7 +42,7 @@ cp config/.env.example .env
 #   LANGCHAIN_API_KEY=lsv2_pt_...       🆕 (optional)
 
 # Install pre-commit hooks (security) 🆕
-pip install pre-commit
+uv pip install pre-commit  # Or: pip install pre-commit
 pre-commit install
 
 # Start Redis (for Speed Layer) 🆕
@@ -665,6 +671,109 @@ bandit -r app/
 - [ ] Kubernetes deployment configs
 - [ ] Secure file storage (S3/Azure)
 - [ ] Email notification service
+
+## UV Dependency Management 🆕
+
+ResearchFlow uses **UV** (ultra-fast Python package manager) for dependency management, providing:
+- **10-100x faster** installations compared to pip
+- **Reproducible builds** via lockfile (`config/requirements.lock`)
+- **Better conflict resolution** (catches incompatibilities early)
+- **Automatic virtual environment management**
+
+### Installation
+
+UV is already installed if you're in the project venv. To install globally:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh  # macOS/Linux
+# or: brew install uv
+```
+
+### Common UV Workflows
+
+**Install from lockfile (recommended for reproducibility):**
+```bash
+source .venv/bin/activate
+uv pip sync config/requirements.lock  # Installs exact versions
+```
+
+**Install from requirements.txt (get latest compatible versions):**
+```bash
+uv pip install -r config/requirements.txt  # Faster than pip
+```
+
+**Add a new dependency:**
+```bash
+# 1. Add to config/requirements.txt
+echo "new-package>=1.0.0" >> config/requirements.txt
+
+# 2. Regenerate lockfile
+uv pip compile config/requirements.txt -o config/requirements.lock
+
+# 3. Install from lockfile
+uv pip sync config/requirements.lock
+
+# 4. Commit both files
+git add config/requirements.txt config/requirements.lock
+git commit -m "Add new-package dependency"
+```
+
+**Upgrade a dependency:**
+```bash
+# 1. Update version in config/requirements.txt
+# 2. Regenerate lockfile
+uv pip compile config/requirements.txt -o config/requirements.lock
+
+# 3. Install
+uv pip sync config/requirements.lock
+```
+
+**Check for conflicts:**
+```bash
+uv pip compile config/requirements.txt  # Shows conflicts immediately
+pip check  # Verify installed packages
+```
+
+### Lockfile Regeneration
+
+The lockfile (`config/requirements.lock`) is regenerated whenever `requirements.txt` changes:
+```bash
+uv pip compile config/requirements.txt -o config/requirements.lock
+```
+
+**When to regenerate:**
+- After adding/removing dependencies
+- After changing version constraints
+- When dependency conflicts need resolution
+
+**Lockfile benefits:**
+- Guarantees identical environments across machines
+- Faster CI/CD builds (no resolver needed)
+- Prevents "works on my machine" issues
+
+### Migration from pip
+
+UV is a drop-in replacement for pip:
+```bash
+# Old (pip)                          # New (UV - 10-100x faster)
+pip install package                  → uv pip install package
+pip install -r requirements.txt      → uv pip install -r requirements.txt
+pip freeze > requirements.txt        → uv pip freeze > requirements.txt
+pip list                             → uv pip list
+```
+
+### Python Version Management
+
+ResearchFlow requires **Python 3.11.x** (not 3.13 due to asyncpg compatibility).
+
+Verify version:
+```bash
+python --version  # Should show Python 3.11.x
+```
+
+Pin version for project:
+```bash
+echo "3.11.12" > .python-version  # UV/pyenv will use this
+```
 
 ## Documentation
 
