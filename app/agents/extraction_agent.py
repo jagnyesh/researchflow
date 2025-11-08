@@ -36,6 +36,8 @@ class DataExtractionAgent(BaseAgent):
         """Execute data extraction task"""
         if task == "extract_data":
             return await self._extract_data(context)
+        elif task == "extract_preview":
+            return await self._extract_preview(context)
         else:
             raise ValueError(f"Unknown task: {task}")
 
@@ -44,19 +46,45 @@ class DataExtractionAgent(BaseAgent):
         Execute data extraction across multiple sources
 
         Args:
-            context: Contains request_id, requirements, phenotype_sql
+            context: Contains request_id, structured_requirements, sql_query, parameters
 
         Returns:
             Dict with extraction results and next routing
         """
         request_id = context.get("request_id")
-        requirements = context.get("requirements")
-        phenotype_sql = context.get("phenotype_sql")
+
+        # Get requirements from approval context
+        # Note: approval_data has 'structured_requirements' not 'requirements'
+        requirements = context.get("structured_requirements") or context.get("requirements")
+
+        # Get SQL query and parameters from approval context
+        # Note: approval_data has 'sql_query' not 'phenotype_sql'
+        sql_query = context.get("sql_query") or context.get("phenotype_sql")
+        parameters = context.get("parameters", {})
+
+        # DEFENSIVE CHECKS: Validate required context is present
+        if not requirements:
+            error_msg = (
+                f"Missing 'structured_requirements' in context for {request_id}. "
+                f"Available context keys: {list(context.keys())}. "
+                f"This indicates the orchestrator did not properly enrich the context."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
+
+        if not sql_query:
+            error_msg = (
+                f"Missing 'sql_query'/'phenotype_sql' in context for {request_id}. "
+                f"Available context keys: {list(context.keys())}. "
+                f"This indicates the orchestrator did not properly enrich the context."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
 
         logger.info(f"[{self.agent_id}] Starting extraction for {request_id}")
 
         # Step 1: Execute phenotype query to get patient cohort
-        cohort = await self._execute_phenotype_query(phenotype_sql)
+        cohort = await self._execute_phenotype_query(sql_query, parameters)
 
         logger.info(f"[{self.agent_id}] Cohort identified: {len(cohort)} patients")
 
@@ -117,15 +145,121 @@ class DataExtractionAgent(BaseAgent):
             "additional_context": {"data_package": data_package},
         }
 
-    async def _execute_phenotype_query(self, phenotype_sql: str) -> list:
+    async def _extract_preview(self, context: Dict) -> Dict[str, Any]:
+        """
+        Extract preview data (10 rows per data element) for validation
+
+        This is a lightweight extraction to validate SQL and data structure
+        before committing to full extraction.
+
+        Args:
+            context: Contains request_id, structured_requirements, sql_query, parameters
+
+        Returns:
+            Dict with preview data and routing to QA agent
+        """
+        request_id = context.get("request_id")
+
+        # Get requirements from approval context
+        # Note: approval_data has 'structured_requirements' not 'requirements'
+        requirements = context.get("structured_requirements") or context.get("requirements")
+
+        # Get SQL query and parameters from approval context
+        # Note: approval_data has 'sql_query' not 'phenotype_sql'
+        sql_query = context.get("sql_query") or context.get("phenotype_sql")
+        parameters = context.get("parameters", {})
+
+        # DEFENSIVE CHECKS: Validate required context is present
+        if not requirements:
+            error_msg = (
+                f"Missing 'structured_requirements' in context for {request_id}. "
+                f"Available context keys: {list(context.keys())}. "
+                f"This indicates the orchestrator did not properly enrich the context."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
+
+        if not sql_query:
+            error_msg = (
+                f"Missing 'sql_query'/'phenotype_sql' in context for {request_id}. "
+                f"Available context keys: {list(context.keys())}. "
+                f"This indicates the orchestrator did not properly enrich the context."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
+
+        logger.info(f"[{self.agent_id}] Starting PREVIEW extraction for {request_id}")
+
+        # Step 1: Execute phenotype query to get patient cohort
+        cohort = await self._execute_phenotype_query(sql_query, parameters)
+
+        logger.info(f"[{self.agent_id}] Cohort identified: {len(cohort)} patients")
+
+        # Step 2: Extract PREVIEW (first 10 rows) for each data element
+        preview_results = {}
+        data_elements = requirements.get("data_elements", [])
+
+        for data_element in data_elements:
+            logger.debug(f"[{self.agent_id}] Extracting PREVIEW for {data_element}")
+            try:
+                # Extract with limit=10
+                element_data = await self._extract_data_element_preview(
+                    data_element=data_element,
+                    patient_ids=[p["patient_id"] for p in cohort],
+                    time_period=requirements.get("time_period", {}),
+                    limit=10,  # Preview: only 10 rows
+                )
+                preview_results[data_element] = element_data
+                logger.info(
+                    f"[{self.agent_id}] Extracted {len(element_data)} preview rows for {data_element}"
+                )
+            except Exception as e:
+                logger.error(f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}")
+                preview_results[data_element] = []
+
+        # Step 3: NO de-identification for preview (informatician needs to see real data)
+        # Preview is internal review only, not for delivery
+
+        # Step 4: Create preview data package
+        preview_package = {
+            "cohort": cohort[:10],  # Also limit cohort to 10 for preview
+            "preview_data": preview_results,
+            "metadata": {
+                "request_id": request_id,
+                "extraction_date": self._get_timestamp(),
+                "cohort_size": len(cohort),
+                "data_elements_extracted": list(preview_results.keys()),
+                "is_preview": True,
+                "preview_rows_per_element": 10,
+            },
+        }
+
+        logger.info(
+            f"[{self.agent_id}] Preview extraction complete: {len(cohort)} patients total, "
+            f"{len(preview_results)} data elements (10 rows each)"
+        )
+
+        return {
+            "preview_extracted": True,
+            "preview_package": preview_package,
+            "next_agent": "qa_agent",
+            "next_task": "validate_preview",
+            "additional_context": {"preview_package": preview_package},
+        }
+
+    async def _execute_phenotype_query(self, phenotype_sql: str, parameters: dict = None) -> list:
         """
         Execute phenotype SQL to get patient cohort
+
+        Args:
+            phenotype_sql: Parameterized SQL query
+            parameters: SQL parameters for binding (e.g., {"gender_1": "male"})
 
         Returns:
             List of patient dicts with id, birthDate, etc.
         """
         try:
-            result = await self.sql_adapter.execute_sql(phenotype_sql)
+            result = await self.sql_adapter.execute_sql(phenotype_sql, parameters)
             return result if result else []
         except Exception as e:
             logger.error(f"[{self.agent_id}] Phenotype query failed: {str(e)}")
@@ -158,7 +292,62 @@ class DataExtractionAgent(BaseAgent):
 
         # Generate extraction query based on data element type
         # Note: f-strings used only for structure, all data in params dict
-        if data_element == "clinical_notes":
+
+        # Handle demographic data elements from patient_demographics materialized view
+        if data_element in [
+            "Family name",
+            "Given name",
+            "Date of birth",
+            "Address",
+            "Demographics (age, gender, race)",
+        ]:
+            # Extract demographics from patient_demographics materialized view
+            # nosec B608 - SQL structure is safe, all values parameterized
+
+            # Field mapping for available columns
+            # NOTE: patient_demographics has: patient_id, gender, dob, name_given, name_family
+            # It does NOT have: race, address (not in FHIR synthetic data)
+            field_mapping = {
+                "Family name": "name_family",
+                "Given name": "name_given",
+                "Date of birth": "dob",
+                "Address": None,  # Not available in patient_demographics
+            }
+
+            # Build SELECT clause based on requested demographic field
+            if data_element == "Demographics (age, gender, race)":
+                # Select all available demographic fields (race not available)
+                select_fields = "patient_id, name_family, name_given, gender, dob"
+            elif data_element == "Address":
+                # Address not available in patient_demographics - return empty
+                logger.warning(
+                    f"[{self.agent_id}] Address data not available in patient_demographics table"
+                )
+                return []
+            else:
+                db_field = field_mapping.get(data_element)
+                if db_field is None:
+                    logger.warning(
+                        f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
+                    )
+                    return []
+                select_fields = f"patient_id, {db_field}"
+
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
+                SELECT {select_fields}
+                FROM sqlonfhir.patient_demographics
+                WHERE patient_id IN ({patient_id_placeholders})
+            """
+
+            try:
+                result = await self.sql_adapter.execute_sql(sql, params)
+                return result if result else []
+            except Exception as e:
+                logger.warning(f"[{self.agent_id}] Demographic extraction failed: {str(e)}")
+                return []
+
+        elif data_element == "clinical_notes":
             # nosec B608 - SQL structure is safe, all values parameterized
             sql = f"""
                 SELECT
@@ -221,6 +410,158 @@ class DataExtractionAgent(BaseAgent):
             logger.warning(f"[{self.agent_id}] Extraction query failed: {str(e)}")
             return []
 
+    async def _extract_data_element_preview(
+        self, data_element: str, patient_ids: list, time_period: Dict, limit: int = 10
+    ) -> list:
+        """
+        Extract preview (limited rows) for a specific data element
+
+        Similar to _extract_data_element but with LIMIT clause for preview
+
+        Args:
+            data_element: Data element type (clinical_notes, lab_results, etc.)
+            patient_ids: List of patient IDs
+            time_period: Time period filter dict
+            limit: Number of rows to extract (default 10)
+
+        Returns:
+            List of records (limited to 'limit' rows)
+        """
+        if not patient_ids:
+            return []
+
+        # Limit to 100 patient IDs for preview (even more restrictive)
+        limited_patient_ids = patient_ids[:100]
+
+        # Build parameterized IN clause
+        patient_id_params = {f"pid_{i}": str(pid) for i, pid in enumerate(limited_patient_ids)}
+        patient_id_placeholders = ", ".join(
+            f":{param_name}" for param_name in patient_id_params.keys()
+        )
+
+        # Initialize query parameters dict
+        params = patient_id_params.copy()
+        params["preview_limit"] = limit  # Add limit parameter
+
+        # Generate extraction query based on data element type
+        # Note: f-strings used only for structure, all data in params dict
+        if data_element == "clinical_notes":
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
+                SELECT
+                    patient_id,
+                    note_id,
+                    note_date,
+                    note_type,
+                    note_text
+                FROM document_reference
+                WHERE patient_id IN ({patient_id_placeholders})
+                LIMIT :preview_limit
+            """
+        elif data_element == "lab_results":
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
+                SELECT
+                    patient_id,
+                    observation_id,
+                    code,
+                    code_display,
+                    value,
+                    unit,
+                    effectiveDateTime
+                FROM observation
+                WHERE patient_id IN ({patient_id_placeholders})
+                AND category = 'laboratory'
+                LIMIT :preview_limit
+            """
+        elif data_element == "medications":
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
+                SELECT
+                    patient_id,
+                    medication_id,
+                    code_display,
+                    authoredOn,
+                    status
+                FROM medication_request
+                WHERE patient_id IN ({patient_id_placeholders})
+                LIMIT :preview_limit
+            """
+        elif data_element in [
+            "Family name",
+            "Given name",
+            "Date of birth",
+            "Address",
+            "Demographics (age, gender, race)",
+        ]:
+            # Extract demographics from patient_demographics materialized view
+            # nosec B608 - SQL structure is safe, all values parameterized
+
+            # NOTE: patient_demographics table has: patient_id, gender, dob, name_given, name_family
+            # It does NOT have: race, address (not in FHIR synthetic data)
+
+            # Field mapping for available columns only
+            field_mapping = {
+                "Family name": "name_family",
+                "Given name": "name_given",
+                "Date of birth": "dob",
+                "Address": None,  # Not available in patient_demographics
+            }
+
+            # Build SELECT clause based on requested demographic fields
+            if data_element == "Demographics (age, gender, race)":
+                # Select all available demographic fields (race not available)
+                select_fields = "patient_id, name_family, name_given, gender, dob"
+            elif data_element == "Address":
+                # Address not available in patient_demographics - return empty
+                logger.warning(
+                    f"[{self.agent_id}] Address data not available in patient_demographics table"
+                )
+                return []
+            else:
+                db_field = field_mapping.get(data_element)
+                if db_field is None:
+                    logger.warning(
+                        f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
+                    )
+                    return []
+                select_fields = f"patient_id, {db_field}"
+
+            sql = f"""
+                SELECT {select_fields}
+                FROM sqlonfhir.patient_demographics
+                WHERE patient_id IN ({patient_id_placeholders})
+                LIMIT :preview_limit
+            """
+        else:
+            # Generic query for other data types
+            # nosec B608 - SQL structure is safe, all values parameterized
+            sql = f"""
+                SELECT *
+                FROM observation
+                WHERE patient_id IN ({patient_id_placeholders})
+                LIMIT :preview_limit
+            """
+
+        # Add time period filter if specified (parameterized)
+        # Note: LIMIT must come AFTER WHERE but we already have LIMIT above
+        # So we need to insert time filter before LIMIT
+        if time_period.get("start") and time_period.get("end"):
+            # Insert time filter before LIMIT clause
+            sql = sql.replace(
+                "LIMIT :preview_limit",
+                "AND date BETWEEN :date_start AND :date_end LIMIT :preview_limit",
+            )
+            params["date_start"] = time_period["start"]
+            params["date_end"] = time_period["end"]
+
+        try:
+            result = await self.sql_adapter.execute_sql(sql, params)
+            return result if result else []
+        except Exception as e:
+            logger.warning(f"[{self.agent_id}] Preview extraction query failed: {str(e)}")
+            return []
+
     async def _deidentify_data(self, data: Dict, phi_level: str) -> Dict:
         """
         Apply de-identification transformations
@@ -275,8 +616,111 @@ class DataExtractionAgent(BaseAgent):
             logger.info(f"[{self.agent_id}] Generating CSV files for request {request_id}")
 
             try:
-                # Create individual CSVs for each data element
+                # Define demographic data elements that should be consolidated
+                demographic_elements = {
+                    "Family name": "name_family",
+                    "Given name": "name_given",
+                    "Date of birth": "dob",
+                    "Demographics (age, gender, race)": "demographics_full",
+                }
+
+                # Separate demographic and non-demographic data
+                demographic_data = {}
+                non_demographic_data = {}
+
                 for element_name, records in data.items():
+                    if element_name in demographic_elements:
+                        demographic_data[element_name] = records
+                    else:
+                        non_demographic_data[element_name] = records
+
+                # If we have demographic data, consolidate into single Demographics.csv
+                if demographic_data:
+                    logger.info(
+                        f"[{self.agent_id}] Consolidating demographic data elements into Demographics.csv"
+                    )
+
+                    # Build consolidated demographic DataFrame
+                    consolidated_records = []
+                    patient_ids = set()
+
+                    # Collect all unique patient IDs from all demographic data elements
+                    for records in demographic_data.values():
+                        for record in records:
+                            if "patient_id" in record:
+                                patient_ids.add(record["patient_id"])
+
+                    # For each patient, merge data from all demographic elements
+                    for patient_id in patient_ids:
+                        patient_record = {"patient_id": patient_id}
+
+                        for element_name, records in demographic_data.items():
+                            # Find this patient's record in this data element
+                            for record in records:
+                                if record.get("patient_id") == patient_id:
+                                    # Add all fields from this record except patient_id
+                                    for key, value in record.items():
+                                        if key != "patient_id":
+                                            # Use friendly column names
+                                            if element_name == "Family name":
+                                                patient_record["family_name"] = value
+                                            elif element_name == "Given name":
+                                                patient_record["given_name"] = value
+                                            elif element_name == "Date of birth":
+                                                patient_record["dob"] = value
+                                            elif key in [
+                                                "gender",
+                                                "dob",
+                                                "name_family",
+                                                "name_given",
+                                            ]:
+                                                # For Demographics (age, gender, race) element
+                                                patient_record[key] = value
+                                    break
+
+                        consolidated_records.append(patient_record)
+
+                    if consolidated_records:
+                        # Create consolidated Demographics.csv
+                        demographics_df = pd.DataFrame(consolidated_records)
+
+                        # Ensure consistent column order
+                        desired_columns = [
+                            "patient_id",
+                            "family_name",
+                            "given_name",
+                            "gender",
+                            "dob",
+                        ]
+                        actual_columns = [
+                            col for col in desired_columns if col in demographics_df.columns
+                        ]
+                        other_columns = [
+                            col for col in demographics_df.columns if col not in desired_columns
+                        ]
+                        demographics_df = demographics_df[actual_columns + other_columns]
+
+                        filename = "Demographics.csv"
+                        file_path = self.file_storage.save_csv(
+                            request_id=request_id, filename=filename, dataframe=demographics_df
+                        )
+
+                        formatted["files"].append(
+                            {
+                                "filename": filename,
+                                "record_count": len(consolidated_records),
+                                "column_count": len(demographics_df.columns),
+                            }
+                        )
+                        formatted["file_paths"].append(file_path)
+
+                        logger.info(
+                            f"[{self.agent_id}] Generated consolidated {filename}: "
+                            f"{len(consolidated_records)} rows, {len(demographics_df.columns)} columns"
+                        )
+
+                # Create individual CSVs for non-demographic data elements
+                for element_name, records in non_demographic_data.items():
                     if not records:
                         logger.warning(f"[{self.agent_id}] No records for {element_name}, skipping")
                         continue

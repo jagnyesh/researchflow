@@ -22,8 +22,9 @@ nest_asyncio.apply(_streamlit_loop)
 # NOW safe to import modules that create database connections
 import streamlit as st
 import httpx
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import extra_streamlit_components as stx
 
 # Load environment variables
 load_dotenv()
@@ -54,14 +55,59 @@ def run_async(coroutine):
     return _streamlit_loop.run_until_complete(coroutine)
 
 
+# Cookie manager singleton
+_cookie_manager = None
+
+
+def get_cookie_manager():
+    """Get or create cookie manager instance"""
+    global _cookie_manager
+    if _cookie_manager is None:
+        _cookie_manager = stx.CookieManager()
+    return _cookie_manager
+
+
+def load_researcher_email() -> str:
+    """Load researcher email from cookie"""
+    try:
+        cookie_manager = get_cookie_manager()
+        return cookie_manager.get("researcher_email") or ""
+    except Exception as e:
+        st.warning(f"Could not load saved email: {str(e)}")
+        return ""
+
+
+def save_researcher_email(email: str):
+    """Save researcher email to cookie (30 days)"""
+    try:
+        cookie_manager = get_cookie_manager()
+        cookie_manager.set(
+            "researcher_email", email, expires_at=datetime.now() + timedelta(days=30)
+        )
+    except Exception as e:
+        st.warning(f"Could not save email: {str(e)}")
+
+
+def clear_researcher_email():
+    """Clear saved researcher email"""
+    try:
+        cookie_manager = get_cookie_manager()
+        cookie_manager.delete("researcher_email")
+    except Exception as e:
+        st.warning(f"Could not clear saved email: {str(e)}")
+
+
 def get_status_badge(state: str) -> str:
     """Get colored status badge for request state"""
     state_colors = {
         "delivered": "🟢",
         "complete": "🟢",
         "data_delivery": "🟡",
+        "delivery_review": "🟠",  # NEW: Awaiting delivery approval
         "qa_validation": "🟡",
         "data_extraction": "🟡",
+        "preview_qa": "🔵",  # NEW: Preview QA validation
+        "preview_extraction": "🔵",  # NEW: Preview extraction
         "feasibility_validation": "🔵",
         "requirements_gathering": "🔵",
         "failed": "🔴",
@@ -81,14 +127,61 @@ def check_delivery_status(request_id: str) -> dict:
         - delivery_location: str
     """
     try:
-        # Call delivery API endpoint
-        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
-        response = httpx.get(f"{api_url}/research/{request_id}/delivery", timeout=10.0)
+        # Query database directly (FIXED: no longer depends on API server running)
+        from app.database.models import DataDelivery
+        from sqlalchemy import select
+        from app.database import get_db_session
+        import json
 
-        if response.status_code == 200:
-            return response.json()
-        else:
+        async def get_delivery():
+            async with get_db_session() as session:
+                result = await session.execute(
+                    select(DataDelivery).where(DataDelivery.request_id == request_id)
+                )
+                return result.scalar_one_or_none()
+
+        delivery = run_async(get_delivery())
+
+        if not delivery:
             return {"delivered": False, "files": []}
+
+        # Build response from database record
+        # Get file list from database (populated by delivery_agent)
+        file_list = delivery.file_list or []
+
+        # Convert filenames to file info dicts with size information
+        files = []
+
+        # Use FileStorageService to get correct path (handles env-specific paths)
+        from app.services.file_storage import FileStorageService
+
+        file_storage = FileStorageService()
+        request_dir = file_storage._get_request_directory(request_id)
+
+        for filename in file_list:
+            try:
+                # Calculate file size from actual file
+                file_path = request_dir / filename
+
+                if file_path.exists():
+                    size_bytes = file_path.stat().st_size
+                    size_mb = size_bytes / (1024 * 1024)
+                else:
+                    size_mb = 0.0
+
+                files.append({"filename": filename, "size_mb": size_mb})
+            except Exception as e:
+                # Fallback if size calculation fails
+                files.append({"filename": filename, "size_mb": 0.0})
+
+        return {
+            "delivered": True,
+            "files": files,
+            "cohort_size": delivery.cohort_size or 0,
+            "delivery_location": str(request_dir),
+            "delivery_metadata": delivery.delivery_metadata or {},
+            "data_elements": delivery.data_elements or [],
+        }
     except Exception as e:
         st.error(f"Error checking delivery status: {str(e)}")
         return {"delivered": False, "files": []}
@@ -121,6 +214,63 @@ def download_file(request_id: str, filename: str = None):
         return None, None
 
 
+def show_preview_data_section_researcher(request_id: str, status: dict):
+    """Show preview extraction status (not actual data - informatician only)"""
+    from app.database.models import DataDelivery
+    from sqlalchemy import select
+    from app.database import get_db_session
+
+    st.markdown("### 🔍 Preview Extraction Status")
+
+    try:
+
+        async def get_preview_data():
+            async with get_db_session() as session:
+                result = await session.execute(
+                    select(DataDelivery).where(DataDelivery.request_id == request_id)
+                )
+                return result.scalar_one_or_none()
+
+        delivery = run_async(get_preview_data())
+
+        if delivery and delivery.preview_data:
+            st.success("✅ Preview extraction complete!")
+            st.caption(
+                "Your data team has extracted a sample preview and is reviewing it before proceeding to full data extraction."
+            )
+
+            # Show preview QA status (no actual data)
+            if delivery.preview_qa_report:
+                qa_report = delivery.preview_qa_report
+                status_icon = "✅" if qa_report.get("overall_status") == "passed" else "❌"
+                st.info(
+                    f"{status_icon} Preview QA Status: {qa_report.get('overall_status', 'unknown').upper()}"
+                )
+                st.caption(
+                    "The informatician is reviewing the preview before authorizing full data extraction."
+                )
+
+        elif status.get("current_state") in ["preview_extraction", "preview_qa"]:
+            st.info(
+                "⏳ Preview data is being extracted and validated. Please check back shortly..."
+            )
+        elif status.get("current_state") in [
+            "data_extraction",
+            "qa_validation",
+            "delivery_review",
+            "data_delivery",
+            "delivered",
+            "complete",
+        ]:
+            st.success("✅ Preview was reviewed and approved by informatician")
+            st.caption("Full data extraction is in progress")
+        else:
+            st.caption("Preview extraction will begin after SQL approval")
+
+    except Exception as e:
+        st.caption("Preview extraction status not available yet")
+
+
 @st.dialog("Request Details", width="large")
 def show_request_details_modal(request_id: str):
     """Show request details in a modal dialog"""
@@ -140,7 +290,9 @@ def show_request_details_modal(request_id: str):
         badge = get_status_badge(status["current_state"])
         st.metric("Status", f"{badge} {status['current_state'].replace('_', ' ').title()}")
     with col2:
-        st.metric("Current Agent", status.get("current_agent", "None").replace("_", " ").title())
+        st.metric(
+            "Current Agent", (status.get("current_agent") or "None").replace("_", " ").title()
+        )
     with col3:
         try:
             started = datetime.fromisoformat(status["started_at"])
@@ -177,11 +329,17 @@ def show_request_details_modal(request_id: str):
 
     st.markdown("---")
 
+    # Preview Data Section (NEW - Sprint X)
+    show_preview_data_section_researcher(request_id, status)
+
+    st.markdown("---")
+
     # Data Delivery Status
     st.markdown("### 📦 Data Delivery")
     delivery_info = check_delivery_status(request_id)
 
-    if delivery_info.get("delivered"):
+    # FIXED: Only show "ready" if files actually exist
+    if delivery_info.get("delivered") and len(delivery_info.get("files", [])) > 0:
         st.success("✅ Data ready for download!")
 
         # Metrics
@@ -194,6 +352,44 @@ def show_request_details_modal(request_id: str):
             st.metric("Files", len(delivery_info.get("files", [])))
 
         st.info("💡 Go to the 'Request Details' tab to download your data files")
+
+        st.markdown("---")
+    elif delivery_info.get("delivered") and len(delivery_info.get("files", [])) == 0:
+        # Delivery record exists but no files (workflow bug - delivery_agent didn't execute properly)
+        st.warning("⚠️ Delivery initiated but files not yet available")
+        st.caption(
+            "The delivery process may have encountered an issue. Please contact support if this persists."
+        )
+        st.markdown("---")
+
+        # Optional Meeting Button (NEW - Sprint X)
+        st.markdown("### 📅 Schedule Kickoff Meeting (Optional)")
+        st.caption("Schedule a meeting with the data team to discuss your dataset")
+
+        if st.button(
+            "📅 Schedule Meeting",
+            type="secondary",
+            use_container_width=True,
+            key=f"schedule_meeting_{request_id}",
+        ):
+            # Trigger calendar agent
+            try:
+                meeting_scheduled = run_async(
+                    st.session_state.orchestrator.trigger_agent_task(
+                        request_id=request_id,
+                        agent_id="calendar_agent",
+                        task="schedule_kickoff_meeting",
+                        context={"meeting_type": "post_delivery_kickoff"},
+                    )
+                )
+
+                if meeting_scheduled.get("meeting_scheduled"):
+                    st.success(f"✅ Meeting scheduled! Check your email for details.")
+                else:
+                    st.info("📧 Meeting request sent. You'll receive a calendar invite shortly.")
+            except Exception as e:
+                st.warning(f"Could not schedule meeting: {str(e)}")
+                st.info("Please contact the data team directly to schedule a meeting.")
     else:
         current_state = status["current_state"]
         st.info(
@@ -233,13 +429,22 @@ def initialize_orchestrator():
             # Get HAPI FHIR database URL from environment
             hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
 
-            # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
+            # Convert to asyncpg format for SQLAlchemy async engine
+            # SQLonFHIRAdapter requires postgresql+asyncpg:// URL format
+            if "postgresql://" in hapi_db_url and "+asyncpg" not in hapi_db_url:
+                hapi_db_url_async = hapi_db_url.replace("postgresql://", "postgresql+asyncpg://")
+            else:
+                hapi_db_url_async = hapi_db_url
+
+            # Register all agents (phenotype and extraction agents need HAPI database for ViewDefinitions)
             orchestrator.register_agent("requirements_agent", RequirementsAgent())
             orchestrator.register_agent(
-                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
+                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url_async)
             )
             orchestrator.register_agent("calendar_agent", CalendarAgent())
-            orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+            orchestrator.register_agent(
+                "extraction_agent", DataExtractionAgent(database_url=hapi_db_url_async)
+            )
             orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
             orchestrator.register_agent("delivery_agent", DeliveryAgent())
 
@@ -263,40 +468,103 @@ def main():
     with st.sidebar:
         st.header("📊 My Requests")
 
+        # Initialize session state
         if "user_requests" not in st.session_state:
-            st.session_state.user_requests = []
+            st.session_state.user_requests = []  # Track just-submitted requests
+        if "researcher_email_input" not in st.session_state:
+            st.session_state.researcher_email_input = load_researcher_email()
 
-        if st.session_state.user_requests:
-            for req_id in st.session_state.user_requests:
-                status = run_async(st.session_state.orchestrator.get_request_status(req_id))
-                if status:
-                    # Get status badge
-                    badge = get_status_badge(status["current_state"])
-                    request_label = f"{badge} Request #{req_id[:8]}..."
+        # Researcher identification
+        st.subheader("👤 Your Identity")
+        researcher_email = st.text_input(
+            "Your Email",
+            value=st.session_state.researcher_email_input,
+            placeholder="researcher@hospital.edu",
+            key="sidebar_email",
+            help="Enter your email to view your requests",
+        )
 
-                    with st.expander(request_label):
-                        # Status with badge
-                        st.write(f"**Status:** {status['current_state'].replace('_', ' ').title()}")
-                        st.write(f"**Started:** {status['started_at'][:19]}")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            remember_me = st.checkbox(
+                "Remember me", value=bool(st.session_state.researcher_email_input)
+            )
+        with col2:
+            if st.button("Clear", help="Clear saved email"):
+                clear_researcher_email()
+                st.session_state.researcher_email_input = ""
+                st.rerun()
 
-                        # Show cohort size if delivered
-                        delivery_info = check_delivery_status(req_id)
-                        if delivery_info.get("delivered"):
+        # Save email to cookie if Remember Me is checked
+        if (
+            remember_me
+            and researcher_email
+            and researcher_email != st.session_state.researcher_email_input
+        ):
+            save_researcher_email(researcher_email)
+            st.session_state.researcher_email_input = researcher_email
+
+        st.markdown("---")
+
+        # Fetch requests from database if email provided
+        if researcher_email:
+            try:
+                # Query database for all researcher's requests
+                db_requests = run_async(
+                    st.session_state.orchestrator.get_requests_by_researcher(researcher_email)
+                )
+
+                # Track just-submitted requests for "new" badge
+                just_submitted_ids = set(st.session_state.user_requests)
+
+                if db_requests:
+                    st.caption(f"Found {len(db_requests)} request(s)")
+
+                    for status in db_requests:
+                        req_id = status["request_id"]
+
+                        # Get status badge
+                        badge = get_status_badge(status["current_state"])
+
+                        # Add "just submitted" indicator
+                        is_new = req_id in just_submitted_ids
+                        new_indicator = " 🆕" if is_new else ""
+
+                        request_label = f"{badge} Request #{req_id[:8]}...{new_indicator}"
+
+                        with st.expander(request_label):
+                            # Status with badge
                             st.write(
-                                f"**Cohort Size:** {delivery_info.get('cohort_size', 'N/A')} patients"
+                                f"**Status:** {status['current_state'].replace('_', ' ').title()}"
                             )
-                            st.write(
-                                f"**Files:** {len(delivery_info.get('files', []))} files ready"
-                            )
+                            st.write(f"**Started:** {status['started_at'][:19]}")
 
-                        if st.button("View Details", key=f"view_{req_id}"):
-                            st.session_state.modal_request = req_id
+                            # Show cohort size if delivered
+                            delivery_info = check_delivery_status(req_id)
+                            if delivery_info.get("delivered"):
+                                st.write(
+                                    f"**Cohort Size:** {delivery_info.get('cohort_size', 'N/A')} patients"
+                                )
+                                st.write(
+                                    f"**Files:** {len(delivery_info.get('files', []))} files ready"
+                                )
 
-            # Show modal if a request was clicked (after loop, still inside if block)
-            if st.session_state.get("modal_request"):
-                show_request_details_modal(st.session_state.modal_request)
+                            if st.button("View Details", key=f"view_{req_id}"):
+                                st.session_state.modal_request = req_id
+                                # Remove from "just submitted" set after viewing
+                                if req_id in just_submitted_ids:
+                                    st.session_state.user_requests.remove(req_id)
+
+                    # Show modal if a request was clicked
+                    if st.session_state.get("modal_request"):
+                        show_request_details_modal(st.session_state.modal_request)
+                else:
+                    st.info("No requests yet. Submit a new request below!")
+
+            except Exception as e:
+                st.error(f"Error loading requests: {str(e)}")
         else:
-            st.info("No requests yet. Submit a new request below!")
+            st.info("👆 Enter your email to view your requests")
 
     # Main content area
     tab1, tab2 = st.tabs(["🆕 New Request", "📋 Request Details"])

@@ -53,11 +53,31 @@ class DeliveryAgent(BaseAgent):
             Dict with delivery confirmation
         """
         request_id = context.get("request_id")
-        requirements = context.get("requirements")
+        # Accept both 'requirements' and 'structured_requirements' (from orchestrator)
+        requirements = context.get("requirements") or context.get("structured_requirements")
         data_package = context.get("data_package")
         qa_report = context.get("qa_report")
 
         logger.info(f"[{self.agent_id}] Preparing delivery for {request_id}")
+
+        # DEFENSIVE: Validate required context
+        if not data_package:
+            error_msg = (
+                f"Missing 'data_package' in context for {request_id}. "
+                f"Available keys: {list(context.keys())}. "
+                f"QA agent should provide data_package in approval_data."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
+
+        if not requirements:
+            error_msg = (
+                f"Missing 'requirements'/'structured_requirements' in context for {request_id}. "
+                f"Available keys: {list(context.keys())}. "
+                f"Orchestrator should enrich context with requirements."
+            )
+            logger.error(f"[{self.agent_id}] {error_msg}")
+            raise ValueError(error_msg)
 
         # Step 1: Create comprehensive data package with metadata
         final_package = {
@@ -80,7 +100,9 @@ class DeliveryAgent(BaseAgent):
         }
 
         # Step 2: Upload to secure location
-        delivery_location = await self._upload_to_secure_storage(final_package, request_id)
+        delivery_location, csv_filenames = await self._upload_to_secure_storage(
+            final_package, request_id
+        )
 
         # Step 3: Notify researcher
         await self._send_notification(
@@ -95,7 +117,7 @@ class DeliveryAgent(BaseAgent):
         )
 
         # Step 4: Log delivery for audit trail
-        await self._log_delivery(request_id, delivery_location, final_package)
+        await self._log_delivery(request_id, delivery_location, final_package, csv_filenames)
 
         logger.info(f"[{self.agent_id}] Delivery complete: {request_id} -> {delivery_location}")
 
@@ -247,27 +269,58 @@ Please cite as:
             ],
         }
 
-    async def _upload_to_secure_storage(self, package: Dict, request_id: str) -> str:
+    async def _upload_to_secure_storage(
+        self, package: Dict, request_id: str
+    ) -> tuple[str, list[str]]:
         """
-        Save data package metadata files to local storage
+        Save data package files (CSV + metadata) to local storage
 
         Saves:
+        - CSV data files: Patient data extracted by ExtractionAgent
         - data_dictionary.txt: Field descriptions
         - qa_report.txt: Quality assurance summary
         - README.txt: Package documentation
         - extraction_metadata.json: Full metadata
 
-        CSV data files are already saved by ExtractionAgent.
-
         Args:
-            package: Data package with documentation
+            package: Data package with documentation and data
             request_id: Research request ID
 
         Returns:
-            Local storage path
+            Tuple of (local_storage_path, csv_filenames_list)
         """
         try:
-            # Prepare metadata files
+            # STEP 1: Copy CSV files from extraction to delivery location
+            import shutil
+            from pathlib import Path
+
+            formatted_data = package.get("data", {})
+            csv_file_paths = formatted_data.get("file_paths", [])
+            csv_filenames = []  # Track successfully copied CSV files
+
+            if csv_file_paths:
+                logger.info(
+                    f"[{self.agent_id}] Copying {len(csv_file_paths)} CSV file(s) to delivery location"
+                )
+                for csv_path in csv_file_paths:
+                    source = Path(csv_path)
+                    if source.exists():
+                        dest_dir = self.file_storage._get_request_directory(request_id)
+                        dest = dest_dir / source.name
+                        shutil.copy2(source, dest)
+                        csv_filenames.append(source.name)  # Track filename
+                        logger.info(f"[{self.agent_id}] ✓ Copied {source.name} to {dest}")
+                    else:
+                        logger.warning(
+                            f"[{self.agent_id}] ⚠️ CSV file not found at {csv_path}, skipping"
+                        )
+            else:
+                logger.warning(
+                    f"[{self.agent_id}] No CSV file paths found in package data, "
+                    "only metadata will be saved"
+                )
+
+            # STEP 2: Prepare metadata files
             metadata_files = {}
 
             # 1. Data Dictionary (human-readable)
@@ -292,20 +345,20 @@ Please cite as:
             for filename, content in metadata_files.items():
                 self.file_storage.save_text_file(request_id, filename, content)
 
-            # Return local storage location
+            # Return local storage location and CSV filenames
             location = self.file_storage._get_request_directory(request_id)
 
             logger.info(
-                f"[{self.agent_id}] Package metadata saved to {location} "
-                f"({len(metadata_files)} files)"
+                f"[{self.agent_id}] Package saved to {location}: "
+                f"{len(csv_filenames)} CSV file(s) + {len(metadata_files)} metadata file(s)"
             )
 
-            return str(location)
+            return (str(location), csv_filenames)
 
         except Exception as e:
             logger.error(f"[{self.agent_id}] Failed to save package metadata: {str(e)}")
-            # Return fallback location
-            return f"/data/deliveries/{request_id}"
+            # Return fallback location with empty CSV list
+            return (f"/data/deliveries/{request_id}", [])
 
     def _format_data_dictionary_text(self, data_dict: Dict) -> str:
         """Format data dictionary as human-readable text"""
@@ -457,21 +510,39 @@ Research Data Services
         )
         logger.debug(f"Email content:\n{message}")
 
-    async def _log_delivery(self, request_id: str, location: str, package: Dict):
+    async def _log_delivery(
+        self, request_id: str, location: str, package: Dict, csv_filenames: list[str] = None
+    ):
         """
         Log delivery to database for audit trail
 
         Saves DataDelivery record with:
-        - File list
+        - File list (CSV files + metadata files)
         - Cohort size
         - Data elements
         - QA report
         - Data dictionary
+
+        Args:
+            request_id: Research request ID
+            location: Delivery location path
+            package: Data package with metadata and documentation
+            csv_filenames: List of CSV filenames that were copied
         """
         try:
-            # Get file list from storage
-            files = self.file_storage.list_files(request_id)
-            file_list = [f["filename"] for f in files]
+            # Build complete file list: CSV files + metadata files
+            file_list = []
+
+            # Add CSV files (actual data files)
+            if csv_filenames:
+                file_list.extend(csv_filenames)
+                logger.info(f"[{self.agent_id}] Tracking {len(csv_filenames)} CSV data file(s)")
+
+            # Add metadata files
+            metadata_files = self.file_storage.list_files(request_id)
+            metadata_filenames = [f["filename"] for f in metadata_files]
+            file_list.extend(metadata_filenames)
+            logger.info(f"[{self.agent_id}] Tracking {len(metadata_filenames)} metadata file(s)")
 
             async with get_db_session() as session:
                 # Create DataDelivery record
