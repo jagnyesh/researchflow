@@ -26,16 +26,22 @@ class WorkflowState(Enum):
     QA_REVIEW = "qa_review"
     SCOPE_CHANGE = "scope_change"
 
+    # PREVIEW EXTRACTION WORKFLOW - Sprint X
+    PREVIEW_EXTRACTION = "preview_extraction"  # Extract 10 rows per data element
+    PREVIEW_QA = "preview_qa"  # Auto QA validation on preview
+    PREVIEW_COMPLETE = "preview_complete"  # Preview validated and approved
+
     FEASIBILITY_VALIDATION = "feasibility_validation"
     FEASIBLE = "feasible"
     NOT_FEASIBLE = "not_feasible"
-    SCHEDULE_KICKOFF = "schedule_kickoff"
+    SCHEDULE_KICKOFF = "schedule_kickoff"  # Optional post-delivery
     KICKOFF_COMPLETE = "kickoff_complete"
-    DATA_EXTRACTION = "data_extraction"
+    DATA_EXTRACTION = "data_extraction"  # Full extraction
     EXTRACTION_COMPLETE = "extraction_complete"
-    QA_VALIDATION = "qa_validation"
+    QA_VALIDATION = "qa_validation"  # Auto QA validation on full data
     QA_PASSED = "qa_passed"
     QA_FAILED = "qa_failed"
+    DELIVERY_REVIEW = "delivery_review"  # Informatician reviews full dataset before delivery
     DATA_DELIVERY = "data_delivery"
     DELIVERED = "delivered"
     COMPLETE = "complete"
@@ -108,12 +114,12 @@ class WorkflowEngine:
                 "next_task": None,
                 "next_state": WorkflowState.PHENOTYPE_REVIEW,
             },
-            # Phenotype SQL approved -> Schedule kickoff
+            # Phenotype SQL approved -> Preview extraction (NEW FLOW)
             ("approval_service", "approve_phenotype_sql"): {
                 "condition": lambda r: r.get("approved") == True,
-                "next_agent": "calendar_agent",
-                "next_task": "schedule_kickoff_meeting",
-                "next_state": WorkflowState.SCHEDULE_KICKOFF,
+                "next_agent": "extraction_agent",
+                "next_task": "extract_preview",
+                "next_state": WorkflowState.PREVIEW_EXTRACTION,
             },
             # Phenotype SQL rejected -> Back to phenotype agent
             ("approval_service", "reject_phenotype_sql"): {
@@ -122,7 +128,46 @@ class WorkflowEngine:
                 "next_task": "validate_feasibility",
                 "next_state": WorkflowState.FEASIBILITY_VALIDATION,
             },
-            # Kickoff meeting scheduled -> Extraction Approval (NEW APPROVAL GATE)
+            # Preview extraction complete -> Preview QA (NEW)
+            ("extraction_agent", "extract_preview"): {
+                "condition": lambda r: r.get("preview_extracted") == True,
+                "next_agent": "qa_agent",
+                "next_task": "validate_preview",
+                "next_state": WorkflowState.PREVIEW_QA,
+            },
+            # Preview QA validation -> Route based on outcome (NEW)
+            ("qa_agent", "validate_preview"): [
+                {
+                    # Preview passed -> Full extraction
+                    "condition": lambda r: r.get("preview_qa_passed") == True,
+                    "next_agent": "extraction_agent",
+                    "next_task": "extract_data",
+                    "next_state": WorkflowState.DATA_EXTRACTION,
+                },
+                {
+                    # Preview failed -> Wait for approval (requires_approval will be True)
+                    "condition": lambda r: r.get("preview_qa_passed") == False
+                    and r.get("requires_approval") == True,
+                    "next_agent": None,
+                    "next_task": None,
+                    "next_state": WorkflowState.HUMAN_REVIEW,
+                },
+            ],
+            # Preview QA approved -> Proceed to full extraction despite mismatch (NEW)
+            ("approval_service", "approve_preview_qa"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "extraction_agent",
+                "next_task": "extract_data",
+                "next_state": WorkflowState.DATA_EXTRACTION,
+            },
+            # Preview QA rejected -> Return to phenotype agent for SQL revision (NEW)
+            ("approval_service", "reject_preview_qa"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": "phenotype_agent",
+                "next_task": "validate_feasibility",
+                "next_state": WorkflowState.FEASIBILITY_VALIDATION,
+            },
+            # Kickoff meeting scheduled -> Extraction Approval (LEGACY - OPTIONAL POST-DELIVERY)
             ("calendar_agent", "schedule_kickoff_meeting"): {
                 "condition": lambda r: r.get("meeting_scheduled") == True,
                 "next_agent": None,  # Waits for extraction approval
@@ -150,21 +195,35 @@ class WorkflowEngine:
                 "next_task": "validate_extracted_data",
                 "next_state": WorkflowState.QA_VALIDATION,
             },
-            # QA passed -> QA Review (NEW APPROVAL GATE)
+            # QA passed -> Delivery Review (UPDATED - Informatician reviews full dataset)
             ("qa_agent", "validate_extracted_data"): {
                 "condition": lambda r: r.get("overall_status") == "passed",
-                "next_agent": None,  # Waits for QA approval
+                "next_agent": None,  # Waits for delivery approval
                 "next_task": None,
-                "next_state": WorkflowState.QA_REVIEW,
+                "next_state": WorkflowState.DELIVERY_REVIEW,
             },
-            # QA approved -> Data delivery
+            # Delivery review approved -> Data delivery (NEW)
+            ("approval_service", "approve_delivery"): {
+                "condition": lambda r: r.get("approved") == True,
+                "next_agent": "delivery_agent",
+                "next_task": "deliver_data",
+                "next_state": WorkflowState.DATA_DELIVERY,
+            },
+            # Delivery review rejected -> Back to extraction (NEW)
+            ("approval_service", "reject_delivery"): {
+                "condition": lambda r: r.get("approved") == False,
+                "next_agent": "extraction_agent",
+                "next_task": "extract_data",
+                "next_state": WorkflowState.DATA_EXTRACTION,
+            },
+            # QA approved -> Data delivery (LEGACY - kept for backwards compatibility)
             ("approval_service", "approve_qa"): {
                 "condition": lambda r: r.get("approved") == True,
                 "next_agent": "delivery_agent",
                 "next_task": "deliver_data",
                 "next_state": WorkflowState.DATA_DELIVERY,
             },
-            # QA rejected -> Back to extraction
+            # QA rejected -> Back to extraction (LEGACY - kept for backwards compatibility)
             ("approval_service", "reject_qa"): {
                 "condition": lambda r: r.get("approved") == False,
                 "next_agent": "extraction_agent",
@@ -271,7 +330,7 @@ class WorkflowEngine:
             WorkflowState.REQUIREMENTS_REVIEW,
             WorkflowState.PHENOTYPE_REVIEW,
             WorkflowState.EXTRACTION_APPROVAL,
-            WorkflowState.QA_REVIEW,
+            WorkflowState.DELIVERY_REVIEW,  # NEW: Replaced QA_REVIEW
             WorkflowState.SCOPE_CHANGE,
             WorkflowState.HUMAN_REVIEW,
         ]
@@ -288,7 +347,7 @@ class WorkflowEngine:
             WorkflowState.REQUIREMENTS_REVIEW: "requirements",
             WorkflowState.PHENOTYPE_REVIEW: "phenotype_sql",
             WorkflowState.EXTRACTION_APPROVAL: "extraction",
-            WorkflowState.QA_REVIEW: "qa",
+            WorkflowState.DELIVERY_REVIEW: "delivery",  # NEW: Replaced qa
             WorkflowState.SCOPE_CHANGE: "scope_change",
         }
         return approval_types.get(state)
@@ -304,7 +363,7 @@ class WorkflowEngine:
             "requirements": 24,
             "phenotype_sql": 24,  # Critical - SQL must be reviewed
             "extraction": 12,
-            "qa": 24,
+            "delivery": 24,  # NEW: Critical - Full dataset must be reviewed before delivery
             "scope_change": 48,
         }
         return timeout_config.get(approval_type, 24)  # Default 24 hours
@@ -315,12 +374,16 @@ class WorkflowEngine:
             WorkflowState.NEW_REQUEST: "New request received",
             WorkflowState.REQUIREMENTS_GATHERING: "Gathering requirements from researcher",
             WorkflowState.REQUIREMENTS_COMPLETE: "Requirements complete, validating feasibility",
-            # New approval state descriptions
+            # Approval state descriptions
             WorkflowState.REQUIREMENTS_REVIEW: "Waiting for informatician to review requirements",
             WorkflowState.PHENOTYPE_REVIEW: "Waiting for informatician to approve SQL query",
             WorkflowState.EXTRACTION_APPROVAL: "Waiting for approval to extract data",
-            WorkflowState.QA_REVIEW: "Waiting for informatician to approve QA results",
+            WorkflowState.DELIVERY_REVIEW: "Waiting for informatician to review and approve full dataset for delivery",
             WorkflowState.SCOPE_CHANGE: "Scope change requested, waiting for review",
+            # Preview extraction state descriptions (NEW)
+            WorkflowState.PREVIEW_EXTRACTION: "Extracting preview data (10 rows per data element)",
+            WorkflowState.PREVIEW_QA: "Running QA validation on preview data",
+            WorkflowState.PREVIEW_COMPLETE: "Preview validated and approved",
             WorkflowState.FEASIBILITY_VALIDATION: "Checking data availability and feasibility",
             WorkflowState.FEASIBLE: "Request is feasible, scheduling kickoff",
             WorkflowState.NOT_FEASIBLE: "Request not feasible with current criteria",

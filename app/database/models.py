@@ -251,10 +251,18 @@ class DataDelivery(Base):
     data_elements = Column(JSON, default=[])
     file_list = Column(JSON, default=[])
 
+    # Preview extraction (NEW - Sprint X)
+    preview_data = Column(JSON, nullable=True)  # Preview extraction results (10 rows per element)
+    preview_qa_report = Column(JSON, nullable=True)  # QA report from preview validation
+
     # Delivery metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     delivery_metadata = Column(JSON)  # Extraction date, methods, etc.
     data_dictionary = Column(JSON)
-    qa_report = Column(JSON)
+    qa_report = Column(JSON)  # Full data QA report
+
+    # Delivery approval (NEW - Sprint X)
+    delivery_approved_by = Column(String, nullable=True)  # Informatician who approved delivery
+    delivery_approved_at = Column(DateTime, nullable=True)  # When delivery was approved
 
     # Notification
     notification_sent = Column(Boolean, default=False)

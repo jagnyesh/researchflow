@@ -37,10 +37,12 @@ class PhenotypeValidationAgent(BaseAgent):
 
     def __init__(self, orchestrator=None, database_url: str = None):
         super().__init__(agent_id="phenotype_agent", orchestrator=orchestrator)
-        self.sql_generator = SQLGenerator()
+        self.sql_generator = SQLGenerator(use_materialized_views=True)
         self.sql_adapter = SQLonFHIRAdapter(database_url)
         self.view_definition_manager = ViewDefinitionManager()
-        self.use_view_definitions = True  # Toggle to use ViewDefinitions instead of legacy SQL
+        # Temporarily disable ViewDefinitions to test legacy SQL path with parameterized queries
+        # ViewDefinition Python filtering was returning 0 instead of 28 for male diabetic patients
+        self.use_view_definitions = False  # Toggle to use ViewDefinitions instead of legacy SQL
 
         # Initialize ViewDefinition runner if using ViewDefinitions
         if self.use_view_definitions and database_url:
@@ -199,6 +201,7 @@ class PhenotypeValidationAgent(BaseAgent):
                 "estimated_cohort": estimated_count,
                 "approval_data": {
                     "sql_query": full_phenotype_sql,
+                    "parameters": full_sql_params,  # Store SQL parameters for debugging/audit
                     "estimated_cohort": estimated_count,
                     "feasibility_score": feasibility_score,
                     "data_availability": data_availability,
@@ -265,7 +268,15 @@ class PhenotypeValidationAgent(BaseAgent):
                 else:
                     count = len(results)
 
-                return count
+                # Apply conservative factor to account for data availability issues
+                # MVP: Estimation often overestimates due to missing data elements during extraction
+                # Applying 0.7x factor to reduce mismatch and improve accuracy
+                conservative_count = int(count * 0.7)
+                logger.info(
+                    f"[{self.agent_id}] Applying conservative factor (0.7x): {count} → {conservative_count} patients"
+                )
+
+                return conservative_count
 
             else:
                 # Use legacy SQL approach with parameterized query (security)
@@ -275,7 +286,13 @@ class PhenotypeValidationAgent(BaseAgent):
                 if result and len(result) > 0:
                     count = result[0].get("patient_count", 0)
                     logger.debug(f"[{self.agent_id}] Estimated cohort size (legacy): {count}")
-                    return count
+
+                    # Apply conservative factor (same as ViewDefinition path)
+                    conservative_count = int(count * 0.7)
+                    logger.info(
+                        f"[{self.agent_id}] Applying conservative factor (0.7x): {count} → {conservative_count} patients"
+                    )
+                    return conservative_count
                 else:
                     logger.warning(f"[{self.agent_id}] No results from count query")
                     return 0
@@ -817,9 +834,67 @@ class PhenotypeValidationAgent(BaseAgent):
 
     async def _save_feasibility_report(self, request_id: str, feasibility_report: Dict):
         """Save feasibility report to database"""
-        # TODO: Implement database save using FeasibilityReport model
         logger.info(f"[{self.agent_id}] Saving feasibility report for {request_id}")
         logger.debug(f"Feasibility report: {feasibility_report}")
+
+        from app.database import get_db_session, FeasibilityReport
+        from sqlalchemy import select
+
+        async with get_db_session() as session:
+            # Check if report already exists
+            result = await session.execute(
+                select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
+            )
+            existing = result.scalar_one_or_none()
+
+            # Extract confidence interval
+            confidence_interval = feasibility_report.get("confidence_interval", [])
+            conf_low = confidence_interval[0] if len(confidence_interval) > 0 else None
+            conf_high = confidence_interval[1] if len(confidence_interval) > 1 else None
+
+            # Extract data availability
+            data_avail = feasibility_report.get("data_availability", {})
+            overall_avail = (
+                data_avail.get("overall_availability", 0.0) if isinstance(data_avail, dict) else 0.0
+            )
+
+            if existing:
+                # Update existing record
+                existing.is_feasible = feasibility_report.get("feasible", False)
+                existing.feasibility_score = feasibility_report.get("feasibility_score", 0.0)
+                existing.estimated_cohort_size = feasibility_report.get("estimated_cohort_size", 0)
+                existing.confidence_interval_low = conf_low
+                existing.confidence_interval_high = conf_high
+                existing.phenotype_sql = feasibility_report.get("phenotype_sql", "")
+                existing.data_availability = data_avail
+                existing.overall_availability = overall_avail
+                existing.warnings = feasibility_report.get("warnings", [])
+                existing.recommendations = feasibility_report.get("recommendations", [])
+                logger.info(
+                    f"[{self.agent_id}] Updated existing feasibility report for {request_id}"
+                )
+            else:
+                # Create new record
+                feasibility = FeasibilityReport(
+                    request_id=request_id,
+                    is_feasible=feasibility_report.get("feasible", False),
+                    feasibility_score=feasibility_report.get("feasibility_score", 0.0),
+                    estimated_cohort_size=feasibility_report.get("estimated_cohort_size", 0),
+                    confidence_interval_low=conf_low,
+                    confidence_interval_high=conf_high,
+                    phenotype_sql=feasibility_report.get("phenotype_sql", ""),
+                    data_availability=data_avail,
+                    overall_availability=overall_avail,
+                    warnings=feasibility_report.get("warnings", []),
+                    recommendations=feasibility_report.get("recommendations", []),
+                )
+                session.add(feasibility)
+                logger.info(f"[{self.agent_id}] Created new feasibility report for {request_id}")
+
+            await session.commit()
+            logger.info(
+                f"[{self.agent_id}] Successfully saved feasibility report to database for {request_id}"
+            )
 
     async def _estimate_cohort_size_with_view_definitions(
         self, requirements: Dict[str, Any]

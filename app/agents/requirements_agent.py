@@ -381,7 +381,79 @@ class RequirementsAgent(BaseAgent):
 
     async def _save_requirements(self, request_id: str, requirements: Dict):
         """Save requirements to database"""
-        # TODO: Implement database save using RequirementsData model
         logger.info(f"[{self.agent_id}] Saving requirements for {request_id}")
-        # For now, just log
         logger.debug(f"Requirements: {requirements}")
+
+        from app.database import get_db_session, RequirementsData
+        from sqlalchemy import select
+        from datetime import datetime
+
+        async with get_db_session() as session:
+            # Check if requirements already exist
+            result = await session.execute(
+                select(RequirementsData).where(RequirementsData.request_id == request_id)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update existing record
+                existing.study_title = requirements.get("study_title")
+                existing.principal_investigator = requirements.get("principal_investigator")
+                existing.irb_number = requirements.get("irb_number")
+                existing.inclusion_criteria = requirements.get("inclusion_criteria", [])
+                existing.exclusion_criteria = requirements.get("exclusion_criteria", [])
+                existing.data_elements = requirements.get("data_elements", [])
+                existing.delivery_format = requirements.get("delivery_format", "CSV")
+                existing.phi_level = requirements.get("phi_level", "de-identified")
+
+                # Handle time period
+                time_period = requirements.get("time_period", {})
+                if time_period:
+                    start_str = time_period.get("start")
+                    end_str = time_period.get("end")
+                    if start_str:
+                        existing.time_period_start = (
+                            datetime.fromisoformat(start_str)
+                            if isinstance(start_str, str)
+                            else start_str
+                        )
+                    if end_str:
+                        existing.time_period_end = (
+                            datetime.fromisoformat(end_str) if isinstance(end_str, str) else end_str
+                        )
+
+                logger.info(f"[{self.agent_id}] Updated existing requirements for {request_id}")
+            else:
+                # Create new record
+                time_period = requirements.get("time_period", {})
+                start_str = time_period.get("start") if time_period else None
+                end_str = time_period.get("end") if time_period else None
+
+                requirements_data = RequirementsData(
+                    request_id=request_id,
+                    study_title=requirements.get("study_title"),
+                    principal_investigator=requirements.get("principal_investigator"),
+                    irb_number=requirements.get("irb_number"),
+                    inclusion_criteria=requirements.get("inclusion_criteria", []),
+                    exclusion_criteria=requirements.get("exclusion_criteria", []),
+                    data_elements=requirements.get("data_elements", []),
+                    delivery_format=requirements.get("delivery_format", "CSV"),
+                    phi_level=requirements.get("phi_level", "de-identified"),
+                    time_period_start=(
+                        datetime.fromisoformat(start_str)
+                        if start_str and isinstance(start_str, str)
+                        else start_str
+                    ),
+                    time_period_end=(
+                        datetime.fromisoformat(end_str)
+                        if end_str and isinstance(end_str, str)
+                        else end_str
+                    ),
+                )
+                session.add(requirements_data)
+                logger.info(f"[{self.agent_id}] Created new requirements record for {request_id}")
+
+            await session.commit()
+            logger.info(
+                f"[{self.agent_id}] Successfully saved requirements to database for {request_id}"
+            )

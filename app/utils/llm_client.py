@@ -245,7 +245,7 @@ Identify:
 - Procedures (e.g., cardiac catheterization)
 - Medications (e.g., metformin, insulin)
 - Lab values (e.g., hemoglobin < 12, creatinine > 1.5)
-- Demographics (e.g., age > 65, female)
+- Demographics (e.g., age > 65, male, female, gender)
 
 Return JSON:
 {{

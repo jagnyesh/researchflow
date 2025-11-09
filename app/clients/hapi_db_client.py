@@ -12,11 +12,19 @@ HAPI FHIR stores resources in PostgreSQL with the following schema:
 """
 
 import logging
-import asyncpg
 import os
 import json
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+
+# Try to import asyncpg, but make it optional for Python 3.13 compatibility
+try:
+    import asyncpg
+
+    ASYNCPG_AVAILABLE = True
+except ImportError:
+    ASYNCPG_AVAILABLE = False
+    asyncpg = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Multi-Provider LLM Integration**: Claude API (primary) with optional secondary providers (OpenAI, Ollama) for non-critical tasks
 - **SQL-on-FHIR**: Automated phenotype SQL generation and execution (v1 + v2)
 - **MCP Infrastructure**: Model Context Protocol servers for external system integration
-- **Streamlit UIs**: Researcher Portal and Admin Dashboard
+- **Streamlit UIs**: Exploratory Analytics Portal, Formal Request Portal, and Admin Dashboard
 - **LangSmith Observability**: Full workflow tracing and debugging 🆕
 - **Security Hardening**: Parameterized SQL, pre-commit hooks, CI/CD security scanning 🆕
 
@@ -51,11 +51,14 @@ redis-server
 # Create materialized views (Batch Layer) 🆕
 python scripts/materialize_views.py
 
-# Run Researcher Portal
-streamlit run app/web_ui/researcher_portal.py --server.port 8501
+# Run Exploratory Analytics Portal (Chat-based)
+streamlit run app/web_ui/research_notebook.py --server.port 8501
+
+# Run Formal Request Portal (Form-based)
+streamlit run app/web_ui/researcher_portal.py --server.port 8502
 
 # Run Admin Dashboard
-streamlit run app/web_ui/admin_dashboard.py --server.port 8502
+streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 # Run API server
 make run
@@ -78,8 +81,9 @@ make docker-up
 ```
 
 Ports:
-- Researcher Portal: http://localhost:8501
-- Admin Dashboard: http://localhost:8502
+- Exploratory Analytics Portal: http://localhost:8501
+- Formal Request Portal: http://localhost:8502
+- Admin Dashboard: http://localhost:8503
 - API Server: http://localhost:8000
 - Mock FHIR: http://localhost:8080
 - Postgres: 5432
@@ -150,7 +154,8 @@ FHIR_PROJECT/
 │   │   └── terminology_server.py # SNOMED/LOINC/RxNorm
 │   │
 │   ├── web_ui/                   # Streamlit interfaces
-│   │   ├── researcher_portal.py # Request submission + tracking
+│   │   ├── research_notebook.py # Exploratory analytics (chat-based)
+│   │   ├── researcher_portal.py # Formal requests (form-based)
 │   │   └── admin_dashboard.py   # Monitoring + escalations
 │   │
 │   ├── api/                      # FastAPI endpoints
@@ -531,6 +536,93 @@ class SQLGenerator:
 - `AgentExecution` - Agent execution logs
 - `Escalation` - Human-in-the-loop cases
 - `DataDelivery` - Delivered data metadata
+
+## Researcher Interfaces
+
+ResearchFlow provides **two specialized interfaces** for researchers, each optimized for different use cases:
+
+### 1. Exploratory Analytics Portal (Port 8501)
+**File**: `app/web_ui/research_notebook.py`
+
+**Use Case**: Quick feasibility checks and exploratory data analysis
+
+**Features**:
+- **Chat-based interface** powered by LangChain agents
+- Natural language queries (e.g., "How many diabetic patients do we have?")
+- **Instant feasibility checks** using Lambda Architecture (Batch + Speed layers)
+- Interactive visualizations and analytics
+- No IRB approval required for aggregate counts
+- Rapid iteration and hypothesis testing
+
+**Typical Workflow**:
+1. Enter natural language question in chat
+2. System generates and executes SQL-on-FHIR query
+3. Results displayed with visualizations (Plotly charts, tables)
+4. Iterate with follow-up questions
+5. Export results for preliminary analysis
+
+**Example Queries**:
+- "Show me patient demographics breakdown by age and gender"
+- "What's the average HbA1c for diabetic patients?"
+- "How many patients have had procedures in the last 6 months?"
+
+### 2. Formal Request Portal (Port 8502)
+**File**: `app/web_ui/researcher_portal.py`
+
+**Use Case**: IRB-approved data requests requiring full approval workflow
+
+**Features**:
+- **Form-based interface** for structured data requests
+- Multi-step wizard (Requirements → Phenotype → Calendar → Extraction → QA → Delivery)
+- Full 6-agent workflow orchestration
+- **Approval gates** at feasibility, extraction, and delivery stages
+- PHI level selection (de-identified, limited dataset, full PHI)
+- Comprehensive audit trail and documentation
+- Request tracking and status monitoring
+
+**Typical Workflow**:
+1. Submit formal request with inclusion/exclusion criteria
+2. Requirements Agent extracts structured phenotype definition
+3. Phenotype Agent validates feasibility (cohort size, SQL generation)
+4. Calendar Agent schedules kickoff meeting with stakeholders
+5. Admin approval at feasibility gate
+6. Extraction Agent retrieves data from FHIR servers
+7. QA Agent validates data quality
+8. Admin approval at delivery gate
+9. Delivery Agent packages data with documentation
+
+**When to Use**:
+- IRB-approved research projects
+- Requests requiring patient-level data (not just aggregates)
+- Projects needing documented approval workflow
+- Multi-stakeholder collaborations
+- Formal data delivery with audit trail
+
+### Interface Comparison
+
+| Feature | Exploratory (8501) | Formal (8502) |
+|---------|-------------------|---------------|
+| **Interface** | Chat-based | Form-based |
+| **Speed** | Instant (<5s) | Hours to days |
+| **Approval** | None required | Multi-stage |
+| **Data Level** | Aggregates only | Patient-level data |
+| **PHI Access** | No | Yes (with approval) |
+| **Use Case** | Hypothesis testing | Production research |
+| **Agents** | 1 (Text2SQL) | 6 (full workflow) |
+| **Audit Trail** | Basic logs | Comprehensive |
+
+### Admin Dashboard (Port 8503)
+**File**: `app/web_ui/admin_dashboard.py`
+
+**Purpose**: System monitoring and approval management for administrators
+
+**Features**:
+- Review and approve feasibility reports
+- Review and approve data delivery requests
+- Monitor all active research requests
+- View agent execution logs and workflow state
+- Handle escalations from automated agents
+- System health monitoring
 
 ## Environment Variables
 

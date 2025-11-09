@@ -54,6 +54,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
                  │                  │
         Batch Ingestion      Real-time Updates
       (materialize_views)    (Redis caching)
+
                  │                  │
                  ↓                  ↓
 ┌─────────────────────────┐  ┌──────────────────────────────┐

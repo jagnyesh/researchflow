@@ -206,6 +206,182 @@ class ApprovalService:
             approval_id=approval_id, reviewer=reviewer, notes=notes, modifications=modifications
         )
 
+    async def approve_preview(
+        self, request_id: str, reviewed_by: str, review_notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Approve preview data extraction for a request
+
+        Args:
+            request_id: Research request ID
+            reviewed_by: User ID or email of reviewer
+            review_notes: Optional review notes
+
+        Returns:
+            Dict with approval status and details
+        """
+        try:
+            # Find the most recent pending preview approval for this request
+            query = (
+                select(Approval)
+                .where(
+                    and_(
+                        Approval.request_id == request_id,
+                        Approval.approval_type == "preview",
+                        Approval.status == "pending",
+                    )
+                )
+                .order_by(Approval.submitted_at.desc())
+                .limit(1)
+            )
+
+            result = await self.db.execute(query)
+            approval = result.scalar_one_or_none()
+
+            if not approval:
+                return {"approved": False, "error": "No pending preview approval found"}
+
+            # Approve the request
+            await self.approve(approval_id=approval.id, reviewer=reviewed_by, notes=review_notes)
+
+            return {"approved": True, "approval_id": approval.id}
+
+        except Exception as e:
+            logger.error(f"Error approving preview for request {request_id}: {str(e)}")
+            return {"approved": False, "error": str(e)}
+
+    async def reject_preview(
+        self, request_id: str, reviewed_by: str, review_notes: str
+    ) -> Dict[str, Any]:
+        """
+        Reject preview data extraction for a request
+
+        Args:
+            request_id: Research request ID
+            reviewed_by: User ID or email of reviewer
+            review_notes: Rejection reason
+
+        Returns:
+            Dict with rejection status and details
+        """
+        try:
+            # Find the most recent pending preview approval for this request
+            query = (
+                select(Approval)
+                .where(
+                    and_(
+                        Approval.request_id == request_id,
+                        Approval.approval_type == "preview",
+                        Approval.status == "pending",
+                    )
+                )
+                .order_by(Approval.submitted_at.desc())
+                .limit(1)
+            )
+
+            result = await self.db.execute(query)
+            approval = result.scalar_one_or_none()
+
+            if not approval:
+                return {"rejected": False, "error": "No pending preview approval found"}
+
+            # Reject the request
+            await self.reject(approval_id=approval.id, reviewer=reviewed_by, reason=review_notes)
+
+            return {"rejected": True, "approval_id": approval.id}
+
+        except Exception as e:
+            logger.error(f"Error rejecting preview for request {request_id}: {str(e)}")
+            return {"rejected": False, "error": str(e)}
+
+    async def approve_delivery(
+        self, request_id: str, reviewed_by: str, review_notes: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Approve data delivery for a request
+
+        Args:
+            request_id: Research request ID
+            reviewed_by: User ID or email of reviewer
+            review_notes: Optional review notes
+
+        Returns:
+            Dict with approval status and details
+        """
+        try:
+            # Find the most recent pending delivery approval for this request
+            query = (
+                select(Approval)
+                .where(
+                    and_(
+                        Approval.request_id == request_id,
+                        Approval.approval_type == "delivery",
+                        Approval.status == "pending",
+                    )
+                )
+                .order_by(Approval.submitted_at.desc())
+                .limit(1)
+            )
+
+            result = await self.db.execute(query)
+            approval = result.scalar_one_or_none()
+
+            if not approval:
+                return {"approved": False, "error": "No pending delivery approval found"}
+
+            # Approve the request
+            await self.approve(approval_id=approval.id, reviewer=reviewed_by, notes=review_notes)
+
+            return {"approved": True, "approval_id": approval.id}
+
+        except Exception as e:
+            logger.error(f"Error approving delivery for request {request_id}: {str(e)}")
+            return {"approved": False, "error": str(e)}
+
+    async def reject_delivery(
+        self, request_id: str, reviewed_by: str, review_notes: str
+    ) -> Dict[str, Any]:
+        """
+        Reject data delivery for a request
+
+        Args:
+            request_id: Research request ID
+            reviewed_by: User ID or email of reviewer
+            review_notes: Rejection reason
+
+        Returns:
+            Dict with rejection status and details
+        """
+        try:
+            # Find the most recent pending delivery approval for this request
+            query = (
+                select(Approval)
+                .where(
+                    and_(
+                        Approval.request_id == request_id,
+                        Approval.approval_type == "delivery",
+                        Approval.status == "pending",
+                    )
+                )
+                .order_by(Approval.submitted_at.desc())
+                .limit(1)
+            )
+
+            result = await self.db.execute(query)
+            approval = result.scalar_one_or_none()
+
+            if not approval:
+                return {"rejected": False, "error": "No pending delivery approval found"}
+
+            # Reject the request
+            await self.reject(approval_id=approval.id, reviewer=reviewed_by, reason=review_notes)
+
+            return {"rejected": True, "approval_id": approval.id}
+
+        except Exception as e:
+            logger.error(f"Error rejecting delivery for request {request_id}: {str(e)}")
+            return {"rejected": False, "error": str(e)}
+
     async def check_timeouts(self) -> List[Approval]:
         """
         Check for timed out approvals and create escalations

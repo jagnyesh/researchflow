@@ -25,8 +25,12 @@ import pandas as pd
 import httpx
 from datetime import datetime, timedelta
 import time
+import logging
 from dotenv import load_dotenv
 from sqlalchemy import select
+
+# Set up logger for this module
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -45,7 +49,7 @@ from app.agents import (
     DeliveryAgent,
 )
 from app.database import get_db_session, get_engine
-from app.database.models import AgentExecution
+from app.database.models import AgentExecution, ResearchRequest
 from app.services.approval_service import ApprovalService
 
 
@@ -65,8 +69,11 @@ def get_status_badge(state: str) -> str:
         "delivered": "🟢",
         "complete": "🟢",
         "data_delivery": "🟡",
+        "delivery_review": "🟠",  # NEW: Awaiting delivery approval
         "qa_validation": "🟡",
         "data_extraction": "🟡",
+        "preview_qa": "🔵",  # NEW: Preview QA validation
+        "preview_extraction": "🔵",  # NEW: Preview extraction
         "feasibility_validation": "🔵",
         "requirements_gathering": "🔵",
         "failed": "🔴",
@@ -153,13 +160,22 @@ def initialize_orchestrator():
             # Get HAPI FHIR database URL from environment
             hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
 
-            # Register all agents (phenotype agent needs HAPI database for ViewDefinitions)
+            # Convert to asyncpg format for SQLAlchemy async engine
+            # SQLonFHIRAdapter requires postgresql+asyncpg:// URL format
+            if "postgresql://" in hapi_db_url and "+asyncpg" not in hapi_db_url:
+                hapi_db_url_async = hapi_db_url.replace("postgresql://", "postgresql+asyncpg://")
+            else:
+                hapi_db_url_async = hapi_db_url
+
+            # Register all agents (phenotype and extraction agents need HAPI database for ViewDefinitions)
             orchestrator.register_agent("requirements_agent", RequirementsAgent())
             orchestrator.register_agent(
-                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
+                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url_async)
             )
             orchestrator.register_agent("calendar_agent", CalendarAgent())
-            orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+            orchestrator.register_agent(
+                "extraction_agent", DataExtractionAgent(database_url=hapi_db_url_async)
+            )
             orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
             orchestrator.register_agent("delivery_agent", DeliveryAgent())
 
@@ -170,23 +186,35 @@ def show_requests_sidebar():
     """Show all submitted requests in sidebar"""
     st.header("📋 All Requests")
 
-    # Get all requests
-    requests = run_async(st.session_state.orchestrator.get_all_active_requests())
+    # Get all requests (FIXED: include completed requests for search)
+    requests = run_async(
+        st.session_state.orchestrator.get_all_active_requests(include_completed=True)
+    )
 
     # Search box
     search_term = st.text_input(
         "🔍 Search", key="search_requests", placeholder="Search by ID or researcher"
     )
 
-    # Status filter
+    # Status filter (all possible workflow states)
     all_statuses = [
-        "delivered",
-        "complete",
-        "in_progress",
+        "new_request",
+        "requirements_gathering",
+        "requirements_complete",
+        "requirements_review",
+        "feasibility_validation",
+        "phenotype_review",
+        "human_review",
+        "preview_extraction",
+        "preview_qa",
+        "schedule_kickoff",
         "data_extraction",
         "qa_validation",
+        "delivery_review",
+        "data_delivery",
+        "delivered",
+        "complete",
         "failed",
-        "not_feasible",
     ]
     status_filter = st.multiselect(
         "Filter by Status", options=all_statuses, default=[], key="status_filter"
@@ -263,7 +291,9 @@ def show_request_details_modal(request_id: str):
     with col1:
         st.metric("Status", status.get("current_state", "N/A").replace("_", " ").title())
     with col2:
-        st.metric("Current Agent", status.get("current_agent", "None").replace("_", " ").title())
+        st.metric(
+            "Current Agent", (status.get("current_agent") or "None").replace("_", " ").title()
+        )
     with col3:
         started = status.get("started_at", "")
         if started:
@@ -302,13 +332,484 @@ def show_request_details_modal(request_id: str):
 
     st.markdown("---")
 
-    # Download Section
-    show_download_section(request_id)
+    # Approval History
+    st.markdown("### ✅ Approval History")
+    try:
+        approval_history = run_async(st.session_state.orchestrator.get_approval_history(request_id))
+
+        if approval_history:
+            for approval in approval_history:
+                approval_type = approval.get("approval_type", "").replace("_", " ").title()
+                status_icon = {
+                    "approved": "✅",
+                    "rejected": "❌",
+                    "pending": "⏳",
+                    "modified": "✏️",
+                    "timeout": "⏰",
+                }.get(approval.get("status", ""), "❓")
+
+                with st.expander(
+                    f"{status_icon} {approval_type} - {approval.get('status', 'N/A').title()}"
+                ):
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        submitted_at = approval.get("submitted_at", "N/A")
+                        if submitted_at != "N/A":
+                            submitted_at = submitted_at[:19]
+                        st.write(f"**Submitted:** {submitted_at}")
+                        st.write(f"**Submitted By:** {approval.get('submitted_by', 'N/A')}")
+                    with col2:
+                        reviewed_at = approval.get("reviewed_at", "N/A")
+                        if reviewed_at and reviewed_at != "N/A":
+                            reviewed_at = reviewed_at[:19]
+                        st.write(f"**Reviewed:** {reviewed_at}")
+                        st.write(f"**Reviewed By:** {approval.get('reviewed_by', 'N/A')}")
+
+                    if approval.get("review_notes"):
+                        st.write(f"**Notes:** {approval.get('review_notes')}")
+        else:
+            st.info("No approvals recorded yet")
+    except Exception as e:
+        st.warning(f"Could not load approval history: {str(e)}")
+
+    st.markdown("---")
+
+    # Preview Data Section (NEW - Sprint X)
+    show_preview_data_section(request_id, status)
+
+    st.markdown("---")
+
+    # Delivery Review Section (NEW - Sprint X)
+    if status.get("current_state") == "delivery_review":
+        show_delivery_review_section(request_id)
+    else:
+        # Regular Download Section
+        show_download_section(request_id)
 
     # Close button
     if st.button("Close", type="secondary", use_container_width=True):
         del st.session_state.selected_request
         st.rerun()
+
+
+def show_preview_data_section(request_id: str, status: dict):
+    """Show preview data (10 rows per element) if available"""
+    from app.database.models import DataDelivery
+    from sqlalchemy import select
+
+    st.markdown("### 🔍 Preview Data")
+
+    # Check if preview data is available
+    try:
+
+        async def get_preview_data():
+            async with get_db_session() as session:
+                result = await session.execute(
+                    select(DataDelivery).where(DataDelivery.request_id == request_id)
+                )
+                delivery = result.scalar_one_or_none()
+                return delivery
+
+        delivery = run_async(get_preview_data())
+
+        if delivery and delivery.preview_data:
+            st.success("✅ Preview extraction complete (10 rows per element)")
+
+            # Show preview QA report summary
+            if delivery.preview_qa_report:
+                qa_report = delivery.preview_qa_report
+                status_icon = "✅" if qa_report.get("overall_status") == "passed" else "❌"
+                st.info(
+                    f"{status_icon} Preview QA Status: {qa_report.get('overall_status', 'unknown').upper()}"
+                )
+
+                # Show QA checks
+                with st.expander("Preview QA Checks"):
+                    for check in qa_report.get("checks", []):
+                        check_icon = "✅" if check.get("passed") else "❌"
+                        st.write(
+                            f"{check_icon} {check.get('check_name', 'Unknown')}: {check.get('message', 'N/A')}"
+                        )
+
+            # Display preview data tables
+            st.markdown("#### Preview Data Tables")
+            st.caption("Showing first 10 rows per data element")
+
+            preview_data = delivery.preview_data
+            for element_name, records in preview_data.items():
+                if records:
+                    with st.expander(
+                        f"📊 {element_name.replace('_', ' ').title()} ({len(records)} rows)"
+                    ):
+                        # Convert to DataFrame for better display
+                        df = pd.DataFrame(records)
+                        st.dataframe(df, use_container_width=True, height=300)
+                else:
+                    st.warning(f"⚠️ {element_name.replace('_', ' ').title()}: No data")
+
+            # Add approval buttons if in preview_qa state
+            if status.get("current_state") == "preview_qa":
+                st.markdown("---")
+                st.markdown("#### 🔍 Preview Review & Approval")
+                st.caption("Review the preview data above before authorizing full data extraction")
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    if st.button(
+                        "✅ Approve Preview - Proceed to Full Extraction",
+                        type="primary",
+                        use_container_width=True,
+                        key=f"approve_preview_{request_id}",
+                    ):
+                        # Approve preview and trigger full extraction via orchestrator
+                        async def approve_preview_action():
+                            async with get_db_session() as session:
+                                # Get request from DB
+                                result = await session.execute(
+                                    select(ResearchRequest).where(ResearchRequest.id == request_id)
+                                )
+                                request = result.scalar_one_or_none()
+
+                                if not request:
+                                    return {"success": False, "error": "Request not found"}
+
+                                # Update state to data_extraction
+                                request.current_state = "data_extraction"
+                                request.current_agent = "extraction_agent"
+
+                                # Update state history
+                                state_history = request.state_history or []
+                                state_history.append(
+                                    {
+                                        "state": "data_extraction",
+                                        "timestamp": datetime.now().isoformat(),
+                                        "approved_by": "admin_dashboard",
+                                        "notes": "Preview approved - proceeding to full data extraction",
+                                    }
+                                )
+                                request.state_history = state_history
+
+                                await session.commit()
+
+                                # Build context from request data
+                                requirements_dict = (
+                                    request.requirements_data.requirements
+                                    if request.requirements_data
+                                    else {}
+                                )
+
+                            # Initialize orchestrator and route task (outside session context)
+                            orchestrator = ResearchRequestOrchestrator()
+
+                            context = {
+                                "request_id": request_id,
+                                "requirements": requirements_dict,
+                                "phenotype_sql": request.phenotype_sql,
+                            }
+
+                            # Route to extraction agent for full extraction
+                            await orchestrator.route_task(
+                                agent_id="extraction_agent",
+                                task="extract_data",
+                                context=context,
+                                from_agent="admin_dashboard",
+                            )
+
+                            return {"success": True}
+
+                        result = run_async(approve_preview_action())
+
+                        if result.get("success"):
+                            st.success("✅ Preview approved! Full data extraction has begun.")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error(
+                                f"❌ Failed to approve preview: {result.get('error', 'Unknown error')}"
+                            )
+
+                with col2:
+                    if st.button(
+                        "❌ Reject Preview",
+                        type="secondary",
+                        use_container_width=True,
+                        key=f"reject_preview_{request_id}",
+                    ):
+                        # Show rejection reason form
+                        with st.form(f"reject_preview_form_{request_id}"):
+                            st.warning("⚠️ Rejecting preview will send the request back for review")
+                            rejection_reason = st.text_area(
+                                "Rejection Reason (required)",
+                                placeholder="e.g., Data quality issues, incorrect cohort, etc.",
+                                key=f"preview_rejection_reason_{request_id}",
+                            )
+
+                            col_a, col_b = st.columns(2)
+                            with col_a:
+                                submit_reject = st.form_submit_button(
+                                    "Confirm Rejection", type="primary", use_container_width=True
+                                )
+                            with col_b:
+                                cancel_reject = st.form_submit_button(
+                                    "Cancel", use_container_width=True
+                                )
+
+                            if submit_reject and rejection_reason:
+
+                                async def reject_preview_action():
+                                    async with get_db_session() as session:
+                                        from app.services.approval_service import ApprovalService
+
+                                        approval_service = ApprovalService(session)
+
+                                        result = await approval_service.reject_preview(
+                                            request_id=request_id,
+                                            reviewed_by="admin_dashboard",
+                                            review_notes=rejection_reason,
+                                        )
+                                        return result
+
+                                result = run_async(reject_preview_action())
+
+                                if result.get("rejected"):
+                                    st.success("✅ Preview rejected. Request sent back for review.")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error(
+                                        f"❌ Rejection failed: {result.get('error', 'Unknown error')}"
+                                    )
+                            elif submit_reject:
+                                st.error("❌ Please provide a rejection reason")
+
+        elif status.get("current_state") in ["preview_extraction"]:
+            # Show loading spinner for preview extraction
+            with st.spinner("⏳ Extracting preview data (10 rows per element)..."):
+                # Get estimated time from SQL approval if available
+                async def get_estimated_time():
+                    async with get_db_session() as session:
+                        from app.database.models import Approval
+                        from sqlalchemy import select
+
+                        result = await session.execute(
+                            select(Approval)
+                            .where(Approval.request_id == request_id)
+                            .where(Approval.approval_type == "phenotype_sql")
+                        )
+                        approval = result.scalar_one_or_none()
+                        if approval and approval.approval_data:
+                            return approval.approval_data.get("estimated_extraction_time_hours", 0)
+                        return 0
+
+                est_time = run_async(get_estimated_time())
+
+                if est_time > 0:
+                    if est_time < 1:
+                        time_msg = f"Estimated time: ~{int(est_time * 60)} minutes"
+                    else:
+                        time_msg = f"Estimated time: ~{est_time:.1f} hours"
+                    st.info(f"⏳ {time_msg}")
+                else:
+                    st.info("⏳ Extraction in progress...")
+
+                # Auto-refresh every 5 seconds to check for completion
+                st.caption("🔄 Auto-refreshing every 5 seconds...")
+                time.sleep(5)
+                st.rerun()
+        elif status.get("current_state") in [
+            "data_extraction",
+            "qa_validation",
+            "delivery_review",
+            "data_delivery",
+            "delivered",
+            "complete",
+        ]:
+            st.success("✅ Preview was approved - full data extraction completed")
+        else:
+            st.caption("Preview data not available yet (request hasn't reached preview extraction)")
+
+    except Exception as e:
+        st.warning(f"Could not load preview data: {str(e)}")
+
+
+def show_delivery_review_section(request_id: str):
+    """Show delivery review UI with download + approve/reject buttons"""
+    st.markdown("### 📦 Delivery Review")
+
+    st.info("⏳ **Awaiting Informatician Approval**")
+    st.caption("Review the full dataset before approving for delivery to researcher")
+
+    # Get delivery data
+    from app.database.models import DataDelivery
+    from sqlalchemy import select
+
+    try:
+
+        async def get_delivery_data():
+            async with get_db_session() as session:
+                result = await session.execute(
+                    select(DataDelivery).where(DataDelivery.request_id == request_id)
+                )
+                return result.scalar_one_or_none()
+
+        delivery = run_async(get_delivery_data())
+
+        if delivery:
+            # Show QA report summary
+            if delivery.qa_report:
+                qa_report = delivery.qa_report
+                status_icon = "✅" if qa_report.get("overall_status") == "passed" else "❌"
+                st.success(
+                    f"{status_icon} Full QA Status: {qa_report.get('overall_status', 'unknown').upper()}"
+                )
+
+                # Metrics
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric(
+                        "Cohort Size",
+                        f"{delivery.cohort_size:,}" if delivery.cohort_size else "N/A",
+                    )
+                with col2:
+                    st.metric(
+                        "Data Elements",
+                        len(delivery.data_elements) if delivery.data_elements else 0,
+                    )
+                with col3:
+                    st.metric("Files", len(delivery.file_list) if delivery.file_list else 0)
+
+                # Show QA checks
+                with st.expander("Full QA Report"):
+                    for check in qa_report.get("checks", []):
+                        check_icon = "✅" if check.get("passed") else "❌"
+                        st.write(
+                            f"{check_icon} {check.get('check_name', 'Unknown')}: {check.get('message', 'N/A')}"
+                        )
+
+            st.markdown("---")
+
+            # Download full dataset for review
+            st.markdown("**Step 1: Download Full Dataset**")
+            st.caption("Download and review the complete dataset before approval")
+
+            delivery_info = check_delivery_status(request_id)
+            if delivery_info.get("delivered") or delivery.file_list:
+                if st.button(
+                    "📥 Download Full Dataset (ZIP)",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"dl_review_{request_id}",
+                ):
+                    with st.spinner("Preparing download..."):
+                        file_content, filename = download_file(request_id)
+                        if file_content:
+                            st.download_button(
+                                label="💾 Save Dataset",
+                                data=file_content,
+                                file_name=filename,
+                                mime="application/zip",
+                                type="secondary",
+                                use_container_width=True,
+                                key=f"save_review_{request_id}",
+                            )
+                            st.success(f"✅ Ready to download: {filename}")
+            else:
+                st.warning("⚠️ Full dataset not yet available for download")
+
+            st.markdown("---")
+
+            # Approve/Reject buttons
+            st.markdown("**Step 2: Approve or Reject Delivery**")
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                # Get pending delivery approval for this request
+                async def get_delivery_approval_id():
+                    async with get_db_session() as session:
+                        from app.database.models import Approval
+                        from sqlalchemy import select
+
+                        result = await session.execute(
+                            select(Approval.id)
+                            .where(Approval.request_id == request_id)
+                            .where(Approval.approval_type == "delivery")
+                            .where(Approval.status == "pending")
+                        )
+                        approval = result.scalar_one_or_none()
+                        return approval
+
+                delivery_approval_id = run_async(get_delivery_approval_id())
+
+                if not delivery_approval_id:
+                    st.warning("⚠️ No pending delivery approval found")
+                elif st.button(
+                    "✅ Approve Delivery",
+                    type="primary",
+                    use_container_width=True,
+                    key=f"approve_delivery_{request_id}",
+                ):
+                    # FIXED: Use handle_approval_response() to trigger workflow continuation
+                    # This is consistent with phenotype SQL approval and ensures orchestrator
+                    # calls delivery_agent after approval
+                    handle_approval_response(
+                        approval_id=delivery_approval_id,
+                        decision="approve",
+                        reviewer="admin_dashboard",
+                        notes="Approved via Admin Dashboard",
+                        modifications={},
+                    )
+
+            with col2:
+                if st.button(
+                    "❌ Reject Delivery",
+                    type="secondary",
+                    use_container_width=True,
+                    key=f"reject_delivery_{request_id}",
+                ):
+                    # Show rejection reason dialog
+                    with st.form(key=f"reject_form_{request_id}"):
+                        reason = st.text_area(
+                            "Rejection Reason",
+                            placeholder="Explain why the dataset is being rejected...",
+                            key=f"reject_reason_{request_id}",
+                        )
+
+                        submit = st.form_submit_button("Confirm Rejection", type="secondary")
+
+                        if submit and reason:
+
+                            async def reject_delivery_action():
+                                async with get_db_session() as session:
+                                    approval_service = ApprovalService(session)
+                                    result = await approval_service.reject_delivery(
+                                        request_id=request_id,
+                                        reviewed_by="admin_dashboard",
+                                        review_notes=reason,
+                                    )
+                                    return result
+
+                            result = run_async(reject_delivery_action())
+
+                            if not result.get("approved"):
+                                st.success(
+                                    "✅ Delivery rejected. Request will return to extraction."
+                                )
+                                time.sleep(1)
+                                del st.session_state.selected_request
+                                st.rerun()
+                            else:
+                                st.error(
+                                    f"❌ Rejection failed: {result.get('error', 'Unknown error')}"
+                                )
+                        elif submit:
+                            st.error("Please provide a rejection reason")
+        else:
+            st.warning("⚠️ Delivery data not found")
+
+    except Exception as e:
+        st.error(f"Error loading delivery review: {str(e)}")
 
 
 def show_download_section(request_id: str):
@@ -751,6 +1252,7 @@ def display_approval_card(approval, reviewer_email):
     type_emoji_map = {
         "requirements": "📄",
         "phenotype_sql": "🔴",  # Red circle for critical SQL
+        "preview_qa": "⚠️",  # Warning for preview QA failure
         "extraction": "📊",
         "qa": "✓",
         "scope_change": "🔄",
@@ -759,6 +1261,7 @@ def display_approval_card(approval, reviewer_email):
     type_label_map = {
         "requirements": "Requirements Review",
         "phenotype_sql": "SQL REVIEW (CRITICAL)",
+        "preview_qa": "PREVIEW QA FAILED - REVIEW REQUIRED",
         "extraction": "Extraction Approval",
         "qa": "QA Review",
         "scope_change": "Scope Change",
@@ -789,6 +1292,9 @@ def display_approval_card(approval, reviewer_email):
         # Display type-specific approval data
         if approval_type == "phenotype_sql":
             display_sql_approval(approval_data)
+
+        elif approval_type == "preview_qa":
+            display_preview_qa_approval(approval_data)
 
         elif approval_type == "requirements":
             display_requirements_approval(approval_data)
@@ -958,7 +1464,7 @@ def display_sql_approval(data):
     st.code(sql_query, language="sql")
 
     # Metrics
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         cohort = data.get("estimated_cohort", "Unknown")
@@ -971,6 +1477,14 @@ def display_sql_approval(data):
     with col3:
         availability = data.get("data_availability", {}).get("overall_availability", 0)
         st.metric("Data Availability", f"{availability:.1%}")
+
+    with col4:
+        extraction_time = data.get("estimated_extraction_time_hours", 0)
+        if extraction_time < 1:
+            time_display = f"{int(extraction_time * 60)} min"
+        else:
+            time_display = f"{extraction_time:.1f} hrs"
+        st.metric("Est. Preview Time", time_display)
 
     # Auto-Feasibility Assessment (informational, not decision gate)
     auto_assessment = data.get("auto_feasibility_assessment", "unknown")
@@ -999,6 +1513,99 @@ def display_sql_approval(data):
         st.info("💡 **Recommendations:**")
         for rec in recommendations:
             st.write(f"- {rec}")
+
+
+def display_preview_qa_approval(data):
+    """Display preview QA failure details for review"""
+    st.subheader("⚠️ Preview QA Failed - Review Required")
+
+    # Display failure message
+    message = data.get(
+        "message",
+        "Preview QA validation failed. Manual review required before proceeding to full extraction.",
+    )
+    st.error(message)
+
+    # Display cohort check results
+    cohort_check = data.get("cohort_check", {})
+    if cohort_check:
+        st.subheader("📊 Cohort Count Mismatch")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            actual_size = cohort_check.get("details", {}).get("actual_cohort_size", "N/A")
+            st.metric("Actual Cohort", actual_size)
+        with col2:
+            estimated_size = cohort_check.get("details", {}).get("estimated_cohort_size", "N/A")
+            st.metric("Estimated Cohort", estimated_size)
+        with col3:
+            tolerance = cohort_check.get("details", {}).get("tolerance", "N/A")
+            st.metric("Tolerance (±)", tolerance)
+
+        # Show expected range
+        details = cohort_check.get("details", {})
+        if "lower_bound" in details and "upper_bound" in details:
+            lower = details["lower_bound"]
+            upper = details["upper_bound"]
+            st.info(f"**Expected Range:** {lower} - {upper} patients")
+
+        # Show check message
+        check_message = cohort_check.get("message", "")
+        if check_message:
+            st.warning(f"**Issue:** {check_message}")
+
+    st.divider()
+
+    # Display QA report if available
+    qa_report = data.get("qa_report", {})
+    if qa_report:
+        st.subheader("📋 QA Report")
+
+        overall_status = qa_report.get("overall_status", "unknown")
+        if overall_status == "failed":
+            st.error(f"**Overall Status:** {overall_status.upper()}")
+        else:
+            st.success(f"**Overall Status:** {overall_status.upper()}")
+
+        # Display issues
+        issues = qa_report.get("issues", [])
+        if issues:
+            st.markdown("**Issues Found:**")
+            for issue in issues:
+                check_name = issue.get("check_name", "Unknown")
+                severity = issue.get("severity", "info")
+                message = issue.get("message", "No message")
+
+                severity_emoji = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(
+                    severity, "⚪"
+                )
+
+                st.markdown(f"{severity_emoji} **{check_name}**: {message}")
+
+    st.divider()
+
+    # Display preview package metadata if available
+    preview_package = data.get("preview_package", {})
+    if preview_package:
+        metadata = preview_package.get("metadata", {})
+        if metadata:
+            st.subheader("📦 Preview Package Metadata")
+            st.json(metadata)
+
+    # Decision guidance
+    st.info(
+        """
+    **Decision Options:**
+
+    **✅ Approve**: Proceed to full extraction despite cohort count mismatch.
+    - Use if the mismatch is acceptable (e.g., data quality issue, acceptable variance)
+    - Full extraction will proceed with all patients that match the SQL query
+
+    **❌ Reject**: Return to SQL generation for revision.
+    - Use if the SQL query needs to be fixed (e.g., wrong criteria, missing conditions)
+    - Request will go back to phenotype agent for new SQL generation
+    """
+    )
 
 
 def display_requirements_approval(data):
@@ -1103,34 +1710,44 @@ def display_extraction_approval(data):
 
 
 def handle_approval_response(approval_id, decision, reviewer, notes, modifications):
-    """Handle approval response (approve/reject/modify) using direct database access"""
+    """Handle approval response (approve/reject/modify) and trigger workflow continuation"""
     try:
+        logger.info(
+            f"[Admin Dashboard] Processing approval {approval_id}: {decision} by {reviewer}"
+        )
 
-        async def process_approval():
-            async with get_db_session() as session:
-                approval_service = ApprovalService(session)
+        async def process_approval_with_orchestrator():
+            # Call orchestrator's process_approval_response method
+            # This handles BOTH database update AND workflow continuation
+            logger.info(
+                f"[Admin Dashboard] Calling orchestrator.process_approval_response for approval {approval_id}"
+            )
+            await st.session_state.orchestrator.process_approval_response(
+                approval_id=approval_id,
+                reviewer=reviewer,
+                decision=decision,
+                notes=notes,
+                modifications=modifications,
+            )
+            logger.info(
+                f"[Admin Dashboard] orchestrator.process_approval_response completed for approval {approval_id}"
+            )
 
-                if decision == "approve":
-                    await approval_service.approve(approval_id, reviewer, notes, modifications)
-                elif decision == "reject":
-                    await approval_service.reject(approval_id, reviewer, notes or "Rejected")
-                elif decision == "modify":
-                    await approval_service.modify(approval_id, reviewer, modifications, notes)
-                else:
-                    raise ValueError(f"Invalid decision: {decision}")
-
-        run_async(process_approval())
+        run_async(process_approval_with_orchestrator())
 
         if decision == "approve":
-            st.success(f"✅ Approval {approval_id} approved! Workflow will continue automatically.")
+            st.success(f"✅ Approval {approval_id} approved! Workflow continuing to next agent...")
+            logger.info(f"[Admin Dashboard] Approval {approval_id} approved successfully")
         elif decision == "reject":
             st.error(
                 f"❌ Approval {approval_id} rejected. Request will return to originating agent."
             )
+            logger.info(f"[Admin Dashboard] Approval {approval_id} rejected")
         elif decision == "modify":
             st.success(
-                f"✏️ Approval {approval_id} approved with modifications. Workflow will continue with your changes."
+                f"✏️ Approval {approval_id} approved with modifications. Workflow continuing with changes..."
             )
+            logger.info(f"[Admin Dashboard] Approval {approval_id} modified and approved")
 
         # Trigger refresh after 2 seconds
         time.sleep(2)
@@ -1138,6 +1755,9 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
 
     except Exception as e:
         st.error(f"Error processing approval: {str(e)}")
+        logger.error(
+            f"[Admin Dashboard] Error processing approval {approval_id}: {str(e)}", exc_info=True
+        )
         import traceback
 
         st.code(traceback.format_exc())

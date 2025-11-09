@@ -14,7 +14,14 @@ import logging
 from sqlalchemy import select
 
 from .workflow_engine import WorkflowEngine, WorkflowState
-from app.database import get_db_session, ResearchRequest, AuditLog, Approval
+from app.database import (
+    get_db_session,
+    ResearchRequest,
+    AuditLog,
+    Approval,
+    RequirementsData,
+    FeasibilityReport,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,6 +134,10 @@ class ResearchRequestOrchestrator:
             from_agent: Source agent (for logging)
         """
         request_id = context.get("request_id")
+
+        logger.info(
+            f"[{request_id}] route_task called: agent_id={agent_id}, task={task}, from_agent={from_agent}"
+        )
 
         # Load request from database
         async with get_db_session() as session:
@@ -287,6 +298,23 @@ class ResearchRequestOrchestrator:
 
         logger.info(f"[{request_id}] {agent_id} requesting {approval_type} approval")
 
+        # FIX: Check for duplicate pending approval to prevent infinite loop
+        async with get_db_session() as session:
+            from app.database.models import Approval
+
+            result_check = await session.execute(
+                select(Approval)
+                .where(Approval.request_id == request_id)
+                .where(Approval.approval_type == approval_type)
+                .where(Approval.status == "pending")
+            )
+            existing_approval = result_check.scalar_one_or_none()
+            if existing_approval:
+                logger.warning(
+                    f"[{request_id}] Duplicate {approval_type} approval request detected (existing ID: {existing_approval.id}) - skipping creation"
+                )
+                return
+
         async with get_db_session() as session:
             # Import here to avoid circular dependency
             from app.services.approval_service import ApprovalService
@@ -445,6 +473,9 @@ class ResearchRequestOrchestrator:
         self, approval_id: int, decision: str, modifications: Optional[Dict[str, Any]] = None
     ):
         """Continue workflow after approval is granted"""
+        logger.info(
+            f"[WORKFLOW] Starting _continue_workflow_after_approval: approval_id={approval_id}, decision={decision}"
+        )
         async with get_db_session() as session:
             # Import here to avoid circular dependency
             from app.services.approval_service import ApprovalService
@@ -452,7 +483,15 @@ class ResearchRequestOrchestrator:
             approval_service = ApprovalService(session)
             approval = await approval_service.get_approval(approval_id)
 
+            if approval:
+                logger.info(
+                    f"[WORKFLOW] Retrieved approval: type={approval.approval_type}, request_id={approval.request_id}, status={approval.status}"
+                )
+
             if not approval:
+                logger.warning(
+                    f"[WORKFLOW] Approval {approval_id} not found - cannot continue workflow"
+                )
                 return
 
             request_id = approval.request_id
@@ -461,9 +500,20 @@ class ResearchRequestOrchestrator:
             # Determine next agent based on approval type
             next_agent_map = {
                 "requirements": ("phenotype_agent", "validate_feasibility"),
-                "phenotype_sql": ("calendar_agent", "schedule_kickoff_meeting"),
+                "phenotype_sql": (
+                    "extraction_agent",
+                    "extract_preview",
+                ),  # Extract preview (10 rows) first
+                "preview_qa": (
+                    "extraction_agent",
+                    "extract_data",
+                ),  # Proceed to full extraction after preview QA approval
                 "extraction": ("extraction_agent", "extract_data"),
-                "qa": ("delivery_agent", "deliver_data"),
+                "qa": ("delivery_agent", "deliver_data"),  # After QA approval, proceed to delivery
+                "delivery": (
+                    "delivery_agent",
+                    "deliver_data",
+                ),  # FIXED: After delivery approval, execute delivery_agent
                 "scope_change": (
                     "requirements_agent",
                     "gather_requirements",
@@ -471,6 +521,10 @@ class ResearchRequestOrchestrator:
             }
 
             next_agent, next_task = next_agent_map.get(approval_type, (None, None))
+
+            logger.info(
+                f"[{request_id}] Approval type: '{approval_type}', next_agent_map lookup result: {next_agent}, {next_task}"
+            )
 
             if next_agent:
                 # Build context with approved data
@@ -483,20 +537,123 @@ class ResearchRequestOrchestrator:
                 # Add approval data to context
                 if approval.approval_data:
                     context.update(approval.approval_data)
+                    logger.debug(
+                        f"[{request_id}] Added approval_data to context: {list(approval.approval_data.keys())}"
+                    )
+
+                # CRITICAL FIX: Enrich context with requirements and SQL for extraction/delivery agents
+                # These agents require structured_requirements and phenotype_sql but approvals don't store them
+                if next_agent in ["extraction_agent", "delivery_agent"]:
+                    logger.info(
+                        f"[{request_id}] Enriching context with requirements and SQL for {next_agent}"
+                    )
+
+                    # Fetch requirements from database
+                    req_result = await session.execute(
+                        select(RequirementsData).where(RequirementsData.request_id == request_id)
+                    )
+                    requirements_data = req_result.scalar_one_or_none()
+
+                    # Fetch feasibility report (contains SQL)
+                    feas_result = await session.execute(
+                        select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
+                    )
+                    feasibility = feas_result.scalar_one_or_none()
+
+                    if requirements_data:
+                        context["structured_requirements"] = {
+                            "study_title": requirements_data.study_title,
+                            "principal_investigator": requirements_data.principal_investigator,
+                            "irb_number": requirements_data.irb_number,
+                            "inclusion_criteria": requirements_data.inclusion_criteria,
+                            "exclusion_criteria": requirements_data.exclusion_criteria,
+                            "data_elements": requirements_data.data_elements,
+                            "time_period": {
+                                "start": (
+                                    requirements_data.time_period_start.isoformat()
+                                    if requirements_data.time_period_start
+                                    else None
+                                ),
+                                "end": (
+                                    requirements_data.time_period_end.isoformat()
+                                    if requirements_data.time_period_end
+                                    else None
+                                ),
+                            },
+                            "delivery_format": requirements_data.delivery_format,
+                            "phi_level": requirements_data.phi_level,
+                        }
+                        logger.info(f"[{request_id}] Added structured_requirements to context")
+                    else:
+                        logger.warning(
+                            f"[{request_id}] No RequirementsData found for {next_agent} - may cause failure"
+                        )
+
+                    if feasibility:
+                        context["phenotype_sql"] = feasibility.phenotype_sql
+                        context["sql_query"] = feasibility.phenotype_sql  # Alias for compatibility
+                        context["estimated_cohort"] = feasibility.estimated_cohort_size or 0
+                        # Parameters are stored in approval_data, don't overwrite if already present
+                        if "parameters" not in context:
+                            context["parameters"] = {}
+                        logger.info(
+                            f"[{request_id}] Added phenotype_sql and estimated_cohort to context"
+                        )
+                    else:
+                        logger.warning(
+                            f"[{request_id}] No FeasibilityReport found for {next_agent} - may cause failure"
+                        )
 
                 # Add modifications if provided
                 if modifications:
                     context["modifications"] = modifications
 
+                # CRITICAL: Validate context for delivery_agent before routing
+                if next_agent == "delivery_agent":
+                    missing_fields = []
+                    if not context.get("structured_requirements"):
+                        missing_fields.append("structured_requirements")
+                    if not context.get("phenotype_sql"):
+                        missing_fields.append("phenotype_sql")
+
+                    if missing_fields:
+                        error_msg = f"Cannot route to delivery_agent: missing required context fields: {missing_fields}"
+                        logger.error(f"[{request_id}] {error_msg}")
+                        logger.error(
+                            f"[{request_id}] Available context keys: {list(context.keys())}"
+                        )
+                        await self._handle_workflow_error(
+                            request_id=request_id, agent_id="approval_service", error=error_msg
+                        )
+                        return
+
                 logger.info(
-                    f"[{request_id}] Routing to {next_agent}.{next_task} after {approval_type} approval"
+                    f"[{request_id}] Routing to {next_agent}.{next_task} after {approval_type} approval (from_agent=approval_service)"
                 )
 
-                await self.route_task(
-                    agent_id=next_agent,
-                    task=next_task,
-                    context=context,
-                    from_agent="approval_service",
+                try:
+                    await self.route_task(
+                        agent_id=next_agent,
+                        task=next_task,
+                        context=context,
+                        from_agent="approval_service",
+                    )
+
+                    logger.info(f"[{request_id}] Successfully routed to {next_agent}.{next_task}")
+                except Exception as e:
+                    logger.error(
+                        f"[{request_id}] CRITICAL: Failed to route to {next_agent}.{next_task} after {approval_type} approval: {str(e)}",
+                        exc_info=True,
+                    )
+                    # Mark workflow as failed and escalate to human review
+                    await self._handle_workflow_error(
+                        request_id=request_id,
+                        agent_id="approval_service",
+                        error=f"Routing to {next_agent} failed: {str(e)}",
+                    )
+            else:
+                logger.error(
+                    f"[{request_id}] No next agent found for approval type: '{approval_type}'. Available types: {list(next_agent_map.keys())}"
                 )
 
     async def _handle_approval_rejection(self, approval_id: int):
@@ -560,6 +717,7 @@ class ResearchRequestOrchestrator:
 
             research_request.completed_at = datetime.now()
             research_request.final_state = final_state.value
+            research_request.current_agent = None  # Clear current agent on completion
 
             duration = (research_request.completed_at - research_request.created_at).total_seconds()
 
@@ -635,7 +793,9 @@ class ResearchRequestOrchestrator:
                 session.add(audit_entry)
                 await session.commit()
 
-        await self._complete_workflow(request_id, WorkflowState.HUMAN_REVIEW)
+        # NOTE: Do NOT call _complete_workflow() here!
+        # HUMAN_REVIEW is a paused state waiting for human intervention, not a terminal state.
+        # Setting completed_at would cause the request to disappear from get_all_active_requests().
 
     async def get_request_status(self, request_id: str) -> Optional[Dict[str, Any]]:
         """Get current status of a request"""
@@ -668,14 +828,23 @@ class ResearchRequestOrchestrator:
                 },
             }
 
-    async def get_all_active_requests(self) -> list:
-        """Get all active requests (not completed), ordered by newest first"""
+    async def get_all_active_requests(self, include_completed: bool = False) -> list:
+        """
+        Get all active requests, ordered by newest first
+
+        Args:
+            include_completed: If True, includes completed requests. Default False for backward compatibility.
+        """
         async with get_db_session() as session:
-            result = await session.execute(
-                select(ResearchRequest)
-                .where(ResearchRequest.completed_at.is_(None))
-                .order_by(ResearchRequest.created_at.desc())  # Newest first
-            )
+            query = select(ResearchRequest)
+
+            # FIXED: Allow including completed requests for admin dashboard
+            if not include_completed:
+                query = query.where(ResearchRequest.completed_at.is_(None))
+
+            query = query.order_by(ResearchRequest.created_at.desc())  # Newest first
+
+            result = await session.execute(query)
             active_requests = result.scalars().all()
 
             # Use asyncio.gather to properly await all status requests
@@ -683,6 +852,49 @@ class ResearchRequestOrchestrator:
                 *[self.get_request_status(req.id) for req in active_requests]
             )
             return statuses
+
+    async def get_requests_by_researcher(self, researcher_email: str) -> list:
+        """Get all requests for a specific researcher, ordered by newest first"""
+        async with get_db_session() as session:
+            result = await session.execute(
+                select(ResearchRequest)
+                .where(ResearchRequest.researcher_email == researcher_email)
+                .order_by(ResearchRequest.created_at.desc())  # Newest first
+            )
+            researcher_requests = result.scalars().all()
+
+            # Use asyncio.gather to properly await all status requests
+            statuses = await asyncio.gather(
+                *[self.get_request_status(req.id) for req in researcher_requests]
+            )
+            return statuses
+
+    async def get_approval_history(self, request_id: str) -> list:
+        """Get all approval history for a request, ordered by submission time"""
+        async with get_db_session() as session:
+            result = await session.execute(
+                select(Approval)
+                .where(Approval.request_id == request_id)
+                .order_by(Approval.submitted_at.asc())  # Chronological order
+            )
+            approvals = result.scalars().all()
+
+            return [
+                {
+                    "approval_type": approval.approval_type,
+                    "submitted_at": (
+                        approval.submitted_at.isoformat() if approval.submitted_at else None
+                    ),
+                    "submitted_by": approval.submitted_by,
+                    "status": approval.status,
+                    "reviewed_at": (
+                        approval.reviewed_at.isoformat() if approval.reviewed_at else None
+                    ),
+                    "reviewed_by": approval.reviewed_by,
+                    "review_notes": approval.review_notes,
+                }
+                for approval in approvals
+            ]
 
     def _generate_request_id(self) -> str:
         """Generate unique request ID"""

@@ -175,7 +175,7 @@ async def handle_user_input(user_input: str):
     - Routes to formal portal for full extraction
     """
     # Detect intent using ConversationManager
-    intent = st.session_state.conversation_manager.detect_intent(user_input)
+    intent = await st.session_state.conversation_manager.detect_intent(user_input)
 
     # Route based on intent
     if intent == UserIntent.GREETING:
@@ -193,7 +193,7 @@ async def handle_user_input(user_input: str):
         # User confirmed something - check what they're confirming
         if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
             # User confirmed feasibility results - direct to formal portal
-            if st.session_state.conversation_manager.is_confirmation(user_input):
+            if await st.session_state.conversation_manager.is_confirmation(user_input):
                 response = """### ✅ Great! Let's move to the Formal Portal
 
 **Next Steps:**
