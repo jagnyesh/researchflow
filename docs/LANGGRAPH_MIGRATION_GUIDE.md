@@ -336,6 +336,8 @@ docker-compose up
 
 ## Monitoring & Validation
 
+**See also**: [`POST_DEPLOYMENT_TESTING_GUIDE.md`](POST_DEPLOYMENT_TESTING_GUIDE.md) for detailed validation procedures, smoke tests, and rollback criteria.
+
 ### Key Metrics to Monitor
 
 | Metric | Tool | Target |
@@ -455,13 +457,24 @@ sqlite3 checkpoints.db "SELECT COUNT(*) FROM checkpoints;"
 
 ## Post-Migration Tasks
 
+**For detailed validation procedures, see**: [`docs/POST_DEPLOYMENT_TESTING_GUIDE.md`](POST_DEPLOYMENT_TESTING_GUIDE.md)
+
+The post-deployment testing guide provides comprehensive validation procedures for each rollout phase, including:
+- Smoke tests (5 tests, 15 minutes) to run after each deployment
+- Phase-specific validation for 10%, 25%, 50%, and 100% rollout
+- Rollback decision criteria with severity levels
+- Success metrics dashboard with SQL queries
+- Incident response procedures
+
 ### Week 1: Monitor Closely
 
+- [ ] Run smoke tests daily (see POST_DEPLOYMENT_TESTING_GUIDE.md)
 - [ ] Check LangSmith daily for errors
 - [ ] Review logs for warnings
 - [ ] Verify approval workflow working
 - [ ] Confirm state persistence
 - [ ] Monitor completion times
+- [ ] Execute canary phase validation (10% rollout)
 
 ---
 
