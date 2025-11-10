@@ -37,8 +37,9 @@ jobs:
 
       - name: Run detect-secrets
         run: |
+          # Scan for new secrets and compare against baseline
           detect-secrets scan --baseline .secrets.baseline
-          detect-secrets audit .secrets.baseline
+          # Note: 'detect-secrets audit' is interactive and should only be run locally
 
   dependency-check:
     name: Dependency Vulnerability Scan
