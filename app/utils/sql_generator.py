@@ -40,7 +40,9 @@ class SQLGenerator:
             self.observation_table = "observation_labs"
             # Column mappings for materialized views
             self.patient_id_column = "patient_id"  # Not "id"
-            self.condition_code_column = "code_text"  # Not "code_display"
+            # Use icd10_display for semantic clarity (ICD-10 specific field)
+            # Note: code_text contains identical data but is less specific
+            self.condition_code_column = "icd10_display"  # Was: "code_text"
             self.observation_code_column = "code"
         else:
             # Legacy HAPI FHIR schema (deprecated)
@@ -304,6 +306,12 @@ class SQLGenerator:
         """
         Build SQL for condition/diagnosis criterion
 
+        IMPORTANT: Uses LOWER() for case-insensitive matching to avoid missing patients
+        due to capitalization variations (e.g., "Diabetes" vs "diabetes").
+
+        Example: Without LOWER(), the query "diabetes" would miss patients with
+        "Diabetes mellitus type 2" (capital D), leading to incorrect cohort counts.
+
         Returns:
             Tuple of (SQL condition string, parameters dict)
         """
@@ -317,7 +325,8 @@ class SQLGenerator:
         patient_id_col = self.patient_id_column
 
         # nosec B608 - Table/column names from validated configuration, parameters are bound
-        sql = f"""{operator} (
+        # CRITICAL: LOWER() is required for case-insensitive matching (see docstring)
+        sql = f"""{operator} (  # nosec B608
         SELECT 1 FROM {condition_table} c
         WHERE c.patient_id = p.{patient_id_col}
         AND LOWER(c.{condition_col}) LIKE LOWER(:{param_name})
