@@ -123,7 +123,7 @@ class FullWorkflow:
     6. Built-in state passing (no manual dict copying)
     """
 
-    def __init__(self, use_real_agents: bool = False, checkpointer=None):
+    def __init__(self, use_real_agents: bool = False, checkpointer=None, persistence=None):
         """
         Initialize the full workflow graph
 
@@ -133,9 +133,13 @@ class FullWorkflow:
             checkpointer: Optional LangGraph checkpointer for state persistence.
                          If provided, enables workflow state snapshots and resumption.
                          Use get_checkpointer() from persistence module.
+            persistence: Optional WorkflowPersistence instance for database sync.
+                        If provided, state will be automatically saved to main database
+                        after each workflow run.
         """
         self.use_real_agents = use_real_agents
         self.checkpointer = checkpointer
+        self.persistence = persistence
 
         # Initialize real agents if requested
         if use_real_agents:
@@ -144,7 +148,8 @@ class FullWorkflow:
             # Get HAPI FHIR database URL from environment
             # Default uses asyncpg for async connections
             hapi_db_url = os.getenv(
-                "HAPI_DB_URL", "postgresql+asyncpg://hapi:hapi@localhost:5433/hapi"  # pragma: allowlist secret
+                "HAPI_DB_URL",
+                "postgresql+asyncpg://hapi:hapi@localhost:5433/hapi",  # pragma: allowlist secret
             )
             healthcare_db_url = os.getenv("HEALTHCARE_DB_URL")
 
@@ -900,6 +905,19 @@ class FullWorkflow:
             f"[FullWorkflow] Workflow ended in state: {final_state['current_state']} "
             f"(duration: {duration_ms:.2f}ms)"
         )
+
+        # Automatically save state to database if persistence is configured
+        if self.persistence:
+            try:
+                await self.persistence.save_workflow_state(final_state)
+                logger.info(
+                    f"[FullWorkflow] State saved to database: "
+                    f"{final_state['request_id']} → {final_state['current_state']}"
+                )
+            except Exception as e:
+                logger.error(f"[FullWorkflow] Failed to save state to database: {e}", exc_info=True)
+                # Don't fail workflow if persistence fails
+                # Checkpointer still has state even if DB sync fails
 
         return final_state
 

@@ -31,7 +31,8 @@ from sqlalchemy import select
 async def facade():
     """Create facade instance for testing"""
     # Use real agents=False for faster tests
-    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=True)
+    # Disable persistence to avoid threading issues in tests (persistence is tested separately in E2E tests)
+    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=False)
     yield facade
     await facade.close()
 

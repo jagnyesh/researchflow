@@ -47,12 +47,14 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 DEFAULT_CHECKPOINT_DB = "data/langgraph_checkpoints.db"
-CHECKPOINT_DB_PATH = os.getenv("LANGGRAPH_CHECKPOINT_DB", DEFAULT_CHECKPOINT_DB)
+
+# Global checkpointer singleton (one per database path)
+_checkpointer_cache: Dict[str, AsyncSqliteSaver] = {}
 
 
 async def get_checkpointer() -> AsyncSqliteSaver:
     """
-    Get LangGraph checkpointer for state persistence.
+    Get LangGraph checkpointer for state persistence (singleton pattern).
 
     Creates SQLite database at data/langgraph_checkpoints.db with schema:
     - checkpoints table (thread_id, checkpoint_id, state BLOB)
@@ -64,7 +66,7 @@ async def get_checkpointer() -> AsyncSqliteSaver:
     - State isolation per thread_id (request_id)
 
     Returns:
-        AsyncSqliteSaver: Configured checkpointer instance
+        AsyncSqliteSaver: Configured checkpointer instance (reused across calls)
 
     Example:
         ```python
@@ -80,16 +82,46 @@ async def get_checkpointer() -> AsyncSqliteSaver:
         resumed_state = await workflow.run({}, config=config)
         ```
     """
-    db_path = Path(CHECKPOINT_DB_PATH)
+    # Read environment variable at runtime (not at module import time)
+    checkpoint_db_path = os.getenv("LANGGRAPH_CHECKPOINT_DB", DEFAULT_CHECKPOINT_DB)
+    db_path = Path(checkpoint_db_path)
+    db_path_str = str(db_path)
+
+    # Return cached checkpointer if exists
+    if db_path_str in _checkpointer_cache:
+        logger.debug(f"[LangGraph Checkpointer] Reusing existing checkpointer for {db_path}")
+        return _checkpointer_cache[db_path_str]
+
+    # Create new checkpointer
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     # AsyncSqliteSaver.from_conn_string returns a context manager
-    # We need to enter the context and return the checkpointer
-    checkpointer_cm = AsyncSqliteSaver.from_conn_string(str(db_path))
+    # We need to enter the context and cache the result
+    checkpointer_cm = AsyncSqliteSaver.from_conn_string(db_path_str)
     checkpointer = await checkpointer_cm.__aenter__()
+
+    # Cache for reuse
+    _checkpointer_cache[db_path_str] = checkpointer
 
     logger.info(f"[LangGraph Checkpointer] Initialized at {db_path}")
     return checkpointer
+
+
+def clear_checkpointer_cache(db_path: str = None):
+    """
+    Clear the checkpointer cache (useful for tests).
+
+    Args:
+        db_path: Specific database path to clear, or None to clear all
+    """
+    global _checkpointer_cache
+    if db_path:
+        if db_path in _checkpointer_cache:
+            del _checkpointer_cache[db_path]
+            logger.debug(f"[LangGraph Checkpointer] Cleared cache for {db_path}")
+    else:
+        _checkpointer_cache.clear()
+        logger.debug("[LangGraph Checkpointer] Cleared entire cache")
 
 
 def create_thread_config(request_id: str) -> Dict[str, Any]:

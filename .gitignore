@@ -260,3 +260,4 @@ benchmarks/
 
 # Miscellaneous enhancements folder (archived development docs)
 docs/misc_enhancements/
+test_agent_comparison_results.json

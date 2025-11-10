@@ -57,9 +57,9 @@ def test_request_data():
 
 
 @pytest.fixture
-def workflow():
-    """Create fresh workflow instance"""
-    return FullWorkflow()
+def workflow(persistence):
+    """Create fresh workflow instance with persistence"""
+    return FullWorkflow(persistence=persistence)
 
 
 # ============================================================================

@@ -18,6 +18,7 @@ from datetime import datetime
 from app.langchain_orchestrator.persistence import (
     get_checkpointer,
     create_thread_config,
+    clear_checkpointer_cache,
     DEFAULT_CHECKPOINT_DB,
 )
 from app.langchain_orchestrator.langgraph_workflow import FullWorkflow, FullWorkflowState
@@ -48,6 +49,9 @@ async def test_checkpointer():
         os.environ["LANGGRAPH_CHECKPOINT_DB"] = original_env
     else:
         del os.environ["LANGGRAPH_CHECKPOINT_DB"]
+
+    # Clear cache to allow new checkpointer for next test
+    clear_checkpointer_cache(test_db_path)
 
     # Remove test database
     if Path(test_db_path).exists():

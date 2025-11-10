@@ -66,9 +66,9 @@ class LangGraphRequestFacade:
         self.use_real_agents = use_real_agents
         self.use_persistence = use_persistence
 
-        # Initialize LangGraph workflow with checkpointer
-        checkpointer = get_checkpointer() if use_persistence else None
-        self.workflow = FullWorkflow(use_real_agents=use_real_agents, checkpointer=checkpointer)
+        # Defer workflow initialization until first async call (get_checkpointer is async)
+        self.workflow = None
+        self._initialized = False
 
         # Initialize approval bridge for human-in-the-loop workflow
         self.approval_bridge = ApprovalBridge()
@@ -79,6 +79,33 @@ class LangGraphRequestFacade:
         logger.info(
             f"[LangGraphRequestFacade] Initialized (real_agents={use_real_agents}, "
             f"persistence={use_persistence})"
+        )
+
+    async def _ensure_initialized(self):
+        """
+        Lazy initialization of LangGraph workflow (async).
+
+        Must be called at the start of every public async method.
+        This is needed because get_checkpointer() is async but __init__ cannot be.
+        """
+        if self._initialized:
+            return
+
+        # Initialize LangGraph workflow with checkpointer and persistence
+        from app.langchain_orchestrator.persistence import WorkflowPersistence
+
+        checkpointer = await get_checkpointer() if self.use_persistence else None
+        persistence = WorkflowPersistence() if self.use_persistence else None
+
+        self.workflow = FullWorkflow(
+            use_real_agents=self.use_real_agents, checkpointer=checkpointer, persistence=persistence
+        )
+        self._initialized = True
+
+        logger.info(
+            f"[LangGraphRequestFacade] Workflow initialized "
+            f"(checkpointer={'enabled' if checkpointer else 'disabled'}, "
+            f"persistence={'enabled' if persistence else 'disabled'})"
         )
 
     def register_agent(self, agent_id: str, agent_instance):
@@ -125,6 +152,9 @@ class LangGraphRequestFacade:
             print(f"Created request: {request_id}")
             ```
         """
+        # Ensure workflow is initialized (lazy init for async checkpointer)
+        await self._ensure_initialized()
+
         # Generate request ID
         request_id = self._generate_request_id()
 
@@ -186,6 +216,9 @@ class LangGraphRequestFacade:
             researcher_info: Researcher metadata
         """
         try:
+            # Ensure workflow is initialized (lazy init for async checkpointer)
+            await self._ensure_initialized()
+
             logger.info(f"[LangGraphRequestFacade] Starting workflow for {request_id}")
 
             # Create initial state for LangGraph
@@ -316,6 +349,9 @@ class LangGraphRequestFacade:
             context: Task context (ignored)
             from_agent: Source agent (ignored)
         """
+        # Ensure workflow is initialized (lazy init for async checkpointer)
+        await self._ensure_initialized()
+
         logger.debug(
             f"[LangGraphRequestFacade] route_task called (ignored): "
             f"{agent_id}.{task} from {from_agent}"
@@ -356,6 +392,9 @@ class LangGraphRequestFacade:
             # Workflow automatically resumes and continues to next step
             ```
         """
+        # Ensure workflow is initialized (lazy init for async checkpointer)
+        await self._ensure_initialized()
+
         logger.info(
             f"[LangGraphRequestFacade] Processing approval {approval_id}: "
             f"{decision} by {reviewer}"
@@ -412,6 +451,9 @@ class LangGraphRequestFacade:
             approval_type: Type of approval (requirements, phenotype_sql, etc.)
         """
         try:
+            # Ensure workflow is initialized (lazy init for async checkpointer)
+            await self._ensure_initialized()
+
             logger.info(
                 f"[LangGraphRequestFacade] Resuming workflow for {request_id} "
                 f"after {approval_type} approval"
@@ -459,6 +501,9 @@ class LangGraphRequestFacade:
             print(f"Agent: {status['current_agent']}")
             ```
         """
+        # Ensure workflow is initialized (lazy init for async checkpointer)
+        await self._ensure_initialized()
+
         async with get_db_session() as session:
             result = await session.execute(
                 select(ResearchRequest).where(ResearchRequest.id == request_id)
@@ -505,6 +550,9 @@ class LangGraphRequestFacade:
                 print(f"  {req['request_id']}: {req['current_state']}")
             ```
         """
+        # Ensure workflow is initialized (lazy init for async checkpointer)
+        await self._ensure_initialized()
+
         async with get_db_session() as session:
             result = await session.execute(
                 select(ResearchRequest)

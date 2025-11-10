@@ -220,7 +220,8 @@ async def migrate_request(
             return True
 
         # Step 4: Create LangGraph checkpoint
-        workflow = FullWorkflow(use_real_agents=True, checkpointer=get_checkpointer())
+        checkpointer = await get_checkpointer()
+        workflow = FullWorkflow(use_real_agents=True, checkpointer=checkpointer)
         config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
 
         # Save checkpoint with converted state
@@ -358,7 +359,7 @@ async def validate_migration(request_id: str) -> bool:
                 return False
 
         # Check LangGraph checkpoint exists
-        checkpointer = get_checkpointer()
+        checkpointer = await get_checkpointer()
         config = {"configurable": {"thread_id": request_id}}
 
         # Attempt to load checkpoint

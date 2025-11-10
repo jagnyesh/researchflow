@@ -16,6 +16,18 @@ from enum import Enum
 import asyncio
 import logging
 
+# LangSmith observability (Sprint 7)
+try:
+    from langsmith import traceable
+except ImportError:
+    # Fallback if langsmith not installed
+    def traceable(**kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+
 logger = logging.getLogger(__name__)
 
 # Import database models for persistence
@@ -61,9 +73,12 @@ class BaseAgent(ABC):
         """
         pass
 
+    @traceable(tags=["base-agent", "production", "agent-execution"])
     async def handle_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Wrapper for task execution with logging, error handling, and state management
+
+        Now with LangSmith tracing (Sprint 7) for full observability of all agents.
         """
         self.state = AgentState.WORKING
         self.current_task = {

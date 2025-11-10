@@ -141,10 +141,32 @@ def initialize_orchestrator():
         get_engine()
 
         # ====================================================================
-        # LangGraph Migration Feature Flag (Sprint 6.5 + 6.6)
+        # LangGraph Migration Feature Flag (Sprint 6.5 + 6.6 + 7)
         # ====================================================================
         # Check if LangGraph workflow is enabled via environment variable
         use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
+
+        # Gradual rollout support (Sprint 7)
+        # If feature flag is enabled, check rollout percentage for gradual deployment
+        if use_langgraph:
+            import random
+
+            rollout_pct = int(os.getenv("LANGGRAPH_ROLLOUT_PCT", "100"))
+
+            # Randomly decide based on rollout percentage
+            # Generate a random number between 0-99, if it's < rollout_pct, use LangGraph
+            if rollout_pct < 100:
+                random_draw = random.randint(0, 99)  # nosec B311 - Feature rollout, not security
+                use_langgraph = random_draw < rollout_pct
+
+                if use_langgraph:
+                    st.caption(
+                        f"🎲 Selected for LangGraph (rollout: {rollout_pct}%, draw: {random_draw})"
+                    )
+                else:
+                    st.caption(
+                        f"🎲 Using legacy orchestrator (rollout: {rollout_pct}%, draw: {random_draw})"
+                    )
 
         if use_langgraph:
             # Use new LangGraph declarative orchestrator
