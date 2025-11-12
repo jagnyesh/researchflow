@@ -113,6 +113,7 @@ def sample_state() -> Dict[str, Any]:
         "requirements_rejection_reason": None,
         # Phenotype
         "phenotype_sql": "SELECT * FROM patients WHERE age > 18",
+        "sql_parameters": {"age_param": 18},  # SQL parameters for parameterized queries
         "feasibility_score": 0.85,
         "estimated_cohort_size": 1500,
         "feasible": True,
@@ -154,7 +155,10 @@ def test_bridge_state_to_approval_type_mapping():
     assert bridge.STATE_TO_APPROVAL_TYPE["requirements_approved"] == "requirements"
     assert bridge.STATE_TO_APPROVAL_TYPE["phenotype_approved"] == "phenotype_sql"
     assert bridge.STATE_TO_APPROVAL_TYPE["extraction_approved"] == "extraction"
-    assert bridge.STATE_TO_APPROVAL_TYPE["qa_approved"] == "qa"
+    assert (
+        bridge.STATE_TO_APPROVAL_TYPE["qa_approved"] == "delivery"
+    )  # FIXED: qa_approved now maps to delivery
+    assert bridge.STATE_TO_APPROVAL_TYPE["preview_qa_review_approved"] == "preview_qa"  # NEW
     assert bridge.STATE_TO_APPROVAL_TYPE["scope_approved"] == "scope_change"
 
 
@@ -165,8 +169,12 @@ def test_bridge_approval_type_to_state_mapping():
     assert bridge.APPROVAL_TYPE_TO_STATE["requirements"] == "requirements_approved"
     assert bridge.APPROVAL_TYPE_TO_STATE["phenotype_sql"] == "phenotype_approved"
     assert bridge.APPROVAL_TYPE_TO_STATE["extraction"] == "extraction_approved"
-    assert bridge.APPROVAL_TYPE_TO_STATE["qa"] == "qa_approved"
+    assert (
+        bridge.APPROVAL_TYPE_TO_STATE["delivery"] == "qa_approved"
+    )  # FIXED: delivery now maps to qa_approved
+    assert bridge.APPROVAL_TYPE_TO_STATE["preview_qa"] == "preview_qa_review_approved"  # NEW
     assert bridge.APPROVAL_TYPE_TO_STATE["scope_change"] == "scope_approved"
+    # NOTE: "qa" approval type is deprecated (qa_approved flag now used for delivery)
 
 
 # ============================================================================
@@ -260,10 +268,12 @@ async def test_extract_approval_data_requirements(bridge, sample_state):
     """Test extracting approval data for requirements type"""
     data = bridge._extract_approval_data("requirements", sample_state)
 
-    assert "requirements" in data
+    assert (
+        "structured_requirements" in data
+    )  # FIXED: Uses structured_requirements, not requirements
     assert "completeness_score" in data
     assert data["completeness_score"] == 0.9
-    assert data["requirements"]["study_title"] == "Test Study"
+    assert data["structured_requirements"]["study_title"] == "Test Study"
 
 
 @pytest.mark.asyncio
@@ -272,11 +282,15 @@ async def test_extract_approval_data_phenotype(bridge, sample_state):
     data = bridge._extract_approval_data("phenotype_sql", sample_state)
 
     assert "phenotype_sql" in data
+    assert "parameters" in data  # SQL parameters should be included
     assert "feasibility_score" in data
     assert "estimated_cohort_size" in data
-    assert "requirements" in data
+    assert (
+        "structured_requirements" in data
+    )  # FIXED: Uses structured_requirements, not requirements
     assert data["feasibility_score"] == 0.85
     assert data["estimated_cohort_size"] == 1500
+    assert data["parameters"] == {"age_param": 18}  # Verify parameters are preserved
 
 
 @pytest.mark.asyncio

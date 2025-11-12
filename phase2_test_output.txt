@@ -360,10 +360,20 @@ FAILED tests/test_phase2_parallel.py::test_phase2_parallel_testing - Assertio...
 Failed to send compressed multipart ingest: langsmith.utils.LangSmithError: Failed to POST https://api.smith.langchain.com/runs/multipart in LangSmith API. HTTPError('422 Client Error: unknown for url: https://api.smith.langchain.com/runs/multipart', '{"error":"Unprocessable entity: error parsing run for post.89fb7cef-cec7-4a03-ab08-50ce8aa422dd: schema validation failed: run_type: run_type must be one of the following: \\"tool\\", \\"chain\\", \\"llm\\", \\"retriever\\", \\"embedding\\", \\"prompt\\", \\"parser\\""}\n')
 
 
-I need demographics (family name, given name, date of birth) for male patients with diabetes diagnosis.
+  I need demographics (family name, given name, date of birth) for male patients with diabetes diagnosis.
 
  Restart using @scripts/restart_apps.sh and test using
   playwright mcp. approve all steps. use "I need demographics
   (family name, given name, date of birth) for male
   patients with diabetes diagnosis." everything else is mocked.
   only inclusion criteria 'male' and 'diabetes' diagnosis.
+
+The workflow is getting stuck after sql approval:[Image #1]. check and fix.\
+  success criteria:\
+  1.After approving sql, the approved sql should be executed to show a preview of first 10 rows.\
+  2.Once the above preview looks good , the 2nd approval should extract the entire dataset and hand off for QA agent for review.\
+  3.After the QA agent performs baseline tests like the data is actually there, it is handed off too delivery agent to create a downloadable csv
+  files for both the admin and the researcher on their respective portal.\
+  analyse if the above workflow is implemented correctly without any gap.\
+  the calender agent can be chained at the end of delivery to setup a meeting.this agent workflow can be added in future sprint. think hard and
+  suggest plan to implement above.

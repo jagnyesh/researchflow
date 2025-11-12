@@ -63,8 +63,12 @@ class MaterializedViewService:
         hapi_db_client = await create_hapi_db_client()
 
         # Create async session for metadata tracking
-        engine = create_async_engine(database_url, echo=False)
-        async_session_maker = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        # Bug #11 Part 5 fix (CRITICAL): Use get_hapi_engine() and get_hapi_session_factory()
+        # instead of creating engine directly to prevent "Queue bound to different loop" errors
+        from app.database import get_hapi_engine, get_hapi_session_factory
+
+        engine = get_hapi_engine()
+        async_session_maker = get_hapi_session_factory()
         session = async_session_maker()
 
         return cls(hapi_db_client, session)

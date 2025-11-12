@@ -14,14 +14,16 @@ LangGraph State Flags:
 - requirements_approved (bool | None)
 - phenotype_approved (bool | None)
 - extraction_approved (bool | None)
-- qa_approved (bool | None)
+- qa_approved (bool | None) - Used for DELIVERY approval (not QA)
+- preview_qa_review_approved (bool | None) - Preview QA failure approval
 - scope_approved (bool | None)
 
 Database Approval Types:
 - "requirements"
 - "phenotype_sql"
 - "extraction"
-- "qa"
+- "delivery" - Full dataset delivery approval (after QA passes)
+- "preview_qa" - Preview QA failure approval (cohort mismatch)
 - "scope_change"
 """
 
@@ -73,7 +75,8 @@ class ApprovalBridge:
         "requirements_approved": "requirements",
         "phenotype_approved": "phenotype_sql",
         "extraction_approved": "extraction",
-        "qa_approved": "qa",
+        "qa_approved": "delivery",  # FIXED: qa_approved is used for DELIVERY approval
+        "preview_qa_review_approved": "preview_qa",  # NEW: Preview QA failure approval
         "scope_approved": "scope_change",
     }
 
@@ -81,23 +84,57 @@ class ApprovalBridge:
         "requirements": "requirements_approved",
         "phenotype_sql": "phenotype_approved",
         "extraction": "extraction_approved",
-        "qa": "qa_approved",
+        "delivery": "qa_approved",  # FIXED: Delivery approval maps to qa_approved state flag
+        "preview_qa": "preview_qa_review_approved",  # NEW: Preview QA approval
         "scope_change": "scope_approved",
     }
 
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///./dev.db"):
+    def __init__(self, database_url: str = None):
         """
-        Initialize approval bridge.
+        Initialize approval bridge using shared database engine.
+
+        Bug #11 Part 6 fix (Nov 11, 2025): Removed instance-level caching.
+        Engine and session factory properties now always delegate to get_engine()
+        and get_session_factory(), which provide correct per-event-loop instances.
+        This completes the fix for "Future attached to different loop" errors.
 
         Args:
-            database_url: Async database connection string
+            database_url: DEPRECATED (kept for API compatibility, but ignored)
+                         Engine is now obtained from get_engine() which manages
+                         per-event-loop engines automatically.
         """
-        self.database_url = database_url
-        self.engine = create_async_engine(database_url, echo=False)
-        self.async_session_maker = sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
+        logger.info(
+            "[ApprovalBridge] Initialized (no instance caching - always uses current event loop)"
         )
-        logger.info(f"[ApprovalBridge] Initialized with {database_url}")
+
+    @property
+    def engine(self):
+        """
+        Get engine for current event loop.
+
+        Delegates to get_engine() which maintains per-event-loop engines in thread-local storage.
+        This prevents "Future attached to a different event loop" errors in Streamlit.
+
+        Bug #11 Part 6 fix (Nov 11, 2025): Remove instance-level caching.
+        """
+        from app.database import get_engine
+
+        return get_engine()
+
+    @property
+    def async_session_maker(self):
+        """
+        Get session factory for current event loop.
+
+        Delegates to get_session_factory() which creates sessionmakers from the current
+        event loop's engine. This prevents "Future attached to a different event loop"
+        errors in Streamlit.
+
+        Bug #11 Part 6 fix (Nov 11, 2025): Remove instance-level caching.
+        """
+        from app.database import get_session_factory
+
+        return get_session_factory()
 
     async def create_approval_request(
         self,
@@ -143,6 +180,24 @@ class ApprovalBridge:
                     f"[ApprovalBridge] Approval already exists: {request_id} / {approval_type}"
                 )
                 return existing.id
+
+            # SAFETY CHECK: Verify request exists before creating approval
+            # This prevents FK constraint violations and detects split-brain conditions
+            request_result = await session.execute(
+                select(ResearchRequest).where(ResearchRequest.id == request_id)
+            )
+            request = request_result.scalar_one_or_none()
+
+            if not request:
+                logger.error(
+                    f"[ApprovalBridge] CRITICAL: Cannot create approval for {request_id} - "
+                    f"request does not exist in database! This indicates a split-brain condition "
+                    f"where the request exists in LangGraph checkpoints but not in the main database."
+                )
+                logger.error(
+                    f"[ApprovalBridge] Approval type: {approval_type}, State: {state.get('current_state')}"
+                )
+                return None
 
             # Extract approval data based on type
             approval_data = self._extract_approval_data(approval_type, state)
@@ -214,6 +269,13 @@ class ApprovalBridge:
 
             # Map approval status to state flag
             state_field = self.APPROVAL_TYPE_TO_STATE.get(approval_type)
+            if not state_field:
+                logger.error(
+                    f"[ApprovalBridge] Unknown approval_type: {approval_type}. "
+                    f"Valid types: {list(self.APPROVAL_TYPE_TO_STATE.keys())}"
+                )
+                return state  # Return unchanged state instead of crashing
+
             rejection_field = state_field.replace("_approved", "_rejection_reason")
 
             if approval.status == "approved":
@@ -371,16 +433,25 @@ class ApprovalBridge:
         """Extract relevant data for approval based on type"""
         if approval_type == "requirements":
             return {
-                "requirements": state.get("requirements", {}),
+                "structured_requirements": state.get("requirements", {}),
                 "completeness_score": state.get("completeness_score", 0.0),
             }
 
         elif approval_type == "phenotype_sql":
             return {
+                "initial_request": state.get("researcher_request", ""),
+                "structured_requirements": state.get("requirements", {}),
                 "phenotype_sql": state.get("phenotype_sql"),
+                "parameters": state.get(
+                    "sql_parameters", {}
+                ),  # SQL parameters for parameterized queries
                 "feasibility_score": state.get("feasibility_score", 0.0),
                 "estimated_cohort_size": state.get("estimated_cohort_size"),
-                "requirements": state.get("requirements", {}),
+                "data_availability": state.get("data_availability", {}),
+                "estimated_extraction_time_hours": state.get("estimated_extraction_time_hours", 0),
+                "auto_feasibility_assessment": state.get("auto_feasibility_assessment", "unknown"),
+                "warnings": state.get("warnings", []),
+                "recommendations": state.get("recommendations", []),
             }
 
         elif approval_type == "extraction":
@@ -390,9 +461,72 @@ class ApprovalBridge:
             }
 
         elif approval_type == "qa":
+            # DEPRECATED: This approval type is no longer used
+            # qa_approved state flag now maps to "delivery" approval type
             return {
                 "qa_report": state.get("qa_report", {}),
                 "overall_status": state.get("overall_status"),
+            }
+
+        elif approval_type == "preview_qa":
+            # NEW: Preview QA failure approval (cohort count mismatch)
+            preview_package = state.get("preview_package", {})
+            actual_cohort = len(preview_package.get("cohort", []))
+            estimated_cohort = state.get("estimated_cohort_size", 0)
+
+            # Calculate tolerance bounds for UI display
+            tolerance_pct = 0.50  # 50% tolerance (MVP setting)
+            min_tolerance = 5
+            tolerance = max(int(estimated_cohort * tolerance_pct), min_tolerance)
+            lower_bound = max(0, estimated_cohort - tolerance)
+            upper_bound = estimated_cohort + tolerance
+
+            # Build cohort_check with nested "details" structure that UI expects
+            # UI reads from: cohort_check["details"]["actual_cohort_size"]
+            cohort_check = {
+                "check_name": "preview_cohort_count_match",
+                "passed": False,  # Preview QA failed, hence approval needed
+                "severity": "critical",
+                "details": {  # ← NESTED STRUCTURE that admin_dashboard.py expects
+                    "actual_cohort_size": actual_cohort,  # UI reads this field
+                    "estimated_cohort_size": estimated_cohort,  # UI reads this field
+                    "tolerance": tolerance,
+                    "tolerance_pct": f"{int(tolerance_pct * 100)}%",
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
+                },
+                "message": f"Preview QA failed: Cohort count mismatch (expected: {estimated_cohort}, actual: {actual_cohort})",
+            }
+
+            return {
+                "preview_package": preview_package,
+                "estimated_cohort": estimated_cohort,  # Keep at root for backward compat
+                "actual_cohort": actual_cohort,  # Keep at root for backward compat
+                "preview_qa_report": state.get("preview_qa_report", {}),
+                "cohort_check": cohort_check,  # ← Now has proper nested structure
+                "message": f"Preview QA failed: Cohort count mismatch (expected: {estimated_cohort}, actual: {actual_cohort}). Review required before full extraction.",
+            }
+
+        elif approval_type == "delivery":
+            # NEW: Full dataset delivery approval (after QA passes)
+            data_package = state.get("extracted_data_summary", {})
+            cohort_size = (
+                data_package.get("metadata", {}).get("cohort_size", 0)
+                if isinstance(data_package.get("metadata"), dict)
+                else 0
+            )
+
+            return {
+                "qa_report": state.get("qa_report", {}),
+                "overall_status": state.get("overall_status"),
+                "data_package": data_package,
+                "cohort_size": cohort_size,
+                "data_elements": (
+                    data_package.get("metadata", {}).get("data_elements_extracted", [])
+                    if isinstance(data_package.get("metadata"), dict)
+                    else []
+                ),
+                "message": "Full data extraction complete and QA passed. Ready for delivery approval.",
             }
 
         elif approval_type == "scope_change":

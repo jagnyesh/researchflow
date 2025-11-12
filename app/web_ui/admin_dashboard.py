@@ -521,8 +521,8 @@ def show_preview_data_section(request_id: str, status: dict):
                                     else {}
                                 )
 
-                            # Initialize orchestrator and route task (outside session context)
-                            orchestrator = ResearchRequestOrchestrator()
+                            # Use session orchestrator (respects LangGraph feature flag)
+                            orchestrator = st.session_state.orchestrator
 
                             context = {
                                 "request_id": request_id,
@@ -1341,10 +1341,9 @@ def display_approval_card(approval, reviewer_email):
             if st.button(
                 "✅ Approve", key=f"approve_{approval_id}", type="primary", use_container_width=True
             ):
-                if not reviewer_email:
-                    st.error("Please enter your email address")
-                else:
-                    handle_approval_response(approval_id, "approve", reviewer_email, "", {})
+                # Email optional for MVP (SSO handles authorization)
+                reviewer = reviewer_email if reviewer_email else "System Admin"
+                handle_approval_response(approval_id, "approve", reviewer, "", {})
 
         with col2:
             if st.button(
@@ -1377,13 +1376,10 @@ def display_approval_card(approval, reviewer_email):
                 modifications = {}
 
             if st.button("Submit Modifications", key=f"submit_modify_{approval_id}"):
-                if not reviewer_email:
-                    st.error("Please enter your email address")
-                else:
-                    handle_approval_response(
-                        approval_id, "modify", reviewer_email, notes, modifications
-                    )
-                    st.session_state[f"show_modify_{approval_id}"] = False
+                # Email optional for MVP (SSO handles authorization)
+                reviewer = reviewer_email if reviewer_email else "System Admin"
+                handle_approval_response(approval_id, "modify", reviewer, notes, modifications)
+                st.session_state[f"show_modify_{approval_id}"] = False
 
         # Rejection interface
         if st.session_state.get(f"show_reject_{approval_id}", False):
@@ -1397,14 +1393,12 @@ def display_approval_card(approval, reviewer_email):
             if st.button(
                 "Confirm Rejection", key=f"confirm_reject_{approval_id}", type="secondary"
             ):
-                if not reviewer_email:
-                    st.error("Please enter your email address")
-                elif not reject_reason:
+                if not reject_reason:
                     st.error("Please provide a reason for rejection")
                 else:
-                    handle_approval_response(
-                        approval_id, "reject", reviewer_email, reject_reason, {}
-                    )
+                    # Email optional for MVP (SSO handles authorization)
+                    reviewer = reviewer_email if reviewer_email else "System Admin"
+                    handle_approval_response(approval_id, "reject", reviewer, reject_reason, {})
                     st.session_state[f"show_reject_{approval_id}"] = False
 
 
@@ -1482,14 +1476,14 @@ def display_sql_approval(data):
     )
 
     # SQL Query
-    sql_query = data.get("sql_query", "N/A")
+    sql_query = data.get("phenotype_sql", "N/A")
     st.code(sql_query, language="sql")
 
     # Metrics
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        cohort = data.get("estimated_cohort", "Unknown")
+        cohort = data.get("estimated_cohort_size", "Unknown")
         st.metric("Estimated Cohort", cohort)
 
     with col2:

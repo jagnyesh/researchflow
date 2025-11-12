@@ -188,12 +188,23 @@ class DataExtractionAgent(BaseAgent):
             logger.error(f"[{self.agent_id}] {error_msg}")
             raise ValueError(error_msg)
 
-        logger.info(f"[{self.agent_id}] Starting PREVIEW extraction for {request_id}")
+        logger.info(
+            f"[{self.agent_id}] Starting PREVIEW extraction for {request_id}"
+            f"\n  SQL Query: {sql_query[:150]}..."
+            f"\n  Parameters: {parameters}"
+            f"\n  Parameter count: {len(parameters) if parameters else 0}"
+            f"\n  Has parameters: {bool(parameters)}"
+        )
 
         # Step 1: Execute phenotype query to get patient cohort
         cohort = await self._execute_phenotype_query(sql_query, parameters)
 
-        logger.info(f"[{self.agent_id}] Cohort identified: {len(cohort)} patients")
+        logger.info(
+            f"[{self.agent_id}] Cohort identified: {len(cohort)} patients"
+            f"\n  SQL: {sql_query[:100]}..."
+            f"\n  Parameters used: {parameters}"
+            f"\n  Result count: {len(cohort)}"
+        )
 
         # Step 2: Extract PREVIEW (first 10 rows) for each data element
         preview_results = {}
@@ -294,12 +305,14 @@ class DataExtractionAgent(BaseAgent):
         # Note: f-strings used only for structure, all data in params dict
 
         # Handle demographic data elements from patient_demographics materialized view
-        if data_element in [
-            "Family name",
-            "Given name",
-            "Date of birth",
-            "Address",
-            "Demographics (age, gender, race)",
+        # Bug fix: Case-insensitive matching for data elements
+        data_element_lower = data_element.lower()
+        if data_element_lower in [
+            "family name",
+            "given name",
+            "date of birth",
+            "address",
+            "demographics (age, gender, race)",
         ]:
             # Extract demographics from patient_demographics materialized view
             # nosec B608 - SQL structure is safe, all values parameterized
@@ -308,24 +321,24 @@ class DataExtractionAgent(BaseAgent):
             # NOTE: patient_demographics has: patient_id, gender, dob, name_given, name_family
             # It does NOT have: race, address (not in FHIR synthetic data)
             field_mapping = {
-                "Family name": "name_family",
-                "Given name": "name_given",
-                "Date of birth": "dob",
-                "Address": None,  # Not available in patient_demographics
+                "family name": "name_family",
+                "given name": "name_given",
+                "date of birth": "dob",
+                "address": None,  # Not available in patient_demographics
             }
 
             # Build SELECT clause based on requested demographic field
-            if data_element == "Demographics (age, gender, race)":
+            if data_element_lower == "demographics (age, gender, race)":
                 # Select all available demographic fields (race not available)
                 select_fields = "patient_id, name_family, name_given, gender, dob"
-            elif data_element == "Address":
+            elif data_element_lower == "address":
                 # Address not available in patient_demographics - return empty
                 logger.warning(
                     f"[{self.agent_id}] Address data not available in patient_demographics table"
                 )
                 return []
             else:
-                db_field = field_mapping.get(data_element)
+                db_field = field_mapping.get(data_element_lower)
                 if db_field is None:
                     logger.warning(
                         f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
@@ -487,12 +500,14 @@ class DataExtractionAgent(BaseAgent):
                 WHERE patient_id IN ({patient_id_placeholders})
                 LIMIT :preview_limit
             """
-        elif data_element in [
-            "Family name",
-            "Given name",
-            "Date of birth",
-            "Address",
-            "Demographics (age, gender, race)",
+        # Bug fix: Case-insensitive matching for preview extraction
+        data_element_lower = data_element.lower()
+        if data_element_lower in [
+            "family name",
+            "given name",
+            "date of birth",
+            "address",
+            "demographics (age, gender, race)",
         ]:
             # Extract demographics from patient_demographics materialized view
             # nosec B608 - SQL structure is safe, all values parameterized
@@ -502,24 +517,24 @@ class DataExtractionAgent(BaseAgent):
 
             # Field mapping for available columns only
             field_mapping = {
-                "Family name": "name_family",
-                "Given name": "name_given",
-                "Date of birth": "dob",
-                "Address": None,  # Not available in patient_demographics
+                "family name": "name_family",
+                "given name": "name_given",
+                "date of birth": "dob",
+                "address": None,  # Not available in patient_demographics
             }
 
             # Build SELECT clause based on requested demographic fields
-            if data_element == "Demographics (age, gender, race)":
+            if data_element_lower == "demographics (age, gender, race)":
                 # Select all available demographic fields (race not available)
                 select_fields = "patient_id, name_family, name_given, gender, dob"
-            elif data_element == "Address":
+            elif data_element_lower == "address":
                 # Address not available in patient_demographics - return empty
                 logger.warning(
                     f"[{self.agent_id}] Address data not available in patient_demographics table"
                 )
                 return []
             else:
-                db_field = field_mapping.get(data_element)
+                db_field = field_mapping.get(data_element_lower)
                 if db_field is None:
                     logger.warning(
                         f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
@@ -617,11 +632,12 @@ class DataExtractionAgent(BaseAgent):
 
             try:
                 # Define demographic data elements that should be consolidated
+                # Bug fix: Use lowercase keys for case-insensitive matching
                 demographic_elements = {
-                    "Family name": "name_family",
-                    "Given name": "name_given",
-                    "Date of birth": "dob",
-                    "Demographics (age, gender, race)": "demographics_full",
+                    "family name": "name_family",
+                    "given name": "name_given",
+                    "date of birth": "dob",
+                    "demographics (age, gender, race)": "demographics_full",
                 }
 
                 # Separate demographic and non-demographic data
@@ -629,7 +645,8 @@ class DataExtractionAgent(BaseAgent):
                 non_demographic_data = {}
 
                 for element_name, records in data.items():
-                    if element_name in demographic_elements:
+                    # Bug fix: Case-insensitive comparison
+                    if element_name.lower() in demographic_elements:
                         demographic_data[element_name] = records
                     else:
                         non_demographic_data[element_name] = records
@@ -661,12 +678,13 @@ class DataExtractionAgent(BaseAgent):
                                     # Add all fields from this record except patient_id
                                     for key, value in record.items():
                                         if key != "patient_id":
-                                            # Use friendly column names
-                                            if element_name == "Family name":
+                                            # Use friendly column names (case-insensitive comparison)
+                                            element_name_lower = element_name.lower()
+                                            if element_name_lower == "family name":
                                                 patient_record["family_name"] = value
-                                            elif element_name == "Given name":
+                                            elif element_name_lower == "given name":
                                                 patient_record["given_name"] = value
-                                            elif element_name == "Date of birth":
+                                            elif element_name_lower == "date of birth":
                                                 patient_record["dob"] = value
                                             elif key in [
                                                 "gender",

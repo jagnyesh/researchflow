@@ -93,10 +93,20 @@ class PhenotypeValidationAgent(BaseAgent):
             raise ValueError("Requirements not found in context")
 
         logger.info(f"[{self.agent_id}] Validating feasibility for {request_id}")
+        logger.info(
+            f"[{self.agent_id}] Requirements structure being passed to SQL generator:"
+            f"\n  Inclusion criteria count: {len(requirements.get('inclusion_criteria', []))}"
+            f"\n  Exclusion criteria count: {len(requirements.get('exclusion_criteria', []))}"
+            f"\n  Data elements: {requirements.get('data_elements', [])}"
+        )
+        logger.debug(f"[{self.agent_id}] Full requirements: {requirements}")
 
         # Step 1: Generate phenotype SQL (with parameters for security)
         phenotype_sql, sql_params = self.sql_generator.generate_phenotype_sql(
             requirements, count_only=True
+        )
+        logger.info(
+            f"[{self.agent_id}] Generated SQL with {len(sql_params)} parameters: {list(sql_params.keys())}"
         )
 
         # Step 2: Estimate cohort size
@@ -269,24 +279,19 @@ class PhenotypeValidationAgent(BaseAgent):
                 else:
                     count = len(results)
 
-                # Apply conservative factor to account for data availability issues
+                # Conservative factor REMOVED (Bug #8 fix - Nov 11, 2025)
                 #
-                # WHY 0.7x FACTOR:
-                # - Feasibility queries count patients meeting criteria in condition_simple table
-                # - Actual extraction may find fewer due to missing demographics (NULL values)
-                # - Historical analysis showed ~30% reduction from feasibility to delivery
-                # - Factor provides more realistic estimates to researchers
+                # HISTORICAL CONTEXT:
+                # - Previously applied 0.7x factor assuming 30% data loss
+                # - Analysis showed current data has 0% loss (materialized views complete)
+                # - Factor was overcorrecting: 28 actual → 19 estimate (off by 47%)
                 #
-                # IMPORTANT: Applied ONLY to feasibility estimates, NOT to final extraction counts
-                # Extraction agent returns actual count from executed query (no factor)
-                #
-                # TODO: Consider making this configurable or data-driven based on historical accuracy
-                conservative_count = int(count * 0.7)
+                # Current implementation returns actual count for accurate feasibility estimates
                 logger.info(
-                    f"[{self.agent_id}] Applying conservative factor (0.7x): {count} → {conservative_count} patients"
+                    f"[{self.agent_id}] Estimated cohort size: {count} patients (no conservative factor)"
                 )
 
-                return conservative_count
+                return count
 
             else:
                 # Use legacy SQL approach with parameterized query (security)
@@ -295,15 +300,11 @@ class PhenotypeValidationAgent(BaseAgent):
 
                 if result and len(result) > 0:
                     count = result[0].get("patient_count", 0)
-                    logger.debug(f"[{self.agent_id}] Estimated cohort size (legacy): {count}")
-
-                    # Apply conservative factor (same logic as ViewDefinition path above)
-                    # See lines 271-282 for detailed explanation of 0.7x factor
-                    conservative_count = int(count * 0.7)
                     logger.info(
-                        f"[{self.agent_id}] Applying conservative factor (0.7x): {count} → {conservative_count} patients"
+                        f"[{self.agent_id}] Estimated cohort size (legacy SQL): {count} patients (no conservative factor)"
                     )
-                    return conservative_count
+                    # Conservative factor removed (Bug #8 fix) - see ViewDefinition path above for explanation
+                    return count
                 else:
                     logger.warning(f"[{self.agent_id}] No results from count query")
                     return 0

@@ -147,6 +147,9 @@ class LangGraphAgentAdapter:
             "requirements_complete": state.get("requirements_complete", False),
             # Feasibility (for extraction/qa agents)
             "phenotype_sql": state.get("phenotype_sql"),
+            "parameters": state.get(
+                "sql_parameters", {}
+            ),  # SQL parameters for parameterized queries
             "feasible": state.get("feasible", False),
             "estimated_cohort_size": state.get("estimated_cohort_size"),
             # Meeting info (for extraction agent)

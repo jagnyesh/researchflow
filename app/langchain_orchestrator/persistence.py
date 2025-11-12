@@ -126,22 +126,22 @@ async def get_checkpointer() -> AsyncSqliteSaver:
         current_loop = asyncio.get_event_loop()
         current_loop_id = id(current_loop)
 
-    # BUG #11 PART 11 FIX: FAST PATH - Check if checkpointer exists and loop matches (NO LOCKING)
+    # BUG #11 PART 12 FIX: FAST PATH - Check if checkpointer exists and loop matches (NO LOCKING)
     # This optimizes the common case where checkpointer exists and event loop hasn't changed
     if _checkpointer_instance is not None and _checkpointer_creation_loop_id == current_loop_id:
         logger.debug(
-            f"[Bug #11 Part 11] Fast path: Reusing checkpointer "
+            f"[Bug #11 Part 12] Fast path: Reusing checkpointer "
             f"(loop {current_loop_id}, instance {id(_checkpointer_instance)})"
         )
         return _checkpointer_instance
 
-    # BUG #11 PART 11 FIX: SLOW PATH - Checkpointer doesn't exist or loop changed
+    # BUG #11 PART 12 FIX: SLOW PATH - Checkpointer doesn't exist or loop changed
     # Use threading.Lock() for thread-safe recreation (NOT event-loop-bound)
     with _checkpointer_mutex:
         # Double-check after acquiring lock (another coroutine might have created it)
         if _checkpointer_instance is not None and _checkpointer_creation_loop_id == current_loop_id:
             logger.debug(
-                f"[Bug #11 Part 11] Another coroutine created checkpointer while waiting for lock"
+                f"[Bug #11 Part 12] Another coroutine created checkpointer while waiting for lock"
             )
             return _checkpointer_instance
 
@@ -155,7 +155,7 @@ async def get_checkpointer() -> AsyncSqliteSaver:
             old_context_id = id(_checkpointer_context_manager)
 
             logger.warning(
-                f"[Bug #11 Part 11] Event loop changed - recreating checkpointer"
+                f"[Bug #11 Part 12] Event loop changed - recreating checkpointer"
                 f"\n  Old loop ID: {old_loop_id}"
                 f"\n  New loop ID: {current_loop_id}"
                 f"\n  Old instance ID: {old_instance_id}"
@@ -165,9 +165,9 @@ async def get_checkpointer() -> AsyncSqliteSaver:
             try:
                 if _checkpointer_context_manager is not None:
                     await _checkpointer_context_manager.__aexit__(None, None, None)
-                    logger.info("[Bug #11 Part 11] Successfully closed old checkpointer")
+                    logger.info("[Bug #11 Part 12] Successfully closed old checkpointer")
             except Exception as e:
-                logger.error(f"[Bug #11 Part 11] Error closing old checkpointer: {e}")
+                logger.error(f"[Bug #11 Part 12] Error closing old checkpointer: {e}")
 
             # Clear references
             _checkpointer_instance = None
@@ -181,7 +181,7 @@ async def get_checkpointer() -> AsyncSqliteSaver:
             # Force garbage collection to destroy old Lock objects
             collected = gc.collect()
             logger.info(
-                f"[Bug #11 Part 11] Cleanup complete"
+                f"[Bug #11 Part 12] Cleanup complete"
                 f"\n  Objects collected by GC: {collected}"
                 f"\n  Delay: 100ms (allows AsyncSqliteSaver resource release)"
             )
@@ -196,17 +196,30 @@ async def get_checkpointer() -> AsyncSqliteSaver:
         _checkpointer_instance = await _checkpointer_context_manager.__aenter__()
         _checkpointer_creation_loop_id = current_loop_id
 
+        # BUG #11 PART 12 FIX: Force AsyncSqliteSaver to recreate Lock in current event loop
+        # AsyncSqliteSaver creates self.lock in __init__, binding it to constructor's loop
+        # When we recreate checkpointer in new loop, we must also recreate its Lock
+        # This prevents "RuntimeError: Lock bound to different event loop"
+        old_lock_id = id(_checkpointer_instance.lock)
+        old_loop_id = id(_checkpointer_instance.loop)
+        _checkpointer_instance.lock = asyncio.Lock()
+        _checkpointer_instance.loop = current_loop
+
         # Log creation
         creation_type = "RECREATED" if is_recreation else "CREATED"
         current_thread = threading.current_thread()
         logger.info(
-            f"[Bug #11 Part 11] {creation_type} checkpointer"
+            f"[Bug #11 Part 12] {creation_type} checkpointer"
             f"\n  Instance ID: {id(_checkpointer_instance)}"
             f"\n  Database: {db_path}"
             f"\n  Event loop ID: {current_loop_id}"
             f"\n  Thread: {current_thread.name} (ID: {current_thread.ident})"
             f"\n  Type: {type(_checkpointer_instance).__name__}"
             f"\n  Protection: threading.Lock (mutex ID: {id(_checkpointer_mutex)})"
+            f"\n  ===== BUG #11 PART 12 FIX ====="
+            f"\n  OLD Lock ID: {old_lock_id} (bound to loop {old_loop_id})"
+            f"\n  NEW Lock ID: {id(_checkpointer_instance.lock)} (bound to loop {current_loop_id})"
+            f"\n  Lock recreated: YES (prevents event loop binding errors)"
         )
 
     return _checkpointer_instance

@@ -123,8 +123,9 @@ class DeliveryAgent(BaseAgent):
 
         return {
             "delivered": True,
+            "delivered_at": datetime.now().isoformat(),  # Workflow expects this key
             "delivery_location": delivery_location,
-            "delivery_package": final_package,
+            "delivery_info": final_package,  # Workflow expects "delivery_info", not "delivery_package"
             "next_agent": None,  # Workflow complete
             "next_task": None,
         }
