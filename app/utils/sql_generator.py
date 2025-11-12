@@ -230,6 +230,45 @@ class SQLGenerator:
         logger.debug(f"Parameters: {params}")
         return sql, params
 
+    def _normalize_criterion(self, criterion: Dict) -> Dict:
+        """
+        Normalize criterion to ensure it has 'concepts' structure.
+
+        Handles both formats:
+        1. Nested (expected): {"description": "...", "concepts": [{...}]}
+        2. Flat (legacy): {"type": "...", "code": "...", "description": "..."}
+
+        Args:
+            criterion: Raw criterion dict
+
+        Returns:
+            Normalized criterion with "concepts" key
+        """
+        # If already has concepts, return as-is
+        if "concepts" in criterion and criterion["concepts"]:
+            return criterion
+
+        # Convert flat structure to nested format
+        logger.debug(f"Converting flat criterion to nested format: {criterion}")
+
+        # Check if this is a flat criterion
+        if "type" in criterion:
+            # Flat structure: {"type": "condition", "code": "diabetes", ...}
+            concept = {
+                "type": criterion.get("type"),
+                "term": criterion.get("code") or criterion.get("value") or criterion.get("term"),
+                "details": criterion.get("description", ""),
+            }
+
+            normalized = {"description": criterion.get("description", ""), "concepts": [concept]}
+
+            logger.debug(f"Normalized to: {normalized}")
+            return normalized
+
+        # If no recognizable structure, return as-is (will result in empty concepts)
+        logger.warning(f"Criterion has unrecognized structure: {criterion}")
+        return criterion
+
     def _build_criteria_conditions(
         self, criteria: List[Dict], include: bool = True
     ) -> Tuple[List[str], Dict[str, Any]]:
@@ -246,11 +285,15 @@ class SQLGenerator:
         conditions = []
         params = {}
 
-        logger.debug(
-            f"Building criteria conditions for {len(criteria)} criteria (include={include})"
+        logger.info(
+            f"[SQLGenerator] Building criteria conditions for {len(criteria)} criteria (include={include})"
         )
+        logger.debug(f"[SQLGenerator] Input criteria structure: {criteria}")
 
-        for criterion in criteria:
+        for i, criterion in enumerate(criteria):
+            # Normalize criterion to ensure it has "concepts" structure
+            criterion = self._normalize_criterion(criterion)
+
             concepts = criterion.get("concepts", [])
             criterion_desc = criterion.get("description", criterion.get("text", "N/A"))
 
@@ -296,8 +339,18 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(lab_params)
 
-        logger.debug(f"Final conditions ({len(conditions)}): {conditions}")
-        logger.debug(f"Final params: {params}")
+        logger.info(
+            f"[SQLGenerator] Generated {len(conditions)} WHERE conditions from {len(criteria)} criteria"
+        )
+        logger.info(f"[SQLGenerator] Parameters: {params}")
+
+        if len(conditions) == 0 and len(criteria) > 0:
+            logger.error(
+                f"[SQLGenerator] ⚠️ PROBLEM: {len(criteria)} criteria provided but 0 WHERE conditions generated! "
+                f"This will result in unfiltered query. Check criteria structure."
+            )
+
+        logger.debug(f"Final conditions: {conditions}")
         return conditions, params
 
     def _build_condition_clause(
@@ -326,7 +379,7 @@ class SQLGenerator:
 
         # nosec B608 - Table/column names from validated configuration, parameters are bound
         # CRITICAL: LOWER() is required for case-insensitive matching (see docstring)
-        sql = f"""{operator} (  # nosec B608
+        sql = f"""{operator} (
         SELECT 1 FROM {condition_table} c
         WHERE c.patient_id = p.{patient_id_col}
         AND LOWER(c.{condition_col}) LIKE LOWER(:{param_name})
@@ -378,10 +431,12 @@ class SQLGenerator:
         gender_value = None
 
         # Check if term contains gender keywords
-        if "male" in term_lower:
-            gender_value = "male"
-        elif "female" in term_lower:
+        # IMPORTANT: Check "female" before "male" to avoid substring collision
+        # ("male" is a substring of "female", so order matters)
+        if "female" in term_lower:
             gender_value = "female"
+        elif "male" in term_lower:
+            gender_value = "male"
         elif "gender" in term_lower:
             # Check details for gender value
             if "male" in details_lower and "female" not in details_lower:
