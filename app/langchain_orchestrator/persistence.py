@@ -48,13 +48,29 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CHECKPOINT_DB = "data/langgraph_checkpoints.db"
 
-# Global checkpointer singleton (one per database path)
-_checkpointer_cache: Dict[str, AsyncSqliteSaver] = {}
+# ============================================================================
+# Singleton Checkpointer Pattern (Sprint 7 - Nov 2025)
+# ============================================================================
+# CRITICAL FIX: Use singleton pattern to prevent "threads can only be started once" error
+#
+# AsyncSqliteSaver creates a background thread on context manager entry (__aenter__).
+# Streamlit reruns would try to re-enter the context manager, causing:
+#   RuntimeError: threads can only be started once
+#
+# Solution: Enter the context manager ONCE at module level, reuse the instance.
+# This ensures the background thread is created once and shared across all requests.
+
+_checkpointer_instance: Optional[AsyncSqliteSaver] = None
+_checkpointer_context_manager = None  # Keep reference to prevent premature cleanup
+_checkpointer_lock = None  # Will be created lazily when event loop exists
+_checkpointer_creation_loop_id: Optional[int] = (
+    None  # Track which loop created checkpointer (Bug #11 Part 10 fix)
+)
 
 
 async def get_checkpointer() -> AsyncSqliteSaver:
     """
-    Get LangGraph checkpointer for state persistence (singleton pattern).
+    Get singleton LangGraph checkpointer for state persistence (shared across all requests).
 
     Creates SQLite database at data/langgraph_checkpoints.db with schema:
     - checkpoints table (thread_id, checkpoint_id, state BLOB)
@@ -65,63 +81,240 @@ async def get_checkpointer() -> AsyncSqliteSaver:
     - Workflow resumption from last checkpoint on failure
     - State isolation per thread_id (request_id)
 
+    IMPORTANT: Returns a SINGLETON instance that is shared across all workflow executions.
+    The context manager is entered ONCE at module level to prevent threading errors.
+
     Returns:
-        AsyncSqliteSaver: Configured checkpointer instance (reused across calls)
+        AsyncSqliteSaver instance (already initialized, ready to use)
 
     Example:
         ```python
-        # Initialize workflow with checkpointing
+        # CORRECT: Get singleton checkpointer (no context manager needed)
         checkpointer = await get_checkpointer()
         workflow = FullWorkflow(use_real_agents=True, checkpointer=checkpointer)
-
-        # Run with thread_id for state isolation
         config = {"configurable": {"thread_id": "REQ-20251030-ABC123"}}
-        final_state = await workflow.run(initial_state, config=config)
+        final_state = await workflow.compiled_graph.ainvoke(initial_state, config)
 
-        # After restart/failure, resume from last checkpoint
-        resumed_state = await workflow.run({}, config=config)
+        # MULTIPLE REQUESTS: Same checkpointer instance, different thread_ids
+        checkpointer1 = await get_checkpointer()  # Same instance
+        checkpointer2 = await get_checkpointer()  # Same instance
+        assert checkpointer1 is checkpointer2  # True
         ```
+
+    Why singleton pattern:
+        - AsyncSqliteSaver uses aiosqlite.Connection with background thread
+        - Python threads can only be started once
+        - Entering context manager multiple times = multiple thread start attempts = RuntimeError
+        - Singleton = enter context ONCE = single thread = no errors
+        - Different thread_ids still provide state isolation per request
     """
-    # Read environment variable at runtime (not at module import time)
-    checkpoint_db_path = os.getenv("LANGGRAPH_CHECKPOINT_DB", DEFAULT_CHECKPOINT_DB)
-    db_path = Path(checkpoint_db_path)
-    db_path_str = str(db_path)
+    import threading
+    import asyncio
 
-    # Return cached checkpointer if exists
-    if db_path_str in _checkpointer_cache:
-        logger.debug(f"[LangGraph Checkpointer] Reusing existing checkpointer for {db_path}")
-        return _checkpointer_cache[db_path_str]
+    global _checkpointer_instance, _checkpointer_context_manager, _checkpointer_lock, _checkpointer_creation_loop_id
 
-    # Create new checkpointer
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    # BUG #11 PART 6 DEBUG: Track event loop information
+    try:
+        current_loop = asyncio.get_running_loop()
+        current_loop_id = id(current_loop)
+    except RuntimeError:
+        current_loop = asyncio.get_event_loop()
+        current_loop_id = id(current_loop)
 
-    # AsyncSqliteSaver.from_conn_string returns a context manager
-    # We need to enter the context and cache the result
-    checkpointer_cm = AsyncSqliteSaver.from_conn_string(db_path_str)
-    checkpointer = await checkpointer_cm.__aenter__()
+    # BUG #11 PART 10 FIX: Use manually tracked loop ID instead of relying on non-existent attribute
+    # AsyncSqliteSaver does not expose a .loop attribute, so the old detection logic never triggered
+    # Now we track the loop ID when creating the checkpointer and compare it with current loop
+    checkpointer_loop_id = _checkpointer_creation_loop_id
+    loops_match = (
+        (checkpointer_loop_id == current_loop_id) if checkpointer_loop_id is not None else None
+    )
 
-    # Cache for reuse
-    _checkpointer_cache[db_path_str] = checkpointer
+    # BUG #11 PART 6 FIX: Recreate lock if bound to different event loop
+    # asyncio.Lock() is bound to the event loop at creation time
+    # If we're in a different loop (Streamlit rerun), we need a new lock
+    if _checkpointer_lock is None:
+        _checkpointer_lock = asyncio.Lock()
+        logger.info(
+            f"[Bug #11 Part 6 Fix] Creating new asyncio.Lock()"
+            f"\n  Lock ID: {id(_checkpointer_lock)}"
+            f"\n  Lock's event loop: {id(_checkpointer_lock._loop) if hasattr(_checkpointer_lock, '_loop') else 'N/A'}"
+            f"\n  Current event loop: {current_loop_id}"
+        )
+    elif hasattr(_checkpointer_lock, "_loop") and _checkpointer_lock._loop != current_loop:
+        # Lock exists but is bound to different loop - RECREATE IT
+        old_lock_id = id(_checkpointer_lock)
+        old_loop_id = id(_checkpointer_lock._loop)
+        _checkpointer_lock = asyncio.Lock()
+        logger.warning(
+            f"[Bug #11 Part 6 Fix] RECREATED lock due to event loop change"
+            f"\n  Old lock ID: {old_lock_id} (bound to loop {old_loop_id})"
+            f"\n  New lock ID: {id(_checkpointer_lock)} (bound to loop {current_loop_id})"
+            f"\n  This prevents 'bound to different event loop' errors"
+        )
 
-    logger.info(f"[LangGraph Checkpointer] Initialized at {db_path}")
-    return checkpointer
+    # BUG #11 PART 10 FIX: Check if checkpointer is bound to different loop
+    # If event loop changed (Streamlit rerun), recreate checkpointer in new loop
+    # Uses manually tracked loop ID (_checkpointer_creation_loop_id) instead of relying on
+    # non-existent .loop attribute (which caused the original detection to always fail)
+    recreate_checkpointer = False
+    if _checkpointer_instance is not None and loops_match is False:
+        logger.warning(
+            f"[Bug #11 Part 10 Fix] Checkpointer bound to different event loop - will recreate"
+            f"\n  Stored loop ID (when created): {checkpointer_loop_id}"
+            f"\n  Current loop ID: {current_loop_id}"
+            f"\n  Closing old checkpointer and creating new one in current loop"
+        )
+        # Close old checkpointer to prevent thread leak
+        try:
+            if _checkpointer_context_manager is not None:
+                await _checkpointer_context_manager.__aexit__(None, None, None)
+                logger.info("[Bug #11 Part 10 Fix] Successfully closed old checkpointer")
+        except Exception as e:
+            logger.error(f"[Bug #11 Part 10 Fix] Error closing old checkpointer: {e}")
+
+        # BUG #11 PART 10 FIX: Force garbage collection to destroy Lock objects
+        # AsyncSqliteSaver has internal asyncio.Lock objects that are bound to event loops
+        # We must ensure these are fully destroyed before creating a new checkpointer
+        old_checkpointer_id = id(_checkpointer_instance)
+        old_context_id = id(_checkpointer_context_manager)
+
+        # Delete references explicitly
+        del _checkpointer_instance
+        del _checkpointer_context_manager
+
+        # Force Python garbage collection
+        import gc
+
+        collected = gc.collect()
+
+        logger.info(
+            f"[Bug #11 Part 10 Fix] Forced garbage collection after checkpointer cleanup"
+            f"\n  Old checkpointer instance ID: {old_checkpointer_id}"
+            f"\n  Old context manager ID: {old_context_id}"
+            f"\n  Objects collected by GC: {collected}"
+            f"\n  This ensures AsyncSqliteSaver's internal Lock objects are destroyed"
+        )
+
+        # Reset to None to force recreation
+        _checkpointer_instance = None
+        _checkpointer_context_manager = None
+        _checkpointer_creation_loop_id = None  # Bug #11 Part 10 fix: Clear tracked loop ID
+        recreate_checkpointer = True
+
+    # Double-checked locking for thread safety
+    if _checkpointer_instance is None:
+        async with _checkpointer_lock:
+            # Check again inside lock (another coroutine might have initialized it)
+            if _checkpointer_instance is None:
+                # Read environment variable at runtime
+                checkpoint_db_path = os.getenv("LANGGRAPH_CHECKPOINT_DB", DEFAULT_CHECKPOINT_DB)
+                db_path = Path(checkpoint_db_path)
+
+                # Ensure directory exists
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+
+                # Create context manager
+                _checkpointer_context_manager = AsyncSqliteSaver.from_conn_string(str(db_path))
+
+                # CRITICAL: Enter the context manager ONCE to start the background thread
+                # Keep reference to context manager to prevent garbage collection
+                _checkpointer_instance = await _checkpointer_context_manager.__aenter__()
+
+                # BUG #11 PART 10 FIX: Store loop ID when checkpointer is created
+                # This enables accurate detection of event loop changes (Streamlit reruns)
+                _checkpointer_creation_loop_id = current_loop_id
+
+                # Debug logging
+                current_thread = threading.current_thread()
+                try:
+                    current_task = asyncio.current_task()
+                    task_name = current_task.get_name() if current_task else "no-task"
+                except RuntimeError:
+                    task_name = "no-event-loop"
+
+                # BUG #11 PART 10 FIX: Comprehensive creation logging
+                creation_reason = (
+                    "RECREATED due to event loop change"
+                    if recreate_checkpointer
+                    else "Initial creation"
+                )
+                logger.info(
+                    f"[Singleton Checkpointer] {creation_reason}"
+                    f"\n  Instance ID: {id(_checkpointer_instance)}"
+                    f"\n  Database path: {db_path}"
+                    f"\n  Thread: {current_thread.name} (ID: {current_thread.ident})"
+                    f"\n  Async task: {task_name}"
+                    f"\n  Type: {type(_checkpointer_instance).__name__}"
+                    f"\n  Status: Background thread started (will be reused in this event loop)"
+                    f"\n  ===== BUG #11 PART 10 FIX ====="
+                    f"\n  Stored event loop ID: {_checkpointer_creation_loop_id}"
+                    f"\n  Current event loop ID: {current_loop_id}"
+                    f"\n  Loops match: {_checkpointer_creation_loop_id == current_loop_id}"
+                    f"\n  Lock object ID: {id(_checkpointer_lock)}"
+                    f"\n  Lock's loop ID: {id(_checkpointer_lock._loop) if hasattr(_checkpointer_lock, '_loop') else 'N/A'}"
+                )
+    else:
+        # BUG #11 PART 10 FIX: Critical logging when reusing checkpointer
+        logger.info(
+            f"[Singleton Checkpointer] Reusing existing instance"
+            f"\n  Instance ID: {id(_checkpointer_instance)}"
+            f"\n  Thread: {threading.current_thread().name}"
+            f"\n  ===== BUG #11 PART 10 FIX ====="
+            f"\n  Stored event loop ID: {checkpointer_loop_id or 'N/A'}"
+            f"\n  Current event loop ID: {current_loop_id}"
+            f"\n  Loops match: {loops_match if loops_match is not None else 'N/A'}"
+            f"\n  {'⚠️ WARNING: EVENT LOOP MISMATCH (will trigger recreation)!' if loops_match is False else '✓ Loops match - OK'}"
+            f"\n  Lock object ID: {id(_checkpointer_lock)}"
+            f"\n  Lock's loop ID: {id(_checkpointer_lock._loop) if hasattr(_checkpointer_lock, '_loop') else 'N/A'}"
+        )
+
+        # BUG #11 PART 10 FIX: If loops don't match, log stack trace to see who's calling
+        # This should never happen now because recreation logic should have caught it
+        if loops_match is False:
+            import traceback
+
+            logger.error(
+                f"[Bug #11 Part 10 Fix] CRITICAL: EVENT LOOP MISMATCH NOT CAUGHT BY RECREATION LOGIC!"
+                f"\n  Checkpointer was created in loop {checkpointer_loop_id}"
+                f"\n  But is being used in loop {current_loop_id}"
+                f"\n  This indicates a bug in the recreation detection logic"
+                f"\n\n  Call stack:\n{''.join(traceback.format_stack())}"
+            )
+
+    return _checkpointer_instance
 
 
-def clear_checkpointer_cache(db_path: str = None):
+async def clear_checkpointer_cache(db_path: str = None):
     """
-    Clear the checkpointer cache (useful for tests).
+    Clear singleton checkpointer instance (useful for testing or cleanup).
+
+    This will close the existing checkpointer's background thread and reset the singleton.
+    The next call to get_checkpointer() will create a fresh instance.
 
     Args:
-        db_path: Specific database path to clear, or None to clear all
+        db_path: Ignored (kept for API compatibility)
+
+    Example:
+        ```python
+        # In tests or cleanup
+        await clear_checkpointer_cache()
+        # Next get_checkpointer() call will create new instance
+        ```
     """
-    global _checkpointer_cache
-    if db_path:
-        if db_path in _checkpointer_cache:
-            del _checkpointer_cache[db_path]
-            logger.debug(f"[LangGraph Checkpointer] Cleared cache for {db_path}")
+    global _checkpointer_instance, _checkpointer_context_manager
+
+    if _checkpointer_instance is not None and _checkpointer_context_manager is not None:
+        try:
+            # Exit the context manager to clean up background thread
+            await _checkpointer_context_manager.__aexit__(None, None, None)
+            logger.info("[Singleton Checkpointer] Closed and cleared singleton instance")
+        except Exception as e:
+            logger.warning(f"[Singleton Checkpointer] Error closing instance: {e}")
+        finally:
+            _checkpointer_instance = None
+            _checkpointer_context_manager = None
     else:
-        _checkpointer_cache.clear()
-        logger.debug("[LangGraph Checkpointer] Cleared entire cache")
+        logger.debug("[Singleton Checkpointer] No instance to clear")
 
 
 def create_thread_config(request_id: str) -> Dict[str, Any]:
@@ -172,19 +365,52 @@ class WorkflowPersistence:
     and the database's persistent storage.
     """
 
-    def __init__(self, database_url: str = "sqlite+aiosqlite:///./dev.db"):
+    def __init__(self, database_url: str = None):
         """
-        Initialize persistence layer
+        Initialize persistence layer using shared database engine.
+
+        Bug #11 Part 7 fix (Nov 11, 2025): Removed instance-level caching.
+        Engine and session factory properties now always delegate to get_engine()
+        and get_session_factory(), which provide correct per-event-loop instances.
+        This completes the fix for "Future attached to different loop" errors.
 
         Args:
-            database_url: Async database URL
+            database_url: DEPRECATED (kept for API compatibility, but ignored)
+                         Engine is now obtained from get_engine() which manages
+                         per-event-loop engines automatically.
         """
-        self.database_url = database_url
-        self.engine = create_async_engine(database_url, echo=False)
-        self.async_session_maker = sessionmaker(
-            self.engine, class_=AsyncSession, expire_on_commit=False
+        logger.info(
+            "[WorkflowPersistence] Initialized (no instance caching - always uses current event loop)"
         )
-        logger.info(f"[WorkflowPersistence] Initialized with {database_url}")
+
+    @property
+    def engine(self):
+        """
+        Get engine for current event loop.
+
+        Delegates to get_engine() which maintains per-event-loop engines in thread-local storage.
+        This prevents "Future attached to a different event loop" errors in Streamlit.
+
+        Bug #11 Part 7 fix (Nov 11, 2025): Remove instance-level caching.
+        """
+        from app.database import get_engine
+
+        return get_engine()
+
+    @property
+    def async_session_maker(self):
+        """
+        Get session factory for current event loop.
+
+        Delegates to get_session_factory() which creates sessionmakers from the current
+        event loop's engine. This prevents "Future attached to a different event loop"
+        errors in Streamlit.
+
+        Bug #11 Part 7 fix (Nov 11, 2025): Remove instance-level caching.
+        """
+        from app.database import get_session_factory
+
+        return get_session_factory()
 
     async def save_workflow_state(
         self, state: FullWorkflowState, session: Optional[AsyncSession] = None
