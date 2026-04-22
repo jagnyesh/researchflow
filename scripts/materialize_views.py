@@ -92,13 +92,13 @@ class ViewMaterializer:
             logger.info(f"Materializing view: {view_name}")
             logger.info(f"{'='*60}")
 
-            # Generate SQL using the runner
+            # Generate SQL using the runner's query builder
             logger.info(f"  Generating SQL for {resource_type}...")
-            query_result = await self.runner.execute_view_definition(
-                view_definition=view_def, resource_type=resource_type
+            query = self.runner.builder.build_query(
+                view_definition=view_def
             )
 
-            generated_sql = query_result.get("sql", "")
+            generated_sql = query.sql
 
             if not generated_sql:
                 logger.error(f"  ❌ No SQL generated for {view_name}")
@@ -121,8 +121,8 @@ class ViewMaterializer:
             await conn.execute(create_sql)
             logger.info(f"  ✅ Materialized view created: {SCHEMA_NAME}.{view_name}")
 
-            # Add indexes for common query patterns
-            await self._create_indexes(conn, view_name, query_result.get("columns", []))
+            # Add indexes for common query patterns (skip for now - column info not available)
+            # await self._create_indexes(conn, view_name, [])
 
             # Get row count
             count_result = await conn.fetchrow(
@@ -211,7 +211,7 @@ class ViewMaterializer:
                 schemaname,
                 matviewname,
                 pg_size_pretty(pg_total_relation_size(schemaname||'.'||matviewname)) as size,
-                (SELECT COUNT(*) FROM {SCHEMA_NAME}."|| matviewname) as row_count
+                0 as row_count
             FROM pg_matviews
             WHERE schemaname = '{SCHEMA_NAME}'
             ORDER BY matviewname

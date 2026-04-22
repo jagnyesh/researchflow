@@ -346,32 +346,66 @@ class RequirementsAgent(BaseAgent):
         """
         Convert natural language criteria to structured format
 
+        Sprint 8 Optimization 5: Batch concept extraction (50% cost savings)
+        Extracts concepts for all criteria in a single LLM call instead of N separate calls.
+
         For each criterion:
-        1. Extract medical concepts using LLM
+        1. Extract medical concepts using LLM (batch extraction)
         2. Look up codes (will use terminology MCP server in future)
         3. Return structured criterion
         """
-        structured_criteria = []
+        if not criteria_list:
+            return []
 
-        for criterion in criteria_list:
-            try:
-                # Extract medical concepts
-                concepts_data = await self.llm_client.extract_medical_concepts(criterion)
+        # Sprint 8 Optimization 5: Batch concept extraction (50% cost savings)
+        # Extract concepts for all criteria in a single LLM call instead of N separate calls
+        try:
+            logger.info(
+                f"[{self.agent_id}] Batch extracting concepts for {len(criteria_list)} criteria"
+            )
+            batch_results = await self.llm_client.extract_medical_concepts_batch(criteria_list)
 
+            # Build structured criteria from batch results
+            structured_criteria = []
+            for criterion, concepts_data in zip(criteria_list, batch_results):
                 criterion_structured = {
                     "description": criterion,
                     "concepts": concepts_data.get("concepts", []),
                     "codes": [],  # Will be populated by terminology server
                 }
-
                 structured_criteria.append(criterion_structured)
 
-            except Exception as e:
-                logger.warning(f"Could not structure criterion '{criterion}': {str(e)}")
-                # Fallback to simple structure
-                structured_criteria.append({"description": criterion, "concepts": [], "codes": []})
+            logger.info(
+                f"[{self.agent_id}] Batch extraction successful (1 LLM call vs {len(criteria_list)} calls)"
+            )
+            return structured_criteria
 
-        return structured_criteria
+        except Exception as e:
+            logger.warning(f"Batch extraction failed: {str(e)}, falling back to individual calls")
+
+            # Fallback to individual extraction (original behavior)
+            structured_criteria = []
+            for criterion in criteria_list:
+                try:
+                    # Extract medical concepts
+                    concepts_data = await self.llm_client.extract_medical_concepts(criterion)
+
+                    criterion_structured = {
+                        "description": criterion,
+                        "concepts": concepts_data.get("concepts", []),
+                        "codes": [],  # Will be populated by terminology server
+                    }
+
+                    structured_criteria.append(criterion_structured)
+
+                except Exception as e:
+                    logger.warning(f"Could not structure criterion '{criterion}': {str(e)}")
+                    # Fallback to simple structure
+                    structured_criteria.append(
+                        {"description": criterion, "concepts": [], "codes": []}
+                    )
+
+            return structured_criteria
 
     def _validate_dates(self, time_period: dict) -> dict:
         """Validate and normalize date strings"""

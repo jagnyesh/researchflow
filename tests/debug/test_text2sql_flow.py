@@ -75,13 +75,17 @@ class Text2SQLTester:
         print("PHASE 4: Template-Based SQL Generation")
         print("-" * 80)
 
-        sql = self.sql_generator.generate_phenotype_sql(
+        # generate_phenotype_sql returns (sql, params) tuple for security
+        sql, params = self.sql_generator.generate_phenotype_sql(
             requirements=structured_requirements, count_only=True  # Based on "count of" in query
         )
 
         print("✓ SQL Generated:")
         print("-" * 80)
         print(sql)
+        if params:
+            print("\n✓ Parameters:")
+            print(json.dumps(params, indent=2))
         print("-" * 80)
         print()
 
@@ -98,7 +102,7 @@ class Text2SQLTester:
 
         try:
             print("\n⏳ Executing query...")
-            results = await self.sql_adapter.execute_sql(sql)
+            results = await self.sql_adapter.execute_sql(sql, params)
 
             print(f"✅ Query executed successfully!")
             print(f"   Rows returned: {len(results)}")
@@ -124,121 +128,47 @@ class Text2SQLTester:
 
     async def _extract_requirements_simplified(self, user_query: str) -> Dict[str, Any]:
         """
-        Simplified requirements extraction for testing
-
-        In production, this would call:
-        llm_client.extract_requirements(conversation_history, current_requirements)
-
-        For testing, we'll parse the query directly
+        Use QueryInterpreter to parse natural language into structured requirements
+        (Production approach instead of manual regex)
         """
-        query_lower = user_query.lower()
+        from app.services.query_interpreter import QueryInterpreter
 
-        # Parse the test query: "count of all female patients between the age of 20 and 30 with diabetes"
+        interpreter = QueryInterpreter()
+        intent = await interpreter.interpret_query(user_query)
+
+        # Convert QueryIntent to structured requirements format
         requirements = {
-            "study_title": "Test Query - Female Diabetic Patients",
+            "study_title": f"Test Query - {user_query[:50]}",
             "irb_number": "TEST-IRB-001",
             "inclusion_criteria": [],
             "exclusion_criteria": [],
             "data_elements": ["patient_demographics"],
-            "time_period": {},  # Empty dict, not None
+            "time_period": {},
             "phi_level": "de-identified",
         }
 
-        # Parse gender - SQL generator expects criteria with concepts
-        if "female" in query_lower:
-            requirements["inclusion_criteria"].append(
-                {
-                    "text": "female patients",
-                    "concepts": [
-                        {"term": "female", "type": "demographic", "details": "female patients"}
-                    ],
-                }
-            )
-        elif "male" in query_lower:
-            requirements["inclusion_criteria"].append(
-                {
-                    "text": "male patients",
-                    "concepts": [
-                        {"term": "male", "type": "demographic", "details": "male patients"}
-                    ],
-                }
-            )
-
-        # Parse age range
-        if "between" in query_lower and "age" in query_lower:
-            # Extract "between 20 and 30"
-            import re
-
-            age_match = re.search(r"between.*?(\d+)\s+and\s+(\d+)", query_lower)
-            if age_match:
-                min_age = int(age_match.group(1))
-                max_age = int(age_match.group(2))
-                requirements["inclusion_criteria"].append(
-                    {
-                        "text": f"age between {min_age} and {max_age}",
-                        "concepts": [
-                            {
-                                "term": "age",
-                                "type": "demographic",
-                                "details": f"between {min_age} and {max_age}",
-                            }
-                        ],
-                    }
-                )
-        elif "over" in query_lower or "above" in query_lower:
-            age_match = re.search(r"(?:over|above)\s+(\d+)", query_lower)
-            if age_match:
-                age = int(age_match.group(1))
-                requirements["inclusion_criteria"].append(
-                    {
-                        "text": f"age over {age}",
-                        "concepts": [
-                            {"term": "age", "type": "demographic", "details": f"over {age}"}
-                        ],
-                    }
-                )
-        elif "under" in query_lower or "below" in query_lower:
-            age_match = re.search(r"(?:under|below)\s+(\d+)", query_lower)
-            if age_match:
-                age = int(age_match.group(1))
-                requirements["inclusion_criteria"].append(
-                    {
-                        "text": f"age under {age}",
-                        "concepts": [
-                            {"term": "age", "type": "demographic", "details": f"under {age}"}
-                        ],
-                    }
-                )
-
-        # Parse conditions
-        if "diabetes" in query_lower or "diabetic" in query_lower:
-            requirements["inclusion_criteria"].append(
-                {
-                    "text": "patients with diabetes",
-                    "concepts": [
-                        {
-                            "term": "diabetes",
-                            "type": "condition",
-                            "details": "diabetes mellitus (any type)",
-                        }
-                    ],
-                }
-            )
-        if "hypertension" in query_lower or "high blood pressure" in query_lower:
-            requirements["inclusion_criteria"].append(
-                {
-                    "text": "patients with hypertension",
-                    "concepts": [
-                        {
-                            "term": "hypertension",
-                            "type": "condition",
-                            "details": "essential hypertension",
-                        }
-                    ],
-                }
-            )
+        # Add filters as inclusion criteria
+        for key, value in intent.filters.items():
+            requirements["inclusion_criteria"].append({
+                "text": f"{key}: {value}",
+                "concepts": [{
+                    "term": str(value),
+                    "type": self._infer_concept_type(key),
+                    "details": f"From query: {user_query}",
+                }]
+            })
 
         return requirements
+
+    def _infer_concept_type(self, filter_key: str) -> str:
+        """Map filter keys to concept types"""
+        mapping = {
+            "condition": "condition",
+            "code": "lab_test",
+            "gender": "demographic",
+            "age": "demographic",
+        }
+        return mapping.get(filter_key, "other")
 
     async def _extract_concept_simplified(self, criterion: str) -> Dict[str, str]:
         """

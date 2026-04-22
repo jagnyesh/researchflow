@@ -144,7 +144,7 @@ FHIR_PROJECT/
 │   │   ├── materialized_view_service.py  # View management
 │   │   ├── fhir_subscription_service.py  # Real-time FHIR updates
 │   │   ├── feasibility_service.py        # Feasibility queries
-│   │   └── text2sql.py                   # Text2SQL service
+│   │   └── query_interpreter.py          # LLM-based query parsing (QueryInterpreter)
 │   │
 │   ├── adapters/                 # Data access
 │   │   └── sql_on_fhir.py       # SQL adapter (parameterized queries) 🆕
@@ -159,7 +159,6 @@ FHIR_PROJECT/
 │   │   └── admin_dashboard.py   # Monitoring + escalations
 │   │
 │   ├── api/                      # FastAPI endpoints
-│   │   ├── text2sql.py          # Text-to-SQL conversion
 │   │   ├── sql_on_fhir.py       # SQL query execution
 │   │   ├── mcp.py               # MCP endpoints
 │   │   └── a2a.py               # OAuth2 token issuance
@@ -182,7 +181,7 @@ FHIR_PROJECT/
 │   └── utils/                    # Utility functions
 │
 ├── tests/                        # Test suite (EXPANDED) 🆕
-│   ├── test_text2sql.py
+│   ├── test_text2sql.py         # QueryInterpreter integration tests
 │   ├── test_sql_adapter.py
 │   ├── test_mcp_store.py
 │   ├── test_speed_layer_runner.py          # Speed layer tests (10 tests) 🆕
@@ -627,7 +626,7 @@ ResearchFlow provides **two specialized interfaces** for researchers, each optim
 | **Data Level** | Aggregates only | Patient-level data |
 | **PHI Access** | No | Yes (with approval) |
 | **Use Case** | Hypothesis testing | Production research |
-| **Agents** | 1 (Text2SQL) | 6 (full workflow) |
+| **Agents** | 1 (QueryInterpreter) | 6 (full workflow) |
 | **Audit Trail** | Basic logs | Comprehensive |
 
 ### Admin Dashboard (Port 8503)
@@ -688,7 +687,7 @@ Tests use pytest with async support (`pytest-asyncio`).
 - `scripts/tests/` - Test scripts for runners
 
 **Core Tests:**
-- `tests/test_text2sql.py` - Text2SQL service tests
+- `tests/test_text2sql.py` - QueryInterpreter integration tests
 - `tests/test_sql_adapter.py` - SQL adapter tests
 - `tests/test_mcp_store.py` - MCP context store tests
 

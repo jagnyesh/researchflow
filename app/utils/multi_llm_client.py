@@ -5,11 +5,14 @@ Supports multiple LLM providers via AI Suite with intelligent routing:
 - Critical medical tasks (requirements, phenotype) → Always use Claude
 - Non-critical tasks (calendar, delivery) → Use configurable secondary provider
 - Automatic fallback to Claude if secondary provider fails
+
+Sprint 8 Optimization 6: Added LangSmith tracing for full cost visibility
 """
 
 import os
 import logging
 from typing import Dict, Any, Optional, Literal
+from langsmith import traceable
 from .llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -130,6 +133,7 @@ class MultiLLMClient:
             logger.warning(f"Unknown provider {self.secondary_provider}, using Claude")
             return "anthropic:claude-3-7-sonnet-20250219"
 
+    @traceable(name="MultiLLMClient.complete")
     async def complete(
         self,
         prompt: str,
@@ -141,6 +145,8 @@ class MultiLLMClient:
     ) -> str:
         """
         Get completion from appropriate LLM provider
+
+        Sprint 8 Optimization 6: Automatically traced to LangSmith for cost visibility
 
         Args:
             prompt: User prompt

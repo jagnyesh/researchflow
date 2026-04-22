@@ -4,6 +4,18 @@
 **Date:** 2025-10-07
 **Purpose:** Explain how LLM conversations convert to SQL queries
 
+> **⚠️ DEPRECATION NOTICE (Sprint 6 - Security Hardening)**
+>
+> The simple POST /text2sql endpoint with DummyProvider has been removed as of April 2026.
+> This was a proof-of-concept stub that used hardcoded keyword-to-SQL mappings and was
+> never intended for production use.
+>
+> **Production Implementations:**
+> - **Exploratory Analytics**: Use `QueryInterpreter` service (app/services/query_interpreter.py)
+> - **Formal Requests**: Use orchestrator workflow (POST /research/submit → Phenotype Agent)
+>
+> This document remains for architectural reference and to document the 5-phase text-to-SQL flow.
+
 ---
 
 ## Table of Contents

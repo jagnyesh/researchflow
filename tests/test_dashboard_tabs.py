@@ -27,7 +27,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.web_ui.admin_dashboard import (
+from app.web_ui.dashboard_helpers import (
     get_agent_metrics_from_db,
     get_all_requests_from_db,
     get_escalations_from_db,
