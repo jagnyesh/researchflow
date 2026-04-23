@@ -12,7 +12,7 @@ Endpoints:
 
 from datetime import timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel, EmailStr
 
@@ -24,6 +24,7 @@ from app.security.auth import (
     Token,
 )
 from app.security.dependencies import get_current_user, get_current_active_user, User
+from app.security.rate_limit import limiter
 from app.database import get_db_session
 from app.database.models import User as UserModel
 from sqlalchemy import select
@@ -81,7 +82,8 @@ MOCK_USERS = {
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(login_request: LoginRequest):
+@limiter.limit("5/minute")  # Strict rate limit to prevent brute-force attacks
+async def login(request: Request, login_request: LoginRequest):
     """
     Authenticate user and return JWT token
 

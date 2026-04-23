@@ -28,6 +28,7 @@ from .agents import (
     DeliveryAgent,
 )
 from .agents.coordinator_agent import CoordinatorAgent
+from .security.rate_limit import setup_rate_limiting
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,9 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# Setup rate limiting (Sprint 6 Phase 1.4)
+setup_rate_limiting(app)
 
 app.include_router(health_router)
 app.include_router(auth_router)  # Authentication endpoints (Sprint 6)
