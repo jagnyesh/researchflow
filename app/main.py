@@ -11,6 +11,7 @@ from .api.health import router as health_router
 from .api.sql_on_fhir import router as sql_router
 from .api.mcp import router as mcp_router
 from .api.a2a import router as a2a_router
+from .api.auth import router as auth_router
 from .api.analytics import router as analytics_router
 from .api.materialized_views import router as materialized_views_router
 from .api.approvals import router as approvals_router, set_orchestrator as set_approvals_orch
@@ -103,6 +104,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(auth_router)  # Authentication endpoints (Sprint 6)
 app.include_router(research_router)
 app.include_router(sql_router)
 app.include_router(mcp_router)

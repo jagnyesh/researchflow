@@ -4,8 +4,10 @@ httpx
 sqlalchemy[asyncio]
 asyncpg==0.28.0
 aiosqlite>=0.20  # Required by langgraph-checkpoint-sqlite
-pydantic
-python-jose==3.3.0
+pydantic[email]  # Email validation for user management
+python-jose[cryptography]==3.3.0  # JWT tokens
+passlib[bcrypt]==1.7.4  # Password hashing
+python-multipart==0.0.9  # Form data parsing for authentication
 pytest
 pytest-asyncio
 alembic
@@ -43,3 +45,7 @@ langsmith>=0.1.142  # For tracing and debugging
 # Lambda Speed Layer dependencies (Sprint 5.5)
 redis[hiredis]>=5.0.0  # Async Redis client with hiredis parser for performance
 greenlet==3.2.4
+
+# Sprint 6: Security Baseline dependencies
+slowapi==0.1.9  # Rate limiting middleware
+cryptography==42.0.5  # Encryption at rest

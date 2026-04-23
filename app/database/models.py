@@ -272,6 +272,40 @@ class DataDelivery(Base):
     request = relationship("ResearchRequest", back_populates="delivery")
 
 
+class User(Base):
+    """User authentication and authorization"""
+
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)  # USR-XXXXXXXX
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+
+    # Profile
+    full_name = Column(String, nullable=False)
+    department = Column(String)
+    role = Column(String, nullable=False, default="researcher")  # researcher, data_steward, admin
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False)  # Email verification status
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    last_login_at = Column(DateTime, nullable=True)
+
+    # Security
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)  # Account lockout timestamp
+
+    # Preferences
+    notification_preferences = Column(JSON, default={})  # Email, SMS preferences
+
+    def __repr__(self):
+        return f"<User(email='{self.email}', role='{self.role}', active={self.is_active})>"
+
+
 class AuditLog(Base):
     """Audit log for compliance and debugging - append-only event tracking"""
 
