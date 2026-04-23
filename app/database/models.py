@@ -307,29 +307,77 @@ class User(Base):
 
 
 class AuditLog(Base):
-    """Audit log for compliance and debugging - append-only event tracking"""
+    """
+    HIPAA-Compliant Audit Log for PHI Access Tracking
+
+    Tracks all system events with emphasis on PHI access per HIPAA requirements.
+    Append-only table for compliance and forensic analysis.
+
+    Standard Event Types:
+    - PHI_VIEW: Viewed PHI data (patient records, observations, etc.)
+    - PHI_EXPORT: Exported PHI data to external system
+    - PHI_SEARCH: Searched for patients/PHI data
+    - REQUEST_CREATE: Created new research request
+    - REQUEST_APPROVE: Approved research request
+    - REQUEST_REJECT: Rejected research request
+    - USER_LOGIN: User authentication
+    - USER_LOGOUT: User logged out
+    - USER_CREATE: New user created
+    - USER_UPDATE: User profile updated
+    - USER_DELETE: User deleted
+    - QUERY_EXECUTE: SQL-on-FHIR query executed
+    - DATA_EXTRACT: Data extraction performed
+    - DATA_DELIVER: Data delivered to researcher
+    - AGENT_STARTED: AI agent started execution
+    - AGENT_COMPLETED: AI agent completed execution
+    - AGENT_FAILED: AI agent failed
+    - STATE_CHANGED: Workflow state transition
+    - ERROR_OCCURRED: System error
+    """
 
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=datetime.now, nullable=False, index=True)
 
+    # User tracking (HIPAA required)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+
     # Request tracking
-    request_id = Column(String, ForeignKey("research_requests.id"), index=True)
+    request_id = Column(String, ForeignKey("research_requests.id"), nullable=True, index=True)
 
     # Event details
     event_type = Column(
         String, nullable=False, index=True
-    )  # state_changed, agent_started, error_occurred, etc.
+    )  # PHI_VIEW, REQUEST_CREATE, USER_LOGIN, etc. (see docstring)
+    action = Column(
+        String, nullable=True, index=True
+    )  # Specific action: view, create, update, delete, export
     agent_id = Column(String, nullable=True)
+
+    # Resource tracking (what was accessed)
+    resource_type = Column(
+        String, nullable=True, index=True
+    )  # Patient, Observation, Condition, ResearchRequest, User
+    resource_id = Column(String, nullable=True)  # ID of the specific resource accessed
+
+    # PHI access flag (HIPAA critical - indexed for fast queries)
+    phi_accessed = Column(Boolean, default=False, nullable=False, index=True)
+
+    # Request metadata (HIPAA audit trail)
+    ip_address = Column(String, nullable=True)  # Client IP address
+    user_agent = Column(String, nullable=True)  # Browser/client user agent
+
+    # Result tracking
+    result = Column(String, nullable=True)  # success, failure, partial, error
 
     # Event data (flexible JSON for different event types)
     event_data = Column(JSON, default={})
 
-    # Context (who/what triggered this)
+    # Legacy context field (kept for backwards compatibility)
     triggered_by = Column(String, nullable=True)  # user_id, agent_id, system
 
-    # Severity (for filtering)
+    # Severity (for filtering and alerting)
     severity = Column(String, default="info")  # debug, info, warning, error, critical
 
 
