@@ -19,10 +19,14 @@ from pydantic import BaseModel, EmailStr
 from app.security.auth import (
     create_access_token,
     verify_password,
+    get_password_hash,
     ACCESS_TOKEN_EXPIRE_MINUTES,
     Token,
 )
 from app.security.dependencies import get_current_user, get_current_active_user, User
+from app.database import get_db_session
+from app.database.models import User as UserModel
+from sqlalchemy import select
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -53,15 +57,16 @@ class LoginResponse(BaseModel):
     user: UserResponse
 
 
-# TODO: Replace with real database lookup in Phase 1.2
-# This is a stub for Phase 1.1 testing only (plain text passwords for testing)
+# Mock users with bcrypt hashed passwords for testing
+# Password for both users: "password123"
+# These are pre-hashed using bcrypt directly (Phase 1.3)
 MOCK_USERS = {
     "researcher@example.com": {
         "user_id": "USR-00000001",
         "email": "researcher@example.com",
         "full_name": "Jane Researcher",
         "role": "researcher",
-        "password": "password123",  # pragma: allowlist secret  # Plain text for Phase 1.1 testing only
+        "hashed_password": "$2b$12$tdO60AuFrQE2z5McrZCsa.OUDmLvOHXoSpKY3fVUOVvIseCr8Hm0y",  # password123  # nosec B106
         "is_active": True,
     },
     "admin@example.com": {
@@ -69,7 +74,7 @@ MOCK_USERS = {
         "email": "admin@example.com",
         "full_name": "John Admin",
         "role": "admin",
-        "password": "password123",  # pragma: allowlist secret  # Plain text for Phase 1.1 testing only
+        "hashed_password": "$2b$12$tn1DrM0IUpMEimr.i/FTreCElmZFpwGd3rh.1ULG9jJEHzV.COElm",  # password123  # nosec B106
         "is_active": True,
     },
 }
@@ -109,28 +114,54 @@ async def login(login_request: LoginRequest):
             }
         }
     """
-    # TODO: Replace with database query in Phase 1.2
-    user = MOCK_USERS.get(login_request.email)
+    # Try database lookup first, fallback to MOCK_USERS
+    async with get_db_session() as db:
+        result = await db.execute(select(UserModel).filter(UserModel.email == login_request.email))
+        user_model = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    if user_model:
+        # Database user found - verify bcrypt hashed password
+        if not verify_password(login_request.password, user_model.hashed_password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
 
-    # Verify password (plain text for Phase 1.1 testing only)
-    # TODO: Use verify_password() with hashed passwords in Phase 1.2
-    if login_request.password != user["password"]:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        # Check if user is active
+        if not user_model.is_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
 
-    # Check if user is active
-    if not user["is_active"]:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
+        # Create user dict for token generation
+        user = {
+            "email": user_model.email,
+            "user_id": user_model.id,
+            "full_name": user_model.full_name,
+            "role": user_model.role,
+            "is_active": user_model.is_active,
+        }
+    else:
+        # Fallback to MOCK_USERS for testing
+        user = MOCK_USERS.get(login_request.email)
+
+        if not user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Verify password using bcrypt
+        if not verify_password(login_request.password, user["hashed_password"]):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        # Check if user is active
+        if not user["is_active"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is inactive")
 
     # Create JWT token
     access_token = create_access_token(

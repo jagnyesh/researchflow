@@ -26,6 +26,7 @@ from app.security.dependencies import (
     require_any_role,
     User,
 )
+from app.security.auth import get_password_hash, verify_password
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -117,15 +118,14 @@ async def create_user(
         # Generate user ID
         user_id = f"USR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
-        # Create user (TODO: hash password in Phase 1.3)
-        # For now, storing plain text password for testing
+        # Create user with hashed password
         new_user = UserModel(
             id=user_id,
             email=user_data.email,
             full_name=user_data.full_name,
             department=user_data.department,
             role=user_data.role,
-            hashed_password=user_data.password,  # TODO: Use get_password_hash()
+            hashed_password=get_password_hash(user_data.password),
             is_active=True,
             is_verified=False,
         )
@@ -363,15 +363,14 @@ async def change_password(
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-        # Verify current password (TODO: use verify_password() in Phase 1.3)
-        # For now, comparing plain text
-        if user.hashed_password != password_data.current_password:
+        # Verify current password using bcrypt
+        if not verify_password(password_data.current_password, user.hashed_password):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password"
             )
 
-        # Update password (TODO: use get_password_hash() in Phase 1.3)
-        user.hashed_password = password_data.new_password
+        # Update password with bcrypt hashing
+        user.hashed_password = get_password_hash(password_data.new_password)
         user.updated_at = datetime.now()
 
         await db.commit()
