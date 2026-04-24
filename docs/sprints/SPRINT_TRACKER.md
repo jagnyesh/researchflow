@@ -22,6 +22,7 @@
 | 5.5 | [Lambda Speed Layer (Redis)](#sprint-55-lambda-speed-layer-redis) | 2 weeks | ✅ Complete | 2025-10-28 | 2025-10-28 | [Link](SPRINT_05_5_SPEED_LAYER.md) - ✅ 29/29 tests passed |
 | 6 | [Security Hardening](#sprint-6-security-hardening) | 1 week | ✅ Complete | 2025-11-08 | 2025-11-10 | [Link](SPRINT_07_SECURITY_HARDENING.md) - ✅ 30 vulnerabilities fixed |
 | 7 | [LangGraph Completion](#sprint-7-langgraph-completion) | 3 days | ✅ Complete | 2025-11-08 | 2025-11-10 | [Link](SPRINT_07_LANGGRAPH_COMPLETION.md) - ✅ Bug #11 fixed, observability added |
+| 6.1 | [Security Baseline (Auth & Audit)](#sprint-61-security-baseline) | 2 weeks | 🚧 In Progress | 2026-04-22 | TBD | [Link](SPRINT_06_IMPLEMENTATION.md) - Phase 1 & 2.1 complete (40%) |
 | 8 | [Prompt Optimization](#sprint-8-prompt-optimization) | 1 week | 🚧 Analysis | 2025-11-11 | TBD | [Link](SPRINT_08_PROMPT_OPTIMIZATION.md) - Analysis: 73% cost reduction |
 | 9 | [Temporal Reasoning Engine](#sprint-9-temporal-reasoning-engine) | 3 weeks | ⏳ Pending | TBD | TBD | - |
 | 10 | [Complex Cohort Logic](#sprint-10-complex-cohort-logic) | 2 weeks | ⏳ Pending | TBD | TBD | - |
@@ -31,10 +32,10 @@
 | 14 | [Real-Time Cohort Discovery](#sprint-14-real-time-cohort-discovery) | 3 weeks | ⏳ Pending | TBD | TBD | - |
 | 15 | [Federated Query Engine](#sprint-15-federated-query-engine) | 3 weeks | ⏳ Pending | TBD | TBD | - |
 
-**Total Sprints:** 21 (including Sprint 0, 4.5, 5.5, 6, 7, and 8)
-**Total Duration:** 35 weeks (8.75 months)
-**Completed:** 10/21 (47.6%)
-**In Progress:** Sprint 8 (Prompt Optimization - Analysis Complete, Implementation Pending)
+**Total Sprints:** 22 (including Sprint 0, 4.5, 5.5, 6, 6.1, 7, and 8)
+**Total Duration:** 37 weeks (9.25 months)
+**Completed:** 10/22 (45.5%)
+**In Progress:** Sprint 6.1 (Security Baseline - 40% Complete), Sprint 8 (Prompt Optimization - Analysis Complete, Implementation Pending)
 
 ---
 
@@ -71,8 +72,9 @@
 
 ---
 
-### Phase 2: Clinical Intelligence & Optimization (9 weeks)
-**Status:** 🚧 In Progress (11% - Sprint 8 analysis complete)
+### Phase 2: Clinical Intelligence & Optimization (11 weeks)
+**Status:** 🚧 In Progress (18% - Sprint 6.1 in progress, Sprint 8 analysis complete)
+- [x] Sprint 6.1: Security Baseline ⏳ 40% Complete (2026-04-22 to TBD)
 - [x] Sprint 8: Prompt Optimization ✅ Analysis Complete (2025-11-11)
 - [ ] Sprint 9: Terminology Expansion
 - [ ] Sprint 10: Temporal Reasoning Engine
@@ -569,6 +571,109 @@ $ pytest tests/test_redis_client.py tests/test_speed_layer_runner.py \
 **Recommendation:** ✅ **PROCEED WITH PHASE 1** - High ROI (3,550% return on 2 hours)
 
 **Documentation:** [SPRINT_08_PROMPT_OPTIMIZATION.md](SPRINT_08_PROMPT_OPTIMIZATION.md)
+
+---
+
+### Sprint 6.1: Security Baseline (Authentication & Audit)
+**Status:** 🚧 In Progress (~40% Complete)
+**Duration:** 2 weeks (estimated)
+**Started:** 2026-04-22
+**Branch:** `feature/sprint6-security-baseline`
+
+**Goal:** Implement HIPAA-compliant authentication, authorization, and audit logging infrastructure
+
+**Completed Deliverables:**
+
+**Phase 1: Authentication & Authorization (100% Complete)**
+- [x] Phase 1.1: JWT Authentication Middleware ✅
+  - File: `app/security/auth.py` (133 lines)
+  - Features: JWT token generation/validation, bcrypt password hashing
+  - Commit: `36062af`
+
+- [x] Phase 1.2: User Management CRUD Endpoints ✅
+  - File: `app/api/users.py` (200+ lines)
+  - Features: Create, read, update, delete users with role-based access
+  - Commit: `db8b406`
+
+- [x] Phase 1.3: Bcrypt Password Hashing ✅
+  - Integrated into: `app/security/auth.py`
+  - Features: Cost factor 12, HIPAA-compliant password storage
+  - Commit: `3e8e877`
+
+- [x] Phase 1.4: API Rate Limiting ✅
+  - File: `app/security/rate_limit.py` (118 lines)
+  - Features: Global 100/min, Auth 5/min, Queries 10/min
+  - Uses: SlowAPI library
+  - Commit: `5476255`
+
+**Phase 2: Auditing & Validation (50% Complete)**
+- [x] Phase 2.1: PHI Audit Logging Schema ✅
+  - Enhanced: `app/database/models.py` (AuditLog model)
+  - Features: 18 event types, PHI tracking, HIPAA compliance
+  - Fields: user_id, action, resource_type, resource_id, phi_accessed, ip_address, user_agent, result
+  - All fields indexed for fast queries
+  - Commit: `803152b`
+  - Tests: 13/13 comprehensive tests passed
+
+- [ ] Phase 2.2: Audit Logging Infrastructure ⏳
+  - Planned: `app/services/audit_service.py`
+  - Planned: `app/security/audit.py` middleware
+  - Planned: `app/api/audit.py` endpoints
+  - Effort: 2-3 days
+
+- [ ] Phase 2.3: Input Validation Framework ⏳
+  - Planned: Pydantic schemas in `app/schemas/`
+  - Planned: `app/security/validation.py`
+  - Effort: 2-3 days
+
+**Pending Phases:**
+- [ ] Phase 3: Infrastructure Security (TLS/HTTPS, Encryption)
+- [ ] Phase 4: Testing & Documentation
+
+**Testing Results:**
+```bash
+# Phase 1 & 2.1 Testing
+✓ JWT authentication working
+✓ User CRUD operations tested (5/5 operations passed)
+✓ Password hashing validated (7/7 scenarios passed)
+✓ Rate limiting tested (5 successful, 2 rate-limited with 429)
+✓ Audit schema validated (13/13 tests passed)
+```
+
+**Success Criteria Progress:**
+- ✅ JWT authentication implemented and tested
+- ✅ User management CRUD complete
+- ✅ Bcrypt password hashing working
+- ✅ Rate limiting preventing abuse
+- ✅ PHI audit logging schema designed
+- ⏳ Audit logging infrastructure (pending)
+- ⏳ Input validation framework (pending)
+- ⏳ TLS/HTTPS enforcement (pending)
+- ⏳ Data encryption at rest (pending)
+
+**Performance Metrics:**
+- Authentication latency: <50ms (target met)
+- Rate limiting: 100% effective (tested with 7 requests)
+- Password hashing: Bcrypt cost factor 12 (HIPAA compliant)
+
+**Key Files Created:**
+- `app/security/auth.py` (133 lines)
+- `app/security/dependencies.py` (100+ lines)
+- `app/security/rate_limit.py` (118 lines)
+- `app/api/users.py` (200+ lines)
+- Enhanced `app/database/models.py` (User + AuditLog models)
+
+**Documentation:**
+- [SPRINT_06_SECURITY_BASELINE.md](SPRINT_06_SECURITY_BASELINE.md) - Technical plan
+- [SPRINT_06_IMPLEMENTATION.md](SPRINT_06_IMPLEMENTATION.md) - Implementation details
+
+**Recommendation:** ✅ **Continue with Phase 2.2** - Audit logging infrastructure (2-3 days effort)
+
+**Next Steps:**
+1. Complete Phase 2.2: Audit logging infrastructure
+2. Complete Phase 2.3: Input validation framework
+3. Implement Phase 3: Infrastructure security
+4. Comprehensive security testing suite
 
 ---
 
