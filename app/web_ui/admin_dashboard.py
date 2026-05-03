@@ -63,6 +63,17 @@ def run_async(coroutine):
     return _streamlit_loop.run_until_complete(coroutine)
 
 
+def _render_db_unreachable(exc: Exception, what: str) -> None:
+    """Render a friendly error for a failed DB call. Use after catching from run_async."""
+    logger.exception("Failed to load %s", what)
+    st.error(
+        f"⚠️ Could not load {what} — the database isn't reachable. "
+        "Check that PostgreSQL is running and DATABASE_URL is correct."
+    )
+    with st.expander("Error details"):
+        st.code(f"{type(exc).__name__}: {exc}")
+
+
 def get_status_badge(state: str) -> str:
     """Get colored status badge for request state"""
     state_colors = {
@@ -209,9 +220,13 @@ def show_requests_sidebar():
     st.header("📋 All Requests")
 
     # Get all requests (FIXED: include completed requests for search)
-    requests = run_async(
-        st.session_state.orchestrator.get_all_active_requests(include_completed=True)
-    )
+    try:
+        requests = run_async(
+            st.session_state.orchestrator.get_all_active_requests(include_completed=True)
+        )
+    except Exception as e:
+        _render_db_unreachable(e, "requests")
+        return
 
     # Search box
     search_term = st.text_input(
@@ -1002,7 +1017,11 @@ def show_overview():
     st.header("System Overview")
 
     # Get all active requests
-    requests = run_async(st.session_state.orchestrator.get_all_active_requests())
+    try:
+        requests = run_async(st.session_state.orchestrator.get_all_active_requests())
+    except Exception as e:
+        _render_db_unreachable(e, "system overview")
+        return
 
     # Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -1110,7 +1129,11 @@ def show_agent_metrics():
 
             return metrics_by_agent
 
-    all_metrics = run_async(fetch_agent_metrics())
+    try:
+        all_metrics = run_async(fetch_agent_metrics())
+    except Exception as e:
+        _render_db_unreachable(e, "agent metrics")
+        return
 
     if not all_metrics:
         st.info("No agent metrics available yet")
@@ -1190,7 +1213,11 @@ def show_pending_approvals():
                 )
                 return approvals
 
-        approvals_db = run_async(fetch_approvals())
+        try:
+            approvals_db = run_async(fetch_approvals())
+        except Exception as e:
+            _render_db_unreachable(e, "pending approvals")
+            return
 
         # Convert to dict format for display
         approvals = [
