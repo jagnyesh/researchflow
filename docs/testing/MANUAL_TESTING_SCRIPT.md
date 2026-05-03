@@ -1040,4 +1040,4 @@ Document results in: `docs/testing/MANUAL_TEST_RESULTS_[DATE].md`
 For questions or issues during testing, refer to:
 - `docs/LANGGRAPH_MIGRATION_GUIDE.md` - Deployment guide
 - `docs/POST_DEPLOYMENT_TESTING_GUIDE.md` - Production validation
-- `docs/sprints/SPRINT_07_LANGGRAPH_COMPLETION.md` - Sprint 7 completion report
+- `docs/sprints/archive/SPRINT_07_LANGGRAPH_COMPLETION.md` - Sprint 7 completion report

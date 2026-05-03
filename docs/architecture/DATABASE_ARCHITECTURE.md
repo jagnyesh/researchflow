@@ -509,7 +509,7 @@ HAPI_DB_URL=postgresql+asyncpg://hapi:hapi@localhost:5433/hapi
 - **Database Models**: `app/database/models.py` (SQLAlchemy ORM)
 - **HAPI Client**: `app/clients/hapi_db_client.py` (asyncpg connection pool)
 - **Environment Config**: `.env` (current settings)
-- **Sprint Docs**: `docs/sprints/SPRINT_04_5_MATERIALIZED_VIEWS.md` (PostgreSQL materialized views)
+- **Sprint Docs**: `docs/sprints/archive/SPRINT_04_5_MATERIALIZED_VIEWS.md` (PostgreSQL materialized views)
 - **LangGraph Persistence**: `app/langchain_orchestrator/persistence.py` (checkpointer)
 
 ---

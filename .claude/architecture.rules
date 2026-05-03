@@ -1,0 +1,74 @@
+# Architecture Rules
+
+Conventions and constraints that apply across the codebase. Extracted from the slim CLAUDE.md so they don't pollute every session by default — loaded via `@.claude/architecture.rules` only when relevant.
+
+## Agent pattern
+
+- All agents inherit `BaseAgent` (`app/agents/base_agent.py`) — gives retry-with-exponential-backoff (3 max), state machine (`idle`/`working`/`failed`/`waiting`), task history, and human escalation.
+- Never instantiate Claude SDK or HTTP clients directly inside an agent. Use `LLMClient` (`app/utils/llm_client.py`) for critical medical reasoning, `MultiLLMClient` (`app/utils/multi_llm_client.py`) for non-critical (calendar text, delivery notifications).
+- A2A messages between agents follow this shape (orchestrator routes by `next_agent`/`next_task`):
+  ```python
+  {"agent_id": "phenotype_agent", "task": "validate_feasibility",
+   "context": {...}, "result": {...},
+   "next_agent": "calendar_agent", "next_task": "schedule_kickoff"}
+  ```
+- Two orchestrators coexist: custom (`app/orchestrator/`) is production; LangGraph (`app/langchain_orchestrator/`) is the migration target behind `USE_LANGGRAPH_WORKFLOW=true` + `LANGGRAPH_ROLLOUT_PCT=N`. Don't touch one without considering the other.
+
+## SQL safety (HARD RULE — Sprint 6 outcome)
+
+- **Never** build SQL with f-strings, `.format()`, or string concat against any value not from a Python literal in the same file.
+- Use SQLAlchemy `text()` with named bind params; SQL generators return `(sql, params)` tuples.
+- The pattern (see `app/utils/sql_generator.py`):
+  ```python
+  patient_id_params = {f"pid_{i}": pid for i, pid in enumerate(patient_ids)}
+  placeholders = ", ".join(f":{k}" for k in patient_id_params)
+  sql = f"SELECT * FROM patient WHERE id IN ({placeholders})"
+  return sql, patient_id_params
+  # then: await sql_adapter.execute_sql(sql, params)
+  ```
+- 30 vulnerabilities were fixed; 30 documented `# nosec` suppressions were added. Don't add new `# nosec` without a comment explaining why and a Bandit-clean alternative being unavailable.
+
+## Lambda Architecture routing
+
+- `HybridRunner` (`app/sql_on_fhir/runner/hybrid_runner.py`) is the only public entrypoint for cohort queries. Don't call `MaterializedViewRunner`, `SpeedLayerRunner`, or `PostgresRunner` directly from agents or UI.
+- Speed layer TTL is 24h; batch refresh is nightly. The merge boundary lives inside HybridRunner — don't bypass.
+- `USE_SPEED_LAYER=false` falls back to PostgresRunner (legacy) — keep that path working for emergencies.
+
+## Database
+
+- 6 tables in `app/database/models.py`: `ResearchRequest`, `RequirementsData`, `FeasibilityReport`, `AgentExecution`, `Escalation`, `DataDelivery`. Sprint 6.1 adds `User` and `audit_logs`.
+- No Alembic migrations yet — schema changes require manual coordination. Flag in PR description.
+- SQLite (`sqlite+aiosqlite:///./dev.db`) is dev-only. Production must be Postgres (asyncpg) — column-level encryption (`EncryptedType`) and Redis-backed audit drain both assume Postgres.
+
+## UI surfaces
+
+- Three Streamlit apps, each on its own port; don't merge them:
+  - `research_notebook.py` (8501) — chat, aggregates only, no PHI, no IRB
+  - `researcher_portal.py` (8502) — form, full 6-agent workflow, IRB-required
+  - `admin_dashboard.py` (8503) — approvals + escalations + monitoring
+- Chat UI uses the `QueryInterpreter` (`app/services/query_interpreter.py`), not the full agent stack.
+
+## No-go zones
+
+- `app/legacy/` — reserved for post-LangGraph-rollout custom orchestrator archive. Don't write here yet; don't delete files from here once the archive starts.
+- `tests/synthetic_phi/`, `**/phi_test_data/` — synthetic-PHI fixtures live here; Sprint 6.1 PreToolUse hook will block writes outside an explicit allowlist.
+- Don't commit anything that grep matches `sk-ant-api03-`, `lsv2_pt_`, `eyJ[A-Za-z0-9_-]{20,}` (JWT-shaped) — pre-commit `detect-secrets` should catch but assume nothing.
+
+## Naming conventions
+
+- Agents: `<role>_agent.py` (e.g. `phenotype_agent.py`); class `<Role>Agent`.
+- Runners: `<layer>_runner.py`; class `<Layer>Runner`.
+- Test files mirror source: `app/x/y.py` → `tests/test_y.py` (or `tests/<dir>/test_y.py` for org).
+- Sprint reports: `SPRINT_NN[_decimal]_<NAME>.md` in `docs/sprints/` (active) or `docs/sprints/archive/` (historical).
+- Schemas (Sprint 6.1+): `app/schemas/<domain>.py`, e.g. `app/schemas/research_request.py`.
+
+## Security middleware composition (Sprint 6.1 in flight)
+
+Add middleware to `app/main.py` in this order — order matters:
+1. `HTTPSRedirectMiddleware` (gated by `ENVIRONMENT=production`)
+2. CORS
+3. Auth (`get_current_user` dependency at the route level, not middleware)
+4. Audit middleware (Redis queue write — Phase 2.2)
+5. Rate limiting (SlowAPI with Redis storage — already in place)
+
+Run uvicorn with `--proxy-headers --forwarded-allow-ips="*"` in any env behind a proxy, or `HTTPSRedirectMiddleware` will loop.
