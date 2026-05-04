@@ -114,3 +114,98 @@ async def test_oversized_body_rejected_413_without_polluting_audit_queue(fake_au
     assert (
         queue_len == 0
     ), f"audit queue had {queue_len} events; body-size middleware order is wrong"
+
+
+# --- BoundedDict-bearing route regression tests (CSO Finding 1) ---
+
+
+@pytest.mark.asyncio
+async def test_one_megabyte_body_to_bounded_dict_route_rejected(fake_audit_redis):
+    """Regression: POST 1MB+ body to /research/submit (which has structured_requirements
+    as BoundedDict) — must be rejected with 413 (body-size middleware) or 422
+    (Pydantic leaf-string cap). Either is acceptable; both close the DoS vector.
+    """
+    from datetime import timedelta
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.security.auth import create_access_token
+
+    token = create_access_token(
+        {"sub": "qa@example.com", "user_id": "qa-1", "role": "researcher"},
+        expires_delta=timedelta(minutes=5),
+    )
+
+    # Body shape: a valid envelope with a 1MB+ string buried inside the BoundedDict field.
+    # Total body size ends up over MAX_REQUEST_BODY_BYTES, so layer 2 (body-size
+    # middleware) catches it first. If middleware were removed, layer 1 (BoundedDict
+    # leaf-string cap of 10KB) would catch it during Pydantic validation.
+    huge_inside_dict = "x" * 1_100_000
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/research/submit",
+            json={
+                "researcher_name": "Bob",
+                "researcher_email": "bob@example.edu",
+                "irb_number": "IRB-001",
+                "initial_request": "ok",
+                "structured_requirements": {"evil": huge_inside_dict},
+            },
+            headers={"authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code in (413, 422), (
+        f"BoundedDict-bearing route accepted 1MB+ body — Finding 1 regression. "
+        f"Got {response.status_code}: {response.text[:200]}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_leaf_string_cap_catches_oversized_inside_bounded_dict(fake_audit_redis):
+    """Regression: 50KB leaf string inside BoundedDict on /research/submit must 422.
+
+    This sizes the body UNDER the body-size middleware cap (1MB) but OVER the
+    BoundedDict leaf-string cap (10KB). It exercises layer 1 (Pydantic) in
+    isolation — proves the leaf-string cap fix actually fires, not just the
+    middleware. Without layer 1, this body would pass and reach the handler.
+    """
+    from datetime import timedelta
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.security.auth import create_access_token
+
+    token = create_access_token(
+        {"sub": "qa@example.com", "user_id": "qa-1", "role": "researcher"},
+        expires_delta=timedelta(minutes=5),
+    )
+
+    # 50KB leaf string: well over the 10KB BoundedDict cap, well under the 1MB
+    # body-size cap. Body total ≈ 50KB.
+    leaf_over_cap = "x" * 50_000
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/research/submit",
+            json={
+                "researcher_name": "Bob",
+                "researcher_email": "bob@example.edu",
+                "irb_number": "IRB-001",
+                "initial_request": "ok",
+                "structured_requirements": {"evil": leaf_over_cap},
+            },
+            headers={"authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code == 422, (
+        f"BoundedDict leaf-string cap did not fire — Finding 1 layer 1 regression. "
+        f"Got {response.status_code}: {response.text[:200]}"
+    )
+
+    # PHI-safe response shape still holds even on this DoS-defense rejection
+    body = response.json()
+    for err in body["detail"]:
+        assert set(err.keys()) <= {"loc", "msg", "type"}
+    # The 50KB leaf string itself must NOT appear in the response body
+    assert leaf_over_cap not in response.text
