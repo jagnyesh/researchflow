@@ -42,6 +42,7 @@ async def clean_database():
         await session.execute(text("DELETE FROM requirements_data"))
         await session.execute(text("DELETE FROM feasibility_reports"))
         await session.execute(text("DELETE FROM research_requests"))
+        await session.execute(text("DELETE FROM audit_logs"))
         await session.commit()
 
     yield

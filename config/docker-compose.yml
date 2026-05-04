@@ -11,6 +11,8 @@ services:
       # Redis Speed Layer
       - REDIS_URL=redis://redis:6379/0
       - USE_SPEED_LAYER=true
+      # Audit Pipeline (Sprint 6.1 Phase 2.2 - separate Redis instance)
+      - REDIS_AUDIT_URL=redis://redis-audit:6379/0
       # LangGraph Migration (Sprint 6.5 + 6.6)
       - USE_LANGGRAPH_WORKFLOW=false
       - LANGGRAPH_ROLLOUT_PCT=0
@@ -23,6 +25,8 @@ services:
       hapi-fhir:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      redis-audit:
         condition: service_healthy
 
   db:
@@ -106,6 +110,23 @@ services:
       timeout: 3s
       retries: 5
 
+  # Audit pipeline Redis (Sprint 6.1 Phase 2.2 - isolated from speed layer cache)
+  # noeviction policy: writes fail loudly when full instead of silently dropping
+  # queued audit events. AOF persistence so the queue survives Redis restart.
+  redis-audit:
+    image: redis:7-alpine
+    container_name: researchflow-redis-audit
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_audit_data:/data
+    command: redis-server --appendonly yes --maxmemory 32mb --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   # Synthea synthetic data generator (run once to populate)
   synthea:
     image: conceptant/synthea-fhir:latest
@@ -137,3 +158,4 @@ volumes:
   postgres_data:
   hapi_postgres_data:
   redis_data:
+  redis_audit_data:

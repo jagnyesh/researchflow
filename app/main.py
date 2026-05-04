@@ -1,8 +1,11 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import os
+
+import redis.asyncio as redis_async
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,17 +32,24 @@ from .agents import (
 )
 from .agents.coordinator_agent import CoordinatorAgent
 from .security.rate_limit import setup_rate_limiting
+from .security import audit_middleware as audit_mw
+from .security.audit_drain import audit_drain_loop
 
 logger = logging.getLogger(__name__)
 
 # Global orchestrator instance
 orchestrator = None
 
+# Audit pipeline state (Sprint 6.1 Phase 2.2 Issue #1)
+_audit_drain_task = None
+_audit_drain_stop = None
+_audit_redis_client = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize resources on startup and cleanup on shutdown."""
-    global orchestrator
+    global orchestrator, _audit_drain_task, _audit_drain_stop, _audit_redis_client
 
     # Startup
     logger.info("Initializing ResearchFlow application...")
@@ -47,6 +57,23 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     logger.info("Database initialized")
+
+    # Initialize audit pipeline (Sprint 6.1 Phase 2.2 Issue #1)
+    audit_redis_url = os.getenv("REDIS_AUDIT_URL")
+    if audit_redis_url:
+        _audit_redis_client = redis_async.from_url(
+            audit_redis_url, encoding="utf-8", decode_responses=True, socket_timeout=5
+        )
+        audit_mw.set_audit_redis(_audit_redis_client)
+        _audit_drain_stop = asyncio.Event()
+        _audit_drain_task = asyncio.create_task(
+            audit_drain_loop(_audit_redis_client, _audit_drain_stop)
+        )
+        logger.info(f"Audit pipeline initialized (REDIS_AUDIT_URL={audit_redis_url})")
+    else:
+        logger.warning(
+            "REDIS_AUDIT_URL not set; audit pipeline disabled (Issue #2 will fail-closed)"
+        )
 
     # Check if orchestrator should be enabled (for full workflow automation)
     # Set ENABLE_ORCHESTRATOR=false to run analytics-only mode
@@ -95,7 +122,16 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("Shutting down ResearchFlow application...")
-    # Cleanup if needed
+    if _audit_drain_stop is not None:
+        _audit_drain_stop.set()
+    if _audit_drain_task is not None:
+        try:
+            await asyncio.wait_for(_audit_drain_task, timeout=2.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            _audit_drain_task.cancel()
+    if _audit_redis_client is not None:
+        await _audit_redis_client.aclose()
+    audit_mw.set_audit_redis(None)
 
 
 app = FastAPI(
@@ -107,6 +143,9 @@ app = FastAPI(
 
 # Setup rate limiting (Sprint 6 Phase 1.4)
 setup_rate_limiting(app)
+
+# Audit middleware (Sprint 6.1 Phase 2.2 Issue #1 — tracer bullet, /sql_query only)
+app.middleware("http")(audit_mw.audit_middleware)
 
 app.include_router(health_router)
 app.include_router(auth_router)  # Authentication endpoints (Sprint 6)
