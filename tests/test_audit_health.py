@@ -92,22 +92,75 @@ def health_app():
 
 
 @pytest.mark.asyncio
-async def test_ready_endpoint_returns_503_when_audit_redis_unreachable(health_app):
+async def test_public_ready_endpoint_returns_503_when_audit_redis_unreachable(health_app):
+    """Public /health/ready still 503s on unhealthy audit pipeline — but only signals it via status, not via leaked metrics."""
     am.set_audit_redis(None)
     transport = ASGITransport(app=health_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health/ready")
     assert response.status_code == 503
     body = response.json()
-    assert body["audit_redis"] == "unreachable"
+    assert body["status"] == "not ready"
 
 
 @pytest.mark.asyncio
-async def test_ready_endpoint_includes_audit_section(fake_audit_redis, health_app):
+async def test_public_ready_endpoint_does_not_leak_audit_internals(fake_audit_redis, health_app):
+    """Finding 2: public probe must not expose drain restart count, queue depth,
+    or any other intel an attacker could use to time activity to a degraded
+    audit pipeline. Detailed payload is auth-gated at /health/ready/detailed.
+    """
     _drain_state["last_success_monotonic"] = time.monotonic()
     transport = ASGITransport(app=health_app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health/ready")
+    body = response.json()
+    leaky = {
+        "audit_redis",
+        "audit_queue_depth",
+        "audit_processing_depth",
+        "drain_last_success_seconds_ago",
+        "drain_restart_count",
+        "components",
+    }
+    leaked = leaky & set(body.keys())
+    assert not leaked, f"public /health/ready must not leak {leaked}"
+    assert body.keys() == {"status", "timestamp"}
+
+
+# --- Two-tier health check (Finding 2 fix): public boolean vs auth-gated detail ---
+
+
+@pytest.mark.asyncio
+async def test_detailed_health_endpoint_requires_auth(fake_audit_redis):
+    """`/health/ready/detailed` must be gated by auth — only operators see internals."""
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/health/ready/detailed")
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_detailed_health_endpoint_returns_full_payload_when_authed(fake_audit_redis):
+    """With valid auth, `/health/ready/detailed` returns the full audit pipeline state."""
+    from datetime import timedelta
+    from app.main import app
+    from app.security.auth import create_access_token
+
+    _drain_state["last_success_monotonic"] = time.monotonic()
+    token = create_access_token(
+        {"sub": "ops@example.com", "user_id": "ops-1", "role": "admin"},
+        expires_delta=timedelta(minutes=5),
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/health/ready/detailed",
+            headers={"authorization": f"Bearer {token}"},
+        )
+    assert response.status_code == 200, f"got {response.status_code}: {response.text}"
     body = response.json()
     assert "audit_redis" in body
     assert "audit_queue_depth" in body

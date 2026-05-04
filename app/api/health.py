@@ -200,17 +200,44 @@ async def liveness() -> Dict[str, str]:
 
 @router.get("/health/ready")
 async def readiness():
-    """Kubernetes readiness probe — includes audit pipeline liveness (Issue #3).
+    """Public readiness probe — boolean only.
 
-    Returns 503 if any critical component isn't ready, including:
-    - audit Redis unreachable
-    - audit queue depth above threshold
-    - drain task hasn't successfully drained recently
+    Two-tier (Sprint 6.1 Phase 2.2 Issue #2 / Finding 2 fix): this endpoint is
+    on the public NO_AUDIT_ALLOWLIST so load balancers can poll it without auth.
+    Internal state (queue depths, drain restart count) is auth-gated at
+    `/health/ready/detailed` to avoid leaking pipeline-failure intel to attackers.
+    """
+    ready = True
+    try:
+        async with get_db_session() as session:
+            await session.execute(select(1))
+    except Exception:
+        ready = False
+
+    audit = await audit_health_check()
+    if not audit["healthy"]:
+        ready = False
+
+    body = {
+        "status": "ready" if ready else "not ready",
+        "timestamp": datetime.now().isoformat(),
+    }
+    if not ready:
+        return JSONResponse(body, status_code=503)
+    return body
+
+
+@router.get("/health/ready/detailed")
+async def readiness_detailed():
+    """Auth-gated detailed readiness — full audit pipeline state for operators.
+
+    Default-deny middleware classifies this as a PHI route, so unauthenticated
+    callers get 401 + UNAUTH_PHI_ATTEMPT. Authorized operators see component
+    health and audit pipeline metrics.
     """
     ready = True
     components = {}
 
-    # Check database
     try:
         async with get_db_session() as session:
             await session.execute(select(1))
@@ -219,7 +246,6 @@ async def readiness():
         components["database"] = f"not ready: {str(e)}"
         ready = False
 
-    # Audit pipeline (Issue #3)
     audit = await audit_health_check()
     if not audit["healthy"]:
         ready = False
@@ -230,7 +256,6 @@ async def readiness():
         "components": components,
         **{k: v for k, v in audit.items() if k != "healthy"},
     }
-
     if not ready:
         return JSONResponse(body, status_code=503)
     return body
