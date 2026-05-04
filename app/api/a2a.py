@@ -1,13 +1,9 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+
 from ..a2a.auth import issue_token
+from ..schemas.a2a import TokenRequest
 
 router = APIRouter(prefix="/a2a")
-
-
-class TokenRequest(BaseModel):
-    client_id: str
-    client_secret: str
 
 
 @router.post("/token")

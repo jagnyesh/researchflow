@@ -15,7 +15,7 @@ Endpoints:
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from app.database import get_db_session
 from app.database.models import User as UserModel
@@ -27,36 +27,15 @@ from app.security.dependencies import (
     User,
 )
 from app.security.auth import get_password_hash, verify_password
+from app.schemas.users import PasswordChange, UserCreate, UserUpdate
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-class UserCreate(BaseModel):
-    """User creation request"""
-
-    email: EmailStr
-    full_name: str
-    department: Optional[str] = None
-    role: str = "researcher"  # researcher, data_steward, admin
-    password: str  # pragma: allowlist secret  # TODO: Use hashed passwords
-
-
-class UserUpdate(BaseModel):
-    """User update request"""
-
-    full_name: Optional[str] = None
-    department: Optional[str] = None
-    role: Optional[str] = None
-    is_active: Optional[bool] = None
-
-
-class PasswordChange(BaseModel):
-    """Password change request"""
-
-    current_password: str  # pragma: allowlist secret
-    new_password: str  # pragma: allowlist secret
+# UserCreate, UserUpdate, PasswordChange migrated to app/schemas/users.py
+# (Sprint 6.1 Phase 2.3 Issue #6)
 
 
 class UserResponse(BaseModel):

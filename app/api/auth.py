@@ -14,7 +14,7 @@ from datetime import timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 from app.security.auth import (
     create_access_token,
@@ -27,17 +27,14 @@ from app.security.dependencies import get_current_user, get_current_active_user,
 from app.security.rate_limit import limiter
 from app.database import get_db_session
 from app.database.models import User as UserModel
+from app.schemas.auth import LoginRequest
 from sqlalchemy import select
 
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 
-class LoginRequest(BaseModel):
-    """Login request model"""
-
-    email: EmailStr
-    password: str
+# LoginRequest migrated to app/schemas/auth.py (Sprint 6.1 Phase 2.3 Issue #6)
 
 
 class UserResponse(BaseModel):
