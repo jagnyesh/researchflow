@@ -1,12 +1,9 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
+
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
+from ..schemas.sql_on_fhir import SQLQueryRequest
 
 router = APIRouter()
-
-
-class SQLQueryRequest(BaseModel):
-    sql: str
 
 
 @router.post("/sql_query")
