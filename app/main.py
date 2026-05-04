@@ -34,6 +34,8 @@ from .agents.coordinator_agent import CoordinatorAgent
 from .security.rate_limit import setup_rate_limiting
 from .security import audit_middleware as audit_mw
 from .security.audit_drain import audit_drain_loop, recovery_sweep
+from .schemas import phi_safe_validation_handler
+from fastapi.exceptions import RequestValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +158,10 @@ setup_rate_limiting(app)
 
 # Audit middleware (Sprint 6.1 Phase 2.2 Issue #1 — tracer bullet, /sql_query only)
 app.middleware("http")(audit_mw.audit_middleware)
+
+# PHI-safe validation error handler (Sprint 6.1 Phase 2.3 Issue #4 — strips
+# input/url/ctx from 422 responses to close the Sentry/Datadog leak vector)
+app.add_exception_handler(RequestValidationError, phi_safe_validation_handler)
 
 app.include_router(health_router)
 app.include_router(auth_router)  # Authentication endpoints (Sprint 6)
