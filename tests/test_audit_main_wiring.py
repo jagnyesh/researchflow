@@ -44,6 +44,25 @@ async def test_audit_middleware_is_installed_on_app():
 
 
 @pytest.mark.asyncio
+async def test_a2a_token_endpoint_is_reachable_through_middleware(fake_audit_redis):
+    """Bootstrap: /a2a/token is the credential-issuance endpoint. Default-deny
+    + middleware-side service-token decode would 401 every caller because the
+    caller has no token yet — this test guards against that regression.
+    """
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        # Valid local-dev creds (issue_token accepts client_id == client_secret)
+        response = await client.post(
+            "/a2a/token", json={"client_id": "agent-x", "client_secret": "agent-x"}
+        )
+    assert response.status_code == 200, f"got {response.status_code}: {response.text}"
+    assert "access_token" in response.json()
+
+
+@pytest.mark.asyncio
 async def test_sql_query_endpoint_enqueues_pre_and_post_via_real_app(fake_audit_redis):
     """Hit the real /sql_query route on app.main:app and assert pre+post events."""
     from datetime import timedelta

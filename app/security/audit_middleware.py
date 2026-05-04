@@ -139,15 +139,16 @@ NO_AUDIT_ALLOWLIST = frozenset(
     }
 )
 
-# Routes that don't require auth (you can't be authenticated to log in) but
-# still need audit — login attempts are themselves auditable HIPAA events.
-# Must be a strict superset of NO_AUDIT_ALLOWLIST: a path that skips audit
-# necessarily skips auth too.
+# Routes that don't require auth (you can't be authenticated to log in or
+# bootstrap a service token) but still need audit. Login attempts and service
+# token issuance are auditable credential events.
+# Must be a strict superset of NO_AUDIT_ALLOWLIST.
 NON_AUTH_ALLOWLIST = NO_AUDIT_ALLOWLIST | frozenset(
     {
         "/auth/login",
         "/auth/refresh",
         "/auth/logout",
+        "/a2a/token",  # service-token issuance: chicken-and-egg, can't require a token to get one
     }
 )
 

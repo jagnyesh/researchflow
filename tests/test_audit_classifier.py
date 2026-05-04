@@ -33,7 +33,7 @@ def test_no_audit_allowlist_paths_classify_as_no_audit(path):
 
 @pytest.mark.parametrize(
     "path",
-    ["/auth/login", "/auth/refresh", "/auth/logout"],
+    ["/auth/login", "/auth/refresh", "/auth/logout", "/a2a/token"],
 )
 def test_non_auth_allowlist_paths_are_audited_without_auth(path):
     assert classify_route(path) is RouteClass.NON_AUTH_AUDITED
@@ -50,7 +50,6 @@ def test_non_auth_allowlist_paths_are_audited_without_auth(path):
         "/approvals/pending",
         "/users",
         "/users/abc-123",
-        "/a2a/token",
         "/mcp/context",
         "/some/path/never/seen/before",
     ],
