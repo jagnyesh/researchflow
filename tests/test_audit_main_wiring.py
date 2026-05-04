@@ -17,9 +17,10 @@ from app.security import audit_middleware as am
 @pytest.fixture
 async def fake_audit_redis():
     client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    previous = am._audit_redis
     am.set_audit_redis(client)
     yield client
-    am.set_audit_redis(None)
+    am.set_audit_redis(previous)
     await client.aclose()
 
 
@@ -43,11 +44,13 @@ async def test_audit_middleware_is_installed_on_app():
 
 
 @pytest.mark.asyncio
-async def test_sql_query_endpoint_enqueues_via_real_app(fake_audit_redis):
-    """Hit the real /sql_query route on app.main:app and assert RPUSH happened."""
+async def test_sql_query_endpoint_enqueues_pre_and_post_via_real_app(fake_audit_redis):
+    """Hit the real /sql_query route on app.main:app and assert pre+post events."""
+    from datetime import timedelta
     from httpx import AsyncClient, ASGITransport
     from app.main import app
     from app.adapters.sql_on_fhir import SQLonFHIRAdapter
+    from app.security.auth import create_access_token
 
     # Stub the SQL execution so we don't need HAPI running
     async def stub_execute(self, sql):
@@ -55,13 +58,25 @@ async def test_sql_query_endpoint_enqueues_via_real_app(fake_audit_redis):
 
     SQLonFHIRAdapter.execute_sql = stub_execute
 
+    token = create_access_token(
+        {"sub": "user@example.com", "user_id": "user-7", "role": "researcher"},
+        expires_delta=timedelta(minutes=5),
+    )
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/sql_query", json={"sql": "SELECT 1"})
+        response = await client.post(
+            "/sql_query",
+            json={"sql": "SELECT 1"},
+            headers={"authorization": f"Bearer {token}"},
+        )
 
     assert response.status_code == 200
     queue_len = await fake_audit_redis.llen(am.AUDIT_QUEUE_KEY)
-    assert queue_len == 1
-    payload = json.loads(await fake_audit_redis.lpop(am.AUDIT_QUEUE_KEY))
-    assert payload["route_template"] == "/sql_query"
-    assert payload["status_code"] == 200
+    assert queue_len == 2
+    pre = json.loads(await fake_audit_redis.lpop(am.AUDIT_QUEUE_KEY))
+    post = json.loads(await fake_audit_redis.lpop(am.AUDIT_QUEUE_KEY))
+    assert pre["event_type"] == "PHI_ACCESS_REQUESTED"
+    assert pre["user_id"] == "user-7"
+    assert post["event_type"] == "PHI_ACCESS_COMPLETED"
+    assert post["status_code"] == 200

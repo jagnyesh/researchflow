@@ -11,7 +11,7 @@ Usage:
 """
 
 from typing import Optional
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -31,28 +31,17 @@ class User(BaseModel):
     is_active: bool = True
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+async def get_current_user(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> User:
+    """Extract and validate JWT token from Authorization header.
+
+    Side effect: writes the resolved User to ``request.state.principal`` so
+    audit middleware (and any downstream consumer) sees a unified principal
+    regardless of which path resolved it (Sprint 6.1 Phase 2.2 Issue #2).
     """
-    Extract and validate JWT token from Authorization header
-
-    Args:
-        credentials: HTTP Bearer credentials from Authorization header
-
-    Returns:
-        User object with email, user_id, and role
-
-    Raises:
-        HTTPException: 401 if token is invalid or expired
-
-    Usage:
-        @app.get("/api/protected")
-        async def protected_endpoint(user: User = Depends(get_current_user)):
-            return {"message": f"Hello {user.email}"}
-    """
-    # Extract token from credentials
     token = credentials.credentials
-
-    # Decode and validate token
     token_data = decode_access_token(token)
 
     if token_data is None:
@@ -62,14 +51,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Return user object (in production, would fetch from database)
-    # For Phase 1.1, we trust the token data
-    return User(
+    user = User(
         email=token_data.email,
         user_id=token_data.user_id,
         role=token_data.role or "researcher",
         is_active=True,
     )
+    request.state.principal = user
+    return user
 
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:

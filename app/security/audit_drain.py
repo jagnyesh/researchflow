@@ -33,12 +33,19 @@ async def process_one_audit_event(redis_client) -> bool:
     timestamp_str = payload.get("timestamp")
     timestamp = datetime.fromisoformat(timestamp_str) if timestamp_str else datetime.utcnow()
 
+    status_code = payload.get("status_code")
     audit = AuditLog(
         timestamp=timestamp,
         user_id=payload.get("user_id"),
-        event_type="PHI_ACCESS",
+        event_type=payload.get("event_type", "PHI_ACCESS"),
         action=payload.get("method"),
-        result="success" if payload.get("status_code", 500) < 400 else "failure",
+        resource_type=payload.get("resource_type"),
+        resource_id=payload.get("resource_id"),
+        result=(
+            "success"
+            if status_code is None or status_code < 400
+            else ("auth_failed" if status_code == 401 else "failure")
+        ),
         ip_address=payload.get("ip_address"),
         user_agent=payload.get("user_agent"),
         phi_accessed=True,

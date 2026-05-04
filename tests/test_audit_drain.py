@@ -51,6 +51,30 @@ async def test_process_one_audit_event_empty_queue_returns_false(fake_audit_redi
 
 
 @pytest.mark.asyncio
+async def test_process_one_audit_event_uses_payload_event_type(fake_audit_redis, clean_database):
+    """Issue #2 emits typed events (PHI_ACCESS_REQUESTED etc.); drain must respect them."""
+    payload = {
+        "event_type": "PHI_ACCESS_REQUESTED",
+        "phase": "requested",
+        "user_id": "user-x",
+        "method": "POST",
+        "route_template": "/sql_query",
+        "status_code": None,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+    await fake_audit_redis.rpush("audit:queue", json.dumps(payload))
+
+    processed = await process_one_audit_event(fake_audit_redis)
+
+    assert processed is True
+    async with get_db_session() as session:
+        result = await session.execute(select(AuditLog))
+        rows = result.scalars().all()
+    assert len(rows) == 1
+    assert rows[0].event_type == "PHI_ACCESS_REQUESTED"
+
+
+@pytest.mark.asyncio
 async def test_process_one_audit_event_handles_null_user_id(fake_audit_redis, clean_database):
     payload = {
         "user_id": None,

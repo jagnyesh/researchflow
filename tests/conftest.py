@@ -53,3 +53,22 @@ async def clean_database():
 def init_test_db(event_loop):
     """Initialize test database schema once"""
     event_loop.run_until_complete(init_db())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def session_audit_redis(event_loop):
+    """Provide a default fakeredis client for the audit pipeline (Issue #2).
+
+    Without this, the audit middleware fails-closed (5xx) on every PHI request
+    because no audit Redis is configured. Tests that need their own fakeredis
+    instance (e.g. to assert RPUSH content) override this with a function-scoped
+    fixture that save/restores around it.
+    """
+    import fakeredis.aioredis
+    from app.security import audit_middleware as am
+
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    am.set_audit_redis(fake)
+    yield fake
+    am.set_audit_redis(None)
+    event_loop.run_until_complete(fake.aclose())
