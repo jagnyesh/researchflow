@@ -33,6 +33,11 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 - [ ] Sprint 14 — Real-Time Cohort Discovery (3 weeks) — FHIR Subscription listener wired to speed layer
 - [ ] Sprint 15 — Federated Query Engine (3 weeks) — cross-institution queries without raw data exchange
 
+## Sprint 6.1 follow-ons (defer until pilot user feedback)
+
+- [ ] **Phase 2.2.1** — `idempotency_key` column on `AuditLog` for exactly-once semantics; current Phase 2.2 accepts dupes (acceptable per design — auditors care about presence). Ship if/when query-time dedup proves operationally annoying.
+- [ ] **Phase 2.3.1** — Discriminated unions for `Dict[str, Any]` fields in request schemas (`structured_requirements`, `requested_changes`, `modifications`, `search_params`, `view_definition`). Phase 2.3 wraps these in `BoundedDict` for size guards; explicit shape work requires per-dict investigation (2-3 weeks per dict). Defer until Sprint 11+ when domain stability allows.
+
 ## Out-of-band tooling debt (this reorg's own follow-on)
 
 - [ ] **Phase 2 of doc reorg**: hooks (PreToolUse/PostToolUse/SessionStart) wired into `.claude/settings.json` — alongside Sprint 6.1 Phase 2.2

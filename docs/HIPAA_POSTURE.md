@@ -121,6 +121,116 @@ Sprint 6.1 Phase 2.2 audit pipeline test surface (~70 tests across):
 
 ---
 
+## Phase 2.3 — Input validation framework
+
+**Status:** complete (Issues #4, #5, #6 — see `git log --grep "feat(schemas)"`).
+**Maps to:** §164.312(c)(1) "Integrity" — protect ePHI from improper alteration; §164.312(b) "Audit Controls" indirectly (validation failures still produce audit events through Phase 2.2's pre/post pair).
+
+### Goal
+
+Bound, type, and validate every request body that flows user input into LLMs, SQL generation, agents, or credential checks. Strip rejected values from 422 responses to close the Sentry/Datadog PHI-leak vector.
+
+### Framework architecture
+
+```
+app/schemas/
+├── __init__.py        re-exports framework primitives
+├── _base.py           PHIInputModel — strict-by-default base class
+├── _types.py          ShortText, MediumText, LongText, BoundedDict, IRBNumber, EmailStr
+├── _errors.py         phi_safe_validation_handler — wired into app.main lifespan
+└── {router}.py × 8    per-router schema files
+```
+
+### Constraint conventions
+
+| Type | Cap | Used for |
+|---|---|---|
+| `ShortText` | 200 chars | names, IDs, view_names, tags |
+| `MediumText` | 2,000 chars | notes, reasons, departmental descriptions |
+| `LongText` | 50,000 chars | `initial_request`, `sql`, free-form prose (~10K LLM tokens; rejects 1MB DoS bodies) |
+| `BoundedDict` | 100 keys × 5 depth | `Dict[str, Any]` escape-hatch fields — JSON-bomb defense |
+| `EmailStr` | RFC 5321 | every `email` field across all routers |
+| `IRBNumber` | regex `^IRB[-/_]?[A-Z0-9-/_]+$`, max 50 | IRB approval numbers (permissive — supports institutional variation) |
+
+### PHI-safe error response contract
+
+422 body returns only `{loc, msg, type}` per error:
+
+```json
+{
+  "detail": [
+    {"loc": ["body", "researcher_email"], "msg": "value is not a valid email address", "type": "value_error"},
+    {"loc": ["body", "irb_number"], "msg": "String should match pattern '^IRB[-/_]?[A-Z0-9-/_]+$'", "type": "string_pattern_mismatch"}
+  ]
+}
+```
+
+**Stripped from default Pydantic response:**
+- `input` — the rejected value (PHI/credential leak)
+- `url` — Pydantic-internal pointer that leaks Pydantic version
+- `ctx` — constraint metadata; some Pydantic error types put input into `ctx.input`
+
+**Why strip everything (not field-aware redaction):** defensibility to institutional reviewer is unconditional — "validation errors never contain field values." Field-aware allowlists invite the question "what if a field is missing from the allowlist?" Closes Sentry/Datadog leak vector by construction.
+
+**Logging:** handler logs `validation_failed loc=… type=…` only — never the input value or request body.
+
+**No separate `VALIDATION_FAILURE` audit event** — Phase 2.2's pre+post middleware pair already records `PHI_ACCESS_REQUESTED` and `PHI_ACCESS_COMPLETED status_code=422`. Auditors reconstruct from the pair.
+
+### What `audit_logs` does NOT contain (still applies after Phase 2.3)
+
+`audit_logs` remains **metadata only**, NOT PHI. The Phase 2.3 `BoundedDict` validators bound the size of dict fields that flow into request bodies, but those dicts are not stored in `audit_logs.event_data`. Phase 2.2's PHI boundary (route_template, not resolved path; status_code; latency_ms) is unchanged.
+
+### Why no SQL keyword filtering on `SQLQueryRequest`
+
+The `/sql_query` endpoint exists to run SQL. Restricting `DROP|DELETE|INSERT|UPDATE|ALTER|CREATE` via regex would:
+1. Be HIPAA security theater — trivially bypassed by `SELECT * FROM x; DROP/* */ TABLE y` or comment-encoding. A reviewer who knows what they're doing spots it as such and loses confidence in the rest of the security posture.
+2. Break the endpoint's reason for being.
+
+**The right control layer is DB-level least-privilege**: the API user has SELECT-only on the FHIR schema. That is the institutional reviewer's expected answer.
+
+`SQLQueryRequest.sql` is bounded by `LongText` (50K cap, DoS defense) and that is the only validation applied.
+
+### Why permissive IRB regex (not canonical)
+
+Sales-grade HIPAA targets **multiple institutions**, each of which uses different IRB number formats:
+
+```
+IRB-001                  IRB-2024-001            IRB-2024-HF-001
+IRB-2025-001             IRB-2025-E2E-TEST-001   IRB/2025/04/123
+```
+
+A canonical regex like `^IRB-\d{4}-\d{3,8}$` would reject 2 of 5 existing fixture formats and an unknown number of real institutional formats. Permissive regex catches obvious garbage (`"hello"`, `"DROP TABLE"`) without committing to one institution's format.
+
+### Failure modes
+
+| Scenario | Behavior |
+|---|---|
+| Request body has malformed email | 422 with PHI-safe body, audit pair emitted with `status_code=422` |
+| Request body contains unknown field (`is_admin: true`) | 422 with `extra_forbidden` error — defends against attacker-supplied keys getting persisted |
+| Request body contains `Dict[str, Any]` with 101+ keys | 422 — JSON bomb defense |
+| Request body contains nested dict 6+ levels deep | 422 — JSON bomb defense |
+| Request `Authorization` JWT expired but body validates | Phase 2.2 middleware emits `UNAUTH_PHI_ATTEMPT`, returns 401 — body is never validated (auth comes first) |
+
+### Phase 2.3.1 — deferred
+
+`Dict[str, Any]` fields (`structured_requirements`, `requested_changes`, `modifications`, `search_params`, `view_definition`) are bounded by `BoundedDict` but not shape-validated. Discriminated-union shape work requires per-dict investigation (what shapes occur in production? what does consumer code do with them?) that is 2-3 weeks per dict. Deferred until Sprint 11+ when domain stability allows. Tracked in `BACKLOG.md`.
+
+### Test coverage
+
+163 schema tests across 9 test files plus 1 framework integration test:
+
+- `tests/test_schemas/test_types.py` (23) — typed primitives
+- `tests/test_schemas/test_bounded_dict.py` (11) — JSON-bomb defense
+- `tests/test_schemas/test_base.py` (5) — PHIInputModel base class
+- `tests/test_schemas/test_errors.py` (7) — PHI-safe handler unit tests
+- `tests/test_schemas/test_main_wiring.py` (2) — handler installed on `app.main:app`
+- `tests/test_schemas/test_sql_on_fhir.py` (10) — tracer bullet
+- `tests/test_schemas/test_research.py` (28), `test_approvals.py` (19), `test_analytics.py` (15), `test_mcp.py` (6) — Tier 1
+- `tests/test_schemas/test_auth.py` (7), `test_users.py` (17), `test_a2a.py` (6) — Tier 2
+- `tests/test_schemas/test_validation_integration.py` (1) — end-to-end: malformed body → PHI-safe 422 + audit pre/post pair
+
+---
+
 ## Future sections
 
 - **Phase 3a — TLS** (in progress)

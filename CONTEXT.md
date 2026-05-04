@@ -1,10 +1,10 @@
 # ResearchFlow — Current State
 
 **Sprint:** 6.1 (Security Baseline)
-**Phase:** 2.2 complete — moving to 2.3 / 3 next
-**Branch:** `feature/sprint6-security-baseline` (6 audit-pipeline commits unmerged)
-**Overall progress:** ~55% of Sprint 6.1 complete; ~10/22 sprints overall
-**Last updated:** 2026-05-03
+**Phase:** 2.3 complete — moving to 3a / 3b next
+**Branch:** `feature/sprint6-security-baseline` (14 commits unmerged: 8 audit-pipeline + 6 input-validation)
+**Overall progress:** ~70% of Sprint 6.1 complete; ~10/22 sprints overall
+**Last updated:** 2026-05-04
 
 ## Active sprint goal
 
@@ -13,13 +13,13 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 ## In progress
 
 - [ ] Phase 1.5 — Wire `Depends(get_current_user)` + `@limiter.limit` onto PHI routes (`sql_on_fhir`, `research`, `analytics`, `materialized_views`, `approvals`); separate service-token auth for agent routes (`mcp`, `a2a`). **Note:** Phase 2.2 middleware now enforces auth on ALL non-allowlisted routes by default; the per-route `Depends` work in this phase is now defense-in-depth rather than primary gating.
-- [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review. See "What just shipped" below.
-- [ ] Phase 2.3 — Input validation framework via per-domain Pydantic schemas in `app/schemas/`
+- [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
+- [x] Phase 2.3 — Input validation framework shipped via 3 issues. See "What just shipped" below.
 - [ ] Phase 3a — TLS via `HTTPSRedirectMiddleware` gated by `ENVIRONMENT=production`; uvicorn `--proxy-headers --forwarded-allow-ips="*"`
 - [ ] Phase 3b — Encryption-at-rest: `sqlalchemy-utils.EncryptedType` on PHI columns (User.SSN/MRN/DOB/etc.); half-day spike to verify asyncpg compatibility
-- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 section already drafted)
+- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 + 2.3 already drafted)
 
-**Estimated remaining:** 12-18 working days = 2.5-4 calendar weeks (Phase 2.2 done; ~5 days saved vs original estimate)
+**Estimated remaining:** 8-13 working days = 2-3 calendar weeks (Phase 2.3 done; ~4 days saved vs original Phase 2.3 estimate)
 
 ## Blockers / decisions needed
 
@@ -28,8 +28,17 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 
 ## What just shipped
 
-Sprint 6.1 Phase 2.2 — audit pipeline (6 commits on `feature/sprint6-security-baseline`, 74 audit tests, ready for merge):
+Sprint 6.1 Phase 2.3 — input validation framework (6 commits, 163 schema tests + integration test, ready for merge):
 
+- `d65f1d2` (2026-05-04) — Issue #6: migrate Tier 2 credential models (auth, users, a2a) + framework integration test
+- `e07f3f2` (2026-05-04) — Issue #5: migrate Tier 1 PHI models (research, approvals, analytics, mcp)
+- `706c6b9` (2026-05-04) — Issue #5: migrate sql_on_fhir to PHIInputModel — tracer bullet
+- `12bf6ff` (2026-05-04) — Issue #4: wire PHI-safe RequestValidationError handler in lifespan
+- `eec5d6c` (2026-05-04) — Issue #4: framework primitives — PHIInputModel, typed primitives, bounded dict validator
+
+Sprint 6.1 Phase 2.2 — audit pipeline (8 commits on `feature/sprint6-security-baseline`, 74 audit tests):
+
+- `e5a094b` (2026-05-03) — wire E2E test for Issue #2 auth + explicit SQLite to bypass stale .env Postgres
 - `d277723` (2026-05-03) — Finding 2 fix: gate detailed health payload behind auth (two-tier `/health/ready` + `/health/ready/detailed`)
 - `a7840fa` (2026-05-03) — Finding 3 fix: correct schema versioning claim in HIPAA doc
 - `1b30e5c` (2026-05-03) — Finding 1 fix: allow `/a2a/token` through middleware (bootstrap deadlock)
