@@ -198,6 +198,7 @@ def _make_payload(
 ) -> dict:
     resource_type, resource_id = resolve_resource(route_template)
     return {
+        "schema_version": 1,
         "event_type": event_type,
         "phase": phase,
         "user_id": user_id,

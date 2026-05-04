@@ -101,6 +101,8 @@ async def test_phi_route_authenticated_emits_pre_and_post_events(fake_audit_redi
     assert post["user_id"] == "user-42"
     assert post["status_code"] == 200
     assert isinstance(post["latency_ms"], (int, float))
+    assert pre["schema_version"] == 1
+    assert post["schema_version"] == 1
 
 
 # --- PHI route, no auth: UNAUTH event + 401, handler NOT called ---
