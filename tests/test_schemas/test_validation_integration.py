@@ -83,3 +83,34 @@ async def test_phi_route_with_invalid_body_returns_phi_safe_422_and_full_audit_p
 
     completed = next(e for e in events if e["event_type"] == "PHI_ACCESS_COMPLETED")
     assert completed["status_code"] == 422
+
+
+@pytest.mark.asyncio
+async def test_oversized_body_rejected_413_without_polluting_audit_queue(fake_audit_redis):
+    """CSO Finding 1 fix: oversized requests get 413 BEFORE audit middleware runs.
+
+    Verifies the body_size_limit_middleware is wired in front of audit_middleware,
+    so attacker probing with 100MB bodies doesn't fill the audit queue with noise.
+    """
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.security import audit_middleware as am
+    from app.security.body_size import MAX_REQUEST_BODY_BYTES
+
+    transport = ASGITransport(app=app)
+    huge_body = '{"sql": "' + ("x" * (MAX_REQUEST_BODY_BYTES + 100)) + '"}'
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/sql_query",
+            content=huge_body,
+            headers={"content-type": "application/json"},
+        )
+
+    assert response.status_code == 413
+
+    # Audit queue MUST be empty — body_size middleware short-circuited before audit ran
+    queue_len = await fake_audit_redis.llen(am.AUDIT_QUEUE_KEY)
+    assert (
+        queue_len == 0
+    ), f"audit queue had {queue_len} events; body-size middleware order is wrong"

@@ -94,3 +94,50 @@ def test_bound_dict_size_custom_caps():
         bound_dict_size({"a": 1, "b": 2, "c": 3}, max_keys=2)
     with pytest.raises(ValueError, match="max_depth=1"):
         bound_dict_size({"a": {"b": {"c": "deep"}}}, max_depth=1)
+
+
+# --- leaf-string cap (CSO Finding 1 fix) ---
+
+
+def test_leaf_string_at_10k_passes():
+    """10KB leaf string is the default cap and should pass."""
+    big_str = "x" * 10_000
+    assert _Wrap(d={"k": big_str}).d["k"] == big_str
+
+
+def test_leaf_string_one_over_cap_rejects():
+    """10KB+1 leaf string exceeds cap and should fail."""
+    big_str = "x" * 10_001
+    with pytest.raises(ValidationError):
+        _Wrap(d={"k": big_str})
+
+
+def test_huge_leaf_string_inside_dict_rejected_dos_defense():
+    """The CSO Finding 1 exploit: 100MB string inside BoundedDict must be rejected.
+
+    Without leaf-string bounds, a single dict with one giant string value bypasses
+    LongText caps and causes memory exhaustion. With the fix, this rejects fast.
+    """
+    huge = "x" * 100_001
+    with pytest.raises(ValidationError):
+        _Wrap(d={"evil": huge})
+
+
+def test_leaf_string_inside_nested_dict_respects_cap():
+    """Cap applies at every level, not just top-level values."""
+    too_big = "x" * 10_001
+    with pytest.raises(ValidationError):
+        _Wrap(d={"outer": {"inner": too_big}})
+
+
+def test_leaf_string_inside_list_respects_cap():
+    """List elements are walked too — strings inside lists are bounded."""
+    too_big = "x" * 10_001
+    with pytest.raises(ValidationError):
+        _Wrap(d={"items": ["ok", too_big]})
+
+
+def test_bound_dict_size_custom_max_leaf_str():
+    """Confirm leaf-string cap is tunable via kwarg."""
+    with pytest.raises(ValueError, match="max_leaf_str=5"):
+        bound_dict_size({"k": "too long"}, max_leaf_str=5)

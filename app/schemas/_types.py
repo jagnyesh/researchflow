@@ -36,11 +36,21 @@ IRBNumber = Annotated[
 ]
 
 
-def bound_dict_size(value: Any, max_keys: int = 100, max_depth: int = 5) -> Any:
-    """Reject dicts with too many keys or too-deep nesting (JSON bomb defense).
+def bound_dict_size(
+    value: Any,
+    max_keys: int = 100,
+    max_depth: int = 5,
+    max_leaf_str: int = 10_000,
+) -> Any:
+    """Reject dicts with too many keys, too-deep nesting, or oversized leaf strings.
 
-    Walks both nested dicts and lists. Non-dict input passes through unchanged
-    so Pydantic's normal type check runs (and fails appropriately).
+    Walks both nested dicts and lists. Strings at any leaf position are bounded
+    by max_leaf_str (default 10KB) — without this, a single dict with one giant
+    string value bypasses LongText caps and causes memory exhaustion (CSO Phase 2.3
+    Finding 1: combined with no body-size limit, this is a real DoS vector).
+
+    Non-dict top-level input passes through unchanged so Pydantic's normal type
+    check runs (and fails appropriately).
     """
     if not isinstance(value, dict):
         return value
@@ -56,6 +66,9 @@ def bound_dict_size(value: Any, max_keys: int = 100, max_depth: int = 5) -> Any:
         elif isinstance(v, list):
             for sub in v:
                 _walk(sub, depth + 1)
+        elif isinstance(v, str):
+            if len(v) > max_leaf_str:
+                raise ValueError(f"leaf string has {len(v)} chars, max_leaf_str={max_leaf_str}")
 
     _walk(value)
     return value

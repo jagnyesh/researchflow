@@ -34,6 +34,7 @@ from .agents.coordinator_agent import CoordinatorAgent
 from .security.rate_limit import setup_rate_limiting
 from .security import audit_middleware as audit_mw
 from .security.audit_drain import audit_drain_loop, recovery_sweep
+from .security.body_size import body_size_limit_middleware
 from .schemas import phi_safe_validation_handler
 from fastapi.exceptions import RequestValidationError
 
@@ -156,8 +157,13 @@ app = FastAPI(
 # Setup rate limiting (Sprint 6 Phase 1.4)
 setup_rate_limiting(app)
 
-# Audit middleware (Sprint 6.1 Phase 2.2 Issue #1 — tracer bullet, /sql_query only)
+# Audit middleware (Sprint 6.1 Phase 2.2 — default-deny + fail-closed PHI gate)
 app.middleware("http")(audit_mw.audit_middleware)
+
+# Body-size limit middleware (Sprint 6.1 Phase 2.3 CSO Finding 1 fix — defense-in-depth
+# DoS guard). Added AFTER audit_middleware so it runs FIRST (FastAPI middleware order
+# is reverse of registration). 413-rejected requests don't pollute the audit queue.
+app.middleware("http")(body_size_limit_middleware)
 
 # PHI-safe validation error handler (Sprint 6.1 Phase 2.3 Issue #4 — strips
 # input/url/ctx from 422 responses to close the Sentry/Datadog leak vector)
