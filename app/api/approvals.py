@@ -6,38 +6,21 @@ Allows informaticians and admins to review and approve/reject requests.
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from typing import Optional
 from datetime import datetime
 import logging
 
 from ..database import get_db_session
 from ..services.approval_service import ApprovalService
 from ..orchestrator.orchestrator import ResearchRequestOrchestrator
+from ..schemas.approvals import ApprovalResponse, ScopeChangeRequest
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 
-class ApprovalResponse(BaseModel):
-    """Approval decision request"""
-
-    decision: str = Field(..., description="approve, reject, or modify")
-    reviewer: str = Field(..., description="User ID or email of reviewer")
-    notes: Optional[str] = Field(None, description="Review notes")
-    modifications: Optional[Dict[str, Any]] = Field(
-        None, description="Modifications (for modify decision)"
-    )
-
-
-class ScopeChangeRequest(BaseModel):
-    """Request to change scope mid-workflow"""
-
-    request_id: str = Field(..., description="Research request ID")
-    requested_by: str = Field(..., description="Email of requester")
-    requested_changes: Dict[str, Any] = Field(..., description="Requested changes to requirements")
-    reason: Optional[str] = Field(None, description="Reason for scope change")
+# Schemas migrated to app/schemas/approvals.py (Sprint 6.1 Phase 2.3 Issue #5)
 
 
 # Global orchestrator instance (will be set by main.py)

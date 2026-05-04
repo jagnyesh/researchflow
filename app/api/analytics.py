@@ -22,6 +22,11 @@ from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
 from ..sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
 from ..sql_on_fhir.runner.hybrid_runner import HybridRunner
 from ..sql_on_fhir.runner import create_postgres_runner
+from ..schemas.analytics import (
+    CountRequest,
+    CreateViewDefinitionRequest,
+    ViewDefinitionRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -111,14 +116,7 @@ async def create_runner():
         return runner, cleanup
 
 
-class ViewDefinitionRequest(BaseModel):
-    """Request to execute a ViewDefinition"""
-
-    view_name: str = Field(..., description="Name of the ViewDefinition to execute")
-    search_params: Optional[Dict[str, Any]] = Field(
-        None, description="FHIR search parameters to filter resources"
-    )
-    max_resources: Optional[int] = Field(None, description="Maximum number of resources to process")
+# ViewDefinitionRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
 
 
 class ViewDefinitionResponse(BaseModel):
@@ -138,11 +136,7 @@ class ViewDefinitionListResponse(BaseModel):
     view_definitions: List[Dict[str, str]]
 
 
-class CreateViewDefinitionRequest(BaseModel):
-    """Request to create a ViewDefinition"""
-
-    view_definition: Dict[str, Any] = Field(..., description="ViewDefinition resource")
-    name: Optional[str] = Field(None, description="Optional name override")
+# CreateViewDefinitionRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
 
 
 @router.get("/view-definitions", response_model=ViewDefinitionListResponse)
@@ -352,13 +346,7 @@ async def execute_view_definition_get(
     return await execute_view_definition(request)
 
 
-class CountRequest(BaseModel):
-    """Request to count resources matching a ViewDefinition"""
-
-    view_name: str = Field(..., description="Name of the ViewDefinition to count")
-    search_params: Optional[Dict[str, Any]] = Field(
-        None, description="FHIR search parameters to filter resources"
-    )
+# CountRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
 
 
 class CountResponse(BaseModel):

@@ -6,8 +6,7 @@ Provides REST API for submitting and managing research data requests.
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any, List
+from typing import Optional
 from datetime import datetime
 import logging
 import uuid
@@ -16,6 +15,7 @@ from pathlib import Path
 from ..database import get_db_session, ResearchRequest, DataDelivery
 from ..orchestrator.workflow_engine import WorkflowState
 from ..services.file_storage import FileStorageService
+from ..schemas.research import ResearchRequestSubmission, RequestProcessingTrigger
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -32,26 +32,7 @@ def set_orchestrator(orch):
     orchestrator = orch
 
 
-class ResearchRequestSubmission(BaseModel):
-    """Research request submission model"""
-
-    researcher_name: str = Field(..., description="Name of the researcher")
-    researcher_email: str = Field(..., description="Email of the researcher")
-    researcher_department: Optional[str] = Field(None, description="Department")
-    irb_number: str = Field(..., description="IRB approval number")
-    initial_request: str = Field(..., description="Natural language research request")
-    structured_requirements: Optional[Dict[str, Any]] = Field(
-        None, description="Pre-structured requirements (optional)"
-    )
-
-
-class RequestProcessingTrigger(BaseModel):
-    """Trigger for processing a specific request"""
-
-    structured_requirements: Optional[Dict[str, Any]] = Field(
-        None, description="Pre-structured requirements"
-    )
-    skip_conversation: bool = Field(False, description="Skip conversational requirements gathering")
+# Schemas migrated to app/schemas/research.py (Sprint 6.1 Phase 2.3 Issue #5)
 
 
 @router.post("/submit")
