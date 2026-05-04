@@ -90,9 +90,11 @@ For "what query did user X run that returned N rows" forensics, that is a separa
 
 ### Schema versioning
 
-Every payload includes `"schema_version": 1`. The drain dispatches on version,
-so new fields added in a later release won't break older drain processes that
-might still be running during a rolling deploy.
+Every payload includes `"schema_version": 1`. The drain reads payload fields
+defensively (`payload.get(field)`) so additive changes (new optional fields) are
+forward-compatible without changes. Version-aware dispatch will be added if/when
+a non-additive schema change (renamed or removed field) ships — at that point a
+v1→v2 handler split lives in `_payload_to_audit_log`.
 
 ### Observability
 
