@@ -231,8 +231,104 @@ A canonical regex like `^IRB-\d{4}-\d{3,8}$` would reject 2 of 5 existing fixtur
 
 ---
 
+## Phase 3a — TLS enforcement
+
+**Status:** complete (Issue #7 — see `git log --grep "feat(tls)"`).
+**Maps to:** §164.312(e)(1) "Transmission Security" — implement technical security measures to guard against unauthorized access to ePHI being transmitted over an electronic communications network.
+
+### Goal
+
+Every PHI-touching request must be encrypted in transit. Browsers must refuse HTTP downgrades. Local development continues to work over plain HTTP without env-var gymnastics.
+
+### Deployment requirement
+
+**Production deployments must run the application container on a private network behind a TLS-terminating proxy.** The proxy (k8s ingress, AWS ALB, GCP Load Balancer, Render/Fly platform) is responsible for:
+- TLS 1.2+ minimum
+- Cipher suite policy
+- Certificate management (issuance, rotation, OCSP stapling)
+- Certificate storage in HSM/Vault if institutional policy requires
+
+The application sees plain HTTP from the proxy with `X-Forwarded-Proto: https` set. uvicorn's `--proxy-headers --forwarded-allow-ips *` rewrites `request.url.scheme` to `"https"` before the app sees the request.
+
+**Why TLS at the LB, not at uvicorn:** institutional pilots deploy via their own platforms. They expect a stateless container that takes plain HTTP from their ingress. BYO-certs into the container creates deployment friction that closes sales doors. Cert management is a separate problem class (Let's Encrypt rotation, ACME challenges, HSM storage) and not Phase 3a-shaped work.
+
+### Redirect contract
+
+Every non-HTTPS request to a non-`/health*` route gets a **308 Permanent Redirect** to the same path on `https://`. Health endpoints (`/health`, `/health/live`, `/health/ready`) pass through without redirect because:
+- Load balancers do plain-HTTP probes from internal subnets by default
+- LBs don't follow 308s and would silently mark the app unhealthy
+- Health endpoints carry no PHI (Phase 2.2 made `/health/ready` return a boolean only)
+
+**308, not 301.** 308 preserves HTTP method and body; 301 may downgrade POST→GET, breaking write requests.
+
+### HSTS configuration
+
+```
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+```
+
+- **`max-age=31536000` (1 year)** — Chrome's preload-list minimum and the institutional-defensible floor. Anything shorter signals lack of commitment.
+- **`includeSubDomains`** — cascades to all current and future subdomains. ResearchFlow has no subdomain story today; setting now forecloses subdomain-on-HTTP footguns later.
+- **`preload` is NOT set.** Submitting to `hstspreload.org` hardcodes the domain into Chromium/Firefox/Safari source. Removal is a months-long manual process. Production domain is unknown — committing now is committing to a name that doesn't exist yet. Trivial 5-minute submission once the domain is real.
+
+HSTS is emitted **only on HTTPS responses, not on the 308 redirect**. Browsers ignore HSTS over HTTP per RFC 6797. The header attaches after `call_next`, so the 308 itself is bare.
+
+### Rollback procedure
+
+If HTTPS becomes unavailable in production, browsers with cached HSTS will refuse plain HTTP for up to 1 year. Rollback options:
+
+1. **Fix HTTPS** — restore the LB / cert infrastructure. This is the expected path.
+2. **Wait out the cache** — the header tells browsers "trust HTTPS for N seconds since last contact." A user who hasn't visited in 1 year has no cached policy.
+3. **Override `HSTS_MAX_AGE`** — set `HSTS_MAX_AGE=300` in the environment so future responses tell browsers to trust HTTPS for only 5 minutes. Doesn't help users with already-cached long max-age.
+
+This is the cost of a 1-year max-age and is acceptable for production-grade HIPAA posture. If the LB/cert infrastructure is unmanaged enough that 1-year HSTS is risky, that infrastructure is itself a HIPAA-compliance concern that needs addressing.
+
+### Environment gating
+
+The TLS middleware is installed at module load **only when `ENVIRONMENT=production`** (strict equality, case-sensitive). Typos (`Production`, trailing space, `prod`) get dev behavior — fail-safe direction. Same posture as Phase 2.2's no-`AUDIT_ENABLED` rule and Phase 2.3's no-`HARDEN_INPUTS` rule.
+
+**Local `make run` and pytest both default to dev mode** (no ENVIRONMENT set → "development" → middleware not installed → no HTTPS redirect → all existing tests work unchanged).
+
+### Forwarded-allow-ips trust boundary
+
+`FORWARDED_ALLOW_IPS=*` (default) trusts `X-Forwarded-Proto` from any source. **Safe iff the container is on a private network** where only the LB can reach it. If the container is internet-reachable directly, an attacker can spoof `X-Forwarded-Proto: https` on a plain-HTTP request and bypass the redirect.
+
+**Startup warning:** `app/main.py` lifespan logs at WARNING when `ENVIRONMENT=production` AND `FORWARDED_ALLOW_IPS=*`:
+```
+production with FORWARDED_ALLOW_IPS=*; container must not be internet-reachable directly.
+```
+
+Operators with deployment-time knowledge of LB subnets can override: `FORWARDED_ALLOW_IPS=10.0.0.0/8` or comma-separated list.
+
+### Middleware order
+
+```
+[outermost — runs first]
+  TLS enforcement      ← installed only when ENVIRONMENT=production
+  body_size_limit      ← Phase 2.3 fix layer 2
+  audit_middleware     ← Phase 2.2 default-deny + fail-closed
+  rate_limiting        ← Phase 1.4
+  → handler
+[innermost — runs last]
+```
+
+HTTP redirects don't pollute the audit queue (TLS runs before audit). Same principle as Phase 2.3's body-size-before-audit ordering.
+
+### Test coverage
+
+22 tests in `tests/test_security/test_tls.py`:
+- HTTP→308 redirect, HTTPS→HSTS header, `/health*` exempt (no redirect, no HSTS)
+- 308 preserves method (POST stays POST) — guards against future "let's switch to 301"
+- X-Forwarded-Proto integration via `uvicorn.middleware.proxy_headers.ProxyHeadersMiddleware`
+- `is_production()` strict equality (5 typo-rejection parametrize cases + default-unset case)
+- HSTS constants: `max-age=31536000`, `includeSubDomains` present, **`preload` absent (regression guard)**
+- `install_tls_middleware_if_production` returns False in dev / True + wires middleware in production
+- FORWARDED_ALLOW_IPS warning logged in production+`*`, NOT logged in dev or production+specific-CIDR
+- TLS middleware NOT on `app.main:app` in dev mode (regression guard against breaking every endpoint test)
+
+---
+
 ## Future sections
 
-- **Phase 3a — TLS** (in progress)
 - **Phase 3b — Encryption-at-rest** (pending)
 - **Phase 4 — End-to-end HIPAA narrative** (pending)

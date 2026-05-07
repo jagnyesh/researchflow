@@ -1,10 +1,10 @@
 # ResearchFlow — Current State
 
 **Sprint:** 6.1 (Security Baseline)
-**Phase:** 2.3 complete — moving to 3a / 3b next
-**Branch:** `feature/sprint6-security-baseline` (14 commits unmerged: 8 audit-pipeline + 6 input-validation)
-**Overall progress:** ~70% of Sprint 6.1 complete; ~10/22 sprints overall
-**Last updated:** 2026-05-04
+**Phase:** 3a complete — moving to 3b next
+**Branch:** `feature/sprint6-security-baseline` (19 commits unmerged: 8 audit + 8 schema + 3 TLS)
+**Overall progress:** ~85% of Sprint 6.1 complete; ~10/22 sprints overall
+**Last updated:** 2026-05-07
 
 ## Active sprint goal
 
@@ -14,12 +14,12 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 
 - [ ] Phase 1.5 — Wire `Depends(get_current_user)` + `@limiter.limit` onto PHI routes (`sql_on_fhir`, `research`, `analytics`, `materialized_views`, `approvals`); separate service-token auth for agent routes (`mcp`, `a2a`). **Note:** Phase 2.2 middleware now enforces auth on ALL non-allowlisted routes by default; the per-route `Depends` work in this phase is now defense-in-depth rather than primary gating.
 - [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
-- [x] Phase 2.3 — Input validation framework shipped via 3 issues. See "What just shipped" below.
-- [ ] Phase 3a — TLS via `HTTPSRedirectMiddleware` gated by `ENVIRONMENT=production`; uvicorn `--proxy-headers --forwarded-allow-ips="*"`
+- [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
+- [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
 - [ ] Phase 3b — Encryption-at-rest: `sqlalchemy-utils.EncryptedType` on PHI columns (User.SSN/MRN/DOB/etc.); half-day spike to verify asyncpg compatibility
-- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 + 2.3 already drafted)
+- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 + 2.3 + 3a already drafted)
 
-**Estimated remaining:** 8-13 working days = 2-3 calendar weeks (Phase 2.3 done; ~4 days saved vs original Phase 2.3 estimate)
+**Estimated remaining:** 5-9 working days = 1.5-2 calendar weeks (Phase 3a done; ~half day vs original 1-day estimate)
 
 ## Blockers / decisions needed
 
@@ -27,6 +27,12 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 - No external pilot user identified. Sprint 6.1 finish-line decision was "ship sales-grade HIPAA posture" — not "wait for users." Outreach is parallel work, not a blocker.
 
 ## What just shipped
+
+Sprint 6.1 Phase 3a — TLS enforcement (3 commits, 22 TLS tests, ready for merge):
+
+- `d067068` (2026-05-07) — Issue #7: wire TLS middleware in lifespan + Dockerfile proxy-headers config
+- `82a02ca` (2026-05-07) — Issue #7: HTTPS-redirect + HSTS middleware with ENVIRONMENT=production gate
+- (commit 3 = this docs commit)
 
 Sprint 6.1 Phase 2.3 — input validation framework (6 commits, 163 schema tests + integration test, ready for merge):
 
