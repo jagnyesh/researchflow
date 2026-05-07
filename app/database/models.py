@@ -9,7 +9,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
-from app.security.encryption import EncryptedText
+from app.security.encryption import EncryptedJSON, EncryptedText
 
 Base = declarative_base()
 
@@ -66,9 +66,9 @@ class RequirementsData(Base):
     principal_investigator = Column(String)
     irb_number = Column(String)
 
-    # Criteria
-    inclusion_criteria = Column(JSON, default=[])  # List of structured criteria with codes
-    exclusion_criteria = Column(JSON, default=[])  # List of structured criteria with codes
+    # Criteria — encrypted at rest (Phase 3b): may contain patient identifiers in label fields
+    inclusion_criteria = Column(EncryptedJSON(), default=list)
+    exclusion_criteria = Column(EncryptedJSON(), default=list)
 
     # Data elements requested
     data_elements = Column(JSON, default=[])  # e.g., ["clinical_notes", "lab_results", "imaging"]
@@ -115,8 +115,8 @@ class FeasibilityReport(Base):
     data_availability = Column(JSON)  # Availability by data element
     overall_availability = Column(Float)
 
-    # Generated SQL
-    phenotype_sql = Column(Text)
+    # Generated SQL — encrypted at rest (Phase 3b): may contain inline patient identifiers
+    phenotype_sql = Column(EncryptedText())
 
     # Timing
     estimated_extraction_time_hours = Column(Float)
