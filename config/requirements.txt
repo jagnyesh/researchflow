@@ -2,6 +2,7 @@ fastapi
 uvicorn[standard]==0.22.0
 httpx
 sqlalchemy[asyncio]
+sqlalchemy-utils>=0.41  # Sprint 6.1 Phase 3b: column-level encryption (StringEncryptedType + FernetEngine)
 asyncpg==0.28.0
 aiosqlite>=0.20  # Required by langgraph-checkpoint-sqlite
 pydantic[email]  # Email validation for user management

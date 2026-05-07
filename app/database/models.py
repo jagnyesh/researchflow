@@ -9,6 +9,8 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
+from app.security.encryption import EncryptedText
+
 Base = declarative_base()
 
 
@@ -29,7 +31,9 @@ class ResearchRequest(Base):
     irb_number = Column(String)
 
     # Request data
-    initial_request = Column(Text, nullable=False)  # Natural language request
+    initial_request = Column(
+        EncryptedText(), nullable=False
+    )  # Natural language request — encrypted at rest (Phase 3b)
     current_state = Column(String, nullable=False)  # Workflow state
     final_state = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)

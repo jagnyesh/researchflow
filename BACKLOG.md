@@ -37,6 +37,7 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 
 - [ ] **Phase 2.2.1** — `idempotency_key` column on `AuditLog` for exactly-once semantics; current Phase 2.2 accepts dupes (acceptable per design — auditors care about presence). Ship if/when query-time dedup proves operationally annoying.
 - [ ] **Phase 2.3.1** — Discriminated unions for `Dict[str, Any]` fields in request schemas (`structured_requirements`, `requested_changes`, `modifications`, `search_params`, `view_definition`). Phase 2.3 wraps these in `BoundedDict` for size guards; explicit shape work requires per-dict investigation (2-3 weeks per dict). Defer until Sprint 11+ when domain stability allows.
+- [ ] **Phase 3b.1** — Researcher-PII encryption (`*.researcher_email`, `User.email`, `User.full_name`, `User.department`). Phase 3b ships ePHI-only encryption (HIPAA §164.312 floor); PII encryption is institution-defensibility nice-to-have. Blocked by `User.email`'s unique-index login lookup — needs deterministic encryption or a separate hashed-email index column. Defer until Sprint 11 (multi-tenant architecture) when the index strategy gets revisited anyway.
 
 ## Out-of-band tooling debt (this reorg's own follow-on)
 

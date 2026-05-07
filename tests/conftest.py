@@ -15,6 +15,15 @@ sys.path.insert(0, project_root)
 # Set test database before importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 
+# Phase 3b: deterministic Fernet key for the test session — DO NOT USE IN PRODUCTION.
+# Set before model import so EncryptedText/EncryptedJSON columns can resolve their
+# key callable on first ORM operation. Generated once with `Fernet.generate_key()`
+# and pinned for reproducibility.
+os.environ.setdefault(
+    "ENCRYPTION_KEY_PRIMARY",
+    "v3J2vUqXk-8CqeI4ZwPVbMx1L_8aJpqg-FTH0nKZQxA=",  # pragma: allowlist secret
+)
+
 from app.database import init_db, get_db_session, get_engine
 from app.database.models import Base
 

@@ -16,14 +16,14 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 - [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
 - [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
 - [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
-- [ ] Phase 3b — Encryption-at-rest: `sqlalchemy-utils.EncryptedType` on PHI columns (User.SSN/MRN/DOB/etc.); half-day spike to verify asyncpg compatibility
+- [ ] Phase 3b — Encryption-at-rest: `sqlalchemy-utils.StringEncryptedType` on Tier 1 freeform-PHI columns — `ResearchRequest.initial_request`, `ResearchRequest.structured_requirements`, `RequirementsData.inclusion_criteria`, `RequirementsData.exclusion_criteria`, `FeasibilityReport.phenotype_sql`. Researcher PII (`*.researcher_email`, `User.email`, `User.full_name`) is out of scope — it's PII, not ePHI under §164.312, and `User.email` is the unique-indexed login key. Half-day spike to verify asyncpg + JSON-column composition.
 - [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 + 2.3 + 3a already drafted)
 
 **Estimated remaining:** 5-9 working days = 1.5-2 calendar weeks (Phase 3a done; ~half day vs original 1-day estimate)
 
 ## Blockers / decisions needed
 
-- Encryption-at-rest spike must run against Postgres (asyncpg) — SQLite mode doesn't support `EncryptedType`. Production must be Postgres; documented as deployment requirement.
+- Encryption-at-rest spike: `sqlalchemy-utils.StringEncryptedType` works at the column level on both SQLite and Postgres (it's transparent serialization, not a DB feature). The asyncpg-specific risk is the JSON-column composition (`StringEncryptedType` wrapping a JSON serializer round-trip) — that's the half-day spike. SQLite test path stays; production-on-Postgres remains the deployment requirement for other reasons.
 - No external pilot user identified. Sprint 6.1 finish-line decision was "ship sales-grade HIPAA posture" — not "wait for users." Outreach is parallel work, not a blocker.
 
 ## What just shipped
