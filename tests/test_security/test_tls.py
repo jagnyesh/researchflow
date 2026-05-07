@@ -290,13 +290,25 @@ def test_install_trusted_host_returns_false_when_allowed_hosts_is_wildcard(monke
 
 
 def test_install_trusted_host_returns_true_when_production_with_explicit_hosts(monkeypatch):
-    """Production with a real ALLOWED_HOSTS value installs the middleware."""
+    """Production with a real ALLOWED_HOSTS value installs the middleware.
+
+    Verifies BOTH the return value AND that TrustedHostMiddleware actually appears
+    in app.user_middleware — guards against a regression where the function returns
+    True but doesn't actually install (caught by /qa mutation testing).
+    """
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
     from app.security.tls import install_trusted_host_middleware_if_production
 
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.setenv("ALLOWED_HOSTS", "app.example.com,api.example.com")
     app = FastAPI()
     assert install_trusted_host_middleware_if_production(app) is True
+
+    # Verify the middleware class is actually wired in user_middleware
+    middleware_classes = [getattr(mw, "cls", None) for mw in app.user_middleware]
+    assert (
+        TrustedHostMiddleware in middleware_classes
+    ), f"TrustedHostMiddleware not found in app.user_middleware: {middleware_classes}"
 
 
 @pytest.mark.asyncio
