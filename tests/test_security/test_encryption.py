@@ -60,3 +60,34 @@ def test_lifespan_invokes_encryption_key_gate_on_startup():
     assert "assert_encryption_key_present_if_production" in src
     # Confirm it's also imported at module level (not just referenced as a string).
     assert hasattr(main_mod, "assert_encryption_key_present_if_production")
+
+
+def test_streamlit_dashboards_invoke_encryption_key_gate_on_startup():
+    """CSO Phase 3b Finding 2 fix: each streamlit dashboard process starts
+    independently of the FastAPI lifespan. Without an explicit gate call, a
+    typo'd `ENCRYPTION_KEY_PRIMARY` surfaces as `cryptography.fernet.InvalidToken`
+    on the first PHI access — burying the misconfiguration in a confusing stack
+    trace instead of the clean RuntimeError the gate is designed to produce.
+
+    Read source as text rather than importing — streamlit modules trigger
+    page-config side effects on import that don't belong in test collection.
+    """
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    entry_points = [
+        "app/web_ui/admin_dashboard.py",
+        "app/web_ui/researcher_portal.py",
+        "app/web_ui/research_notebook.py",
+    ]
+
+    for relpath in entry_points:
+        src = (repo_root / relpath).read_text()
+        assert (
+            "assert_encryption_key_present_if_production()" in src
+        ), f"{relpath} must CALL the encryption key gate at startup (not just reference it)"
+        assert (
+            "from app.security.encryption_keys import" in src
+            or "from .security.encryption_keys import" in src
+            or "from ..security.encryption_keys import" in src
+        ), f"{relpath} must import the gate explicitly"

@@ -38,6 +38,16 @@ load_dotenv()
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+# Phase 3b CSO Finding 2: streamlit processes start outside the FastAPI lifespan,
+# so the encryption-key gate must run independently here. Without this call, a
+# typo'd ENCRYPTION_KEY_PRIMARY in production surfaces only on the first PHI
+# access as cryptography.fernet.InvalidToken inside a SQLAlchemy result-processor
+# stack frame — burying the misconfiguration. With this call, the dashboard
+# refuses to start and emits the same clean RuntimeError as `uvicorn`.
+from app.security.encryption_keys import assert_encryption_key_present_if_production
+
+assert_encryption_key_present_if_production()
+
 from app.orchestrator import ResearchRequestOrchestrator
 from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 from app.agents import (

@@ -59,6 +59,16 @@ else:
 # Add parent directory to path
 sys.path.insert(0, project_root)
 
+# Phase 3b CSO Finding 2: streamlit processes start outside the FastAPI lifespan,
+# so the encryption-key gate must run independently here. Without this call, a
+# typo'd ENCRYPTION_KEY_PRIMARY in production surfaces only on the first PHI
+# access as cryptography.fernet.InvalidToken inside a SQLAlchemy result-processor
+# stack frame — burying the misconfiguration. With this call, the dashboard
+# refuses to start and emits the same clean RuntimeError as `uvicorn`.
+from app.security.encryption_keys import assert_encryption_key_present_if_production
+
+assert_encryption_key_present_if_production()
+
 from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
 from app.services.query_interpreter import QueryInterpreter
