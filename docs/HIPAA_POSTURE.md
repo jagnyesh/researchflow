@@ -348,7 +348,110 @@ HTTP redirects don't pollute the audit queue (TLS runs before audit). Same princ
 
 ---
 
+## Phase 3b — Encryption-at-rest
+
+**Maps to:** §164.312(a)(2)(iv) "Encryption (Addressable)" — render ePHI unusable to unauthorized persons via cryptographic mechanism. Storage scope only; in-transit encryption is Phase 3a.
+
+### Goal
+
+Make freeform-PHI columns unreadable on disk to anyone with a database file or backup but no encryption key. Limits the blast radius of a stolen Postgres dump, lost backup tape, or misconfigured storage volume.
+
+### Scope
+
+Tier 1 freeform-PHI columns only — fields that can carry inline patient identifiers (MRN, DOB, names) injected by free text or query templating:
+
+| Model | Column | Type | Why encrypted |
+|---|---|---|---|
+| `ResearchRequest` | `initial_request` | Text | Researcher's natural-language prompt — may contain "patient ABC-123…" |
+| `RequirementsData` | `inclusion_criteria` | JSON | Structured criteria with `label` fields that may carry patient identifiers |
+| `RequirementsData` | `exclusion_criteria` | JSON | Same shape as above |
+| `FeasibilityReport` | `phenotype_sql` | Text | Generated SQL — may contain inline PHI from query templating before parameterization |
+
+**Out of scope (deferred to Phase 3b.1):** researcher PII (`User.email`, `*.researcher_email`, `User.full_name`, `User.department`). PII is not ePHI under §164.312, and `User.email` is the unique-indexed login key — encrypting it forces deterministic encryption (weakens crypto) or a hashed-email index column (Sprint 11 multi-tenant index work).
+
+**Out of scope (architectural):** HAPI FHIR's patient resource columns. Patient PHI lives in HAPI's separate Postgres database, encrypted at the HAPI deployment layer (institution's own database security configuration). ResearchFlow's app DB only stores derived metadata, audit records, and the freeform fields above.
+
+**Out of scope by design (Phase 2.2 boundary):** `audit_logs.event_data`. The audit pipeline is metadata-only; encrypting it would cost forensic queryability for zero ePHI gain.
+
+### Algorithm
+
+`StringEncryptedType` / `EncryptedType` from `sqlalchemy-utils` with `FernetEngine` — AES-128-CBC + HMAC-SHA256, encrypt-then-MAC (IND-CCA2). Versioned ciphertext (Fernet's leading version byte) keeps the format stable across library upgrades and is what makes a future MultiFernet-based rotation envelope ergonomic without a schema-aware backfill.
+
+`AesEngine` (the `sqlalchemy-utils` default) was rejected — no version byte means future rotation forces a brittle model-aware re-encrypt-all migration.
+
+### JSON column composition (D4 spike outcome)
+
+`EncryptedType(JSON)` does NOT round-trip cleanly. `sqlalchemy-utils` calls `underlying_type.python_type(decrypted_value)` in `process_result_value`; for JSON that becomes `dict("[{...JSON-string...}]")` — `ValueError` because `dict()` cannot init from a string. The library never invokes `json.loads` on the decrypted side.
+
+**Workaround:** `app/security/encryption.py::_EncryptedJSONImpl` is a `TypeDecorator` that wraps `StringEncryptedType(Text)` with explicit `json.dumps` on bind / `json.loads` on result. Models stay clean (round-trip Python dicts/lists), encryption stays at the column-type layer, no `@validates` boilerplate per model.
+
+JSONB query operators (`->>`, `@>`) are unavailable on encrypted columns — only wholesale ORM round-trip reads. Codebase scan (`grep -rn "->>"`) confirmed none of our encryption-targeted JSON columns use JSONB ops; all JSONB usage targets HAPI's `res_text_vc::jsonb` (a separate database).
+
+### Key sourcing
+
+`get_encryption_key()` in `app/security/encryption_keys.py` is a pluggable callable. The default reads `ENCRYPTION_KEY_PRIMARY` from the environment. Institutions that mandate KMS or Vault swap the function body at deploy time without touching column definitions — column types reference the callable, not the bytes.
+
+### Startup gate
+
+`assert_encryption_key_present_if_production()` runs in `app/main.py` lifespan. In production, it raises `RuntimeError` if `ENCRYPTION_KEY_PRIMARY` is missing or is not a parseable Fernet key. The process exits non-zero; uvicorn surfaces the error; the orchestrator restart loop advertises the misconfiguration loudly. **No silent fallback to plaintext writes.** Same "no kill switches" posture as Phase 2.2 (no `AUDIT_ENABLED`), Phase 2.3 (no `HARDEN_INPUTS`), Phase 3a (`ENVIRONMENT` strict equality).
+
+The Fernet-key format check is the typo-catcher: `ENCRYPTION_KEY_PRIMARY="abc"` fails at boot, not at the first row write hours later. Outside production the gate is a no-op so dev/test/CI environments don't need a key set.
+
+### Migration strategy
+
+**Drop-and-recreate dev/test DBs; no backfill script.** Production has zero pilot rows (no external pilot user yet — the Sprint 6.1 sales-grade-HIPAA-posture decision predates any institution deployment). Test DBs are recreated per session via `init_test_db` autouse fixture. Local dev DBs are an operator concern — `rm dev.db` is a one-line action.
+
+A dual-mode "read-plaintext-or-ciphertext, write-ciphertext" migration was rejected as the same OCR-finding pattern as Phase 2.2's no-`AUDIT_ENABLED` rule: the "graceful migration" code path becomes a permanent backdoor that lets plaintext rows survive forever.
+
+### Key rotation runbook
+
+Rotation is a manual operator procedure. MultiFernet read-fallback for rolling rotation is deferred to Sprint 11+ — Phase 3b's job is "encryption exists at rest," not "rotation is automated." When the first rotation triggers (annually, on suspected key compromise, or on operator transition), follow this runbook:
+
+1. **Generate a new Fernet key:**
+   ```
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+
+2. **Stop the application** to prevent concurrent writes during the cutover. Audit pipeline drain completes its in-flight `audit:processing` items via the standard shutdown path (Phase 2.2).
+
+3. **Re-encrypt rows under the new key.** A one-shot script reads each Tier 1 column with the OLD key (`ENCRYPTION_KEY_PRIMARY` set to the previous value), writes back with the NEW key:
+   ```python
+   # script/rotate_encryption_key.py — runs offline, single-process
+   # 1. Set ENCRYPTION_KEY_PRIMARY=<old key>, query+collect plaintext rows
+   # 2. Set ENCRYPTION_KEY_PRIMARY=<new key>, write rows back via ORM
+   # 3. Verify a sample of rows decrypts under the new key
+   ```
+   This script is unwritten — write it the moment the first rotation triggers; treat it as throwaway. Operator runs it on a maintenance window with backups in hand.
+
+4. **Swap the env var to the new key.** Update `ENCRYPTION_KEY_PRIMARY` in the production secret store / KMS / `.env`. Restart the application.
+
+5. **Verify** by exercising a PHI-write/PHI-read flow end-to-end. Confirm the prior key is destroyed (paper key wipe, KMS key disable, env var rotation history pruned per institutional retention policy).
+
+The version byte in Fernet ciphertext means a future MultiFernet implementation can read both old and new keys simultaneously, eliminating the application-stop step. Worth implementing the day a rotating production deployment exists; not worth speculating against today.
+
+### What encryption-at-rest does NOT cover
+
+Column-level encryption protects **data at rest in the database row**. It does NOT protect:
+
+- **Decrypted values in process memory.** Any code holding a session-bound row plus the key can recover plaintext — that is the design.
+- **Decrypted values in logs and exception traces.** A `logger.info(f"updated request: {req.initial_request}")` writes plaintext to the log stream. Sentry or Datadog stack traces that include local variables can capture decrypted PHI. Application code must avoid serializing PHI fields into log messages or unstructured error context. Phase 2.3's `phi_safe_validation_handler` already strips `input`/`url`/`ctx` from 422 response bodies; structured logging discipline is a separate, ongoing review.
+- **API response bodies.** A researcher reading their own `ResearchRequest` sees the plaintext — that is the application contract, not a leak. Authorization (Phase 1.x JWT) is what ensures the request reaches only its owner; encryption-at-rest is the layer below that.
+- **In-transit traffic.** That is Phase 3a (TLS termination + HSTS).
+- **Backups taken before encryption rolled out.** Existing dev/test DB files contain plaintext history; the drop-and-recreate migration assumes operators rotate backup volumes accordingly.
+
+§164.312(a)(2)(iv) speaks specifically to storage. The other layers (transport, access logging, audit) are separate Security Rule provisions, addressed elsewhere in this document and in code.
+
+### Test coverage
+
+12 tests across `tests/test_security/`:
+
+- `test_encryption.py` (6): env-var read, dev no-op, prod-missing-key raises `RuntimeError`, prod-malformed-key raises `RuntimeError`, prod-valid-key passes, lifespan wiring (regression guard against the gate being removed from `app/main.py`).
+- `test_encryption_models.py` (6): per-column round-trip via ORM AND ciphertext-on-disk via raw `SELECT` bypassing the column type. The ciphertext assertion is the actual encryption-at-rest verification — a future regression that disabled the column type would round-trip fine via ORM but fail the raw-bytes check immediately. JSON columns also assert that `json.dumps(payload)` is absent from stored bytes (catches a hypothetical "store as JSON, encryption disabled silently" bug).
+
+`tests/conftest.py` sets `ENCRYPTION_KEY_PRIMARY` at module-load before model import (autouse-equivalent). Test key is a pinned constant marked `# pragma: allowlist secret`; production keys are generated per-deployment and never checked in.
+
+---
+
 ## Future sections
 
-- **Phase 3b — Encryption-at-rest** (pending)
 - **Phase 4 — End-to-end HIPAA narrative** (pending)

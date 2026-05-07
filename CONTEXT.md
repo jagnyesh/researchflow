@@ -1,9 +1,9 @@
 # ResearchFlow — Current State
 
 **Sprint:** 6.1 (Security Baseline)
-**Phase:** 3a complete — moving to 3b next
-**Branch:** `feature/sprint6-security-baseline` (19 commits unmerged: 8 audit + 8 schema + 3 TLS)
-**Overall progress:** ~85% of Sprint 6.1 complete; ~10/22 sprints overall
+**Phase:** 3b complete — moving to 4 next
+**Branch:** `feature/sprint6-security-baseline` (22 commits unmerged: 8 audit + 8 schema + 3 TLS + 3 encryption)
+**Overall progress:** ~95% of Sprint 6.1 complete; ~10/22 sprints overall
 **Last updated:** 2026-05-07
 
 ## Active sprint goal
@@ -16,10 +16,10 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 - [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
 - [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
 - [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
-- [ ] Phase 3b — Encryption-at-rest: `sqlalchemy-utils.StringEncryptedType` on Tier 1 freeform-PHI columns — `ResearchRequest.initial_request` (Text, ✅ shipped via #8), `RequirementsData.inclusion_criteria` (JSON), `RequirementsData.exclusion_criteria` (JSON), `FeasibilityReport.phenotype_sql` (Text). **Note:** the previously-listed `ResearchRequest.structured_requirements` does NOT exist as a column — it's a runtime dict key in agent context only; structured criteria persist in `RequirementsData.inclusion_criteria`/`exclusion_criteria`. Researcher PII (`*.researcher_email`, `User.email`, `User.full_name`) is out of scope — it's PII not ePHI under §164.312, and `User.email` is the unique-indexed login key (deferred to Phase 3b.1). Half-day spike (in #9) verifies asyncpg + JSON-column composition.
-- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + remaining `docs/HIPAA_POSTURE.md` sections (Phase 2.2 + 2.3 + 3a already drafted)
+- [x] Phase 3b — Encryption-at-rest shipped via 3 issues (#8 tracer + #9 remaining columns + #10 docs). Tier 1 scope: 4 columns total (`ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`/`exclusion_criteria`, `FeasibilityReport.phenotype_sql`). Spike outcome: `EncryptedType(JSON)` doesn't round-trip cleanly; fallback to `_EncryptedJSONImpl` TypeDecorator that wraps `StringEncryptedType(Text)` with explicit `json.dumps`/`loads`. Researcher PII deferred to Phase 3b.1.
+- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + `docs/HIPAA_POSTURE.md` end-to-end HIPAA narrative (Phase 2.2 + 2.3 + 3a + 3b sections already drafted)
 
-**Estimated remaining:** 5-9 working days = 1.5-2 calendar weeks (Phase 3a done; ~half day vs original 1-day estimate)
+**Estimated remaining:** 2-4 working days = 0.5-1 calendar week (Phases 3a and 3b done in ~half a day each vs original 1-day estimates; Phase 4 narrative + E2E remain)
 
 ## Blockers / decisions needed
 
@@ -27,6 +27,12 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 - No external pilot user identified. Sprint 6.1 finish-line decision was "ship sales-grade HIPAA posture" — not "wait for users." Outreach is parallel work, not a blocker.
 
 ## What just shipped
+
+Sprint 6.1 Phase 3b — encryption-at-rest (3 commits, 12 encryption tests, ready for merge):
+
+- `1946ac5` (2026-05-07) — Issue #9: encrypt remaining 3 Tier 1 columns (inclusion_criteria, exclusion_criteria, phenotype_sql); spike outcome → `_EncryptedJSONImpl` TypeDecorator workaround for `EncryptedType(JSON)` round-trip bug
+- `a7e7da7` (2026-05-07) — Issue #8: tracer bullet — `ResearchRequest.initial_request` encrypted at rest; pluggable `get_encryption_key` callable + lifespan startup gate (RuntimeError on missing/malformed key in production)
+- (commit 3 = Issue #10 docs commit)
 
 Sprint 6.1 Phase 3a — TLS enforcement (3 commits, 22 TLS tests, ready for merge):
 
