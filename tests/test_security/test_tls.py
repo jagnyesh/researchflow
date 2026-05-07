@@ -164,3 +164,100 @@ def test_preload_is_NOT_in_hsts_value():
     DO NOT add `preload` until that domain exists and is confirmed permanent.
     """
     assert "preload" not in HSTS_HEADER
+
+
+# --- install_tls_middleware_if_production wiring helper ---
+
+
+def test_install_returns_false_in_development(monkeypatch):
+    """No middleware installed when ENVIRONMENT≠production."""
+    from app.security.tls import install_tls_middleware_if_production
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    app = FastAPI()
+    assert install_tls_middleware_if_production(app) is False
+
+
+def test_install_wires_middleware_when_production(monkeypatch):
+    """Returns True and the middleware is actually on app.user_middleware."""
+    from app.security.tls import install_tls_middleware_if_production
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    app = FastAPI()
+    assert install_tls_middleware_if_production(app) is True
+
+    # Verify the middleware is actually wired (FastAPI stores it in user_middleware)
+    middleware_funcs = []
+    for mw in app.user_middleware:
+        kwargs = getattr(mw, "kwargs", {}) or {}
+        dispatch = kwargs.get("dispatch")
+        if dispatch is not None:
+            middleware_funcs.append(dispatch)
+    assert tls_enforcement_middleware in middleware_funcs
+
+
+# --- FORWARDED_ALLOW_IPS=* startup warning ---
+
+
+def test_warning_logged_when_production_with_wildcard_forwarded_allow_ips(monkeypatch, caplog):
+    """Production + FORWARDED_ALLOW_IPS=* logs a warning — container must not be
+    internet-reachable directly. Visibility nudge without forcing operator action.
+    """
+    import logging
+    from app.security.tls import maybe_warn_about_forwarded_allow_ips
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    with caplog.at_level(logging.WARNING):
+        maybe_warn_about_forwarded_allow_ips()
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "FORWARDED_ALLOW_IPS=*" in log_text
+    assert "internet-reachable" in log_text
+
+
+def test_warning_not_logged_in_development(monkeypatch, caplog):
+    """Dev or staging environments don't warn — they're expected to use *."""
+    import logging
+    from app.security.tls import maybe_warn_about_forwarded_allow_ips
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "*")
+    with caplog.at_level(logging.WARNING):
+        maybe_warn_about_forwarded_allow_ips()
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "FORWARDED_ALLOW_IPS" not in log_text
+
+
+def test_warning_not_logged_when_forwarded_allow_ips_is_specific_cidr(monkeypatch, caplog):
+    """Operator hardened FORWARDED_ALLOW_IPS to a specific subnet — no warning."""
+    import logging
+    from app.security.tls import maybe_warn_about_forwarded_allow_ips
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("FORWARDED_ALLOW_IPS", "10.0.0.0/8")
+    with caplog.at_level(logging.WARNING):
+        maybe_warn_about_forwarded_allow_ips()
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "FORWARDED_ALLOW_IPS" not in log_text
+
+
+# --- Wiring integration: real app.main:app ---
+
+
+def test_tls_middleware_NOT_on_real_app_in_dev_mode():
+    """Default test environment has ENVIRONMENT unset → development → TLS middleware
+    NOT installed on app.main:app. This guards against a regression where someone
+    flips the conditional and breaks every existing test (every endpoint suddenly
+    redirects to HTTPS in test mode).
+    """
+    from app.main import app
+
+    middleware_funcs = []
+    for mw in app.user_middleware:
+        kwargs = getattr(mw, "kwargs", {}) or {}
+        dispatch = kwargs.get("dispatch")
+        if dispatch is not None:
+            middleware_funcs.append(dispatch)
+    assert (
+        tls_enforcement_middleware not in middleware_funcs
+    ), "TLS middleware is on app.main:app in dev mode — would break every endpoint test"

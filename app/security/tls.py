@@ -1,9 +1,12 @@
 """HTTPS enforcement + HSTS — Sprint 6.1 Phase 3a (Issue #7)."""
 
+import logging
 import os
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
+
+logger = logging.getLogger(__name__)
 
 HSTS_MAX_AGE = int(os.getenv("HSTS_MAX_AGE", "31536000"))
 HSTS_HEADER = f"max-age={HSTS_MAX_AGE}; includeSubDomains"
@@ -35,3 +38,29 @@ async def tls_enforcement_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["Strict-Transport-Security"] = HSTS_HEADER
     return response
+
+
+def install_tls_middleware_if_production(app: FastAPI) -> bool:
+    """Install the TLS enforcement middleware on `app` iff ENVIRONMENT=production.
+
+    Returns True if installed, False otherwise. Idempotent at module-load time
+    (called once from app/main.py).
+    """
+    if not is_production():
+        return False
+    app.middleware("http")(tls_enforcement_middleware)
+    return True
+
+
+def maybe_warn_about_forwarded_allow_ips() -> None:
+    """Log a WARNING if production is configured with FORWARDED_ALLOW_IPS=*.
+
+    Visibility nudge: production deployments must run the container on a private
+    network behind a TLS-terminating proxy. With * trust on any source, an
+    internet-reachable container would let attackers spoof X-Forwarded-Proto.
+    """
+    if is_production() and os.getenv("FORWARDED_ALLOW_IPS", "*") == "*":
+        logger.warning(
+            "production with FORWARDED_ALLOW_IPS=*; container must not be "
+            "internet-reachable directly. Trust X-Forwarded-Proto from any source."
+        )

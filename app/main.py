@@ -35,6 +35,10 @@ from .security.rate_limit import setup_rate_limiting
 from .security import audit_middleware as audit_mw
 from .security.audit_drain import audit_drain_loop, recovery_sweep
 from .security.body_size import body_size_limit_middleware
+from .security.tls import (
+    install_tls_middleware_if_production,
+    maybe_warn_about_forwarded_allow_ips,
+)
 from .schemas import phi_safe_validation_handler
 from fastapi.exceptions import RequestValidationError
 
@@ -60,6 +64,9 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_db()
     logger.info("Database initialized")
+
+    # Phase 3a: warn if production with default-permissive forwarded-allow-ips
+    maybe_warn_about_forwarded_allow_ips()
 
     # Initialize audit pipeline (Sprint 6.1 Phase 2.2)
     audit_redis_url = os.getenv("REDIS_AUDIT_URL")
@@ -164,6 +171,11 @@ app.middleware("http")(audit_mw.audit_middleware)
 # DoS guard). Added AFTER audit_middleware so it runs FIRST (FastAPI middleware order
 # is reverse of registration). 413-rejected requests don't pollute the audit queue.
 app.middleware("http")(body_size_limit_middleware)
+
+# TLS enforcement (Sprint 6.1 Phase 3a Issue #7 — production only). Added LAST so it
+# runs FIRST in the middleware chain: HTTP redirects don't pollute the audit queue,
+# /health* probes pass through, HSTS emitted on HTTPS responses.
+install_tls_middleware_if_production(app)
 
 # PHI-safe validation error handler (Sprint 6.1 Phase 2.3 Issue #4 — strips
 # input/url/ctx from 422 responses to close the Sentry/Datadog leak vector)
