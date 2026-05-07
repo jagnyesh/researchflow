@@ -8,6 +8,103 @@ audit log schema), **Sprint 6.1** (audit pipeline + middleware, TLS, encryption-
 
 ---
 
+## Sprint 6.1 baseline — control-by-control summary
+
+This section is the elevator pitch for an institutional reviewer: every Security
+Rule control that ResearchFlow's Sprint 6.1 baseline addresses, with a one-line
+control description and a pointer to the code that implements it. Per-phase
+deep-dives follow below.
+
+| §164.312 paragraph | Control | Implemented by | Tests | Phase |
+|---|---|---|---|---|
+| (a)(1) Access Control | JWT-bearer authentication on every PHI route | `app/security/auth.py` + `app/security/audit_middleware.py` (default-deny classifier) | 74 audit + 6 auth | 1.1 + 2.2 |
+| (a)(2)(i) Unique User Identification | `User.id` (USR-XXXXXXXX) on every audit row | `app/database/models.py::User` + `AuditLog.user_id` | included above | 1.2 + 2.2 |
+| (a)(2)(iii) Automatic Logoff | JWT `exp` claim + `failed_login_attempts` lockout | `app/security/auth.py` + `User.locked_until` | 6 auth | 1.1 + 1.3 |
+| (a)(2)(iv) Encryption (Addressable) — at rest | Column-level Fernet encryption on Tier 1 PHI columns | `app/security/encryption.py` + `app/security/encryption_keys.py` | 13 encryption | 3b |
+| (b) Audit Controls | Default-deny route classifier + at-least-once Redis queue + Postgres `audit_logs` | `app/security/audit_middleware.py` + `audit_drain.py` | 74 audit | 2.2 |
+| (c)(1) Integrity | Pydantic `PHIInputModel` framework + parameterized SQL | `app/schemas/_base.py` + 30 SQL injection fixes (Sprint 6) | 163 schema | 2.3 + Sprint 6 |
+| (c)(2) Mechanism to Authenticate ePHI | Fernet HMAC-SHA256 detects ciphertext tampering on read | `FernetEngine` (encrypt-then-MAC, IND-CCA2) | covered by 13 encryption | 3b |
+| (d) Person or Entity Authentication | bcrypt password hashing + JWT issuance | `app/security/auth.py::create_access_token` | 6 auth | 1.1 + 1.3 |
+| (e)(1) Transmission Security | HTTPS-redirect middleware + HSTS | `app/security/tls.py` | 22 TLS | 3a |
+| (e)(2)(i) Integrity Controls — in transit | TLS 1.2+ at the load balancer | platform-managed (k8s ingress / ALB) | covered by 22 TLS | 3a |
+| (e)(2)(ii) Encryption (Addressable) — in transit | HSTS `max-age=31536000; includeSubDomains` enforced; HTTP redirected with 308 | `app/security/tls.py::tls_enforcement_middleware` | 22 TLS | 3a |
+
+### What an institutional reviewer asks first
+
+**Q1 — "Where is patient PHI at rest in your stack, and how is it protected?"**
+Patient PHI lives in HAPI FHIR's separate Postgres (encrypted at the institution's
+deployment layer). ResearchFlow's app DB stores derived metadata, audit records, and
+four free-form fields that may contain inline patient identifiers from researcher
+queries: `ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`,
+`RequirementsData.exclusion_criteria`, `FeasibilityReport.phenotype_sql`. Those four
+columns are encrypted at the application layer with Fernet (AES-128-CBC + HMAC-SHA256);
+key sourcing is pluggable via `get_encryption_key()` so institutions that mandate KMS or
+Vault can swap the function body at deploy without touching column definitions. See
+[Phase 3b](#phase-3b--encryption-at-rest).
+
+**Q2 — "Show me the audit trail for a PHI access. What does it record? What does it
+NOT record?"**
+Every authenticated request to a non-allowlisted route emits two audit rows
+(`PHI_ACCESS_REQUESTED` pre-event and `PHI_ACCESS_COMPLETED` post-event with status
+code) via a fail-closed default-deny middleware. Records: `route_template` (not
+resolved path, so `/users/123` becomes `/users/{id}`), HTTP method, response status,
+latency, and JWT principal. Does NOT record: request body, response body, query
+strings, headers. The `audit_logs` table is metadata-only by design — see
+[Phase 2.2 PHI boundary](#phi-boundary). Durability: at-least-once via Redis
+processing-list pattern with crash-recovery sweep on lifespan startup.
+
+**Q3 — "What happens when something goes wrong? Show me the failure mode."**
+Three coupled fail-closed postures. **(1) Audit:** if the Redis audit queue is
+unreachable, every PHI route returns 5xx (silently dropping access events is the
+OCR-finding pattern; we 5xx the app instead). A small allowlist (`/health*`,
+`/auth/{login,refresh,logout}`, `/`, `/docs*`, `/openapi.json`) fails open to keep
+liveness probes alive and bootstrap unblocked. **(2) Encryption:** if
+`ENCRYPTION_KEY_PRIMARY` is missing or malformed in production, FastAPI lifespan +
+each streamlit dashboard refuse to start with a clean RuntimeError. No silent fallback
+to plaintext writes. **(3) Validation:** malformed bodies return 422 with a PHI-safe
+error response that strips `input`, `url`, `ctx` from Pydantic's default 422 shape —
+closes the Sentry/Datadog leak vector by construction, not by Sentry config. See
+[Phase 2.3 PHI-safe error response contract](#phi-safe-error-response-contract).
+
+**Q4 — "What's NOT covered? Where are the seams?"**
+Encryption-at-rest does not protect decrypted values in process memory, in logger
+calls (`logger.info(f"req={req.initial_request}")` is a leak vector — application
+discipline, not framework guarantee), or in API response bodies the researcher is
+authorized to see. The audit pipeline is metadata-only — body-content audit is
+deferred indefinitely as it would itself become a PHI store. Researcher PII
+(`User.email`, `*.researcher_email`, `User.full_name`) is NOT encrypted at rest —
+it's PII not ePHI under §164.312, and `User.email` is the unique-indexed login key;
+encryption is deferred to Phase 3b.1 (Sprint 11+ multi-tenant index work).
+TLS termination happens at the load balancer / platform, not at uvicorn directly —
+deployment requirement is that the container runs on a private network behind
+a TLS-terminating proxy. See each phase section's "what this does NOT cover"
+subsection for the full carve-out per control.
+
+**Q5 — "Has this been tested end-to-end?"**
+`tests/e2e/test_hipaa_baseline_e2e.py` walks one PHI-bearing request through every
+Sprint 6.1 control in execution order and asserts each fired: body-size middleware
+accepts → audit middleware emits `PHI_ACCESS_REQUESTED` → JWT principal lands on the
+audit row → Pydantic validates → `ResearchRequest` row written with ciphertext on
+disk (raw `SELECT` bypassing the column type) → audit middleware emits
+`PHI_ACCESS_COMPLETED` → drain task flushes both events to `audit_logs`. Plus a
+negative-path tracer that confirms a malformed body returns 422 with the PHI-safe
+error shape. The test is gated on the audit Redis being reachable; per-phase unit
+tests (350+ across Phases 1–3b) cover the controls in isolation.
+
+### Test coverage summary
+
+| Layer | File | Count | Phase |
+|---|---|---|---|
+| Auth + RBAC | `tests/test_security/test_auth*.py` | ~6 | 1.1–1.4 |
+| Audit pipeline | `tests/test_security/test_audit*.py` | 74 | 2.2 |
+| Input validation | `tests/test_schemas/test_*.py` | 163 | 2.3 |
+| TLS | `tests/test_security/test_tls.py` | 22 | 3a |
+| Encryption | `tests/test_security/test_encryption*.py` | 13 | 3b |
+| End-to-end | `tests/e2e/test_audit_pipeline_e2e.py`, `test_hipaa_baseline_e2e.py` | 2 | 2.2 + 4 |
+| **Total** | | **~280** | |
+
+---
+
 ## Phase 2.2 — HIPAA-compliant audit pipeline
 
 **Status:** complete (Issues #1, #2, #3 — see `git log --grep "feat(audit)"`).

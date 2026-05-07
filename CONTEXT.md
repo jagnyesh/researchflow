@@ -1,9 +1,9 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.1 (Security Baseline)
-**Phase:** 3b complete — moving to 4 next
-**Branch:** `feature/sprint6-security-baseline` (22 commits unmerged: 8 audit + 8 schema + 3 TLS + 3 encryption)
-**Overall progress:** ~95% of Sprint 6.1 complete; ~10/22 sprints overall
+**Sprint:** 6.1 (Security Baseline) — **COMPLETE**, ready for PR
+**Phase:** 4 complete (E2E test + final HIPAA narrative)
+**Branch:** `feature/sprint6-security-baseline` (24+ commits unmerged: 8 audit + 8 schema + 3 TLS + 4 encryption + Phase 4)
+**Overall progress:** Sprint 6.1 100%; ~10/22 sprints overall
 **Last updated:** 2026-05-07
 
 ## Active sprint goal
@@ -16,10 +16,10 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 - [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
 - [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
 - [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
-- [x] Phase 3b — Encryption-at-rest shipped via 3 issues (#8 tracer + #9 remaining columns + #10 docs). Tier 1 scope: 4 columns total (`ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`/`exclusion_criteria`, `FeasibilityReport.phenotype_sql`). Spike outcome: `EncryptedType(JSON)` doesn't round-trip cleanly; fallback to `_EncryptedJSONImpl` TypeDecorator that wraps `StringEncryptedType(Text)` with explicit `json.dumps`/`loads`. Researcher PII deferred to Phase 3b.1.
-- [ ] Phase 4 — E2E test (login → SQL query → audit row visible) + `docs/HIPAA_POSTURE.md` end-to-end HIPAA narrative (Phase 2.2 + 2.3 + 3a + 3b sections already drafted)
+- [x] Phase 3b — Encryption-at-rest shipped via 3 issues (#8 tracer + #9 remaining columns + #10 docs) + CSO findings 1+2 fix. Tier 1 scope: 4 columns total (`ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`/`exclusion_criteria`, `FeasibilityReport.phenotype_sql`). Spike outcome: `EncryptedType(JSON)` doesn't round-trip cleanly; fallback to `_EncryptedJSONImpl` TypeDecorator that wraps `StringEncryptedType(Text)` with explicit `json.dumps`/`loads`. Researcher PII deferred to Phase 3b.1.
+- [x] Phase 4 — E2E test (`tests/e2e/test_hipaa_baseline_e2e.py`: login → POST research request → encryption-on-disk + audit row visible + PHI-safe 422 negative tracer) + `docs/HIPAA_POSTURE.md` Sprint 6.1 baseline summary section (control-by-control table + reviewer Q&A).
 
-**Estimated remaining:** 2-4 working days = 0.5-1 calendar week (Phases 3a and 3b done in ~half a day each vs original 1-day estimates; Phase 4 narrative + E2E remain)
+**Estimated remaining:** 0 days. Sprint 6.1 ships as one PR.
 
 ## Blockers / decisions needed
 

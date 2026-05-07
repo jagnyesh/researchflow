@@ -4,7 +4,7 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 
 ## Phase 2 — Clinical Intelligence & Optimization (in progress)
 
-- [x] Sprint 6.1 — Security Baseline (~95% complete, see CONTEXT.md — Phase 4 narrative + E2E remaining)
+- [x] Sprint 6.1 — Security Baseline (COMPLETE 2026-05-07, ready for PR)
 - [ ] Sprint 8 — Prompt Optimization (analysis done; 73% projected cost reduction)
   - Implement prompt cache for stable agent system prompts
   - Token-budget tracking per agent
