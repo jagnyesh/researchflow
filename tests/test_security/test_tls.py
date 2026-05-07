@@ -261,3 +261,121 @@ def test_tls_middleware_NOT_on_real_app_in_dev_mode():
     assert (
         tls_enforcement_middleware not in middleware_funcs
     ), "TLS middleware is on app.main:app in dev mode — would break every endpoint test"
+
+
+# --- TrustedHostMiddleware (CSO Finding 1 fix — open redirect via Host header) ---
+
+
+def test_install_trusted_host_returns_false_in_development(monkeypatch):
+    """Dev mode: don't install TrustedHostMiddleware (developers use localhost, etc.)."""
+    from app.security.tls import install_trusted_host_middleware_if_production
+
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    monkeypatch.setenv("ALLOWED_HOSTS", "app.example.com")
+    app = FastAPI()
+    assert install_trusted_host_middleware_if_production(app) is False
+
+
+def test_install_trusted_host_returns_false_when_allowed_hosts_is_wildcard(monkeypatch):
+    """Production with ALLOWED_HOSTS=* explicitly opts out of host validation.
+    Combined with the startup warning, this is the documented escape hatch for
+    deployments that haven't set the canonical hostname yet.
+    """
+    from app.security.tls import install_trusted_host_middleware_if_production
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ALLOWED_HOSTS", "*")
+    app = FastAPI()
+    assert install_trusted_host_middleware_if_production(app) is False
+
+
+def test_install_trusted_host_returns_true_when_production_with_explicit_hosts(monkeypatch):
+    """Production with a real ALLOWED_HOSTS value installs the middleware."""
+    from app.security.tls import install_trusted_host_middleware_if_production
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ALLOWED_HOSTS", "app.example.com,api.example.com")
+    app = FastAPI()
+    assert install_trusted_host_middleware_if_production(app) is True
+
+
+@pytest.mark.asyncio
+async def test_attacker_host_header_is_rejected_with_400():
+    """CSO Finding 1: regression guard against open redirect via attacker-controlled Host.
+
+    Install order (mirroring production): TLS first (added 1st → runs 2nd),
+    TrustedHost LAST (added 2nd → runs 1st). Host validation gates BEFORE the
+    redirect logic — attacker host gets 400, never sees a 308 to evil.com.
+    """
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    app = FastAPI()
+    # Order matters: FastAPI runs middleware in reverse-registration order.
+    app.middleware("http")(tls_enforcement_middleware)  # added 1st → runs 2nd
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["app.example.com"]
+    )  # added 2nd → runs 1st
+
+    @app.get("/")
+    async def root():
+        return {"ok": True}
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://app.example.com") as client:
+        # Forge Host header to simulate attacker
+        response = await client.get(
+            "/", headers={"Host": "evil-attacker.example"}, follow_redirects=False
+        )
+    assert response.status_code == 400, (
+        f"Attacker host not rejected — open redirect vector. Got {response.status_code}: "
+        f"location={response.headers.get('location', 'N/A')}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legitimate_host_is_accepted_after_redirect():
+    """Sanity check: real hostname still gets the 308 + HSTS treatment."""
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    app = FastAPI()
+    app.middleware("http")(tls_enforcement_middleware)  # added 1st → runs 2nd
+    app.add_middleware(
+        TrustedHostMiddleware, allowed_hosts=["app.example.com"]
+    )  # added 2nd → runs 1st
+
+    @app.get("/")
+    async def root():
+        return {"ok": True}
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://app.example.com") as client:
+        response = await client.get("/", follow_redirects=False)
+    assert response.status_code == 308
+    assert response.headers["location"].startswith("https://app.example.com")
+
+
+def test_warning_logged_when_production_with_wildcard_allowed_hosts(monkeypatch, caplog):
+    """Same posture as FORWARDED_ALLOW_IPS warning — visibility nudge to the operator."""
+    import logging
+    from app.security.tls import maybe_warn_about_allowed_hosts
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ALLOWED_HOSTS", "*")
+    with caplog.at_level(logging.WARNING):
+        maybe_warn_about_allowed_hosts()
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "ALLOWED_HOSTS=*" in log_text
+    assert "open redirect" in log_text.lower()
+
+
+def test_allowed_hosts_warning_not_logged_when_set(monkeypatch, caplog):
+    """Operator hardened ALLOWED_HOSTS to a real hostname — no warning."""
+    import logging
+    from app.security.tls import maybe_warn_about_allowed_hosts
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("ALLOWED_HOSTS", "app.example.com")
+    with caplog.at_level(logging.WARNING):
+        maybe_warn_about_allowed_hosts()
+    log_text = "\n".join(r.getMessage() for r in caplog.records)
+    assert "ALLOWED_HOSTS" not in log_text

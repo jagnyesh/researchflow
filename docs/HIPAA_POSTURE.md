@@ -289,6 +289,26 @@ The TLS middleware is installed at module load **only when `ENVIRONMENT=producti
 
 **Local `make run` and pytest both default to dev mode** (no ENVIRONMENT set → "development" → middleware not installed → no HTTPS redirect → all existing tests work unchanged).
 
+### Open-redirect defense (CSO Finding 1 fix)
+
+The 308 redirect target is constructed from `request.url`, which includes the `Host` header from the incoming request. Without Host validation, an attacker who can set the `Host` header (directly or through a misconfigured LB) steers the redirect to attacker-controlled domains — phishing vector that defeats the entire transport-security narrative.
+
+**Mitigation:** Starlette's `TrustedHostMiddleware` is installed in production when `ALLOWED_HOSTS` is set to anything other than `*`. It validates the `Host` header against the allowlist BEFORE the TLS middleware sees the request. Forged Host → 400 (no 308 leak).
+
+**`ALLOWED_HOSTS=*`** (default) is an explicit opt-out for deployments that haven't allocated their canonical hostname yet. A startup WARNING is logged so the operator sees: `production with ALLOWED_HOSTS=*; Host header not validated. Set ALLOWED_HOSTS=app.example.com to defend against open redirect.`
+
+Production-grade institutions should always set `ALLOWED_HOSTS` to the canonical hostname(s). Subdomain wildcards (`*.researchflow.example`) are supported by Starlette.
+
+**Middleware order in production:**
+```
+TrustedHost (added last → runs first) → validates Host or 400
+TLS enforcement (added 4th → runs 2nd) → HTTP→308 or HSTS
+body_size_limit (added 3rd → runs 3rd)
+audit_middleware (added 2nd → runs 4th)
+rate_limiting (added 1st → runs 5th)
+→ handler
+```
+
 ### Forwarded-allow-ips trust boundary
 
 `FORWARDED_ALLOW_IPS=*` (default) trusts `X-Forwarded-Proto` from any source. **Safe iff the container is on a private network** where only the LB can reach it. If the container is internet-reachable directly, an attacker can spoof `X-Forwarded-Proto: https` on a plain-HTTP request and bypass the redirect.

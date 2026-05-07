@@ -64,3 +64,37 @@ def maybe_warn_about_forwarded_allow_ips() -> None:
             "production with FORWARDED_ALLOW_IPS=*; container must not be "
             "internet-reachable directly. Trust X-Forwarded-Proto from any source."
         )
+
+
+def install_trusted_host_middleware_if_production(app: FastAPI) -> bool:
+    """Install Starlette's TrustedHostMiddleware to validate Host header in production.
+
+    Closes CSO Finding 1: without Host validation, an attacker-controlled Host header
+    causes our 308 redirect to point at attacker.com (open redirect → phishing).
+
+    Returns True if installed. Skips installation when ENVIRONMENT≠production OR
+    when ALLOWED_HOSTS=* (explicit wildcard escape hatch + startup warning).
+    """
+    if not is_production():
+        return False
+    raw = os.getenv("ALLOWED_HOSTS", "*")
+    allowed = [h.strip() for h in raw.split(",") if h.strip()]
+    if allowed == ["*"]:
+        return False  # explicit opt-out; warning nudges operator to set hosts
+    from starlette.middleware.trustedhost import TrustedHostMiddleware
+
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed)
+    return True
+
+
+def maybe_warn_about_allowed_hosts() -> None:
+    """Log a WARNING if production is configured with ALLOWED_HOSTS=*.
+
+    Without Host validation, the 308 redirect honors any Host header the client
+    sends — an open redirect vector that defeats the transport-security narrative.
+    """
+    if is_production() and os.getenv("ALLOWED_HOSTS", "*") == "*":
+        logger.warning(
+            "production with ALLOWED_HOSTS=*; Host header not validated. "
+            "Set ALLOWED_HOSTS=app.example.com to defend against open redirect."
+        )
