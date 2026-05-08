@@ -4184,7 +4184,7 @@ researchflow/ docs/ FULL\_PRD.md # 18-month enterprise vision MVP\_SCOPE.md # Wh
 
 # Clone repository
 
-git clone https://github.com/yourusername/researchflow.git
+git clone https://github.com/jagnyesh/researchflow.git
 
 cd researchflow
 
@@ -4251,7 +4251,7 @@ Built as a portfolio demonstration of:
 * Real-world workflow optimization
 * Modern integration patterns (MCP, FHIR, APIs)
 
-**Author**: [Your Name] **Background**: 9+ years in healthcare IT (Epic, Optum, CDC, UIC) **Expertise**: FHIR/HL7, clinical research informatics, AI/ML for healthcare
+**Author**: Jagnyesh Patra **Background**: Healthcare Data & Informatics Leader **Expertise**: FHIR & Epic Interoperability, Product Strategy, AI/ML Innovation
 
 **Note**: This is a proof-of-concept implementation demonstrating core capabilities. The Full PRD outlines the complete enterprise vision.
 

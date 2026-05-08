@@ -21,7 +21,8 @@ We take the security of ResearchFlow seriously. If you believe you have found a 
 
 ### Please Do
 
-1. **Email Security Team**: Send details to [security@yourorg.com](mailto:security@yourorg.com)
+1. **Report via GitHub**: Use [GitHub Security Advisories](https://github.com/jagnyesh/researchflow/security/advisories/new) (preferred)
+2. **Or Email**: Send details to jagnyesh@gmail.com with subject "SECURITY: ResearchFlow"
 2. **Include Details**:
    - Type of vulnerability
    - Full paths of source file(s) related to the vulnerability
@@ -353,8 +354,8 @@ ResearchFlow is designed to support HIPAA-compliant deployments:
 
 For security-related questions or concerns:
 
-- **Email**: [security@yourorg.com](mailto:security@yourorg.com)
-- **PGP Key**: [Download public key](https://yourorg.com/security.asc)
+- **GitHub Security Advisories**: [Report a vulnerability](https://github.com/jagnyesh/researchflow/security/advisories/new)
+- **Email**: jagnyesh@gmail.com (subject: "SECURITY: ResearchFlow")
 - **Response Time**: 48 hours for acknowledgment
 
 ## Attribution

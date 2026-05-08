@@ -31,7 +31,7 @@ This project and everyone participating in it is governed by our Code of Conduct
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/yourusername/researchflow.git
+   git clone https://github.com/jagnyesh/researchflow.git
    cd researchflow
    ```
 
@@ -121,7 +121,7 @@ docs(readme): update installation instructions for Docker
 ### Before Submitting a Bug Report
 
 - Check the [documentation](docs/) to ensure it's not a configuration issue
-- Check [existing issues](https://github.com/yourusername/researchflow/issues) to avoid duplicates
+- Check [existing issues](https://github.com/jagnyesh/researchflow/issues) to avoid duplicates
 - Collect relevant information:
   - ResearchFlow version
   - Python version
@@ -146,7 +146,7 @@ Use the bug report template when creating an issue. Include:
 
 ### Before Submitting a Feature Request
 
-- Check [existing issues](https://github.com/yourusername/researchflow/issues) for similar proposals
+- Check [existing issues](https://github.com/jagnyesh/researchflow/issues) for similar proposals
 - Consider whether the feature aligns with ResearchFlow's goals
 - Think about how the feature would benefit multiple users
 
@@ -409,8 +409,8 @@ plantuml diagrams/*.puml
 
 ## Questions?
 
-- Open a [discussion](https://github.com/yourusername/researchflow/discussions) for questions
-- Join our community chat (if applicable)
+- Open a [discussion](https://github.com/jagnyesh/researchflow/discussions) for questions
+- Email: jagnyesh@gmail.com
 - Check the [documentation](docs/)
 
 Thank you for contributing to ResearchFlow!
