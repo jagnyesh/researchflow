@@ -28,7 +28,7 @@ jobs:
         plantuml diagrams/*.puml
 
     - name: Upload generated diagrams
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: diagrams
         path: diagrams/*.png
@@ -65,7 +65,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python 3.11
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -85,7 +85,7 @@ jobs:
         openapi-spec-validator openapi.json
 
     - name: Upload OpenAPI schema
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: openapi-schema
         path: openapi.json
@@ -98,7 +98,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python 3.11
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.11'
         cache: 'pip'
