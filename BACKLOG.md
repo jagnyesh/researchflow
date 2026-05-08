@@ -33,11 +33,11 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 - [ ] Sprint 14 — Real-Time Cohort Discovery (3 weeks) — FHIR Subscription listener wired to speed layer
 - [ ] Sprint 15 — Federated Query Engine (3 weeks) — cross-institution queries without raw data exchange
 
-## Sprint 6.1 follow-ons (defer until pilot user feedback)
+## Sprint 6.1 follow-ons (defer until production usage informs priority)
 
 - [ ] **Phase 2.2.1** — `idempotency_key` column on `AuditLog` for exactly-once semantics; current Phase 2.2 accepts dupes (acceptable per design — auditors care about presence). Ship if/when query-time dedup proves operationally annoying.
 - [ ] **Phase 2.3.1** — Discriminated unions for `Dict[str, Any]` fields in request schemas (`structured_requirements`, `requested_changes`, `modifications`, `search_params`, `view_definition`). Phase 2.3 wraps these in `BoundedDict` for size guards; explicit shape work requires per-dict investigation (2-3 weeks per dict). Defer until Sprint 11+ when domain stability allows.
-- [ ] **Phase 3b.1** — Researcher-PII encryption (`*.researcher_email`, `User.email`, `User.full_name`, `User.department`). Phase 3b ships ePHI-only encryption (HIPAA §164.312 floor); PII encryption is institution-defensibility nice-to-have. Blocked by `User.email`'s unique-index login lookup — needs deterministic encryption or a separate hashed-email index column. Defer until Sprint 11 (multi-tenant architecture) when the index strategy gets revisited anyway.
+- [ ] **Phase 3b.1** — Researcher-PII encryption (`*.researcher_email`, `User.email`, `User.full_name`, `User.department`). Phase 3b ships ePHI-only encryption (HIPAA §164.312 floor); PII encryption is a defense-in-depth follow-on. Blocked by `User.email`'s unique-index login lookup — needs deterministic encryption or a separate hashed-email index column. Defer until Sprint 11 (multi-tenant architecture) when the index strategy gets revisited anyway.
 
 ## Out-of-band tooling debt (this reorg's own follow-on)
 
@@ -45,7 +45,3 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 - [ ] **Phase 3 of doc reorg**: distill `docs/SQL_ON_FHIR_V2.md`, `docs/MATERIALIZED_VIEWS_ARCHITECTURE.md`, etc. into `.claude/skills/{fhir-query,hipaa-review,agent-design,sprint-workflow}/SKILL.md` — post Sprint 6.1
 - [ ] **Phase 4 of doc reorg**: subagents + plugin manifest — deferred until second contributor or clear pain
 - [ ] LangSmith API key rotation per `LANGSMITH_KEY_ROTATION_GUIDE.md` (was exposed in `.claude/settings.local.json`)
-
-## Persistent open question
-
-No external pilot user. Sprint 6.1 ships sales-grade HIPAA posture as the asset for institutional outreach, but outreach itself is unscheduled. **Treat any sprint that defers this question without addressing it as suspect.**

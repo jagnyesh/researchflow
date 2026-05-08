@@ -8,7 +8,7 @@
 
 ## Active sprint goal
 
-Establish HIPAA-compliant security baseline so ResearchFlow can host institutional pilot conversations: JWT auth wired to PHI endpoints, audit middleware writing to a durable Redis-backed queue, input validation framework, TLS, encryption-at-rest design.
+Establish HIPAA-compliant security baseline as a prerequisite for any production deployment: JWT auth wired to PHI endpoints, audit middleware writing to a durable Redis-backed queue, input validation framework, TLS, encryption-at-rest design.
 
 ## In progress
 
@@ -24,7 +24,7 @@ Establish HIPAA-compliant security baseline so ResearchFlow can host institution
 ## Blockers / decisions needed
 
 - Encryption-at-rest spike: `sqlalchemy-utils.StringEncryptedType` works at the column level on both SQLite and Postgres (it's transparent serialization, not a DB feature). The asyncpg-specific risk is the JSON-column composition (`StringEncryptedType` wrapping a JSON serializer round-trip) — that's the half-day spike. SQLite test path stays; production-on-Postgres remains the deployment requirement for other reasons.
-- No external pilot user identified. Sprint 6.1 finish-line decision was "ship sales-grade HIPAA posture" — not "wait for users." Outreach is parallel work, not a blocker.
+- Sprint 6.1 prioritized the HIPAA security baseline ahead of feature work; production-readiness gating is on baseline completeness, not on user-feedback signal.
 
 ## What just shipped
 

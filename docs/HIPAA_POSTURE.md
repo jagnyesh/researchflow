@@ -1,7 +1,7 @@
 # HIPAA Security Posture
 
 ResearchFlow's compliance-relevant controls, organized by HIPAA Security Rule
-section. This doc is the artifact for institutional security reviews.
+section. This doc is the technical reference for the security baseline.
 
 Sprints align as: **Sprint 6** (parameterized SQL, JWT auth, RBAC, rate limiting,
 audit log schema), **Sprint 6.1** (audit pipeline + middleware, TLS, encryption-at-rest).
@@ -10,7 +10,7 @@ audit log schema), **Sprint 6.1** (audit pipeline + middleware, TLS, encryption-
 
 ## Sprint 6.1 baseline — control-by-control summary
 
-This section is the elevator pitch for an institutional reviewer: every Security
+This section summarizes the security baseline at the control level: every Security
 Rule control that ResearchFlow's Sprint 6.1 baseline addresses, with a one-line
 control description and a pointer to the code that implements it. Per-phase
 deep-dives follow below.
@@ -29,7 +29,7 @@ deep-dives follow below.
 | (e)(2)(i) Integrity Controls — in transit | TLS 1.2+ at the load balancer | platform-managed (k8s ingress / ALB) | covered by 22 TLS | 3a |
 | (e)(2)(ii) Encryption (Addressable) — in transit | HSTS `max-age=31536000; includeSubDomains` enforced; HTTP redirected with 308 | `app/security/tls.py::tls_enforcement_middleware` | 22 TLS | 3a |
 
-### What an institutional reviewer asks first
+### Common review questions
 
 **Q1 — "Where is patient PHI at rest in your stack, and how is it protected?"**
 Patient PHI lives in HAPI FHIR's separate Postgres (encrypted at the institution's
@@ -247,7 +247,7 @@ app/schemas/
 | `LongText` | 50,000 chars | `initial_request`, `sql`, free-form prose (~10K LLM tokens; rejects 1MB DoS bodies) |
 | `BoundedDict` | 100 keys × 5 depth | `Dict[str, Any]` escape-hatch fields — JSON-bomb defense |
 | `EmailStr` | RFC 5321 | every `email` field across all routers |
-| `IRBNumber` | regex `^IRB[-/_]?[A-Z0-9-/_]+$`, max 50 | IRB approval numbers (permissive — supports institutional variation) |
+| `IRBNumber` | regex `^IRB[-/_]?[A-Z0-9-/_]+$`, max 50 | IRB approval numbers (permissive — supports format variation across deployment environments) |
 
 ### PHI-safe error response contract
 
@@ -267,7 +267,7 @@ app/schemas/
 - `url` — Pydantic-internal pointer that leaks Pydantic version
 - `ctx` — constraint metadata; some Pydantic error types put input into `ctx.input`
 
-**Why strip everything (not field-aware redaction):** defensibility to institutional reviewer is unconditional — "validation errors never contain field values." Field-aware allowlists invite the question "what if a field is missing from the allowlist?" Closes Sentry/Datadog leak vector by construction.
+**Why strip everything (not field-aware redaction):** defensibility under external review is unconditional — "validation errors never contain field values." Field-aware allowlists invite the question "what if a field is missing from the allowlist?" Closes Sentry/Datadog leak vector by construction.
 
 **Logging:** handler logs `validation_failed loc=… type=…` only — never the input value or request body.
 
@@ -283,20 +283,20 @@ The `/sql_query` endpoint exists to run SQL. Restricting `DROP|DELETE|INSERT|UPD
 1. Be HIPAA security theater — trivially bypassed by `SELECT * FROM x; DROP/* */ TABLE y` or comment-encoding. A reviewer who knows what they're doing spots it as such and loses confidence in the rest of the security posture.
 2. Break the endpoint's reason for being.
 
-**The right control layer is DB-level least-privilege**: the API user has SELECT-only on the FHIR schema. That is the institutional reviewer's expected answer.
+**The right control layer is DB-level least-privilege**: the API user has SELECT-only on the FHIR schema. That is the expected answer under external review.
 
 `SQLQueryRequest.sql` is bounded by `LongText` (50K cap, DoS defense) and that is the only validation applied.
 
 ### Why permissive IRB regex (not canonical)
 
-Sales-grade HIPAA targets **multiple institutions**, each of which uses different IRB number formats:
+Production HIPAA controls span **multiple deployment environments**, each of which uses different IRB number formats:
 
 ```
 IRB-001                  IRB-2024-001            IRB-2024-HF-001
 IRB-2025-001             IRB-2025-E2E-TEST-001   IRB/2025/04/123
 ```
 
-A canonical regex like `^IRB-\d{4}-\d{3,8}$` would reject 2 of 5 existing fixture formats and an unknown number of real institutional formats. Permissive regex catches obvious garbage (`"hello"`, `"DROP TABLE"`) without committing to one institution's format.
+A canonical regex like `^IRB-\d{4}-\d{3,8}$` would reject 2 of 5 existing fixture formats and an unknown number of real deployment-environment formats. Permissive regex catches obvious garbage (`"hello"`, `"DROP TABLE"`) without committing to one environment's format.
 
 ### Failure modes
 
@@ -343,11 +343,11 @@ Every PHI-touching request must be encrypted in transit. Browsers must refuse HT
 - TLS 1.2+ minimum
 - Cipher suite policy
 - Certificate management (issuance, rotation, OCSP stapling)
-- Certificate storage in HSM/Vault if institutional policy requires
+- Certificate storage in HSM/Vault if deployment-environment policy requires
 
 The application sees plain HTTP from the proxy with `X-Forwarded-Proto: https` set. uvicorn's `--proxy-headers --forwarded-allow-ips *` rewrites `request.url.scheme` to `"https"` before the app sees the request.
 
-**Why TLS at the LB, not at uvicorn:** institutional pilots deploy via their own platforms. They expect a stateless container that takes plain HTTP from their ingress. BYO-certs into the container creates deployment friction that closes sales doors. Cert management is a separate problem class (Let's Encrypt rotation, ACME challenges, HSM storage) and not Phase 3a-shaped work.
+**Why TLS at the LB, not at uvicorn:** production deployments use their own platforms. They expect a stateless container that takes plain HTTP from their ingress. BYO-certs into the container creates deployment friction that narrows the set of viable deployment options. Cert management is a separate problem class (Let's Encrypt rotation, ACME challenges, HSM storage) and not Phase 3a-shaped work.
 
 ### Redirect contract
 
@@ -364,7 +364,7 @@ Every non-HTTPS request to a non-`/health*` route gets a **308 Permanent Redirec
 Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
-- **`max-age=31536000` (1 year)** — Chrome's preload-list minimum and the institutional-defensible floor. Anything shorter signals lack of commitment.
+- **`max-age=31536000` (1 year)** — Chrome's preload-list minimum and the defensible floor for production. Anything shorter signals lack of commitment.
 - **`includeSubDomains`** — cascades to all current and future subdomains. ResearchFlow has no subdomain story today; setting now forecloses subdomain-on-HTTP footguns later.
 - **`preload` is NOT set.** Submitting to `hstspreload.org` hardcodes the domain into Chromium/Firefox/Safari source. Removal is a months-long manual process. Production domain is unknown — committing now is committing to a name that doesn't exist yet. Trivial 5-minute submission once the domain is real.
 
@@ -496,7 +496,7 @@ The Fernet-key format check is the typo-catcher: `ENCRYPTION_KEY_PRIMARY="abc"` 
 
 ### Migration strategy
 
-**Drop-and-recreate dev/test DBs; no backfill script.** Production has zero pilot rows (no external pilot user yet — the Sprint 6.1 sales-grade-HIPAA-posture decision predates any institution deployment). Test DBs are recreated per session via `init_test_db` autouse fixture. Local dev DBs are an operator concern — `rm dev.db` is a one-line action.
+**Drop-and-recreate dev/test DBs; no backfill script.** Production has zero rows (the Sprint 6.1 security baseline predates any production deployment). Test DBs are recreated per session via `init_test_db` autouse fixture. Local dev DBs are an operator concern — `rm dev.db` is a one-line action.
 
 A dual-mode "read-plaintext-or-ciphertext, write-ciphertext" migration was rejected as the same OCR-finding pattern as Phase 2.2's no-`AUDIT_ENABLED` rule: the "graceful migration" code path becomes a permanent backdoor that lets plaintext rows survive forever.
 
@@ -522,7 +522,7 @@ Rotation is a manual operator procedure. MultiFernet read-fallback for rolling r
 
 4. **Swap the env var to the new key.** Update `ENCRYPTION_KEY_PRIMARY` in the production secret store / KMS / `.env`. Restart the application.
 
-5. **Verify** by exercising a PHI-write/PHI-read flow end-to-end. Confirm the prior key is destroyed (paper key wipe, KMS key disable, env var rotation history pruned per institutional retention policy).
+5. **Verify** by exercising a PHI-write/PHI-read flow end-to-end. Confirm the prior key is destroyed (paper key wipe, KMS key disable, env var rotation history pruned per deployment-environment retention policy).
 
 The version byte in Fernet ciphertext means a future MultiFernet implementation can read both old and new keys simultaneously, eliminating the application-stop step. Worth implementing the day a rotating production deployment exists; not worth speculating against today.
 
