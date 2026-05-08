@@ -31,8 +31,7 @@ from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from app.sql_on_fhir.runner.postgres_runner import PostgresRunner
 
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -53,9 +52,11 @@ class ViewMaterializer:
     async def create_schema(self, conn: asyncpg.Connection):
         """Create the sqlonfhir schema if it doesn't exist."""
         logger.info(f"Creating schema '{SCHEMA_NAME}' if not exists...")
-        await conn.execute(f"""
+        await conn.execute(
+            f"""
             CREATE SCHEMA IF NOT EXISTS {SCHEMA_NAME}
-        """)
+        """
+        )
         logger.info(f"✅ Schema '{SCHEMA_NAME}' ready")
 
     async def get_view_definitions(self) -> List[Dict[str, Any]]:
@@ -64,26 +65,26 @@ class ViewMaterializer:
 
         for json_file in VIEW_DEFINITIONS_DIR.glob("*.json"):
             try:
-                with open(json_file, 'r') as f:
+                with open(json_file, "r") as f:
                     view_def = json.load(f)
-                    view_defs.append({
-                        'name': view_def.get('name'),
-                        'resource': view_def.get('resource'),
-                        'definition': view_def,
-                        'file': json_file.name
-                    })
-                    logger.info(f"  Loaded ViewDefinition: {view_def.get('name')} ({json_file.name})")
+                    view_defs.append(
+                        {
+                            "name": view_def.get("name"),
+                            "resource": view_def.get("resource"),
+                            "definition": view_def,
+                            "file": json_file.name,
+                        }
+                    )
+                    logger.info(
+                        f"  Loaded ViewDefinition: {view_def.get('name')} ({json_file.name})"
+                    )
             except Exception as e:
                 logger.error(f"  Failed to load {json_file.name}: {e}")
 
         return view_defs
 
     async def materialize_view(
-        self,
-        conn: asyncpg.Connection,
-        view_name: str,
-        view_def: Dict[str, Any],
-        resource_type: str
+        self, conn: asyncpg.Connection, view_name: str, view_def: Dict[str, Any], resource_type: str
     ):
         """Create a materialized view for a ViewDefinition."""
         try:
@@ -91,14 +92,11 @@ class ViewMaterializer:
             logger.info(f"Materializing view: {view_name}")
             logger.info(f"{'='*60}")
 
-            # Generate SQL using the runner
+            # Generate SQL using the runner's query builder
             logger.info(f"  Generating SQL for {resource_type}...")
-            query_result = await self.runner.execute_view_definition(
-                view_definition=view_def,
-                resource_type=resource_type
-            )
+            query = self.runner.builder.build_query(view_definition=view_def)
 
-            generated_sql = query_result.get('sql', '')
+            generated_sql = query.sql
 
             if not generated_sql:
                 logger.error(f"  ❌ No SQL generated for {view_name}")
@@ -121,12 +119,14 @@ class ViewMaterializer:
             await conn.execute(create_sql)
             logger.info(f"  ✅ Materialized view created: {SCHEMA_NAME}.{view_name}")
 
-            # Add indexes for common query patterns
-            await self._create_indexes(conn, view_name, query_result.get('columns', []))
+            # Add indexes for common query patterns (skip for now - column info not available)
+            # await self._create_indexes(conn, view_name, [])
 
             # Get row count
-            count_result = await conn.fetchrow(f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}")
-            row_count = count_result['count']
+            count_result = await conn.fetchrow(
+                f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}"
+            )
+            row_count = count_result["count"]
             logger.info(f"  📊 Row count: {row_count:,}")
 
             return True
@@ -141,17 +141,19 @@ class ViewMaterializer:
         logger.info(f"  Creating indexes...")
 
         # Common columns to index
-        index_candidates = ['patient_id', 'id', 'code', 'status', 'date', 'effective_date']
+        index_candidates = ["patient_id", "id", "code", "status", "date", "effective_date"]
 
         indexes_created = 0
         for col in index_candidates:
             if col in [c.lower() for c in columns]:
                 try:
                     index_name = f"idx_{view_name}_{col}"
-                    await conn.execute(f"""
+                    await conn.execute(
+                        f"""
                         CREATE INDEX IF NOT EXISTS {index_name}
                         ON {SCHEMA_NAME}.{view_name} ({col})
-                    """)
+                    """
+                    )
                     indexes_created += 1
                     logger.info(f"    ✅ Index created: {index_name}")
                 except Exception as e:
@@ -164,13 +166,17 @@ class ViewMaterializer:
         """Refresh a materialized view with latest data."""
         try:
             logger.info(f"Refreshing view: {view_name}...")
-            await conn.execute(f"""
+            await conn.execute(
+                f"""
                 REFRESH MATERIALIZED VIEW {SCHEMA_NAME}.{view_name}
-            """)
+            """
+            )
 
             # Get updated row count
-            count_result = await conn.fetchrow(f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}")
-            row_count = count_result['count']
+            count_result = await conn.fetchrow(
+                f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}"
+            )
+            row_count = count_result["count"]
             logger.info(f"  ✅ View refreshed: {SCHEMA_NAME}.{view_name} ({row_count:,} rows)")
             return True
         except Exception as e:
@@ -181,9 +187,11 @@ class ViewMaterializer:
         """Drop a materialized view."""
         try:
             logger.info(f"Dropping view: {view_name}...")
-            await conn.execute(f"""
+            await conn.execute(
+                f"""
                 DROP MATERIALIZED VIEW IF EXISTS {SCHEMA_NAME}.{view_name} CASCADE
-            """)
+            """
+            )
             logger.info(f"  ✅ View dropped: {SCHEMA_NAME}.{view_name}")
             return True
         except Exception as e:
@@ -195,16 +203,18 @@ class ViewMaterializer:
         logger.info(f"\nMaterialized views in '{SCHEMA_NAME}' schema:")
         logger.info(f"{'='*60}")
 
-        result = await conn.fetch(f"""
+        result = await conn.fetch(
+            f"""
             SELECT
                 schemaname,
                 matviewname,
                 pg_size_pretty(pg_total_relation_size(schemaname||'.'||matviewname)) as size,
-                (SELECT COUNT(*) FROM {SCHEMA_NAME}."|| matviewname) as row_count
+                0 as row_count
             FROM pg_matviews
             WHERE schemaname = '{SCHEMA_NAME}'
             ORDER BY matviewname
-        """)
+        """
+        )
 
         if not result:
             logger.info("  No materialized views found")
@@ -240,10 +250,7 @@ class ViewMaterializer:
 
             for view_data in view_defs:
                 success = await self.materialize_view(
-                    conn,
-                    view_data['name'],
-                    view_data['definition'],
-                    view_data['resource']
+                    conn, view_data["name"], view_data["definition"], view_data["resource"]
                 )
                 if success:
                     success_count += 1
@@ -281,18 +288,20 @@ class ViewMaterializer:
 
         try:
             # Get list of views
-            result = await conn.fetch(f"""
+            result = await conn.fetch(
+                f"""
                 SELECT matviewname
                 FROM pg_matviews
                 WHERE schemaname = '{SCHEMA_NAME}'
                 ORDER BY matviewname
-            """)
+            """
+            )
 
             if not result:
                 logger.warning(f"No materialized views found in '{SCHEMA_NAME}' schema")
                 return
 
-            view_names = [row['matviewname'] for row in result]
+            view_names = [row["matviewname"] for row in result]
             logger.info(f"Found {len(view_names)} views to refresh")
 
             success_count = 0
@@ -315,18 +324,20 @@ class ViewMaterializer:
 
         try:
             # Get list of views
-            result = await conn.fetch(f"""
+            result = await conn.fetch(
+                f"""
                 SELECT matviewname
                 FROM pg_matviews
                 WHERE schemaname = '{SCHEMA_NAME}'
                 ORDER BY matviewname
-            """)
+            """
+            )
 
             if not result:
                 logger.warning(f"No materialized views found in '{SCHEMA_NAME}' schema")
                 return
 
-            view_names = [row['matviewname'] for row in result]
+            view_names = [row["matviewname"] for row in result]
             logger.info(f"Found {len(view_names)} views to drop")
 
             success_count = 0
@@ -349,26 +360,10 @@ async def main():
     parser = argparse.ArgumentParser(
         description="Materialize SQL-on-FHIR ViewDefinitions in PostgreSQL"
     )
-    parser.add_argument(
-        '--create',
-        action='store_true',
-        help='Create all materialized views'
-    )
-    parser.add_argument(
-        '--refresh',
-        action='store_true',
-        help='Refresh all materialized views'
-    )
-    parser.add_argument(
-        '--drop',
-        action='store_true',
-        help='Drop all materialized views'
-    )
-    parser.add_argument(
-        '--list',
-        action='store_true',
-        help='List all materialized views'
-    )
+    parser.add_argument("--create", action="store_true", help="Create all materialized views")
+    parser.add_argument("--refresh", action="store_true", help="Refresh all materialized views")
+    parser.add_argument("--drop", action="store_true", help="Drop all materialized views")
+    parser.add_argument("--list", action="store_true", help="List all materialized views")
 
     args = parser.parse_args()
 

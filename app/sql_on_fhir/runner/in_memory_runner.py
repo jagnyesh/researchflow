@@ -50,7 +50,7 @@ class InMemoryRunner:
         enable_cache: bool = True,
         cache_ttl_seconds: int = 300,
         parallel_processing: bool = True,
-        max_parallel_resources: int = 10
+        max_parallel_resources: int = 10,
     ):
         """
         Initialize in-memory runner
@@ -86,7 +86,7 @@ class InMemoryRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute a ViewDefinition and return tabular results
@@ -106,8 +106,8 @@ class InMemoryRunner:
                 max_resources=1000
             )
         """
-        resource_type = view_definition.get('resource')
-        view_name = view_definition.get('name')
+        resource_type = view_definition.get("resource")
+        view_name = view_definition.get("name")
 
         # Step 0: Check cache
         if self.enable_cache:
@@ -116,20 +116,21 @@ class InMemoryRunner:
 
             if cached_result is not None:
                 self._cache_hits += 1
-                logger.info(f"✓ Cache HIT for '{view_name}' ({len(cached_result)} rows) [hits: {self._cache_hits}, misses: {self._cache_misses}]")
+                logger.info(
+                    f"✓ Cache HIT for '{view_name}' ({len(cached_result)} rows) [hits: {self._cache_hits}, misses: {self._cache_misses}]"
+                )
                 return cached_result
 
             self._cache_misses += 1
-            logger.debug(f"Cache MISS for '{view_name}' [hits: {self._cache_hits}, misses: {self._cache_misses}]")
+            logger.debug(
+                f"Cache MISS for '{view_name}' [hits: {self._cache_hits}, misses: {self._cache_misses}]"
+            )
 
         logger.info(f"Executing ViewDefinition '{view_name}' for {resource_type}")
 
         # Step 1: Fetch FHIR resources
         resources = await self._fetch_resources(
-            resource_type,
-            view_definition,
-            search_params,
-            max_resources
+            resource_type, view_definition, search_params, max_resources
         )
 
         logger.debug(f"Fetched {len(resources)} {resource_type} resources")
@@ -140,7 +141,9 @@ class InMemoryRunner:
         else:
             rows = await self._transform_resources_sequential(resources, view_definition)
 
-        logger.info(f"ViewDefinition '{view_name}' produced {len(rows)} rows from {len(resources)} resources")
+        logger.info(
+            f"ViewDefinition '{view_name}' produced {len(rows)} rows from {len(resources)} resources"
+        )
 
         # Step 3: Store in cache
         if self.enable_cache:
@@ -153,7 +156,7 @@ class InMemoryRunner:
         resource_type: str,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]],
-        max_resources: Optional[int]
+        max_resources: Optional[int],
     ) -> List[Dict[str, Any]]:
         """
         Fetch FHIR resources, applying where clauses if possible
@@ -175,22 +178,18 @@ class InMemoryRunner:
 
         # Fetch resources
         resources = await self.fhir_client.search(
-            resource_type,
-            params=params,
-            max_results=max_resources
+            resource_type, params=params, max_results=max_resources
         )
 
         # Apply where clauses if present
-        where_clauses = view_definition.get('where', [])
+        where_clauses = view_definition.get("where", [])
         if where_clauses:
             resources = self._apply_where_clauses(resources, where_clauses)
 
         return resources
 
     def _apply_where_clauses(
-        self,
-        resources: List[Dict[str, Any]],
-        where_clauses: List[Dict[str, str]]
+        self, resources: List[Dict[str, Any]], where_clauses: List[Dict[str, str]]
     ) -> List[Dict[str, Any]]:
         """
         Filter resources using where clauses
@@ -208,7 +207,7 @@ class InMemoryRunner:
             include = True
 
             for where_clause in where_clauses:
-                path = where_clause.get('path')
+                path = where_clause.get("path")
                 if not path:
                     continue
 
@@ -233,9 +232,7 @@ class InMemoryRunner:
         return filtered
 
     async def _transform_resources_sequential(
-        self,
-        resources: List[Dict[str, Any]],
-        view_definition: Dict[str, Any]
+        self, resources: List[Dict[str, Any]], view_definition: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Transform resources sequentially (original behavior)
@@ -260,9 +257,7 @@ class InMemoryRunner:
         return rows
 
     async def _transform_resources_parallel(
-        self,
-        resources: List[Dict[str, Any]],
-        view_definition: Dict[str, Any]
+        self, resources: List[Dict[str, Any]], view_definition: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Transform resources in parallel using asyncio.gather()
@@ -276,15 +271,12 @@ class InMemoryRunner:
         Returns:
             Flattened list of all rows from all resources
         """
+
         async def transform_one(resource: Dict[str, Any]) -> List[Dict[str, Any]]:
             """Transform single resource in thread pool"""
             try:
                 # Run CPU-bound transformation in thread pool for true parallelism
-                return await asyncio.to_thread(
-                    self._transform_resource,
-                    resource,
-                    view_definition
-                )
+                return await asyncio.to_thread(self._transform_resource, resource, view_definition)
             except Exception as e:
                 logger.warning(f"Error transforming resource {resource.get('id')}: {e}")
                 return []
@@ -294,26 +286,26 @@ class InMemoryRunner:
         batch_size = self.max_parallel_resources
 
         for i in range(0, len(resources), batch_size):
-            batch = resources[i:i + batch_size]
+            batch = resources[i : i + batch_size]
             logger.debug(f"Processing batch {i // batch_size + 1} ({len(batch)} resources)")
 
             # Transform batch in parallel
             batch_results = await asyncio.gather(
                 *[transform_one(resource) for resource in batch],
-                return_exceptions=False  # Errors handled in transform_one
+                return_exceptions=False,  # Errors handled in transform_one
             )
 
             # Flatten results
             for resource_rows in batch_results:
                 all_rows.extend(resource_rows)
 
-        logger.debug(f"Parallel processing produced {len(all_rows)} rows from {len(resources)} resources")
+        logger.debug(
+            f"Parallel processing produced {len(all_rows)} rows from {len(resources)} resources"
+        )
         return all_rows
 
     def _transform_resource(
-        self,
-        resource: Dict[str, Any],
-        view_definition: Dict[str, Any]
+        self, resource: Dict[str, Any], view_definition: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Transform a single FHIR resource into one or more tabular rows
@@ -325,7 +317,7 @@ class InMemoryRunner:
         Returns:
             List of rows (each resource may produce multiple rows due to forEach)
         """
-        select_elements = view_definition.get('select', [])
+        select_elements = view_definition.get("select", [])
 
         # Process select elements
         all_rows = []
@@ -337,9 +329,7 @@ class InMemoryRunner:
         return all_rows
 
     def _process_select_element(
-        self,
-        resource: Dict[str, Any],
-        select_elem: Dict[str, Any]
+        self, resource: Dict[str, Any], select_elem: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Process a single select element
@@ -352,17 +342,17 @@ class InMemoryRunner:
             List of rows
         """
         # Handle forEach
-        if 'forEach' in select_elem:
-            return self._process_for_each(resource, select_elem, 'forEach')
+        if "forEach" in select_elem:
+            return self._process_for_each(resource, select_elem, "forEach")
 
         # Handle forEachOrNull
-        if 'forEachOrNull' in select_elem:
-            return self._process_for_each(resource, select_elem, 'forEachOrNull')
+        if "forEachOrNull" in select_elem:
+            return self._process_for_each(resource, select_elem, "forEachOrNull")
 
         # Handle nested select
-        if 'select' in select_elem:
+        if "select" in select_elem:
             # Recursive select - combine results
-            nested_select = select_elem['select']
+            nested_select = select_elem["select"]
             all_rows = []
             for nested_elem in nested_select:
                 rows = self._process_select_element(resource, nested_elem)
@@ -370,8 +360,8 @@ class InMemoryRunner:
             return all_rows
 
         # Handle unionAll
-        if 'unionAll' in select_elem:
-            union_selects = select_elem['unionAll']
+        if "unionAll" in select_elem:
+            union_selects = select_elem["unionAll"]
             all_rows = []
             for union_select in union_selects:
                 rows = self._process_select_element(resource, union_select)
@@ -379,17 +369,14 @@ class InMemoryRunner:
             return all_rows
 
         # Handle regular column extraction
-        if 'column' in select_elem:
-            row = self._extract_columns(resource, select_elem['column'], {})
+        if "column" in select_elem:
+            row = self._extract_columns(resource, select_elem["column"], {})
             return [row] if row else []
 
         return []
 
     def _process_for_each(
-        self,
-        resource: Dict[str, Any],
-        select_elem: Dict[str, Any],
-        for_each_key: str
+        self, resource: Dict[str, Any], select_elem: Dict[str, Any], for_each_key: str
     ) -> List[Dict[str, Any]]:
         """
         Process forEach or forEachOrNull
@@ -403,7 +390,7 @@ class InMemoryRunner:
             List of rows (one per collection item)
         """
         for_each_path = select_elem[for_each_key]
-        columns = select_elem.get('column', [])
+        columns = select_elem.get("column", [])
 
         try:
             # Evaluate forEach expression
@@ -411,7 +398,7 @@ class InMemoryRunner:
 
             if not collection:
                 # No items in collection
-                if for_each_key == 'forEachOrNull':
+                if for_each_key == "forEachOrNull":
                     # Return one row with null values
                     return [self._extract_columns(resource, columns, {})]
                 else:
@@ -422,7 +409,7 @@ class InMemoryRunner:
             rows = []
             for item in collection:
                 # Create context with current item
-                context = {'%context': item}
+                context = {"%context": item}
                 row = self._extract_columns(resource, columns, context, item)
                 if row:
                     rows.append(row)
@@ -438,7 +425,7 @@ class InMemoryRunner:
         resource: Dict[str, Any],
         columns: List[Dict[str, Any]],
         context: Dict[str, Any],
-        current_item: Optional[Any] = None
+        current_item: Optional[Any] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Extract column values from resource
@@ -455,8 +442,8 @@ class InMemoryRunner:
         row = {}
 
         for column in columns:
-            column_name = column.get('name')
-            column_path = column.get('path')
+            column_name = column.get("name")
+            column_path = column.get("path")
 
             if not column_name or not column_path:
                 continue
@@ -474,7 +461,7 @@ class InMemoryRunner:
                         row[column_name] = result[0]
                     else:
                         # Multiple values - return as array or concatenate
-                        if column.get('collection', False):
+                        if column.get("collection", False):
                             row[column_name] = result
                         else:
                             # Take first value
@@ -483,7 +470,9 @@ class InMemoryRunner:
                     row[column_name] = None
 
             except Exception as e:
-                logger.warning(f"Error extracting column '{column_name}' with path '{column_path}': {e}")
+                logger.warning(
+                    f"Error extracting column '{column_name}' with path '{column_path}': {e}"
+                )
                 row[column_name] = None
 
         return row if row else None
@@ -500,7 +489,7 @@ class InMemoryRunner:
         """
         schema = {}
 
-        select_elements = view_definition.get('select', [])
+        select_elements = view_definition.get("select", [])
 
         for select_elem in select_elements:
             self._extract_schema_from_select(select_elem, schema)
@@ -515,22 +504,22 @@ class InMemoryRunner:
             select_elem: Select element
             schema: Schema dict to populate
         """
-        if 'column' in select_elem:
-            for column in select_elem['column']:
-                name = column.get('name')
-                col_type = column.get('type', 'string')  # Default to string
+        if "column" in select_elem:
+            for column in select_elem["column"]:
+                name = column.get("name")
+                col_type = column.get("type", "string")  # Default to string
 
                 if name:
                     schema[name] = col_type
 
         # Handle nested selects
-        if 'select' in select_elem:
-            for nested in select_elem['select']:
+        if "select" in select_elem:
+            for nested in select_elem["select"]:
                 self._extract_schema_from_select(nested, schema)
 
         # Handle unionAll
-        if 'unionAll' in select_elem:
-            for union_select in select_elem['unionAll']:
+        if "unionAll" in select_elem:
+            for union_select in select_elem["unionAll"]:
                 self._extract_schema_from_select(union_select, schema)
 
     # ========================================================================
@@ -541,7 +530,7 @@ class InMemoryRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]],
-        max_resources: Optional[int]
+        max_resources: Optional[int],
     ) -> str:
         """
         Generate cache key from query parameters
@@ -553,22 +542,32 @@ class InMemoryRunner:
 
         Returns:
             Cache key (MD5 hash)
+
+        Security Note:
+            MD5 is used here for NON-CRYPTOGRAPHIC purposes only (cache key generation).
+            This is an acceptable use case because:
+            - Not used for password hashing or authentication
+            - Not used for integrity verification of security-sensitive data
+            - Fast hash function suitable for creating unique cache identifiers
+            - Collision resistance not critical for cache keys (worst case: cache miss)
         """
         # Create unique key from all parameters
         key_components = {
-            'view_name': view_definition.get('name'),
-            'resource_type': view_definition.get('resource'),
-            'search_params': search_params or {},
-            'max_resources': max_resources,
+            "view_name": view_definition.get("name"),
+            "resource_type": view_definition.get("resource"),
+            "search_params": search_params or {},
+            "max_resources": max_resources,
             # Include critical parts of ViewDefinition that affect results
-            'where_clauses': view_definition.get('where', []),
-            'select_hash': hashlib.md5(
-                json.dumps(view_definition.get('select', []), sort_keys=True).encode()
-            ).hexdigest()
+            "where_clauses": view_definition.get("where", []),
+            # MD5 for cache key generation only (non-cryptographic use)
+            "select_hash": hashlib.md5(  # nosec B324
+                json.dumps(view_definition.get("select", []), sort_keys=True).encode()
+            ).hexdigest(),
         }
 
         key_string = json.dumps(key_components, sort_keys=True)
-        cache_key = hashlib.md5(key_string.encode()).hexdigest()
+        # MD5 for cache key generation only (non-cryptographic use)
+        cache_key = hashlib.md5(key_string.encode()).hexdigest()  # nosec B324
 
         return cache_key
 
@@ -627,11 +626,11 @@ class InMemoryRunner:
         hit_rate = (self._cache_hits / total_requests * 100) if total_requests > 0 else 0
 
         return {
-            'enabled': self.enable_cache,
-            'ttl_seconds': self.cache_ttl_seconds,
-            'cache_size': len(self._cache),
-            'cache_hits': self._cache_hits,
-            'cache_misses': self._cache_misses,
-            'total_requests': total_requests,
-            'hit_rate_percent': round(hit_rate, 2)
+            "enabled": self.enable_cache,
+            "ttl_seconds": self.cache_ttl_seconds,
+            "cache_size": len(self._cache),
+            "cache_hits": self._cache_hits,
+            "cache_misses": self._cache_misses,
+            "total_requests": total_requests,
+            "hit_rate_percent": round(hit_rate, 2),
         }

@@ -1,4 +1,4 @@
-# Caching Complete: 1151x Performance Improvement 
+# Caching Complete: 1151x Performance Improvement
 
 **Date:** October 8, 2025
 **Feature:** Simple in-memory caching for FHIR query results

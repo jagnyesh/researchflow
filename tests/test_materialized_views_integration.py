@@ -16,6 +16,7 @@ from datetime import datetime
 # Add project to path
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
@@ -28,9 +29,9 @@ from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 @pytest.mark.asyncio
 async def test_materialized_view_exists():
     """Test that materialized views exist in sqlonfhir schema"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: Check Materialized Views Exist")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
 
@@ -60,7 +61,7 @@ async def test_materialized_view_exists():
             # Get row count
             count_sql = f"SELECT COUNT(*) as count FROM sqlonfhir.{view['matviewname']}"
             count_result = await db_client.execute_query(count_sql)
-            row_count = count_result[0]['count'] if count_result else 0
+            row_count = count_result[0]["count"] if count_result else 0
 
             print(f"  • {view['matviewname']}: {row_count:,} rows, {view['size']}")
 
@@ -74,9 +75,9 @@ async def test_materialized_view_exists():
 @pytest.mark.asyncio
 async def test_materialized_view_runner():
     """Test MaterializedViewRunner directly"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: MaterializedViewRunner Performance")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
     runner = MaterializedViewRunner(db_client)
@@ -104,7 +105,7 @@ async def test_materialized_view_runner():
         first_row = rows[0]
         print(f"  Sample row keys: {list(first_row.keys())}")
 
-        assert 'patient_id' in first_row or 'id' in first_row, "❌ Missing patient_id column"
+        assert "patient_id" in first_row or "id" in first_row, "❌ Missing patient_id column"
 
         print(f"\n✅ TEST PASSED: MaterializedViewRunner works ({execution_time_ms:.2f}ms)")
 
@@ -115,9 +116,9 @@ async def test_materialized_view_runner():
 @pytest.mark.asyncio
 async def test_hybrid_runner():
     """Test HybridRunner smart routing"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: HybridRunner Smart Routing")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
     runner = HybridRunner(db_client)
@@ -146,7 +147,7 @@ async def test_hybrid_runner():
         print(f"    Materialized: {stats['materialized_queries']}")
         print(f"    Postgres fallback: {stats['postgres_queries']}")
 
-        assert stats['materialized_queries'] > 0, "❌ Materialized runner not used"
+        assert stats["materialized_queries"] > 0, "❌ Materialized runner not used"
 
         print(f"\n✅ TEST PASSED: HybridRunner smart routing works")
 
@@ -157,9 +158,9 @@ async def test_hybrid_runner():
 @pytest.mark.asyncio
 async def test_performance_comparison():
     """Compare PostgresRunner vs MaterializedViewRunner performance"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: Performance Comparison")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
     manager = ViewDefinitionManager()
@@ -217,9 +218,9 @@ async def test_performance_comparison():
 @pytest.mark.asyncio
 async def test_view_with_filters():
     """Test materialized view queries with filters"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: Filtered Queries")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
     runner = MaterializedViewRunner(db_client)
@@ -230,18 +231,14 @@ async def test_view_with_filters():
 
         # Test with gender filter
         print("\nTest: Filter by gender='female'")
-        rows = await runner.execute(
-            view_def,
-            search_params={"gender": "female"},
-            max_resources=50
-        )
+        rows = await runner.execute(view_def, search_params={"gender": "female"}, max_resources=50)
 
         print(f"  Rows returned: {len(rows)}")
 
         # Verify all rows match filter
         if rows:
-            genders = [r.get('gender') for r in rows if 'gender' in r]
-            female_count = sum(1 for g in genders if g and 'female' in str(g).lower())
+            genders = [r.get("gender") for r in rows if "gender" in r]
+            female_count = sum(1 for g in genders if g and "female" in str(g).lower())
             print(f"  Female patients: {female_count}/{len(genders)}")
 
         print(f"\n✅ TEST PASSED: Filtered queries work")
@@ -253,9 +250,9 @@ async def test_view_with_filters():
 @pytest.mark.asyncio
 async def test_count_query():
     """Test COUNT queries"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 6: COUNT Queries")
-    print("="*60)
+    print("=" * 60)
 
     db_client = await create_hapi_db_client()
     runner = MaterializedViewRunner(db_client)
@@ -283,10 +280,11 @@ async def test_count_query():
 
 def test_summary():
     """Print test summary"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("MATERIALIZED VIEWS INTEGRATION TEST SUMMARY")
-    print("="*60)
-    print("""
+    print("=" * 60)
+    print(
+        """
 ✅ Phase 1 & 2 Implementation Verified:
 
 1. ✅ Materialized views exist in 'sqlonfhir' schema
@@ -310,14 +308,15 @@ API Endpoints Available:
 Documentation:
 - docs/MATERIALIZED_VIEWS.md
 - /tmp/materialized_views_summary.md
-    """)
+    """
+    )
 
 
 if __name__ == "__main__":
     # Run tests
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("STARTING MATERIALIZED VIEWS INTEGRATION TESTS")
-    print("="*80)
+    print("=" * 80)
 
     asyncio.run(test_materialized_view_exists())
     asyncio.run(test_materialized_view_runner())
@@ -327,6 +326,6 @@ if __name__ == "__main__":
     asyncio.run(test_count_query())
     test_summary()
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("ALL TESTS COMPLETED SUCCESSFULLY! ✅")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")

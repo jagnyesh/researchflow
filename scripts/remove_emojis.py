@@ -7,33 +7,34 @@ from pathlib import Path
 
 # Common emoji mappings to text equivalents
 EMOJI_REPLACEMENTS = {
-    '✅': '[x]',
-    '✓': '[x]',
-    '❌': '[ ]',
-    '⚠️': 'WARNING:',
-    '📊': '',
-    '🚀': '',
-    '💡': 'NOTE:',
-    '🔧': '',
-    '🎯': '',
-    '📝': '',
-    '🔥': '',
-    '⭐': '',
-    '🎉': '',
-    '👍': '',
-    '📌': 'NOTE:',
-    '🔍': '',
-    '💻': '',
-    '🤖': '',
-    '🟢': '',
-    '🟡': '',
-    '🔴': '',
+    "✅": "[x]",
+    "✓": "[x]",
+    "❌": "[ ]",
+    "⚠️": "WARNING:",
+    "📊": "",
+    "🚀": "",
+    "💡": "NOTE:",
+    "🔧": "",
+    "🎯": "",
+    "📝": "",
+    "🔥": "",
+    "⭐": "",
+    "🎉": "",
+    "👍": "",
+    "📌": "NOTE:",
+    "🔍": "",
+    "💻": "",
+    "🤖": "",
+    "🟢": "",
+    "🟡": "",
+    "🔴": "",
 }
+
 
 def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
     """Remove emojis from a markdown file."""
     try:
-        content = file_path.read_text(encoding='utf-8')
+        content = file_path.read_text(encoding="utf-8")
         original_content = content
 
         # Replace known emojis with text equivalents
@@ -44,26 +45,26 @@ def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
         # This regex matches most emojis
         emoji_pattern = re.compile(
             "["
-            "\U0001F600-\U0001F64F"  # emoticons
-            "\U0001F300-\U0001F5FF"  # symbols & pictographs
-            "\U0001F680-\U0001F6FF"  # transport & map symbols
-            "\U0001F1E0-\U0001F1FF"  # flags (iOS)
-            "\U00002702-\U000027B0"
-            "\U000024C2-\U0001F251"
+            "\U0001f600-\U0001f64f"  # emoticons
+            "\U0001f300-\U0001f5ff"  # symbols & pictographs
+            "\U0001f680-\U0001f6ff"  # transport & map symbols
+            "\U0001f1e0-\U0001f1ff"  # flags (iOS)
+            "\U00002702-\U000027b0"
+            "\U000024c2-\U0001f251"
             "]+",
-            flags=re.UNICODE
+            flags=re.UNICODE,
         )
-        content = emoji_pattern.sub('', content)
+        content = emoji_pattern.sub("", content)
 
         # Clean up any double spaces created by emoji removal
-        content = re.sub(r'  +', ' ', content)
+        content = re.sub(r"  +", " ", content)
 
         # Clean up lines that now start with just a space
-        content = re.sub(r'^\s+$', '', content, flags=re.MULTILINE)
+        content = re.sub(r"^\s+$", "", content, flags=re.MULTILINE)
 
         if content != original_content:
             if not dry_run:
-                file_path.write_text(content, encoding='utf-8')
+                file_path.write_text(content, encoding="utf-8")
                 print(f"✓ Updated: {file_path.relative_to(Path.cwd())}")
             else:
                 print(f"Would update: {file_path.relative_to(Path.cwd())}")
@@ -75,9 +76,10 @@ def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
         print(f"ERROR processing {file_path}: {e}")
         return False
 
+
 def main():
     """Remove emojis from all documentation files."""
-    docs_dir = Path(__file__).parent.parent / 'docs'
+    docs_dir = Path(__file__).parent.parent / "docs"
 
     if not docs_dir.exists():
         print(f"ERROR: Documentation directory not found: {docs_dir}")
@@ -88,7 +90,7 @@ def main():
     print("=" * 80)
 
     # Find all markdown files
-    md_files = list(docs_dir.rglob('*.md'))
+    md_files = list(docs_dir.rglob("*.md"))
 
     print(f"\nFound {len(md_files)} markdown files")
     print()
@@ -103,5 +105,6 @@ def main():
     print(f"Summary: Updated {updated_count}/{len(md_files)} files")
     print("=" * 80)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

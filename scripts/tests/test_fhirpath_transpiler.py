@@ -25,25 +25,27 @@ def main():
         ("Simple field: gender", "gender", "v.res_text_vc::jsonb->>'gender'"),
         ("Simple field: birthDate", "birthDate", "v.res_text_vc::jsonb->>'birthDate'"),
         ("Simple field: active", "active", "v.res_text_vc::jsonb->>'active'"),
-
         # Nested field access (with arrays)
-        ("Nested: name.family", "name.family",
-         "v.res_text_vc::jsonb->'name'->0->>'family'"),
-        ("Nested: name.given", "name.given",
-         "v.res_text_vc::jsonb->'name'->0->>'given'"),
-        ("Nested: address.city", "address.city",
-         "v.res_text_vc::jsonb->'address'->0->>'city'"),
-
+        ("Nested: name.family", "name.family", "v.res_text_vc::jsonb->'name'->0->>'family'"),
+        ("Nested: name.given", "name.given", "v.res_text_vc::jsonb->'name'->0->>'given'"),
+        ("Nested: address.city", "address.city", "v.res_text_vc::jsonb->'address'->0->>'city'"),
         # Deep nesting
-        ("Deep: code.coding.code", "code.coding.code",
-         "v.res_text_vc::jsonb->'code'->'coding'->0->>'code'"),
-
+        (
+            "Deep: code.coding.code",
+            "code.coding.code",
+            "v.res_text_vc::jsonb->'code'->'coding'->0->>'code'",
+        ),
         # FHIRPath functions
-        ("Function: name.exists()", "name.exists()",
-         "(v.res_text_vc::jsonb->'name'->0->>'exists' IS NOT NULL)"),
-
-        ("Function: name.count()", "name.count()",
-         "jsonb_array_length(v.res_text_vc::jsonb->'name'->0->>'count')"),
+        (
+            "Function: name.exists()",
+            "name.exists()",
+            "(v.res_text_vc::jsonb->'name'->0->>'exists' IS NOT NULL)",
+        ),
+        (
+            "Function: name.count()",
+            "name.count()",
+            "jsonb_array_length(v.res_text_vc::jsonb->'name'->0->>'count')",
+        ),
     ]
 
     print("\n1. Testing simple transpilations:")
@@ -81,13 +83,16 @@ def main():
     print("-" * 80)
 
     where_tests = [
-        ("Simple where",
-         "coding.where(system='http://loinc.org').code",
-         ["jsonb_array_elements", "WHERE", "system", "http://loinc.org", "code"]),
-
-        ("Where on coding",
-         "code.coding.where(system='http://hl7.org/fhir/sid/icd-10-cm').code",
-         ["jsonb_array_elements", "WHERE", "system", "icd-10-cm"]),
+        (
+            "Simple where",
+            "coding.where(system='http://loinc.org').code",
+            ["jsonb_array_elements", "WHERE", "system", "http://loinc.org", "code"],
+        ),
+        (
+            "Where on coding",
+            "code.coding.where(system='http://hl7.org/fhir/sid/icd-10-cm').code",
+            ["jsonb_array_elements", "WHERE", "system", "icd-10-cm"],
+        ),
     ]
 
     for description, fhir_path, expected_parts in where_tests:
@@ -121,11 +126,7 @@ def main():
 
     try:
         lateral_join, array_alias, select_cols = transpiler.transpile_forEach(
-            fhir_path="name",
-            column_paths=[
-                ("family_name", "family"),
-                ("given_name", "given")
-            ]
+            fhir_path="name", column_paths=[("family_name", "family"), ("given_name", "given")]
         )
 
         print(f"\nforEach: name")

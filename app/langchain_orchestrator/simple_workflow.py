@@ -31,6 +31,7 @@ class WorkflowState(TypedDict):
     LangGraph uses TypedDict to define state shape.
     This replaces the manual state tracking in custom workflow_engine.py
     """
+
     request_id: str
     current_state: str
     researcher_request: str
@@ -95,8 +96,8 @@ class SimpleWorkflow:
             self._route_after_requirements,
             {
                 "complete": "complete",
-                "wait_for_input": END  # Wait for more user input (don't loop)
-            }
+                "wait_for_input": END,  # Wait for more user input (don't loop)
+            },
         )
 
         # complete is terminal
@@ -154,16 +155,22 @@ class SimpleWorkflow:
             if state.get("requirements") and state.get("completeness_score", 0) >= 0.8:
                 # Requirements are complete
                 state["requires_approval"] = True
-                logger.info(f"[SimpleWorkflow] Requirements complete (score: {state['completeness_score']:.1%})")
+                logger.info(
+                    f"[SimpleWorkflow] Requirements complete (score: {state['completeness_score']:.1%})"
+                )
             else:
                 # Need more conversation
-                logger.info(f"[SimpleWorkflow] Requirements incomplete (score: {state['completeness_score']:.1%})")
+                logger.info(
+                    f"[SimpleWorkflow] Requirements incomplete (score: {state['completeness_score']:.1%})"
+                )
         else:
             logger.info(f"[SimpleWorkflow] Requirements already marked as ready")
 
         return state
 
-    def _route_after_requirements(self, state: WorkflowState) -> Literal["complete", "wait_for_input"]:
+    def _route_after_requirements(
+        self, state: WorkflowState
+    ) -> Literal["complete", "wait_for_input"]:
         """
         Conditional routing after requirements gathering
 

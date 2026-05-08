@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Allowlist for the detect-secrets baseline file (contains hashed secrets that detect-secrets has audited)"
+paths = [
+  '''\.secrets\.baseline$''',
+]

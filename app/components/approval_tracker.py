@@ -33,9 +33,7 @@ class ApprovalTracker:
         """
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.api_base_url}/research/{request_id}"
-                )
+                response = await client.get(f"{self.api_base_url}/research/{request_id}")
                 response.raise_for_status()
                 return response.json()
 
@@ -55,9 +53,7 @@ class ApprovalTracker:
         """
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(
-                    f"{self.api_base_url}/approvals/request/{request_id}"
-                )
+                response = await client.get(f"{self.api_base_url}/approvals/request/{request_id}")
                 response.raise_for_status()
 
                 approvals_data = response.json()
@@ -70,11 +66,7 @@ class ApprovalTracker:
             logger.error(f"Failed to get pending approvals: {e}")
             return []
 
-    def render_approval_status(
-        self,
-        request_id: str,
-        status_data: Dict[str, Any]
-    ):
+    def render_approval_status(self, request_id: str, status_data: Dict[str, Any]):
         """
         Render approval status card
 
@@ -86,7 +78,8 @@ class ApprovalTracker:
         current_agent = status_data.get("current_agent", "unknown")
 
         # Create status container
-        st.markdown(f"""
+        st.markdown(
+            f"""
 <div style="
     background-color: #f0f8ff;
     border-left: 5px solid #1f77b4;
@@ -97,7 +90,9 @@ class ApprovalTracker:
     <p><strong>Current State:</strong> {current_state.replace('_', ' ').title()}</p>
     <p><strong>Current Agent:</strong> {current_agent}</p>
 </div>
-        """, unsafe_allow_html=True)
+        """,
+            unsafe_allow_html=True,
+        )
 
         # Show approval pipeline
         self._render_approval_pipeline(status_data)
@@ -128,7 +123,7 @@ class ApprovalTracker:
             ("qa_validation", "✅", "QA"),
             ("qa_review", "⏸️", "QA Approval"),
             ("data_delivery", "📦", "Delivery"),
-            ("delivered", "✅", "Delivered")
+            ("delivered", "✅", "Delivered"),
         ]
 
         st.markdown("### Workflow Progress")
@@ -141,38 +136,42 @@ class ApprovalTracker:
                 # Check if this stage is complete, current, or pending
                 if current_state == state_key:
                     # Current stage
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
 <div style="text-align: center; background-color: #fff3cd; padding: 10px; border-radius: 5px;">
     <div style="font-size: 24px;">{icon}</div>
     <div style="font-size: 10px; font-weight: bold;">{label}</div>
     <div style="font-size: 8px; color: #856404;">◉ In Progress</div>
 </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 elif self._is_stage_complete(current_state, state_key, stages):
                     # Completed stage
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
 <div style="text-align: center; background-color: #d4edda; padding: 10px; border-radius: 5px;">
     <div style="font-size: 24px;">✅</div>
     <div style="font-size: 10px;">{label}</div>
     <div style="font-size: 8px; color: #155724;">Complete</div>
 </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
                 else:
                     # Pending stage
-                    st.markdown(f"""
+                    st.markdown(
+                        f"""
 <div style="text-align: center; background-color: #f8f9fa; padding: 10px; border-radius: 5px;">
     <div style="font-size: 24px; opacity: 0.3;">{icon}</div>
     <div style="font-size: 10px; opacity: 0.5;">{label}</div>
     <div style="font-size: 8px; color: #6c757d;">Pending</div>
 </div>
-                    """, unsafe_allow_html=True)
+                    """,
+                        unsafe_allow_html=True,
+                    )
 
-    def _is_stage_complete(
-        self,
-        current_state: str,
-        stage_key: str,
-        stages: list
-    ) -> bool:
+    def _is_stage_complete(self, current_state: str, stage_key: str, stages: list) -> bool:
         """Check if a stage is complete based on current state"""
         try:
             current_idx = next(i for i, (key, _, _) in enumerate(stages) if key == current_state)
@@ -182,10 +181,7 @@ class ApprovalTracker:
             return False
 
     async def poll_for_updates(
-        self,
-        request_id: str,
-        poll_interval: int = 5,
-        max_polls: int = 60
+        self, request_id: str, poll_interval: int = 5, max_polls: int = 60
     ) -> Dict[str, Any]:
         """
         Poll for request status updates
@@ -255,7 +251,8 @@ class ApprovalTracker:
             urgency_color = "#dc3545" if is_critical else "#ffc107"
             urgency_label = "CRITICAL" if is_critical else "Pending"
 
-            st.markdown(f"""
+            st.markdown(
+                f"""
 <div style="
     background-color: #fff;
     border-left: 5px solid {urgency_color};
@@ -269,7 +266,9 @@ class ApprovalTracker:
     <p><strong>By:</strong> {submitted_by}</p>
     <p><em>⏳ Awaiting informatician review...</em></p>
 </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             # Show SQL for phenotype approvals
             if approval_type == "phenotype_sql":

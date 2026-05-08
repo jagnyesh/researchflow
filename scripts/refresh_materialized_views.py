@@ -25,10 +25,7 @@ sys.path.insert(0, str(project_root))
 
 from app.services.materialized_view_service import MaterializedViewService
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -40,10 +37,7 @@ async def refresh_all_views():
     logger.info("=" * 60)
 
     # Get database URL from environment
-    database_url = os.getenv(
-        'DATABASE_URL',
-        'sqlite+aiosqlite:///./dev.db'
-    )
+    database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 
     # Initialize service
     service = None
@@ -69,16 +63,16 @@ async def refresh_all_views():
         logger.info(f"Views refreshed: {result.get('refreshed_count', 0)}")
         logger.info(f"Views failed: {result.get('failed_count', 0)}")
 
-        if result.get('errors'):
+        if result.get("errors"):
             logger.error("\nErrors encountered:")
-            for error in result['errors']:
+            for error in result["errors"]:
                 logger.error(f"  - {error}")
 
         logger.info(f"Finished at: {datetime.utcnow().isoformat()}")
         logger.info("=" * 60)
 
         # Return exit code based on success
-        return 0 if result.get('failed_count', 0) == 0 else 1
+        return 0 if result.get("failed_count", 0) == 0 else 1
 
     except Exception as e:
         logger.error(f"\n❌ Fatal error: {e}", exc_info=True)

@@ -17,7 +17,7 @@ ResearchFlow automates clinical research data requests from natural language to 
 
 **The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
 
-As a biomedical informatician supporting clinical research, I observed that ~50% of my work was administrative coordination (scheduling, routing, status tracking) while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality).
+As a biomedical informatician supporting clinical research, I observed that ~50% of work was administrative coordination (scheduling, routing, status tracking) handled by non-techincal staff, while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality) which required years of domain experience in healthcare data.
 
 **The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
 - **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
@@ -54,6 +54,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
                  │                  │
         Batch Ingestion      Real-time Updates
       (materialize_views)    (Redis caching)
+
                  │                  │
                  ↓                  ↓
 ┌─────────────────────────┐  ┌──────────────────────────────┐

@@ -85,7 +85,7 @@ class ViewDefinitionTester:
 
         # Get user confirmation
         response = input("⚠️  Execute this SQL? (yes/no): ").strip().lower()
-        if response != 'yes':
+        if response != "yes":
             print("❌ Execution cancelled by user")
             return [], query.sql
 
@@ -139,7 +139,7 @@ class ViewDefinitionTester:
 
         # Get user confirmation
         response = input("⚠️  Execute this SQL? (yes/no): ").strip().lower()
-        if response != 'yes':
+        if response != "yes":
             print("❌ Execution cancelled by user")
             return [], query.sql
 
@@ -159,9 +159,13 @@ class ViewDefinitionTester:
             return None
 
         try:
-            birth_date = datetime.fromisoformat(birth_date_str.replace('Z', '+00:00')).date()
+            birth_date = datetime.fromisoformat(birth_date_str.replace("Z", "+00:00")).date()
             today = date.today()
-            age = today.year - birth_date.year - ((today.month, today.day) < (birth_date.month, birth_date.day))
+            age = (
+                today.year
+                - birth_date.year
+                - ((today.month, today.day) < (birth_date.month, birth_date.day))
+            )
             return age
         except:
             return None
@@ -170,7 +174,7 @@ class ViewDefinitionTester:
         """Filter patients by age range"""
         filtered = []
         for patient in patients:
-            birth_date = patient.get('birth_date')
+            birth_date = patient.get("birth_date")
             if not birth_date:
                 continue
 
@@ -192,16 +196,16 @@ class ViewDefinitionTester:
         for condition in conditions:
             # Check all text fields for keyword
             fields_to_check = [
-                condition.get('icd10_display', ''),
-                condition.get('snomed_display', ''),
-                condition.get('code_text', ''),
-                condition.get('icd10_code', ''),
-                condition.get('snomed_code', '')
+                condition.get("icd10_display", ""),
+                condition.get("snomed_display", ""),
+                condition.get("code_text", ""),
+                condition.get("icd10_code", ""),
+                condition.get("snomed_code", ""),
             ]
 
             for field in fields_to_check:
                 if field and keyword.lower() in str(field).lower():
-                    patient_id = condition.get('patient_id')
+                    patient_id = condition.get("patient_id")
                     if patient_id:
                         patient_ids.add(patient_id)
                     break
@@ -281,7 +285,7 @@ class ViewDefinitionTester:
             print("=" * 80)
 
             # Get patient IDs from age-filtered patients
-            age_filtered_ids = {p.get('id') or p.get('patient_id') for p in patients_by_age}
+            age_filtered_ids = {p.get("id") or p.get("patient_id") for p in patients_by_age}
 
             # Intersection: patients who are female, aged 20-30, AND have diabetes
             final_patient_ids = age_filtered_ids & set(diabetes_patient_ids)
@@ -302,10 +306,13 @@ class ViewDefinitionTester:
                 print("Patient IDs:")
                 for pid in sorted(final_patient_ids):
                     # Find patient details
-                    patient = next((p for p in patients_by_age if (p.get('id') or p.get('patient_id')) == pid), None)
+                    patient = next(
+                        (p for p in patients_by_age if (p.get("id") or p.get("patient_id")) == pid),
+                        None,
+                    )
                     if patient:
-                        name = patient.get('full_name', 'Unknown')
-                        age = self.calculate_age(patient.get('birth_date'))
+                        name = patient.get("full_name", "Unknown")
+                        age = self.calculate_age(patient.get("birth_date"))
                         print(f"  - {pid}: {name} (age {age})")
             else:
                 print("No patients found matching all criteria")

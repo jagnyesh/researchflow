@@ -37,7 +37,6 @@ VIEW_TEMPLATES = {
         WHERE r.res_type = 'Patient'
           AND r.res_deleted_at IS NULL
     """,
-
     "condition_simple": """
         SELECT
             r.res_id::text as id,
@@ -54,7 +53,6 @@ VIEW_TEMPLATES = {
         WHERE r.res_type = 'Condition'
           AND r.res_deleted_at IS NULL
     """,
-
     "patient_demographics": """
         SELECT
             r.res_id::text as id,
@@ -68,7 +66,6 @@ VIEW_TEMPLATES = {
         WHERE r.res_type = 'Patient'
           AND r.res_deleted_at IS NULL
     """,
-
     "observation_labs": """
         SELECT
             r.res_id::text as id,
@@ -84,7 +81,7 @@ VIEW_TEMPLATES = {
         JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver
         WHERE r.res_type = 'Observation'
           AND r.res_deleted_at IS NULL
-    """
+    """,
 }
 
 
@@ -113,7 +110,7 @@ async def create_materialized_view(conn, view_name, sql):
 
         # Get row count
         result = await conn.fetchrow(f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}")
-        row_count = result['count']
+        row_count = result["count"]
 
         print(f"  ✅ Created: {SCHEMA_NAME}.{view_name}")
         print(f"  📊 Rows: {row_count:,}\n")
@@ -130,10 +127,10 @@ async def create_indexes(conn, view_name):
     print(f"  Creating indexes for {view_name}...")
 
     indexes = {
-        'patient_simple': ['patient_id', 'gender'],
-        'patient_demographics': ['patient_id', 'gender'],
-        'condition_simple': ['patient_id', 'patient_ref', 'icd10_code', 'snomed_code'],
-        'observation_labs': ['patient_id', 'patient_ref', 'code', 'effective_date']
+        "patient_simple": ["patient_id", "gender"],
+        "patient_demographics": ["patient_id", "gender"],
+        "condition_simple": ["patient_id", "patient_ref", "icd10_code", "snomed_code"],
+        "observation_labs": ["patient_id", "patient_ref", "code", "effective_date"],
     }
 
     if view_name not in indexes:
@@ -142,10 +139,12 @@ async def create_indexes(conn, view_name):
     for col in indexes[view_name]:
         try:
             idx_name = f"idx_{view_name}_{col}"
-            await conn.execute(f"""
+            await conn.execute(
+                f"""
                 CREATE INDEX IF NOT EXISTS {idx_name}
                 ON {SCHEMA_NAME}.{view_name} ({col})
-            """)
+            """
+            )
             print(f"    ✅ Index: {idx_name}")
         except Exception as e:
             print(f"    ⚠️  Index failed: {col} ({e})")
@@ -159,23 +158,27 @@ async def list_views(conn):
     print(f"MATERIALIZED VIEWS IN '{SCHEMA_NAME}' SCHEMA")
     print(f"{'='*60}\n")
 
-    result = await conn.fetch(f"""
+    result = await conn.fetch(
+        f"""
         SELECT
             matviewname,
             pg_size_pretty(pg_total_relation_size('{SCHEMA_NAME}.'||matviewname)) as size
         FROM pg_matviews
         WHERE schemaname = '{SCHEMA_NAME}'
         ORDER BY matviewname
-    """)
+    """
+    )
 
     if not result:
         print("  No materialized views found\n")
         return
 
     for row in result:
-        view_name = row['matviewname']
-        count_result = await conn.fetchrow(f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}")
-        row_count = count_result['count']
+        view_name = row["matviewname"]
+        count_result = await conn.fetchrow(
+            f"SELECT COUNT(*) as count FROM {SCHEMA_NAME}.{view_name}"
+        )
+        row_count = count_result["count"]
 
         print(f"  • {view_name}")
         print(f"      Size: {row['size']}")
@@ -270,7 +273,8 @@ async def main():
         print("Query examples:")
         print(f"  SELECT * FROM {SCHEMA_NAME}.patient_demographics LIMIT 10;")
         print(f"  SELECT COUNT(*) FROM {SCHEMA_NAME}.condition_simple;")
-        print(f"""
+        print(
+            f"""
   -- Simplified JOINs with dual column architecture
   SELECT  DATE_PART('year', AGE(pt.dob::timestamp)) AS age,
           gender,
@@ -291,7 +295,8 @@ async def main():
       ON p.patient_id = c.patient_id
    WHERE LOWER(p.gender) = 'male'
      AND (c.icd10_code LIKE 'E11%' OR LOWER(c.icd10_display) LIKE '%diabetes%');
-""")
+"""
+        )
 
     finally:
         await conn.close()

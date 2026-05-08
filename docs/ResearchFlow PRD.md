@@ -2,27 +2,27 @@
 
 **Core Innovation: Specialized AI Agents Working Together**
 
- RESEARCHER INTERFACE 
+ RESEARCHER INTERFACE
 
- "I need clinical notes for heart failure patients admitted 
+ "I need clinical notes for heart failure patients admitted
 
- in 2024 who had prior diabetes diagnosis" 
+ in 2024 who had prior diabetes diagnosis"
 
- ORCHESTRATOR AGENT (Central Coordinator) 
+ ORCHESTRATOR AGENT (Central Coordinator)
 
- - Receives request 
+ - Receives request
 
- - Routes to appropriate specialized agents 
+ - Routes to appropriate specialized agents
 
- - Monitors progress 
+ - Monitors progress
 
- - Handles escalations 
+ - Handles escalations
 
-RequirementsCalendarPhenotypeData QA 
+RequirementsCalendarPhenotypeData QA
 
- Agent Agent Agent Extract Agent 
+ Agent Agent Agent Extract Agent
 
- Agent 
+ Agent
 
 [MCP] [MCP] [MCP] [MCP] [MCP]
 
@@ -4184,7 +4184,7 @@ researchflow/ docs/ FULL\_PRD.md # 18-month enterprise vision MVP\_SCOPE.md # Wh
 
 # Clone repository
 
-git clone https://github.com/yourusername/researchflow.git
+git clone https://github.com/jagnyesh/researchflow.git
 
 cd researchflow
 
@@ -4251,7 +4251,7 @@ Built as a portfolio demonstration of:
 * Real-world workflow optimization
 * Modern integration patterns (MCP, FHIR, APIs)
 
-**Author**: [Your Name] **Background**: 9+ years in healthcare IT (Epic, Optum, CDC, UIC) **Expertise**: FHIR/HL7, clinical research informatics, AI/ML for healthcare
+**Author**: Jagnyesh Patra **Background**: Healthcare Data & Informatics Leader **Expertise**: FHIR & Epic Interoperability, Product Strategy, AI/ML Innovation
 
 **Note**: This is a proof-of-concept implementation demonstrating core capabilities. The Full PRD outlines the complete enterprise vision.
 
@@ -4445,7 +4445,7 @@ For production deployment, additional work needed on:
 
 - Differentiates you from 99% of candidates
 
-\*\*This is the project. Start building Monday.\*\* 
+\*\*This is the project. Start building Monday.\*\*
 
 Should I create the detailed Week 1 implementation guide with Claude Code prompts to get you started immediately?
 

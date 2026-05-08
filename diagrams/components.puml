@@ -1,7 +1,7 @@
 @startuml ResearchFlow Components
 !theme blueprint
 
-title ResearchFlow - Component Architecture\n(7 Agents with Human-in-Loop Approval Workflow)
+title ResearchFlow - Component Architecture\n(6 Production + 6 Experimental LangChain Agents | LangGraph 75% Complete)
 
 skinparam componentStyle rectangle
 
@@ -21,7 +21,10 @@ package "Frontend Layer" <<Frontend>> {
 
 package "Core Orchestration" <<Core>> {
     [ResearchRequest\nOrchestrator] as Orchestrator
-    [Workflow Engine\n(State Machine)] as WorkflowEngine
+    [Workflow Engine\n(LangGraph StateGraph)] as WorkflowEngine
+    [Agent Adapter\n(BaseAgent Compat)] as AgentAdapter
+    [Approval Bridge\n(HITL Sync)] as ApprovalBridge
+    [Request Facade\n(UI Compat)] as RequestFacade
     [MCP Server\nRegistry] as MCPRegistry
 }
 
@@ -167,7 +170,7 @@ note bottom of Agent1
 end note
 
 note bottom of DB
-  **7 Database Tables**
+  **8 Database Tables**
   - ResearchRequest (main)
   - RequirementsData
   - FeasibilityReport
@@ -175,29 +178,33 @@ note bottom of DB
   - Escalation (human review)
   - DataDelivery
   - Approval (human-in-loop)
+  - Checkpoints (LangGraph state persistence)
 end note
 
 note left of WorkflowEngine
-  **20 Workflow States**
+  **23 Workflow States (LangGraph StateGraph)**
 
-  new_request →
-  requirements_gathering →
-  requirements_review (APPROVAL) →
-  requirements_complete →
-  feasibility_validation →
-  phenotype_review (APPROVAL) →
-  feasible →
-  schedule_kickoff →
-  extraction_approval (APPROVAL) →
-  data_extraction →
-  qa_validation →
-  qa_review (APPROVAL) →
-  qa_passed →
-  data_delivery →
-  delivered →
-  complete
+  15 Main States:
+  new_request → requirements_gathering →
+  requirements_complete → feasibility_validation →
+  feasible → schedule_kickoff →
+  kickoff_complete → data_extraction →
+  extraction_complete → qa_validation →
+  qa_passed → data_delivery →
+  delivered → complete → archived
 
-  + scope_change (APPROVAL)
+  5 Approval Gates (Human-in-Loop):
+  requirements_review → phenotype_review →
+  extraction_approval → qa_review →
+  scope_change
+
+  3 Terminal States:
+  not_feasible, rejected, failed
+
+  **LangGraph Features:**
+  - AsyncSqliteSaver checkpointing
+  - State persistence & recovery
+  - Observable with LangSmith
 end note
 
 @enduml

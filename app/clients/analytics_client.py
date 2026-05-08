@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class QueryResult:
     """Result from ViewDefinition execution"""
+
     view_name: str
     resource_type: str
     row_count: int
@@ -65,7 +66,7 @@ class AnalyticsClient:
         self,
         view_name: str,
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> QueryResult:
         """
         Execute a ViewDefinition
@@ -79,19 +80,17 @@ class AnalyticsClient:
             QueryResult with rows and metadata
         """
         import time
+
         start_time = time.time()
 
         try:
             payload = {
                 "view_name": view_name,
                 "search_params": search_params or {},
-                "max_resources": max_resources
+                "max_resources": max_resources,
             }
 
-            response = await self.client.post(
-                f"{self.analytics_url}/execute",
-                json=payload
-            )
+            response = await self.client.post(f"{self.analytics_url}/execute", json=payload)
             response.raise_for_status()
             data = response.json()
 
@@ -103,7 +102,7 @@ class AnalyticsClient:
                 row_count=data.get("row_count", 0),
                 rows=data.get("rows", []),
                 schema=data.get("column_schema", {}),
-                execution_time_ms=execution_time
+                execution_time_ms=execution_time,
             )
 
         except Exception as e:
@@ -114,7 +113,7 @@ class AnalyticsClient:
         self,
         view_names: List[str],
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> Dict[str, QueryResult]:
         """
         Execute multiple ViewDefinitions
@@ -132,9 +131,7 @@ class AnalyticsClient:
         for view_name in view_names:
             try:
                 result = await self.execute_view_definition(
-                    view_name=view_name,
-                    search_params=search_params,
-                    max_resources=max_resources
+                    view_name=view_name, search_params=search_params, max_resources=max_resources
                 )
                 results[view_name] = result
             except Exception as e:
@@ -148,7 +145,7 @@ class AnalyticsClient:
         self,
         primary_result: QueryResult,
         secondary_result: QueryResult,
-        join_key: str = "patient_id"
+        join_key: str = "patient_id",
     ) -> List[Dict[str, Any]]:
         """
         Join two query results on a common key
@@ -186,9 +183,7 @@ class AnalyticsClient:
         return joined_rows
 
     async def filter_rows(
-        self,
-        rows: List[Dict[str, Any]],
-        filters: List[Dict[str, Any]]
+        self, rows: List[Dict[str, Any]], filters: List[Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
         """
         Apply post-filters to result rows
@@ -209,19 +204,12 @@ class AnalyticsClient:
             operator = filter_spec.get("operator", "eq")
 
             filtered = [
-                row for row in filtered
-                if self._matches_filter(row, field, value, operator)
+                row for row in filtered if self._matches_filter(row, field, value, operator)
             ]
 
         return filtered
 
-    def _matches_filter(
-        self,
-        row: Dict[str, Any],
-        field: str,
-        value: Any,
-        operator: str
-    ) -> bool:
+    def _matches_filter(self, row: Dict[str, Any], field: str, value: Any, operator: str) -> bool:
         """Check if row matches filter condition"""
         row_value = row.get(field)
 

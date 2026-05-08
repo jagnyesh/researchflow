@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SummaryStats:
     """Summary statistics for a dataset"""
+
     total_count: int
     gender_distribution: Dict[str, int]
     age_stats: Optional[Dict[str, float]]
@@ -55,7 +56,7 @@ class StatsCalculator:
                 age_stats=None,
                 condition_prevalence=None,
                 date_range=None,
-                top_values={}
+                top_values={},
             )
 
         total_count = len(rows)
@@ -81,7 +82,7 @@ class StatsCalculator:
             age_stats=age_stats,
             condition_prevalence=condition_prevalence,
             date_range=date_range,
-            top_values=top_values
+            top_values=top_values,
         )
 
     @staticmethod
@@ -123,8 +124,12 @@ class StatsCalculator:
             "min": ages_sorted[0],
             "max": ages_sorted[-1],
             "mean": sum(ages_sorted) / n,
-            "median": ages_sorted[n // 2] if n % 2 == 1 else (ages_sorted[n // 2 - 1] + ages_sorted[n // 2]) / 2,
-            "count": n
+            "median": (
+                ages_sorted[n // 2]
+                if n % 2 == 1
+                else (ages_sorted[n // 2 - 1] + ages_sorted[n // 2]) / 2
+            ),
+            "count": n,
         }
 
         return stats
@@ -137,10 +142,10 @@ class StatsCalculator:
         for row in rows:
             # Try different condition field names
             condition_name = (
-                row.get("snomed_display") or
-                row.get("icd10_display") or
-                row.get("code_text") or
-                row.get("condition_name")
+                row.get("snomed_display")
+                or row.get("icd10_display")
+                or row.get("code_text")
+                or row.get("condition_name")
             )
 
             if condition_name:
@@ -159,8 +164,12 @@ class StatsCalculator:
         dates = []
 
         date_fields = [
-            "birth_date", "onset_datetime", "recorded_date",
-            "effective_datetime", "performed_datetime", "authored_on"
+            "birth_date",
+            "onset_datetime",
+            "recorded_date",
+            "effective_datetime",
+            "performed_datetime",
+            "authored_on",
         ]
 
         for row in rows:
@@ -182,9 +191,8 @@ class StatsCalculator:
             "earliest": dates_sorted[0],
             "latest": dates_sorted[-1],
             "span_days": (
-                datetime.fromisoformat(dates_sorted[-1]) -
-                datetime.fromisoformat(dates_sorted[0])
-            ).days
+                datetime.fromisoformat(dates_sorted[-1]) - datetime.fromisoformat(dates_sorted[0])
+            ).days,
         }
 
     @staticmethod
@@ -192,8 +200,13 @@ class StatsCalculator:
         """Calculate top values for categorical fields"""
         # Fields to analyze
         categorical_fields = [
-            "gender", "state", "city", "clinical_status",
-            "verification_status", "category", "status"
+            "gender",
+            "state",
+            "city",
+            "clinical_status",
+            "verification_status",
+            "category",
+            "status",
         ]
 
         top_values = {}

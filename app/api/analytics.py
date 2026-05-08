@@ -22,6 +22,11 @@ from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
 from ..sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
 from ..sql_on_fhir.runner.hybrid_runner import HybridRunner
 from ..sql_on_fhir.runner import create_postgres_runner
+from ..schemas.analytics import (
+    CountRequest,
+    CreateViewDefinitionRequest,
+    ViewDefinitionRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +47,11 @@ async def create_runner():
         ENABLE_QUERY_CACHE: 'true' or 'false' (default: true)
         CACHE_TTL_SECONDS: Cache TTL in seconds (default: 300)
     """
-    runner_type = os.getenv('VIEWDEF_RUNNER', 'hybrid').lower()
-    enable_cache = os.getenv('ENABLE_QUERY_CACHE', 'true').lower() == 'true'
-    cache_ttl = int(os.getenv('CACHE_TTL_SECONDS', '300'))
+    runner_type = os.getenv("VIEWDEF_RUNNER", "hybrid").lower()
+    enable_cache = os.getenv("ENABLE_QUERY_CACHE", "true").lower() == "true"
+    cache_ttl = int(os.getenv("CACHE_TTL_SECONDS", "300"))
 
-    if runner_type == 'hybrid':
+    if runner_type == "hybrid":
         logger.info(
             f"Using HybridRunner (materialized views when available, postgres fallback, cache={enable_cache}, TTL={cache_ttl}s)"
         )
@@ -55,11 +60,7 @@ async def create_runner():
         db_client = await create_hapi_db_client()
 
         # Create HybridRunner
-        runner = HybridRunner(
-            db_client,
-            enable_cache=enable_cache,
-            cache_ttl_seconds=cache_ttl
-        )
+        runner = HybridRunner(db_client, enable_cache=enable_cache, cache_ttl_seconds=cache_ttl)
 
         # Cleanup function
         async def cleanup():
@@ -67,7 +68,7 @@ async def create_runner():
 
         return runner, cleanup
 
-    elif runner_type == 'postgres':
+    elif runner_type == "postgres":
         logger.info(f"Using PostgresRunner (cache={enable_cache}, TTL={cache_ttl}s)")
 
         # Create HAPI DB client
@@ -75,9 +76,7 @@ async def create_runner():
 
         # Create PostgresRunner
         runner = await create_postgres_runner(
-            db_client,
-            enable_cache=enable_cache,
-            cache_ttl_seconds=cache_ttl
+            db_client, enable_cache=enable_cache, cache_ttl_seconds=cache_ttl
         )
 
         # Cleanup function
@@ -86,7 +85,7 @@ async def create_runner():
 
         return runner, cleanup
 
-    elif runner_type == 'materialized':
+    elif runner_type == "materialized":
         logger.info("Using MaterializedViewRunner (10-100x faster, queries pre-computed views)")
 
         # Create HAPI DB client
@@ -117,15 +116,12 @@ async def create_runner():
         return runner, cleanup
 
 
-class ViewDefinitionRequest(BaseModel):
-    """Request to execute a ViewDefinition"""
-    view_name: str = Field(..., description="Name of the ViewDefinition to execute")
-    search_params: Optional[Dict[str, Any]] = Field(None, description="FHIR search parameters to filter resources")
-    max_resources: Optional[int] = Field(None, description="Maximum number of resources to process")
+# ViewDefinitionRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
 
 
 class ViewDefinitionResponse(BaseModel):
     """Response from ViewDefinition execution"""
+
     view_name: str
     resource_type: str
     row_count: int
@@ -136,13 +132,11 @@ class ViewDefinitionResponse(BaseModel):
 
 class ViewDefinitionListResponse(BaseModel):
     """List of available ViewDefinitions"""
+
     view_definitions: List[Dict[str, str]]
 
 
-class CreateViewDefinitionRequest(BaseModel):
-    """Request to create a ViewDefinition"""
-    view_definition: Dict[str, Any] = Field(..., description="ViewDefinition resource")
-    name: Optional[str] = Field(None, description="Optional name override")
+# CreateViewDefinitionRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
 
 
 @router.get("/view-definitions", response_model=ViewDefinitionListResponse)
@@ -162,7 +156,7 @@ async def list_view_definitions():
                 "name": name,
                 "resource_type": vd.get("resource"),
                 "title": vd.get("title", ""),
-                "description": vd.get("description", "")
+                "description": vd.get("description", ""),
             }
             for name, vd in view_defs.items()
         ]
@@ -293,9 +287,7 @@ async def execute_view_definition(request: ViewDefinitionRequest):
             )
 
             rows = await runner.execute(
-                view_def,
-                search_params=request.search_params,
-                max_resources=request.max_resources
+                view_def, search_params=request.search_params, max_resources=request.max_resources
             )
 
             # Get schema
@@ -303,7 +295,7 @@ async def execute_view_definition(request: ViewDefinitionRequest):
 
             # Get generated SQL (if PostgresRunner)
             generated_sql = None
-            if hasattr(runner, 'get_last_executed_sql'):
+            if hasattr(runner, "get_last_executed_sql"):
                 generated_sql = runner.get_last_executed_sql()
 
             logger.info(f"ViewDefinition '{request.view_name}' returned {len(rows)} rows")
@@ -314,14 +306,16 @@ async def execute_view_definition(request: ViewDefinitionRequest):
                 row_count=len(rows),
                 rows=rows,
                 column_schema=schema,
-                generated_sql=generated_sql
+                generated_sql=generated_sql,
             )
 
         finally:
             await cleanup()
 
     except FileNotFoundError:
-        raise HTTPException(status_code=404, detail=f"ViewDefinition '{request.view_name}' not found")
+        raise HTTPException(
+            status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
+        )
     except Exception as e:
         logger.error(f"Error executing ViewDefinition: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -330,7 +324,7 @@ async def execute_view_definition(request: ViewDefinitionRequest):
 @router.get("/execute/{view_name}", response_model=ViewDefinitionResponse)
 async def execute_view_definition_get(
     view_name: str,
-    max_resources: Optional[int] = Query(None, description="Maximum resources to process")
+    max_resources: Optional[int] = Query(None, description="Maximum resources to process"),
 ):
     """
     Execute a ViewDefinition via GET request (simplified version)
@@ -346,19 +340,99 @@ async def execute_view_definition_get(
         GET /analytics/execute/patient_demographics?max_resources=100
     """
     request = ViewDefinitionRequest(
-        view_name=view_name,
-        search_params=None,
-        max_resources=max_resources
+        view_name=view_name, search_params=None, max_resources=max_resources
     )
 
     return await execute_view_definition(request)
+
+
+# CountRequest migrated to app/schemas/analytics.py (Phase 2.3 Issue #5)
+
+
+class CountResponse(BaseModel):
+    """Response from count query"""
+
+    view_name: str
+    resource_type: str
+    count: int
+    generated_sql: Optional[str] = None  # SQL COUNT query that was executed
+
+
+@router.post("/count", response_model=CountResponse)
+async def count_resources(request: CountRequest):
+    """
+    Count resources matching a ViewDefinition without fetching data
+
+    This endpoint uses SELECT COUNT(*) queries for accurate counts without
+    fetching rows. Much faster than execute + len(rows) for large datasets.
+
+    Runner selection is controlled by VIEWDEF_RUNNER environment variable:
+    - 'hybrid': Uses materialized views when available
+    - 'materialized': Counts from pre-computed views
+    - 'postgres': Executes COUNT(*) query
+    - 'in_memory': Falls back to execute + count
+
+    Args:
+        request: Count request with view_name and search_params
+
+    Returns:
+        Actual count from database
+
+    Example:
+        POST /analytics/count
+        {
+            "view_name": "patient_demographics",
+            "search_params": {"gender": "female"}
+        }
+    """
+    try:
+        # Load ViewDefinition
+        manager = ViewDefinitionManager()
+        view_def = manager.load(request.view_name)
+
+        # Create runner based on environment configuration
+        runner, cleanup = await create_runner()
+
+        try:
+            logger.info(
+                f"Counting resources for ViewDefinition '{request.view_name}' "
+                f"with params: {request.search_params}"
+            )
+
+            # Use execute_count() method for accurate COUNT(*) queries
+            count = await runner.execute_count(view_def, search_params=request.search_params)
+
+            # Get generated SQL (if available)
+            generated_sql = None
+            if hasattr(runner, "get_last_executed_sql"):
+                generated_sql = runner.get_last_executed_sql()
+
+            logger.info(f"ViewDefinition '{request.view_name}' count: {count}")
+
+            return CountResponse(
+                view_name=request.view_name,
+                resource_type=view_def.get("resource"),
+                count=count,
+                generated_sql=generated_sql,
+            )
+
+        finally:
+            await cleanup()
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
+        )
+    except Exception as e:
+        logger.error(f"Error counting resources: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/query")
 async def execute_custom_query(
     view_names: List[str] = Query(..., description="ViewDefinitions to execute"),
     search_params: Optional[Dict[str, Any]] = None,
-    max_resources: Optional[int] = None
+    max_resources: Optional[int] = None,
 ):
     """
     Execute multiple ViewDefinitions and return combined results
@@ -392,22 +466,18 @@ async def execute_custom_query(
                     logger.info(f"Executing ViewDefinition '{view_name}' in batch query")
 
                     rows = await runner.execute(
-                        view_def,
-                        search_params=search_params,
-                        max_resources=max_resources
+                        view_def, search_params=search_params, max_resources=max_resources
                     )
 
                     results[view_name] = {
                         "resource_type": view_def.get("resource"),
                         "row_count": len(rows),
-                        "rows": rows
+                        "rows": rows,
                     }
 
                 except Exception as e:
                     logger.warning(f"Error executing ViewDefinition '{view_name}': {e}")
-                    results[view_name] = {
-                        "error": str(e)
-                    }
+                    results[view_name] = {"error": str(e)}
 
             logger.info(f"Batch query complete: {len(view_names)} ViewDefinitions")
             return results
@@ -444,7 +514,7 @@ async def get_view_schema(view_name: str):
             return {
                 "view_name": view_name,
                 "resource_type": view_def.get("resource"),
-                "schema": schema
+                "schema": schema,
             }
 
         finally:
@@ -474,7 +544,7 @@ async def health_check():
             return {
                 "status": "healthy" if is_connected else "degraded",
                 "fhir_server_connected": is_connected,
-                "fhir_server_url": fhir_client.base_url
+                "fhir_server_url": fhir_client.base_url,
             }
 
         finally:
@@ -482,7 +552,4 @@ async def health_check():
 
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}

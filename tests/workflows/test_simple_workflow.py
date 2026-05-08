@@ -38,7 +38,7 @@ def initial_state() -> WorkflowState:
         "requires_approval": False,
         "error": None,
         "created_at": datetime.now().isoformat(),
-        "updated_at": datetime.now().isoformat()
+        "updated_at": datetime.now().isoformat(),
     }
 
 
@@ -64,7 +64,7 @@ class TestStateTransitions:
         initial_state["requirements"] = {
             "inclusion_criteria": ["diabetes"],
             "exclusion_criteria": [],
-            "data_elements": ["demographics"]
+            "data_elements": ["demographics"],
         }
         initial_state["completeness_score"] = 0.9
         initial_state["requires_approval"] = True
@@ -94,7 +94,7 @@ class TestConditionalRouting:
             "requires_approval": True,
             "error": None,
             "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now().isoformat(),
         }
 
         route = simple_workflow._route_after_requirements(state)
@@ -114,7 +114,7 @@ class TestConditionalRouting:
             "requires_approval": False,
             "error": None,
             "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "updated_at": datetime.now().isoformat(),
         }
 
         route = simple_workflow._route_after_requirements(state)
@@ -175,7 +175,7 @@ class TestWorkflowExecution:
         initial_state["requirements"] = {
             "inclusion_criteria": ["diabetes mellitus"],
             "exclusion_criteria": ["pregnancy"],
-            "data_elements": ["demographics", "lab_results"]
+            "data_elements": ["demographics", "lab_results"],
         }
         initial_state["completeness_score"] = 0.95
         initial_state["requires_approval"] = True
@@ -238,7 +238,7 @@ class TestTypeSafety:
         # Create incomplete state (missing required fields)
         incomplete_state = {
             "request_id": "test-004",
-            "current_state": "new"
+            "current_state": "new",
             # Missing many required fields
         }
 

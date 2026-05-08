@@ -43,10 +43,7 @@ async def test_complete_filtering():
 
     agent.use_view_definitions = True
     agent.hapi_db_client = HAPIDBClient(connection_url=hapi_url)
-    agent.postgres_runner = PostgresRunner(
-        db_client=agent.hapi_db_client,
-        enable_cache=False
-    )
+    agent.postgres_runner = PostgresRunner(db_client=agent.hapi_db_client, enable_cache=False)
 
     # Wait for database connection
     if agent.hapi_db_client and not agent.hapi_db_client.pool:
@@ -71,18 +68,14 @@ async def test_complete_filtering():
                 {
                     "text": "female patients",
                     "concepts": [
-                        {
-                            "term": "female",
-                            "type": "demographic",
-                            "details": "female patients"
-                        }
-                    ]
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
                 }
             ],
             "exclusion_criteria": [],
             "data_elements": [],
             "time_period": {},
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         count2 = await agent._estimate_cohort_size(count_sql="", requirements=requirements2)
@@ -97,28 +90,20 @@ async def test_complete_filtering():
                 {
                     "text": "female patients",
                     "concepts": [
-                        {
-                            "term": "female",
-                            "type": "demographic",
-                            "details": "female patients"
-                        }
-                    ]
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
                 },
                 {
                     "text": "age between 20 and 30",
                     "concepts": [
-                        {
-                            "term": "age",
-                            "type": "demographic",
-                            "details": "between 20 and 30"
-                        }
-                    ]
-                }
+                        {"term": "age", "type": "demographic", "details": "between 20 and 30"}
+                    ],
+                },
             ],
             "exclusion_criteria": [],
             "data_elements": [],
             "time_period": {},
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         count3 = await agent._estimate_cohort_size(count_sql="", requirements=requirements3)
@@ -133,38 +118,26 @@ async def test_complete_filtering():
                 {
                     "text": "female patients",
                     "concepts": [
-                        {
-                            "term": "female",
-                            "type": "demographic",
-                            "details": "female patients"
-                        }
-                    ]
+                        {"term": "female", "type": "demographic", "details": "female patients"}
+                    ],
                 },
                 {
                     "text": "age between 20 and 30",
                     "concepts": [
-                        {
-                            "term": "age",
-                            "type": "demographic",
-                            "details": "between 20 and 30"
-                        }
-                    ]
+                        {"term": "age", "type": "demographic", "details": "between 20 and 30"}
+                    ],
                 },
                 {
                     "text": "with diabetes",
                     "concepts": [
-                        {
-                            "term": "diabetes",
-                            "type": "condition",
-                            "details": "diabetes mellitus"
-                        }
-                    ]
-                }
+                        {"term": "diabetes", "type": "condition", "details": "diabetes mellitus"}
+                    ],
+                },
             ],
             "exclusion_criteria": [],
             "data_elements": [],
             "time_period": {},
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         count4 = await agent._estimate_cohort_size(count_sql="", requirements=requirements4)
@@ -202,9 +175,13 @@ async def test_complete_filtering():
 
         if count4 >= 0 and count4 <= count3:
             print("✅ Test 4 PASSED: Condition filtering works")
-            print(f"   (Found {count4} patients with diabetes out of {count3} in age/gender cohort)")
+            print(
+                f"   (Found {count4} patients with diabetes out of {count3} in age/gender cohort)"
+            )
         else:
-            print(f"❌ Test 4 FAILED: Condition filter not working (count4={count4}, count3={count3})")
+            print(
+                f"❌ Test 4 FAILED: Condition filter not working (count4={count4}, count3={count3})"
+            )
 
         print()
 

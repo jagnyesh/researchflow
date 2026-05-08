@@ -30,10 +30,7 @@ async def init_test_database():
     print()
 
     # Create async engine
-    engine = create_async_engine(
-        database_url,
-        echo=True  # Show SQL statements
-    )
+    engine = create_async_engine(database_url, echo=True)  # Show SQL statements
 
     try:
         # Create all tables

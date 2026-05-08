@@ -9,13 +9,13 @@ from .hapi_schema import (
     HAPISchema,
     TableColumn,
     SearchParamIndex,
-    create_schema_introspector
+    create_schema_introspector,
 )
 
 __all__ = [
-    'HAPISchemaIntrospector',
-    'HAPISchema',
-    'TableColumn',
-    'SearchParamIndex',
-    'create_schema_introspector'
+    "HAPISchemaIntrospector",
+    "HAPISchema",
+    "TableColumn",
+    "SearchParamIndex",
+    "create_schema_introspector",
 ]

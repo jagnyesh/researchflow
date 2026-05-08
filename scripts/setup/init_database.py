@@ -58,18 +58,17 @@ async def main(drop_first: bool = False):
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        description="Initialize ResearchFlow database tables"
-    )
+    parser = argparse.ArgumentParser(description="Initialize ResearchFlow database tables")
     parser.add_argument(
         "--drop",
         action="store_true",
-        help="Drop all existing tables before creating new ones (DANGEROUS)"
+        help="Drop all existing tables before creating new ones (DANGEROUS)",
     )
 
     args = parser.parse_args()

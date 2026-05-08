@@ -47,10 +47,10 @@ async def create_test_data():
                 agents_involved=[],
                 state_history=[
                     {
-                        'state': WorkflowState.NEW_REQUEST.value,
-                        'timestamp': datetime.now().isoformat()
+                        "state": WorkflowState.NEW_REQUEST.value,
+                        "timestamp": datetime.now().isoformat(),
                     }
-                ]
+                ],
             )
             session.add(research_request)
             await session.flush()
@@ -72,21 +72,15 @@ async def create_test_data():
                     "inclusion_criteria": [
                         "Patients with Type 2 Diabetes",
                         "HbA1c > 7.0%",
-                        "Age >= 18 years"
+                        "Age >= 18 years",
                     ],
-                    "exclusion_criteria": [
-                        "Type 1 Diabetes",
-                        "Pregnant patients"
-                    ],
+                    "exclusion_criteria": ["Type 1 Diabetes", "Pregnant patients"],
                     "data_elements": ["demographics", "lab_results", "medications"],
-                    "time_period": {
-                        "start": "2023-01-01",
-                        "end": "2024-12-31"
-                    }
+                    "time_period": {"start": "2023-01-01", "end": "2024-12-31"},
                 },
                 "completeness_score": 0.92,
-                "conversation_turns": 5
-            }
+                "conversation_turns": 5,
+            },
         )
         print(f"   ✓ Created requirements approval (ID: {req_approval.id})")
 
@@ -116,23 +110,19 @@ ORDER BY p.id, o.effectiveDateTime DESC""",
                 "feasibility_score": 0.87,
                 "data_availability": {
                     "overall_availability": 0.91,
-                    "by_element": {
-                        "demographics": 1.0,
-                        "hba1c_labs": 0.95,
-                        "medications": 0.78
-                    }
+                    "by_element": {"demographics": 1.0, "hba1c_labs": 0.95, "medications": 0.78},
                 },
                 "warnings": [
                     {
                         "type": "data_availability",
-                        "message": "Medication data availability is 78%, some patients may have incomplete records"
+                        "message": "Medication data availability is 78%, some patients may have incomplete records",
                     }
                 ],
                 "recommendations": [
                     "Consider extending time period to increase cohort size",
-                    "Review medication completeness with informatician"
-                ]
-            }
+                    "Review medication completeness with informatician",
+                ],
+            },
         )
         print(f"   ✓ Created phenotype_sql approval (ID: {sql_approval.id}) - CRITICAL")
 
@@ -147,9 +137,9 @@ ORDER BY p.id, o.effectiveDateTime DESC""",
                     "inclusion_criteria": [
                         "Patients with Type 2 Diabetes",
                         "HbA1c > 7.0%",
-                        "Age >= 50 years"  # CHANGED from >= 18
+                        "Age >= 50 years",  # CHANGED from >= 18
                     ],
-                    "additional_data_elements": ["smoking_status", "bmi"]
+                    "additional_data_elements": ["smoking_status", "bmi"],
                 },
                 "reason": "IRB requested age restriction to >= 50 years and additional risk factors",
                 "requested_by": "researcher@hospital.org",
@@ -162,10 +152,10 @@ ORDER BY p.id, o.effectiveDateTime DESC""",
                     "cohort_impact": {
                         "current_estimated": 347,
                         "new_estimated": 198,
-                        "reduction_percentage": 43
-                    }
-                }
-            }
+                        "reduction_percentage": 43,
+                    },
+                },
+            },
         )
         print(f"   ✓ Created scope_change approval (ID: {scope_approval.id})")
 
@@ -182,14 +172,14 @@ ORDER BY p.id, o.effectiveDateTime DESC""",
                     "estimated_records": 5200,
                     "estimated_duration_minutes": 45,
                     "phi_level": "limited_dataset",
-                    "scheduled_time": (datetime.now() + timedelta(hours=2)).isoformat()
+                    "scheduled_time": (datetime.now() + timedelta(hours=2)).isoformat(),
                 },
                 "kickoff_meeting": {
                     "scheduled": True,
                     "attendees": ["researcher@hospital.org", "informatician@hospital.org"],
-                    "date": (datetime.now() + timedelta(hours=1)).isoformat()
-                }
-            }
+                    "date": (datetime.now() + timedelta(hours=1)).isoformat(),
+                },
+            },
         )
         print(f"   ✓ Created extraction approval (ID: {extract_approval.id})")
 
@@ -208,22 +198,22 @@ ORDER BY p.id, o.effectiveDateTime DESC""",
                         "no_duplicates": True,
                         "phi_scrubbed": True,
                         "data_integrity": True,
-                        "schema_validation": True
+                        "schema_validation": True,
                     },
                     "issues_found": [
                         {
                             "severity": "low",
                             "type": "missing_data",
                             "message": "23 patients missing smoking status",
-                            "patient_count": 23
+                            "patient_count": 23,
                         }
                     ],
                     "recommendations": [
                         "Data quality is excellent",
-                        "Minor missing data documented in delivery notes"
-                    ]
+                        "Minor missing data documented in delivery notes",
+                    ],
                 }
-            }
+            },
         )
         print(f"   ✓ Created qa approval (ID: {qa_approval.id})")
 
@@ -250,7 +240,7 @@ async def test_api_endpoints(request_id):
     print(f"   Status: {response.status_code}")
     print(f"   Count: {data['count']}")
     print(f"   Approvals: {len(data['approvals'])}")
-    for approval in data['approvals']:
+    for approval in data["approvals"]:
         print(f"     - {approval['approval_type']} (ID: {approval['id']})")
 
     # Test 2: Get phenotype_sql approvals only (CRITICAL)
@@ -259,12 +249,12 @@ async def test_api_endpoints(request_id):
     data = response.json()
     print(f"   Status: {response.status_code}")
     print(f"   Count: {data['count']}")
-    if data['approvals']:
-        sql_approval = data['approvals'][0]
+    if data["approvals"]:
+        sql_approval = data["approvals"][0]
         print(f"   SQL Approval ID: {sql_approval['id']}")
         print(f"   Estimated Cohort: {sql_approval['approval_data']['estimated_cohort']}")
         print(f"   Feasibility: {sql_approval['approval_data']['feasibility_score']}")
-        sql_query = sql_approval['approval_data']['sql_query']
+        sql_query = sql_approval["approval_data"]["sql_query"]
         print(f"   SQL Query (first 100 chars): {sql_query[:100]}...")
 
     # Test 3: Get approvals for specific request
@@ -302,8 +292,8 @@ async def test_approval_workflow():
         json={
             "decision": "approve",
             "reviewer": "informatician@hospital.org",
-            "notes": "Requirements look good, medical terminology is accurate"
-        }
+            "notes": "Requirements look good, medical terminology is accurate",
+        },
     )
     print(f"   Status: {response.status_code}")
     if response.status_code == 200:
@@ -334,8 +324,8 @@ WHERE o.code_coding_code = '4548-4'
   AND o.effectiveDateTime BETWEEN '2023-01-01' AND '2024-12-31'
   AND EXTRACT(YEAR FROM AGE(p.birthDate)) >= 18
 ORDER BY p.id, o.effectiveDateTime DESC"""
-            }
-        }
+            },
+        },
     )
     print(f"   Status: {response.status_code}")
     if response.status_code == 200:
@@ -350,8 +340,8 @@ ORDER BY p.id, o.effectiveDateTime DESC"""
         json={
             "decision": "reject",
             "reviewer": "admin@hospital.org",
-            "notes": "Scope change too significant, would require new IRB approval. Please submit as new request."
-        }
+            "notes": "Scope change too significant, would require new IRB approval. Please submit as new request.",
+        },
     )
     print(f"   Status: {response.status_code}")
     if response.status_code == 200:
@@ -388,8 +378,8 @@ async def verify_final_state():
         response = requests.get("http://localhost:8000/approvals/pending")
         data = response.json()
         print(f"   Count: {data['count']}")
-        if data['approvals']:
-            for approval in data['approvals']:
+        if data["approvals"]:
+            for approval in data["approvals"]:
                 print(f"     - {approval['approval_type']} (ID: {approval['id']})")
         else:
             print("   (None - all processed!)")
@@ -434,6 +424,7 @@ async def main():
     except Exception as e:
         print(f"\n❌ TEST FAILED: {str(e)}")
         import traceback
+
         traceback.print_exc()
 
 

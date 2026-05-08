@@ -44,7 +44,7 @@ async def main():
     runner_sequential = InMemoryRunner(
         client,
         enable_cache=False,  # Disable cache to measure raw processing speed
-        parallel_processing=False  # Sequential
+        parallel_processing=False,  # Sequential
     )
 
     start = time.time()
@@ -63,7 +63,7 @@ async def main():
         client,
         enable_cache=False,  # Disable cache to measure raw processing speed
         parallel_processing=True,  # Parallel
-        max_parallel_resources=10
+        max_parallel_resources=10,
     )
 
     start = time.time()
@@ -79,10 +79,7 @@ async def main():
     print("Test 3: Parallel Processing (batch size 20)")
     print("=" * 80)
     runner_parallel_20 = InMemoryRunner(
-        client,
-        enable_cache=False,
-        parallel_processing=True,
-        max_parallel_resources=20
+        client, enable_cache=False, parallel_processing=True, max_parallel_resources=20
     )
 
     start = time.time()
@@ -110,8 +107,10 @@ async def main():
     if len(results_sequential) == len(results_parallel) == len(results_parallel_20):
         print(f"✓ All methods produced {len(results_sequential)} rows (consistent)")
     else:
-        print(f"⚠ Row counts differ: sequential={len(results_sequential)}, "
-              f"parallel={len(results_parallel)}, parallel_20={len(results_parallel_20)}")
+        print(
+            f"⚠ Row counts differ: sequential={len(results_sequential)}, "
+            f"parallel={len(results_parallel)}, parallel_20={len(results_parallel_20)}"
+        )
     print()
 
     # Cleanup

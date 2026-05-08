@@ -12,11 +12,19 @@ HAPI FHIR stores resources in PostgreSQL with the following schema:
 """
 
 import logging
-import asyncpg
 import os
 import json
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+
+# Try to import asyncpg, but make it optional for Python 3.13 compatibility
+try:
+    import asyncpg
+
+    ASYNCPG_AVAILABLE = True
+except ImportError:
+    ASYNCPG_AVAILABLE = False
+    asyncpg = None  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +45,7 @@ class HAPIDBClient:
         connection_url: Optional[str] = None,
         min_pool_size: int = 5,
         max_pool_size: int = 20,
-        command_timeout: float = 30.0
+        command_timeout: float = 30.0,
     ):
         """
         Initialize HAPI DB client
@@ -50,13 +58,12 @@ class HAPIDBClient:
         """
         # Get raw connection URL from parameter or environment
         raw_url = connection_url or os.getenv(
-            'HAPI_DB_URL',
-            'postgresql://hapi:hapi@localhost:5433/hapi'
+            "HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi"
         )
 
         # Normalize DSN: strip SQLAlchemy dialect specifiers
         # asyncpg expects 'postgresql://' but SQLAlchemy uses 'postgresql+asyncpg://'
-        self.connection_url = raw_url.replace('postgresql+asyncpg://', 'postgresql://')
+        self.connection_url = raw_url.replace("postgresql+asyncpg://", "postgresql://")
 
         self.min_pool_size = min_pool_size
         self.max_pool_size = max_pool_size
@@ -71,7 +78,7 @@ class HAPIDBClient:
                     self.connection_url,
                     min_size=self.min_pool_size,
                     max_size=self.max_pool_size,
-                    command_timeout=self.command_timeout
+                    command_timeout=self.command_timeout,
                 )
                 logger.info(
                     f"Connected to HAPI database "
@@ -100,17 +107,14 @@ class HAPIDBClient:
                 await self.connect()
 
             async with self.pool.acquire() as conn:
-                result = await conn.fetchval('SELECT 1')
+                result = await conn.fetchval("SELECT 1")
                 return result == 1
         except Exception as e:
             logger.error(f"Connection test failed: {e}")
             return False
 
     async def execute_query(
-        self,
-        sql: str,
-        params: Optional[List] = None,
-        timeout: Optional[float] = None
+        self, sql: str, params: Optional[List] = None, timeout: Optional[float] = None
     ) -> List[Dict[str, Any]]:
         """
         Execute SELECT query and return results as list of dicts
@@ -130,7 +134,7 @@ class HAPIDBClient:
             async with self.pool.acquire() as conn:
                 # Set timeout for this query if specified
                 if timeout:
-                    await conn.execute(f'SET statement_timeout = {int(timeout * 1000)}')
+                    await conn.execute(f"SET statement_timeout = {int(timeout * 1000)}")
 
                 # Execute query
                 if params:
@@ -142,17 +146,17 @@ class HAPIDBClient:
                 return [dict(row) for row in rows]
 
         except asyncpg.QueryCanceledError:
-            logger.error(f"Query timed out after {timeout or self.command_timeout}s: {sql[:100]}...")
-            raise TimeoutError(f"Query execution exceeded {timeout or self.command_timeout} seconds")
+            logger.error(
+                f"Query timed out after {timeout or self.command_timeout}s: {sql[:100]}..."
+            )
+            raise TimeoutError(
+                f"Query execution exceeded {timeout or self.command_timeout} seconds"
+            )
         except Exception as e:
             logger.error(f"Query execution failed: {e}\nSQL: {sql[:200]}...")
             raise
 
-    async def execute_scalar(
-        self,
-        sql: str,
-        params: Optional[List] = None
-    ) -> Any:
+    async def execute_scalar(self, sql: str, params: Optional[List] = None) -> Any:
         """
         Execute query and return single scalar value
 
@@ -190,7 +194,7 @@ class HAPIDBClient:
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(explain_sql)
-            return '\n'.join([row['QUERY PLAN'] for row in rows])
+            return "\n".join([row["QUERY PLAN"] for row in rows])
 
     @asynccontextmanager
     async def transaction(self):
@@ -242,12 +246,10 @@ class HAPIDBClient:
             ORDER BY res_type
         """
         rows = await self.execute_query(sql)
-        return [row['res_type'] for row in rows]
+        return [row["res_type"] for row in rows]
 
     async def get_resource_by_id(
-        self,
-        resource_type: str,
-        resource_id: str
+        self, resource_type: str, resource_id: str
     ) -> Optional[Dict[str, Any]]:
         """
         Fetch single resource by ID
@@ -271,7 +273,7 @@ class HAPIDBClient:
         rows = await self.execute_query(sql, [resource_type, resource_id])
 
         if rows:
-            resource_text = rows[0]['resource']
+            resource_text = rows[0]["resource"]
             # Parse JSON string to dict if needed
             if isinstance(resource_text, str):
                 return json.loads(resource_text)
@@ -297,25 +299,22 @@ class HAPIDBClient:
             LIMIT 10
         """
         resource_counts = await self.execute_query(sql)
-        stats['resource_counts'] = {
-            row['res_type']: row['count']
-            for row in resource_counts
-        }
+        stats["resource_counts"] = {row["res_type"]: row["count"] for row in resource_counts}
 
         # Total resources
-        stats['total_resources'] = await self.execute_scalar(
+        stats["total_resources"] = await self.execute_scalar(
             "SELECT COUNT(*) FROM hfj_resource WHERE res_deleted_at IS NULL"
         )
 
         # Database size
-        stats['database_size_mb'] = await self.execute_scalar(
+        stats["database_size_mb"] = await self.execute_scalar(
             "SELECT pg_database_size(current_database()) / 1024 / 1024"
         )
 
         # Connection pool stats
         if self.pool:
-            stats['pool_size'] = self.pool.get_size()
-            stats['pool_free_connections'] = self.pool.get_idle_size()
+            stats["pool_size"] = self.pool.get_size()
+            stats["pool_free_connections"] = self.pool.get_idle_size()
 
         return stats
 

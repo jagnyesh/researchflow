@@ -88,7 +88,7 @@ class SpeedLayerRunner:
     ) -> Dict[str, Any]:
         """
         Query recent FHIR resources from Redis
-        
+
         Returns:
         - patient_ids: List of patient IDs
         - resources: Full FHIR JSON
@@ -118,11 +118,11 @@ class HybridRunner:
         self.materialized_runner = MaterializedViewRunner(db_client)
         self.speed_layer_runner = SpeedLayerRunner(redis_client)
         self.use_speed_layer = os.getenv("USE_SPEED_LAYER", "true")
-        
+
     async def execute(self, view_definition, search_params, max_resources):
         """
         Lambda Architecture Serving Layer
-        
+
         Strategy:
         1. Query batch layer (materialized view or PostgresRunner)
         2. Query speed layer (Redis) for recent data
@@ -130,18 +130,18 @@ class HybridRunner:
         """
         # Step 1: Batch layer
         batch_result = await self.materialized_runner.execute(...)
-        
+
         # Step 2: Speed layer (if enabled)
         if self.use_speed_layer:
             speed_result = await self.speed_layer_runner.execute(...)
-            
+
             # Step 3: Merge
             if speed_result.get("total_count", 0) > 0:
                 return self._merge_batch_and_speed_results(
-                    batch_result, 
+                    batch_result,
                     speed_result
                 )
-        
+
         return batch_result
 Key Features:
 ✅ Automatic routing to batch/speed layers
@@ -179,21 +179,21 @@ Verdict: ✅ FUNCTIONALLY EQUIVALENT
 File: app/cache/redis_client.py Key Methods:
 class RedisClient:
     async def set_fhir_resource(
-        self, 
-        resource_type: str, 
-        resource_id: str, 
+        self,
+        resource_type: str,
+        resource_id: str,
         resource: dict,
         ttl_hours: int = 24
     ):
         """Cache FHIR resource with TTL"""
-        
+
     async def scan_recent_resources(
         self,
         resource_type: str,
         since: datetime
     ) -> List[Dict]:
         """Scan for resources cached after timestamp"""
-        
+
     async def flush_all():
         """Clear all cached resources"""
 AWS HealthLake Equivalent:

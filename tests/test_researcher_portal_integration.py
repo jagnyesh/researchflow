@@ -26,7 +26,7 @@ class TestResearcherPortalIntegration:
             "name": "Dr. Jane Smith",
             "email": "jsmith@hospital.edu",
             "department": "Cardiology",
-            "irb_number": "IRB-2024-001"
+            "irb_number": "IRB-2024-001",
         }
 
         initial_request = "I need clinical notes and lab results for heart failure patients"
@@ -38,11 +38,11 @@ class TestResearcherPortalIntegration:
                 {
                     "role": "user",
                     "content": initial_request,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
             ],
             "researcher_info": researcher_info,
-            "initial_request": initial_request
+            "initial_request": initial_request,
         }
 
         # Call agent (as portal does)
@@ -53,7 +53,9 @@ class TestResearcherPortalIntegration:
         assert "completeness_score" in result
 
         # Should NOT be complete after first message
-        assert result["requirements_complete"] is False, "Requirements should not be complete after initial request"
+        assert (
+            result["requirements_complete"] is False
+        ), "Requirements should not be complete after initial request"
         assert result["completeness_score"] < 1.0, "Completeness should be less than 100%"
 
         # Should have a follow-up question
@@ -76,7 +78,7 @@ class TestResearcherPortalIntegration:
         researcher_info = {
             "name": "Dr. Test",
             "email": "test@hospital.edu",
-            "irb_number": "IRB-TEST-001"
+            "irb_number": "IRB-TEST-001",
         }
 
         # Turn 1: Initial request
@@ -84,9 +86,13 @@ class TestResearcherPortalIntegration:
             "request_id": "REQ-TEST-001",
             "initial_request": "I need data for diabetes patients",
             "conversation_history": [
-                {"role": "user", "content": "I need data for diabetes patients", "timestamp": datetime.now().isoformat()}
+                {
+                    "role": "user",
+                    "content": "I need data for diabetes patients",
+                    "timestamp": datetime.now().isoformat(),
+                }
             ],
-            "researcher_info": researcher_info
+            "researcher_info": researcher_info,
         }
 
         result1 = await agent.execute_task("gather_requirements", context1)
@@ -98,11 +104,23 @@ class TestResearcherPortalIntegration:
             "initial_request": "I need data for diabetes patients",
             "user_response": "Patients admitted between January 2023 and December 2023",
             "conversation_history": [
-                {"role": "user", "content": "I need data for diabetes patients", "timestamp": datetime.now().isoformat()},
-                {"role": "assistant", "content": result1["next_question"], "timestamp": datetime.now().isoformat()},
-                {"role": "user", "content": "Patients admitted between January 2023 and December 2023", "timestamp": datetime.now().isoformat()}
+                {
+                    "role": "user",
+                    "content": "I need data for diabetes patients",
+                    "timestamp": datetime.now().isoformat(),
+                },
+                {
+                    "role": "assistant",
+                    "content": result1["next_question"],
+                    "timestamp": datetime.now().isoformat(),
+                },
+                {
+                    "role": "user",
+                    "content": "Patients admitted between January 2023 and December 2023",
+                    "timestamp": datetime.now().isoformat(),
+                },
             ],
-            "researcher_info": researcher_info
+            "researcher_info": researcher_info,
         }
 
         result2 = await agent.execute_task("gather_requirements", context2)
@@ -125,19 +143,15 @@ class TestResearcherPortalIntegration:
         portal_context = {
             "request_id": "temp_20241022120000",
             "conversation_history": [
-                {
-                    "role": "user",
-                    "content": "Test request",
-                    "timestamp": datetime.now().isoformat()
-                }
+                {"role": "user", "content": "Test request", "timestamp": datetime.now().isoformat()}
             ],
             "researcher_info": {
                 "name": "Dr. Portal Test",
                 "email": "portal@test.edu",
                 "department": "Testing",
-                "irb_number": "IRB-PORTAL-001"
+                "irb_number": "IRB-PORTAL-001",
             },
-            "initial_request": "Test request"
+            "initial_request": "Test request",
         }
 
         # Should not raise any exceptions
@@ -185,13 +199,17 @@ class TestResearcherPortalIntegration:
             "request_id": "REQ-COMPLETE-TEST",
             "initial_request": comprehensive_request,
             "conversation_history": [
-                {"role": "user", "content": comprehensive_request, "timestamp": datetime.now().isoformat()}
+                {
+                    "role": "user",
+                    "content": comprehensive_request,
+                    "timestamp": datetime.now().isoformat(),
+                }
             ],
             "researcher_info": {
                 "name": "Dr. Complete",
                 "email": "complete@test.edu",
-                "irb_number": "IRB-2024-HF-001"
-            }
+                "irb_number": "IRB-2024-HF-001",
+            },
         }
 
         result = await agent.execute_task("gather_requirements", context)
@@ -199,7 +217,9 @@ class TestResearcherPortalIntegration:
         # Completeness should be reasonable (>= 0.5)
         # Note: In test environment with dummy LLM, this may be exactly 0.5
         # With real LLM, comprehensive requests should score higher
-        assert result["completeness_score"] >= 0.5, "Comprehensive request should have reasonable completeness"
+        assert (
+            result["completeness_score"] >= 0.5
+        ), "Comprehensive request should have reasonable completeness"
 
         print(f"✅ Completion detection working")
         print(f"   Completeness: {result['completeness_score']:.0%}")
@@ -210,4 +230,4 @@ class TestResearcherPortalIntegration:
 
 if __name__ == "__main__":
     # Run tests
-    pytest.main([__file__, '-v', '-s'])
+    pytest.main([__file__, "-v", "-s"])

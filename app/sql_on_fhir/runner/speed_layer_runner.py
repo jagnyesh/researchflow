@@ -1,4 +1,5 @@
 """Speed layer runner for querying Redis-cached FHIR data."""
+
 from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 import logging
@@ -24,7 +25,7 @@ class SpeedLayerRunner:
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, str]] = None,
         max_resources: int = 1000,
-        since: Optional[datetime] = None
+        since: Optional[datetime] = None,
     ) -> Dict[str, Any]:
         """
         Execute query against speed layer (Redis cache).
@@ -49,11 +50,12 @@ class SpeedLayerRunner:
 
         # Scan Redis for recent resources
         resources = await self.redis_client.scan_recent_resources(
-            resource_type=resource_type,
-            since=since
+            resource_type=resource_type, since=since
         )
 
-        logger.info(f"[SpeedLayerRunner] Found {len(resources)} recent {resource_type} resources in Redis")
+        logger.info(
+            f"[SpeedLayerRunner] Found {len(resources)} recent {resource_type} resources in Redis"
+        )
 
         # Apply search parameter filters
         if search_params:
@@ -72,7 +74,7 @@ class SpeedLayerRunner:
             "patient_ids": list(patient_ids),
             "resources": resources,
             "query_timestamp": datetime.utcnow().isoformat(),
-            "since": since.isoformat() if since else None
+            "since": since.isoformat() if since else None,
         }
 
     def _get_resource_type(self, view_definition: Dict[str, Any]) -> str:
@@ -95,7 +97,7 @@ class SpeedLayerRunner:
         self,
         resources: List[Dict[str, Any]],
         search_params: Dict[str, str],
-        view_definition: Dict[str, Any]
+        view_definition: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """Apply search parameter filters to resources."""
         filtered = resources
@@ -103,18 +105,12 @@ class SpeedLayerRunner:
         # Gender filter (for Patient resources)
         if "gender" in search_params:
             gender = search_params["gender"].lower()
-            filtered = [
-                r for r in filtered
-                if r.get("gender", "").lower() == gender
-            ]
+            filtered = [r for r in filtered if r.get("gender", "").lower() == gender]
 
         # Code filter (for Condition/Observation resources)
         if "code" in search_params:
             code_value = search_params["code"]
-            filtered = [
-                r for r in filtered
-                if self._matches_code(r, code_value)
-            ]
+            filtered = [r for r in filtered if self._matches_code(r, code_value)]
 
         return filtered
 
@@ -135,9 +131,7 @@ class SpeedLayerRunner:
         return False
 
     def _extract_patient_ids(
-        self,
-        resources: List[Dict[str, Any]],
-        view_definition: Dict[str, Any]
+        self, resources: List[Dict[str, Any]], view_definition: Dict[str, Any]
     ) -> set:
         """Extract patient IDs from resources."""
         patient_ids = set()

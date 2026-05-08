@@ -1,4 +1,5 @@
 """FHIR subscription service for capturing resource changes."""
+
 import asyncio
 import logging
 from typing import Dict, List, Any
@@ -19,10 +20,7 @@ class FHIRSubscriptionService:
     """
 
     def __init__(
-        self,
-        hapi_client: HAPIDBClient,
-        redis_client: RedisClient,
-        poll_interval_minutes: int = 5
+        self, hapi_client: HAPIDBClient, redis_client: RedisClient, poll_interval_minutes: int = 5
     ):
         self.hapi_client = hapi_client
         self.redis_client = redis_client
@@ -60,18 +58,12 @@ class FHIRSubscriptionService:
         # Cache in Redis
         for patient in recent_patients:
             await self.redis_client.set_fhir_resource(
-                "Patient",
-                patient["id"],
-                patient,
-                ttl_hours=24
+                "Patient", patient["id"], patient, ttl_hours=24
             )
 
         for condition in recent_conditions:
             await self.redis_client.set_fhir_resource(
-                "Condition",
-                condition["id"],
-                condition,
-                ttl_hours=24
+                "Condition", condition["id"], condition, ttl_hours=24
             )
 
         for observation in recent_observations:
@@ -79,14 +71,10 @@ class FHIRSubscriptionService:
                 "Observation",
                 observation["id"],
                 observation,
-                ttl_hours=12  # Shorter TTL for observations
+                ttl_hours=12,  # Shorter TTL for observations
             )
 
-        total_cached = (
-            len(recent_patients) +
-            len(recent_conditions) +
-            len(recent_observations)
-        )
+        total_cached = len(recent_patients) + len(recent_conditions) + len(recent_observations)
 
         logger.info(
             f"[FHIRSubscriptionService] Cached {total_cached} resources "
@@ -115,16 +103,18 @@ class FHIRSubscriptionService:
         """
 
         try:
-            results = await self.hapi_client.execute_query(
-                query,
-                (self.last_sync_time,)
-            )
+            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
 
             resources = []
             for row in results:
                 try:
                     import json
-                    resource = json.loads(row['resource']) if isinstance(row['resource'], str) else row['resource']
+
+                    resource = (
+                        json.loads(row["resource"])
+                        if isinstance(row["resource"], str)
+                        else row["resource"]
+                    )
                     resources.append(resource)
                 except Exception as e:
                     logger.warning(f"Failed to parse Patient resource: {e}")
@@ -152,16 +142,18 @@ class FHIRSubscriptionService:
         """
 
         try:
-            results = await self.hapi_client.execute_query(
-                query,
-                (self.last_sync_time,)
-            )
+            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
 
             resources = []
             for row in results:
                 try:
                     import json
-                    resource = json.loads(row['resource']) if isinstance(row['resource'], str) else row['resource']
+
+                    resource = (
+                        json.loads(row["resource"])
+                        if isinstance(row["resource"], str)
+                        else row["resource"]
+                    )
                     resources.append(resource)
                 except Exception as e:
                     logger.warning(f"Failed to parse Condition resource: {e}")
@@ -189,16 +181,18 @@ class FHIRSubscriptionService:
         """
 
         try:
-            results = await self.hapi_client.execute_query(
-                query,
-                (self.last_sync_time,)
-            )
+            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
 
             resources = []
             for row in results:
                 try:
                     import json
-                    resource = json.loads(row['resource']) if isinstance(row['resource'], str) else row['resource']
+
+                    resource = (
+                        json.loads(row["resource"])
+                        if isinstance(row["resource"], str)
+                        else row["resource"]
+                    )
                     resources.append(resource)
                 except Exception as e:
                     logger.warning(f"Failed to parse Observation resource: {e}")

@@ -63,7 +63,6 @@ class MaterializedViewRunner:
         "birthdate": "dob",
         "family": "name_family",
         "given": "name_given",
-
         # Common params across resources
         # Note: patient_id is the extracted ID from patient_ref
         "patient": "patient_id",
@@ -71,10 +70,8 @@ class MaterializedViewRunner:
         "_id": "id",
         "code": "code",
         "status": "status",
-
         # Condition-specific
         "clinical-status": "clinical_status",
-
         # Observation-specific
         "date": "effective_date",
         "value-quantity": "value",
@@ -102,7 +99,7 @@ class MaterializedViewRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute query against materialized view
@@ -122,8 +119,8 @@ class MaterializedViewRunner:
                 max_resources=1000
             )
         """
-        view_name = view_definition.get('name')
-        resource_type = view_definition.get('resource')
+        view_name = view_definition.get("name")
+        resource_type = view_definition.get("resource")
 
         logger.info(f"Executing materialized view query: '{view_name}' (MaterializedViewRunner)")
 
@@ -166,9 +163,7 @@ class MaterializedViewRunner:
             raise RuntimeError(f"Materialized view query failed: {e}")
 
     async def execute_count(
-        self,
-        view_definition: Dict[str, Any],
-        search_params: Optional[Dict[str, Any]] = None
+        self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Execute COUNT query against materialized view
@@ -180,7 +175,7 @@ class MaterializedViewRunner:
         Returns:
             Count of matching rows
         """
-        view_name = view_definition.get('name')
+        view_name = view_definition.get("name")
 
         logger.info(f"Executing COUNT query: '{view_name}' (MaterializedViewRunner)")
 
@@ -188,16 +183,14 @@ class MaterializedViewRunner:
         view_exists = await self._check_view_exists(view_name)
 
         if not view_exists:
-            raise ValueError(
-                f"Materialized view '{self.SCHEMA_NAME}.{view_name}' does not exist"
-            )
+            raise ValueError(f"Materialized view '{self.SCHEMA_NAME}.{view_name}' does not exist")
 
         # Build COUNT query
         sql = self._build_count_query(view_name, search_params)
 
         try:
             result = await self.db_client.execute_query(sql)
-            count = result[0]['count'] if result else 0
+            count = result[0]["count"] if result else 0
 
             logger.info(f"✓ COUNT query returned: {count:,} rows")
             return count
@@ -222,8 +215,8 @@ class MaterializedViewRunner:
         schema = {}
 
         # Extract select columns from ViewDefinition
-        for select_item in view_definition.get('select', []):
-            column_name = select_item.get('column')
+        for select_item in view_definition.get("select", []):
+            column_name = select_item.get("column")
 
             # Skip if column_name is None or not a string
             if not column_name or not isinstance(column_name, str):
@@ -233,11 +226,11 @@ class MaterializedViewRunner:
             column_type = "string"
 
             # Common type mappings
-            if any(keyword in column_name.lower() for keyword in ['date', 'time']):
+            if any(keyword in column_name.lower() for keyword in ["date", "time"]):
                 column_type = "datetime"
-            elif any(keyword in column_name.lower() for keyword in ['count', 'age']):
+            elif any(keyword in column_name.lower() for keyword in ["count", "age"]):
                 column_type = "integer"
-            elif any(keyword in column_name.lower() for keyword in ['value', 'score']):
+            elif any(keyword in column_name.lower() for keyword in ["value", "score"]):
                 column_type = "float"
 
             schema[column_name] = column_type
@@ -261,16 +254,14 @@ class MaterializedViewRunner:
             Dictionary with execution stats
         """
         avg_time = (
-            self._total_execution_time_ms / self._total_queries
-            if self._total_queries > 0
-            else 0.0
+            self._total_execution_time_ms / self._total_queries if self._total_queries > 0 else 0.0
         )
 
         return {
             "total_queries": self._total_queries,
             "total_execution_time_ms": self._total_execution_time_ms,
             "average_execution_time_ms": avg_time,
-            "runner_type": "materialized"
+            "runner_type": "materialized",
         }
 
     # Private helper methods
@@ -296,7 +287,7 @@ class MaterializedViewRunner:
 
         try:
             result = await self.db_client.execute_query(sql)
-            return result[0]['exists'] if result else False
+            return result[0]["exists"] if result else False
         except Exception as e:
             logger.warning(f"Failed to check view existence: {e}")
             return False
@@ -305,7 +296,7 @@ class MaterializedViewRunner:
         self,
         view_name: str,
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> str:
         """
         Build SQL SELECT query for materialized view
@@ -334,9 +325,7 @@ class MaterializedViewRunner:
         return sql
 
     def _build_count_query(
-        self,
-        view_name: str,
-        search_params: Optional[Dict[str, Any]] = None
+        self, view_name: str, search_params: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Build SQL COUNT query
@@ -359,10 +348,7 @@ class MaterializedViewRunner:
 
         return sql
 
-    def _build_where_clauses(
-        self,
-        search_params: Optional[Dict[str, Any]] = None
-    ) -> List[str]:
+    def _build_where_clauses(self, search_params: Optional[Dict[str, Any]] = None) -> List[str]:
         """
         Build WHERE clause conditions from search parameters
 
@@ -401,10 +387,10 @@ class MaterializedViewRunner:
 
             elif isinstance(param_value, dict):
                 # Handle complex parameters (e.g., date ranges)
-                if 'start' in param_value or 'end' in param_value:
-                    if 'start' in param_value:
+                if "start" in param_value or "end" in param_value:
+                    if "start" in param_value:
                         clauses.append(f"{column_name} >= '{param_value['start']}'")
-                    if 'end' in param_value:
+                    if "end" in param_value:
                         clauses.append(f"{column_name} <= '{param_value['end']}'")
 
         return clauses

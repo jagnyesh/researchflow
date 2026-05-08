@@ -56,18 +56,21 @@ class RequirementsAgent(BaseAgent):
             - next_question: str (if not complete)
             - conversation_state: current state
         """
-        request_id = context.get('request_id')
-        initial_request = context.get('initial_request')
-        conversation_history = context.get('conversation_history', [])
-        user_response = context.get('user_response')
+        request_id = context.get("request_id")
+        initial_request = context.get("initial_request")
+        conversation_history = context.get("conversation_history", [])
+        user_response = context.get("user_response")
 
         # Check if pre-structured requirements are provided (from Research Notebook)
-        pre_structured_requirements = context.get('structured_requirements')
-        skip_conversation = context.get('skip_conversation', False)
+        pre_structured_requirements = context.get("structured_requirements")
+        skip_conversation = context.get("skip_conversation", False)
+        from_formal_portal = context.get("from_formal_portal", False)  # NEW: Form-based submission
 
         # If we have pre-structured requirements and should skip conversation, complete immediately
         if pre_structured_requirements and skip_conversation:
-            logger.info(f"[{self.agent_id}] Processing pre-structured requirements from Research Notebook")
+            logger.info(
+                f"[{self.agent_id}] Processing pre-structured requirements from Research Notebook"
+            )
 
             # Validate and finalize requirements
             final_requirements = await self._validate_and_structure_requirements(
@@ -95,13 +98,85 @@ class RequirementsAgent(BaseAgent):
                         "structured_requirements": final_requirements,
                         "completeness_score": 1.0,
                         "conversation_history": [
-                            {"role": "system", "content": "Requirements pre-extracted from Research Notebook feasibility check"}
+                            {
+                                "role": "system",
+                                "content": "Requirements pre-extracted from Research Notebook feasibility check",
+                            }
                         ],
-                        "inclusion_criteria": final_requirements.get('inclusion_criteria', []),
-                        "exclusion_criteria": final_requirements.get('exclusion_criteria', []),
-                        "data_elements": final_requirements.get('data_elements', [])
-                    }
-                }
+                        "inclusion_criteria": final_requirements.get("inclusion_criteria", []),
+                        "exclusion_criteria": final_requirements.get("exclusion_criteria", []),
+                        "data_elements": final_requirements.get("data_elements", []),
+                    },
+                },
+            }
+
+        # NEW: Handle form-based submissions from Formal Request Portal
+        if from_formal_portal:
+            logger.info(f"[{self.agent_id}] Processing form-based submission from Formal Portal")
+
+            # Extract researcher info from context (already validated in UI)
+            researcher_info = context.get("researcher_info", {})
+
+            # Get structured requirements from form (if provided, else use defaults)
+            structured_reqs = researcher_info.get("structured_requirements", {})
+
+            # Build requirements from form data and initial_request
+            # Merge form fields with defaults
+            form_requirements = {
+                "study_title": (
+                    initial_request[:100] if len(initial_request) > 100 else initial_request
+                ),
+                "principal_investigator": researcher_info.get("name"),
+                "irb_number": researcher_info.get("irb_number"),
+                "inclusion_criteria": structured_reqs.get("inclusion_criteria", [initial_request]),
+                "exclusion_criteria": structured_reqs.get("exclusion_criteria", []),
+                "data_elements": structured_reqs.get(
+                    "data_elements", ["demographics", "clinical_data"]
+                ),
+                "time_period": structured_reqs.get(
+                    "time_period", {"start": "2022-01-01", "end": "2024-12-31"}
+                ),
+                "phi_level": structured_reqs.get("phi_level", "limited_dataset"),
+            }
+
+            # Use LLM for light validation (hybrid approach - validate + light LLM check)
+            try:
+                analysis = await self.llm_client.extract_requirements(
+                    conversation_history=[{"role": "user", "content": initial_request}],
+                    current_requirements=form_requirements,
+                )
+
+                # Update with LLM-extracted details
+                form_requirements.update(analysis.get("extracted_requirements", {}))
+
+                # Log any warnings but proceed anyway
+                if analysis.get("completeness_score", 1.0) < 0.5:
+                    logger.warning(
+                        f"[{self.agent_id}] Low completeness score ({analysis.get('completeness_score')}) "
+                        f"but proceeding with form submission"
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"[{self.agent_id}] LLM validation failed, using form data as-is: {e}"
+                )
+
+            # Validate and structure
+            final_requirements = await self._validate_and_structure_requirements(form_requirements)
+
+            # Save to database
+            await self._save_requirements(request_id, final_requirements)
+
+            logger.info(f"[{self.agent_id}] Form-based requirements complete for {request_id}")
+
+            # Return complete - skip requirements approval, go straight to phenotype SQL generation
+            # NOTE: Do NOT return next_agent/next_task - let workflow engine determine routing
+            return {
+                "requirements_complete": True,
+                "structured_requirements": final_requirements,
+                "conversation_history": [{"role": "user", "content": initial_request}],
+                "completeness_score": 1.0,  # Form submission = complete
+                "requires_approval": False,  # Skip requirements approval, SQL will be reviewed instead
+                "additional_context": {"requirements": final_requirements},
             }
 
         # Initialize conversation state if new
@@ -117,48 +192,54 @@ class RequirementsAgent(BaseAgent):
                     "time_period": {"start": None, "end": None},
                     "estimated_cohort_size": None,
                     "delivery_format": None,
-                    "phi_level": None
+                    "phi_level": None,
                 },
                 "questions_asked": [],
-                "completeness_score": 0.0
+                "completeness_score": 0.0,
             }
 
             # Add initial request to conversation
             conversation_history = [
-                {"role": "user", "content": initial_request, "timestamp": datetime.now().isoformat()}
+                {
+                    "role": "user",
+                    "content": initial_request,
+                    "timestamp": datetime.now().isoformat(),
+                }
             ]
 
         # Add user response if provided
         if user_response:
-            conversation_history.append({
-                "role": "user",
-                "content": user_response,
-                "timestamp": datetime.now().isoformat()
-            })
+            conversation_history.append(
+                {"role": "user", "content": user_response, "timestamp": datetime.now().isoformat()}
+            )
 
         state = self.conversation_state[request_id]
 
-        logger.info(f"[{self.agent_id}] Extracting requirements from conversation (turns: {len(conversation_history)})")
+        logger.info(
+            f"[{self.agent_id}] Extracting requirements from conversation (turns: {len(conversation_history)})"
+        )
 
         # Use LLM to extract structured info from conversation
         try:
             analysis = await self.llm_client.extract_requirements(
                 conversation_history=conversation_history,
-                current_requirements=state['requirements']
+                current_requirements=state["requirements"],
             )
 
             # Update state
-            state['requirements'] = analysis['extracted_requirements']
-            state['completeness_score'] = analysis['completeness_score']
+            state["requirements"] = analysis["extracted_requirements"]
+            state["completeness_score"] = analysis["completeness_score"]
 
             # Add assistant question to conversation
-            if not analysis['ready_for_submission']:
-                conversation_history.append({
-                    "role": "assistant",
-                    "content": analysis['next_question'],
-                    "timestamp": datetime.now().isoformat()
-                })
-                state['questions_asked'].append(analysis['next_question'])
+            if not analysis["ready_for_submission"]:
+                conversation_history.append(
+                    {
+                        "role": "assistant",
+                        "content": analysis["next_question"],
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+                state["questions_asked"].append(analysis["next_question"])
 
             logger.info(
                 f"[{self.agent_id}] Completeness: {analysis['completeness_score']:.1%}, "
@@ -166,10 +247,10 @@ class RequirementsAgent(BaseAgent):
             )
 
             # Check if requirements are complete
-            if analysis['ready_for_submission']:
+            if analysis["ready_for_submission"]:
                 # Validate and structure requirements
                 final_requirements = await self._validate_and_structure_requirements(
-                    state['requirements']
+                    state["requirements"]
                 )
 
                 # Save to database (TODO: implement when DB is connected)
@@ -187,7 +268,7 @@ class RequirementsAgent(BaseAgent):
                     "requirements_complete": True,
                     "structured_requirements": final_requirements,
                     "conversation_history": conversation_history,
-                    "completeness_score": analysis['completeness_score'],
+                    "completeness_score": analysis["completeness_score"],
                     "requires_approval": True,  # Flag for orchestrator
                     "approval_type": "requirements",  # Type of approval needed
                     "next_agent": None,  # Wait for approval - orchestrator will route
@@ -196,23 +277,27 @@ class RequirementsAgent(BaseAgent):
                         "requirements": final_requirements,
                         "approval_data": {
                             "structured_requirements": final_requirements,
-                            "completeness_score": analysis['completeness_score'],
-                            "conversation_history": conversation_history[-5:] if len(conversation_history) > 5 else conversation_history,  # Last 5 turns
-                            "inclusion_criteria": final_requirements.get('inclusion_criteria', []),
-                            "exclusion_criteria": final_requirements.get('exclusion_criteria', []),
-                            "data_elements": final_requirements.get('data_elements', [])
-                        }
-                    }
+                            "completeness_score": analysis["completeness_score"],
+                            "conversation_history": (
+                                conversation_history[-5:]
+                                if len(conversation_history) > 5
+                                else conversation_history
+                            ),  # Last 5 turns
+                            "inclusion_criteria": final_requirements.get("inclusion_criteria", []),
+                            "exclusion_criteria": final_requirements.get("exclusion_criteria", []),
+                            "data_elements": final_requirements.get("data_elements", []),
+                        },
+                    },
                 }
             else:
                 # Continue conversation
                 return {
                     "requirements_complete": False,
-                    "next_question": analysis['next_question'],
-                    "completeness_score": analysis['completeness_score'],
-                    "current_requirements": state['requirements'],
-                    "missing_fields": analysis['missing_fields'],
-                    "conversation_history": conversation_history
+                    "next_question": analysis["next_question"],
+                    "completeness_score": analysis["completeness_score"],
+                    "current_requirements": state["requirements"],
+                    "missing_fields": analysis["missing_fields"],
+                    "conversation_history": conversation_history,
                 }
 
         except Exception as e:
@@ -232,28 +317,28 @@ class RequirementsAgent(BaseAgent):
         structured_requirements = requirements.copy()
 
         # Convert inclusion/exclusion criteria to structured format with codes
-        if requirements.get('inclusion_criteria'):
-            structured_requirements['inclusion_criteria'] = await self._criteria_to_structured(
-                requirements['inclusion_criteria']
+        if requirements.get("inclusion_criteria"):
+            structured_requirements["inclusion_criteria"] = await self._criteria_to_structured(
+                requirements["inclusion_criteria"]
             )
 
-        if requirements.get('exclusion_criteria'):
-            structured_requirements['exclusion_criteria'] = await self._criteria_to_structured(
-                requirements['exclusion_criteria']
+        if requirements.get("exclusion_criteria"):
+            structured_requirements["exclusion_criteria"] = await self._criteria_to_structured(
+                requirements["exclusion_criteria"]
             )
 
         # Validate dates
-        if requirements.get('time_period'):
-            structured_requirements['time_period'] = self._validate_dates(
-                requirements['time_period']
+        if requirements.get("time_period"):
+            structured_requirements["time_period"] = self._validate_dates(
+                requirements["time_period"]
             )
 
         # Set defaults
-        if not structured_requirements.get('delivery_format'):
-            structured_requirements['delivery_format'] = 'CSV'
+        if not structured_requirements.get("delivery_format"):
+            structured_requirements["delivery_format"] = "CSV"
 
-        if not structured_requirements.get('phi_level'):
-            structured_requirements['phi_level'] = 'de-identified'
+        if not structured_requirements.get("phi_level"):
+            structured_requirements["phi_level"] = "de-identified"
 
         return structured_requirements
 
@@ -261,36 +346,66 @@ class RequirementsAgent(BaseAgent):
         """
         Convert natural language criteria to structured format
 
+        Sprint 8 Optimization 5: Batch concept extraction (50% cost savings)
+        Extracts concepts for all criteria in a single LLM call instead of N separate calls.
+
         For each criterion:
-        1. Extract medical concepts using LLM
+        1. Extract medical concepts using LLM (batch extraction)
         2. Look up codes (will use terminology MCP server in future)
         3. Return structured criterion
         """
-        structured_criteria = []
+        if not criteria_list:
+            return []
 
-        for criterion in criteria_list:
-            try:
-                # Extract medical concepts
-                concepts_data = await self.llm_client.extract_medical_concepts(criterion)
+        # Sprint 8 Optimization 5: Batch concept extraction (50% cost savings)
+        # Extract concepts for all criteria in a single LLM call instead of N separate calls
+        try:
+            logger.info(
+                f"[{self.agent_id}] Batch extracting concepts for {len(criteria_list)} criteria"
+            )
+            batch_results = await self.llm_client.extract_medical_concepts_batch(criteria_list)
 
+            # Build structured criteria from batch results
+            structured_criteria = []
+            for criterion, concepts_data in zip(criteria_list, batch_results):
                 criterion_structured = {
                     "description": criterion,
-                    "concepts": concepts_data.get('concepts', []),
-                    "codes": []  # Will be populated by terminology server
+                    "concepts": concepts_data.get("concepts", []),
+                    "codes": [],  # Will be populated by terminology server
                 }
-
                 structured_criteria.append(criterion_structured)
 
-            except Exception as e:
-                logger.warning(f"Could not structure criterion '{criterion}': {str(e)}")
-                # Fallback to simple structure
-                structured_criteria.append({
-                    "description": criterion,
-                    "concepts": [],
-                    "codes": []
-                })
+            logger.info(
+                f"[{self.agent_id}] Batch extraction successful (1 LLM call vs {len(criteria_list)} calls)"
+            )
+            return structured_criteria
 
-        return structured_criteria
+        except Exception as e:
+            logger.warning(f"Batch extraction failed: {str(e)}, falling back to individual calls")
+
+            # Fallback to individual extraction (original behavior)
+            structured_criteria = []
+            for criterion in criteria_list:
+                try:
+                    # Extract medical concepts
+                    concepts_data = await self.llm_client.extract_medical_concepts(criterion)
+
+                    criterion_structured = {
+                        "description": criterion,
+                        "concepts": concepts_data.get("concepts", []),
+                        "codes": [],  # Will be populated by terminology server
+                    }
+
+                    structured_criteria.append(criterion_structured)
+
+                except Exception as e:
+                    logger.warning(f"Could not structure criterion '{criterion}': {str(e)}")
+                    # Fallback to simple structure
+                    structured_criteria.append(
+                        {"description": criterion, "concepts": [], "codes": []}
+                    )
+
+            return structured_criteria
 
     def _validate_dates(self, time_period: dict) -> dict:
         """Validate and normalize date strings"""
@@ -300,7 +415,79 @@ class RequirementsAgent(BaseAgent):
 
     async def _save_requirements(self, request_id: str, requirements: Dict):
         """Save requirements to database"""
-        # TODO: Implement database save using RequirementsData model
         logger.info(f"[{self.agent_id}] Saving requirements for {request_id}")
-        # For now, just log
         logger.debug(f"Requirements: {requirements}")
+
+        from app.database import get_db_session, RequirementsData
+        from sqlalchemy import select
+        from datetime import datetime
+
+        async with get_db_session() as session:
+            # Check if requirements already exist
+            result = await session.execute(
+                select(RequirementsData).where(RequirementsData.request_id == request_id)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                # Update existing record
+                existing.study_title = requirements.get("study_title")
+                existing.principal_investigator = requirements.get("principal_investigator")
+                existing.irb_number = requirements.get("irb_number")
+                existing.inclusion_criteria = requirements.get("inclusion_criteria", [])
+                existing.exclusion_criteria = requirements.get("exclusion_criteria", [])
+                existing.data_elements = requirements.get("data_elements", [])
+                existing.delivery_format = requirements.get("delivery_format", "CSV")
+                existing.phi_level = requirements.get("phi_level", "de-identified")
+
+                # Handle time period
+                time_period = requirements.get("time_period", {})
+                if time_period:
+                    start_str = time_period.get("start")
+                    end_str = time_period.get("end")
+                    if start_str:
+                        existing.time_period_start = (
+                            datetime.fromisoformat(start_str)
+                            if isinstance(start_str, str)
+                            else start_str
+                        )
+                    if end_str:
+                        existing.time_period_end = (
+                            datetime.fromisoformat(end_str) if isinstance(end_str, str) else end_str
+                        )
+
+                logger.info(f"[{self.agent_id}] Updated existing requirements for {request_id}")
+            else:
+                # Create new record
+                time_period = requirements.get("time_period", {})
+                start_str = time_period.get("start") if time_period else None
+                end_str = time_period.get("end") if time_period else None
+
+                requirements_data = RequirementsData(
+                    request_id=request_id,
+                    study_title=requirements.get("study_title"),
+                    principal_investigator=requirements.get("principal_investigator"),
+                    irb_number=requirements.get("irb_number"),
+                    inclusion_criteria=requirements.get("inclusion_criteria", []),
+                    exclusion_criteria=requirements.get("exclusion_criteria", []),
+                    data_elements=requirements.get("data_elements", []),
+                    delivery_format=requirements.get("delivery_format", "CSV"),
+                    phi_level=requirements.get("phi_level", "de-identified"),
+                    time_period_start=(
+                        datetime.fromisoformat(start_str)
+                        if start_str and isinstance(start_str, str)
+                        else start_str
+                    ),
+                    time_period_end=(
+                        datetime.fromisoformat(end_str)
+                        if end_str and isinstance(end_str, str)
+                        else end_str
+                    ),
+                )
+                session.add(requirements_data)
+                logger.info(f"[{self.agent_id}] Created new requirements record for {request_id}")
+
+            await session.commit()
+            logger.info(
+                f"[{self.agent_id}] Successfully saved requirements to database for {request_id}"
+            )

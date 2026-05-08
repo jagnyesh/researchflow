@@ -16,6 +16,18 @@ from enum import Enum
 import asyncio
 import logging
 
+# LangSmith observability (Sprint 7)
+try:
+    from langsmith import traceable
+except ImportError:
+    # Fallback if langsmith not installed
+    def traceable(**kwargs):
+        def decorator(func):
+            return func
+
+        return decorator
+
+
 logger = logging.getLogger(__name__)
 
 # Import database models for persistence
@@ -29,6 +41,7 @@ except ImportError:
 
 class AgentState(Enum):
     """Agent operational states"""
+
     IDLE = "idle"
     WORKING = "working"
     FAILED = "failed"
@@ -60,16 +73,19 @@ class BaseAgent(ABC):
         """
         pass
 
+    @traceable(tags=["base-agent", "production", "agent-execution"])
     async def handle_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Wrapper for task execution with logging, error handling, and state management
+
+        Now with LangSmith tracing (Sprint 7) for full observability of all agents.
         """
         self.state = AgentState.WORKING
         self.current_task = {
             "task": task,
             "context": context,
             "started_at": datetime.now(),
-            "agent_id": self.agent_id
+            "agent_id": self.agent_id,
         }
 
         try:
@@ -83,7 +99,9 @@ class BaseAgent(ABC):
             self.current_task["result"] = result
             self.current_task["status"] = "success"
 
-            duration = (self.current_task["completed_at"] - self.current_task["started_at"]).total_seconds()
+            duration = (
+                self.current_task["completed_at"] - self.current_task["started_at"]
+            ).total_seconds()
             logger.info(f"[{self.agent_id}] Completed task: {task} in {duration:.2f}s")
 
             # Add to history
@@ -93,11 +111,11 @@ class BaseAgent(ABC):
             await self._save_execution_to_db(self.current_task.copy())
 
             # Notify orchestrator if next agent specified
-            if result.get('next_agent'):
+            if result.get("next_agent"):
                 await self.notify_orchestrator(
-                    next_agent=result['next_agent'],
-                    next_task=result['next_task'],
-                    context={**context, **result.get('additional_context', {})}
+                    next_agent=result["next_agent"],
+                    next_task=result["next_task"],
+                    context={**context, **result.get("additional_context", {})},
                 )
 
             return result
@@ -132,15 +150,12 @@ class BaseAgent(ABC):
         if self.orchestrator:
             logger.info(f"[{self.agent_id}] Routing to {next_agent}.{next_task}")
             await self.orchestrator.route_task(
-                agent_id=next_agent,
-                task=next_task,
-                context=context,
-                from_agent=self.agent_id
+                agent_id=next_agent, task=next_task, context=context, from_agent=self.agent_id
             )
 
     def should_retry(self, error: Exception, context: Dict) -> bool:
         """Determine if task should be retried"""
-        retry_count = context.get('retry_count', 0)
+        retry_count = context.get("retry_count", 0)
 
         # Don't retry if max retries exceeded
         if retry_count >= self.max_retries:
@@ -151,31 +166,30 @@ class BaseAgent(ABC):
             "ConnectionError",
             "TimeoutError",
             "TemporaryFailure",
-            "ServiceUnavailable"
+            "ServiceUnavailable",
         ]
 
         return type(error).__name__ in transient_errors
 
     async def retry_task(self, task: str, context: Dict) -> Dict[str, Any]:
         """Retry failed task with exponential backoff"""
-        retry_count = context.get('retry_count', 0)
+        retry_count = context.get("retry_count", 0)
 
         if retry_count >= self.max_retries:
             error_msg = f"Max retries ({self.max_retries}) exceeded"
             logger.error(f"[{self.agent_id}] {error_msg}")
-            await self.escalate_to_human(
-                error=error_msg,
-                context=context
-            )
+            await self.escalate_to_human(error=error_msg, context=context)
             raise Exception(error_msg)
 
         # Exponential backoff: 2^retry_count seconds
-        wait_time = 2 ** retry_count
-        logger.info(f"[{self.agent_id}] Retrying task after {wait_time}s (attempt {retry_count + 1}/{self.max_retries})")
+        wait_time = 2**retry_count
+        logger.info(
+            f"[{self.agent_id}] Retrying task after {wait_time}s (attempt {retry_count + 1}/{self.max_retries})"
+        )
         await asyncio.sleep(wait_time)
 
         # Retry with incremented count
-        context['retry_count'] = retry_count + 1
+        context["retry_count"] = retry_count + 1
         return await self.handle_task(task, context)
 
     async def escalate_to_human(self, error: Any, context: Dict):
@@ -190,7 +204,7 @@ class BaseAgent(ABC):
             "context": context,
             "task": self.current_task,
             "escalated_at": datetime.now().isoformat(),
-            "status": "pending_review"
+            "status": "pending_review",
         }
 
         logger.warning(f"[{self.agent_id}] Escalating to human review: {str(error)}")
@@ -214,15 +228,15 @@ class BaseAgent(ABC):
     def get_metrics(self) -> Dict[str, Any]:
         """Get agent performance metrics"""
         total_tasks = len(self.task_history)
-        successful_tasks = sum(1 for t in self.task_history if t.get('status') == 'success')
-        failed_tasks = sum(1 for t in self.task_history if t.get('status') == 'failed')
+        successful_tasks = sum(1 for t in self.task_history if t.get("status") == "success")
+        failed_tasks = sum(1 for t in self.task_history if t.get("status") == "failed")
 
         avg_duration = 0
         if total_tasks > 0:
             durations = [
-                (t['completed_at'] - t['started_at']).total_seconds()
+                (t["completed_at"] - t["started_at"]).total_seconds()
                 for t in self.task_history
-                if 'completed_at' in t and 'started_at' in t
+                if "completed_at" in t and "started_at" in t
             ]
             avg_duration = sum(durations) / len(durations) if durations else 0
 
@@ -234,7 +248,7 @@ class BaseAgent(ABC):
             "failed_tasks": failed_tasks,
             "success_rate": successful_tasks / total_tasks if total_tasks > 0 else 0,
             "avg_duration_seconds": avg_duration,
-            "current_task": self.current_task
+            "current_task": self.current_task,
         }
 
     async def _save_execution_to_db(self, execution_data: Dict):
@@ -246,25 +260,25 @@ class BaseAgent(ABC):
         try:
             async with get_db_session() as session:
                 # Calculate duration
-                started_at = execution_data.get('started_at')
-                completed_at = execution_data.get('completed_at')
+                started_at = execution_data.get("started_at")
+                completed_at = execution_data.get("completed_at")
                 duration = None
                 if started_at and completed_at:
                     duration = (completed_at - started_at).total_seconds()
 
                 # Create AgentExecution record
                 agent_execution = AgentExecution(
-                    request_id=execution_data.get('context', {}).get('request_id'),
-                    agent_id=execution_data.get('agent_id'),
-                    task=execution_data.get('task'),
+                    request_id=execution_data.get("context", {}).get("request_id"),
+                    agent_id=execution_data.get("agent_id"),
+                    task=execution_data.get("task"),
                     started_at=started_at,
                     completed_at=completed_at,
-                    status=execution_data.get('status', 'unknown'),
+                    status=execution_data.get("status", "unknown"),
                     duration_seconds=duration,
-                    context=execution_data.get('context', {}),
-                    result=execution_data.get('result', {}),
-                    error=execution_data.get('error'),
-                    retry_count=execution_data.get('context', {}).get('retry_count', 0)
+                    context=execution_data.get("context", {}),
+                    result=execution_data.get("result", {}),
+                    error=execution_data.get("error"),
+                    retry_count=execution_data.get("context", {}).get("retry_count", 0),
                 )
 
                 session.add(agent_execution)

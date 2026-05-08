@@ -22,7 +22,7 @@ from app.agents import (
     CalendarAgent,
     DataExtractionAgent,
     QualityAssuranceAgent,
-    DeliveryAgent
+    DeliveryAgent,
 )
 from app.agents.coordinator_agent import CoordinatorAgent
 from sqlalchemy import select
@@ -33,13 +33,13 @@ async def setup_orchestrator():
     orchestrator = ResearchRequestOrchestrator()
 
     # Register all agents
-    orchestrator.register_agent('requirements_agent', RequirementsAgent())
-    orchestrator.register_agent('phenotype_agent', PhenotypeValidationAgent())
-    orchestrator.register_agent('calendar_agent', CalendarAgent())
-    orchestrator.register_agent('extraction_agent', DataExtractionAgent())
-    orchestrator.register_agent('qa_agent', QualityAssuranceAgent())
-    orchestrator.register_agent('delivery_agent', DeliveryAgent())
-    orchestrator.register_agent('coordinator_agent', CoordinatorAgent())
+    orchestrator.register_agent("requirements_agent", RequirementsAgent())
+    orchestrator.register_agent("phenotype_agent", PhenotypeValidationAgent())
+    orchestrator.register_agent("calendar_agent", CalendarAgent())
+    orchestrator.register_agent("extraction_agent", DataExtractionAgent())
+    orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
+    orchestrator.register_agent("delivery_agent", DeliveryAgent())
+    orchestrator.register_agent("coordinator_agent", CoordinatorAgent())
 
     print("✓ Orchestrator initialized with all agents")
     return orchestrator
@@ -49,12 +49,9 @@ async def find_stuck_requests():
     """Find requests stuck in early states"""
     async with get_db_session() as session:
         result = await session.execute(
-            select(ResearchRequest).where(
-                ResearchRequest.current_state.in_([
-                    'new_request',
-                    'requirements_gathering'
-                ])
-            ).order_by(ResearchRequest.created_at)
+            select(ResearchRequest)
+            .where(ResearchRequest.current_state.in_(["new_request", "requirements_gathering"]))
+            .order_by(ResearchRequest.created_at)
         )
         stuck_requests = result.scalars().all()
         return stuck_requests
@@ -76,8 +73,8 @@ async def process_stuck_request(orchestrator, request):
                 "name": request.researcher_name,
                 "email": request.researcher_email,
                 "department": request.researcher_department,
-                "irb_number": request.irb_number
-            }
+                "irb_number": request.irb_number,
+            },
         }
 
         # Route to requirements agent
@@ -85,7 +82,7 @@ async def process_stuck_request(orchestrator, request):
             agent_id="requirements_agent",
             task="gather_requirements",
             context=context,
-            from_agent="process_stuck_script"
+            from_agent="process_stuck_script",
         )
 
         print(f"   ✓ Workflow triggered")
@@ -125,7 +122,7 @@ async def main():
     print("This will trigger the workflow for these requests.")
     response = input("Continue? (y/n): ")
 
-    if response.lower() != 'y':
+    if response.lower() != "y":
         print("Cancelled")
         return
 

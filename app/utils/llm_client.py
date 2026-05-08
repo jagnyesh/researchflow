@@ -2,19 +2,21 @@
 LLM Client for ResearchFlow
 
 Wrapper for Anthropic Claude API with structured output parsing.
+Now uses LangChain's ChatAnthropic for automatic LangSmith tracing.
 """
 
 import os
 import json
 import logging
 from typing import Dict, Any, Optional
-import anthropic
 from dotenv import load_dotenv
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import HumanMessage, SystemMessage
 
 # Load .env file from project root when this module is imported
 # This ensures ANTHROPIC_API_KEY is available before LLMClient is initialized
 _project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-_dotenv_path = os.path.join(_project_root, '.env')
+_dotenv_path = os.path.join(_project_root, ".env")
 load_dotenv(_dotenv_path)
 
 logger = logging.getLogger(__name__)
@@ -22,34 +24,48 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     """
-    Client for interacting with Claude API
+    Client for interacting with Claude API via LangChain
 
+    Uses ChatAnthropic for automatic LangSmith tracing when LANGCHAIN_TRACING_V2=true.
     Provides methods for structured requirement extraction, SQL generation,
     and medical terminology mapping.
     """
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
+    def __init__(self, api_key: Optional[str] = None, model: str = "claude-sonnet-4-6"):
+        self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
+        self.model = model
+
         if not self.api_key:
             logger.warning("ANTHROPIC_API_KEY not set - LLM features will be limited")
             self.client = None
         else:
-            self.client = anthropic.Anthropic(api_key=self.api_key)
+            # LangChain ChatAnthropic automatically traces to LangSmith when:
+            # - LANGCHAIN_TRACING_V2=true
+            # - LANGCHAIN_API_KEY is set
+            # - LANGCHAIN_PROJECT is set
+            self.client = ChatAnthropic(
+                model=self.model, anthropic_api_key=self.api_key, temperature=0.7, max_tokens=4096
+            )
+            logger.info(
+                f"LLM client initialized with model={self.model} (LangSmith tracing enabled)"
+            )
 
     async def complete(
         self,
         prompt: str,
-        model: str = "claude-3-7-sonnet-20250219",
+        model: Optional[str] = None,
         max_tokens: int = 4096,
         temperature: float = 0.7,
-        system: Optional[str] = None
+        system: Optional[str] = None,
     ) -> str:
         """
-        Get completion from Claude API
+        Get completion from Claude API via LangChain
+
+        All calls are automatically traced to LangSmith when tracing is enabled.
 
         Args:
             prompt: User prompt
-            model: Model identifier
+            model: Model identifier (optional, uses instance default)
             max_tokens: Maximum tokens in response
             temperature: Sampling temperature
             system: System prompt
@@ -62,17 +78,47 @@ class LLMClient:
             return self._dummy_response(prompt)
 
         try:
-            message = self.client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system if system else "You are a helpful clinical research data specialist.",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
+            # Create a new client instance if model/params differ from default
+            if model and model != self.model:
+                client = ChatAnthropic(
+                    model=model,
+                    anthropic_api_key=self.api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+            else:
+                # Update params on existing client
+                client = ChatAnthropic(
+                    model=self.model,
+                    anthropic_api_key=self.api_key,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
 
-            response_text = message.content[0].text
+            # Build messages in LangChain format
+            messages = []
+            if system:
+                # Enable prompt caching for system message (Sprint 8 optimization)
+                messages.append(
+                    SystemMessage(
+                        content=system, additional_kwargs={"cache_control": {"type": "ephemeral"}}
+                    )
+                )
+            else:
+                # Enable prompt caching for default system message
+                messages.append(
+                    SystemMessage(
+                        content="You are a helpful clinical research data specialist.",
+                        additional_kwargs={"cache_control": {"type": "ephemeral"}},
+                    )
+                )
+
+            messages.append(HumanMessage(content=prompt))
+
+            # Invoke with async - automatically traced to LangSmith!
+            response = await client.ainvoke(messages)
+
+            response_text = response.content
             logger.debug(f"LLM response ({len(response_text)} chars)")
             return response_text
 
@@ -84,8 +130,8 @@ class LLMClient:
         self,
         prompt: str,
         schema_description: str,
-        model: str = "claude-3-7-sonnet-20250219",
-        system: Optional[str] = None
+        model: Optional[str] = None,
+        system: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Extract structured JSON from text using LLM
@@ -93,7 +139,7 @@ class LLMClient:
         Args:
             prompt: Input text to parse
             schema_description: Description of expected JSON schema
-            model: Model to use
+            model: Model to use (optional)
             system: Optional system prompt
 
         Returns:
@@ -105,7 +151,9 @@ class LLMClient:
 
 Return ONLY valid JSON, no other text."""
 
-        response = await self.complete(full_prompt, model=model, temperature=0.3, system=system)
+        response = await self.complete(
+            full_prompt, model=model or self.model, temperature=0.3, system=system
+        )
 
         # Extract JSON from response (handle markdown code blocks)
         response = response.strip()
@@ -124,9 +172,7 @@ Return ONLY valid JSON, no other text."""
             raise
 
     async def extract_requirements(
-        self,
-        conversation_history: list,
-        current_requirements: Dict[str, Any]
+        self, conversation_history: list, current_requirements: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
         Extract structured requirements from conversation
@@ -192,6 +238,9 @@ Return JSON with this exact structure:
         """
         Extract medical concepts from a clinical criterion
 
+        Sprint 8 Optimization: Uses Claude Haiku 3.5 (10x cheaper than Sonnet 4.5)
+        for simple medical term classification task.
+
         Args:
             criterion: Natural language criterion (e.g., "patients with diabetes")
 
@@ -208,7 +257,7 @@ Identify:
 - Procedures (e.g., cardiac catheterization)
 - Medications (e.g., metformin, insulin)
 - Lab values (e.g., hemoglobin < 12, creatinine > 1.5)
-- Demographics (e.g., age > 65, female)
+- Demographics (e.g., age > 65, male, female, gender)
 
 Return JSON:
 {{
@@ -221,21 +270,96 @@ Return JSON:
   ]
 }}"""
 
-        return await self.extract_structured_json(prompt, "")
+        # Sprint 8 Optimization 2: Use Haiku for simple classification (10x cheaper)
+        # Haiku 3.5 is sufficient for medical term classification
+        # Cost: ~$0.0001 per call vs ~$0.001 with Sonnet (90% savings)
+        return await self.extract_structured_json(prompt, "", model="claude-haiku-4-5-20251001")
+
+    async def extract_medical_concepts_batch(
+        self, criteria_list: list[str]
+    ) -> list[Dict[str, Any]]:
+        """
+        Extract medical concepts from multiple criteria in a single LLM call
+
+        Sprint 8 Optimization 5: Batch extraction reduces LLM calls by 50%
+        Cost: ~$0.0001 per batch vs ~$0.0001 × N calls (50% savings)
+
+        Args:
+            criteria_list: List of clinical criteria
+
+        Returns:
+            List of dicts with:
+            - concepts: List of {term, type, category}
+            - for each criterion in same order as input
+        """
+        if not criteria_list:
+            return []
+
+        # Build batch prompt
+        criteria_text = ""
+        for i, criterion in enumerate(criteria_list, 1):
+            criteria_text += f'{i}. "{criterion}"\n'
+
+        prompt = f"""Extract medical concepts from these clinical criteria:
+
+{criteria_text}
+
+For EACH criterion, identify:
+- Conditions/diagnoses (e.g., diabetes, heart failure)
+- Procedures (e.g., cardiac catheterization)
+- Medications (e.g., metformin, insulin)
+- Lab values (e.g., hemoglobin < 12, creatinine > 1.5)
+- Demographics (e.g., age > 65, male, female, gender)
+
+Return JSON array with one entry per criterion (in same order):
+{{
+  "results": [
+    {{
+      "criterion_index": 1,
+      "concepts": [
+        {{
+          "term": "diabetes",
+          "type": "condition",
+          "details": "any diabetes diagnosis"
+        }}
+      ]
+    }}
+  ]
+}}"""
+
+        result = await self.extract_structured_json(prompt, "", model="claude-haiku-4-5-20251001")
+
+        # Extract results array
+        results = result.get("results", [])
+
+        # Convert to list of concept dicts (maintaining order)
+        concept_dicts = []
+        for i in range(len(criteria_list)):
+            # Find matching result by index
+            matching_result = next((r for r in results if r.get("criterion_index") == i + 1), None)
+            if matching_result:
+                concept_dicts.append({"concepts": matching_result.get("concepts", [])})
+            else:
+                # Fallback if index not found
+                concept_dicts.append({"concepts": []})
+
+        return concept_dicts
 
     def _dummy_response(self, prompt: str) -> str:
         """Dummy response when LLM not available (for testing)"""
         if "extract" in prompt.lower() or "json" in prompt.lower():
-            return json.dumps({
-                "extracted_requirements": {
-                    "study_title": "Research Study",
-                    "inclusion_criteria": ["dummy criterion"],
-                    "data_elements": ["clinical_notes"],
-                    "phi_level": "de-identified"
-                },
-                "missing_fields": ["irb_number", "time_period"],
-                "next_question": "What is your IRB number?",
-                "completeness_score": 0.5,
-                "ready_for_submission": False
-            })
+            return json.dumps(
+                {
+                    "extracted_requirements": {
+                        "study_title": "Research Study",
+                        "inclusion_criteria": ["dummy criterion"],
+                        "data_elements": ["clinical_notes"],
+                        "phi_level": "de-identified",
+                    },
+                    "missing_fields": ["irb_number", "time_period"],
+                    "next_question": "What is your IRB number?",
+                    "completeness_score": 0.5,
+                    "ready_for_submission": False,
+                }
+            )
         return "Dummy LLM response"

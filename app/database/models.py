@@ -9,11 +9,14 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
 
+from app.security.encryption import EncryptedJSON, EncryptedText
+
 Base = declarative_base()
 
 
 class ResearchRequest(Base):
     """Main research data request tracking"""
+
     __tablename__ = "research_requests"
 
     id = Column(String, primary_key=True)  # REQ-YYYYMMDD-XXXXXXXX
@@ -28,7 +31,9 @@ class ResearchRequest(Base):
     irb_number = Column(String)
 
     # Request data
-    initial_request = Column(Text, nullable=False)  # Natural language request
+    initial_request = Column(
+        EncryptedText(), nullable=False
+    )  # Natural language request — encrypted at rest (Phase 3b)
     current_state = Column(String, nullable=False)  # Workflow state
     final_state = Column(String, nullable=True)
     error_message = Column(Text, nullable=True)
@@ -49,6 +54,7 @@ class ResearchRequest(Base):
 
 class RequirementsData(Base):
     """Structured requirements extracted from researcher"""
+
     __tablename__ = "requirements_data"
 
     id = Column(Integer, primary_key=True)
@@ -60,9 +66,9 @@ class RequirementsData(Base):
     principal_investigator = Column(String)
     irb_number = Column(String)
 
-    # Criteria
-    inclusion_criteria = Column(JSON, default=[])  # List of structured criteria with codes
-    exclusion_criteria = Column(JSON, default=[])  # List of structured criteria with codes
+    # Criteria — encrypted at rest (Phase 3b): may contain patient identifiers in label fields
+    inclusion_criteria = Column(EncryptedJSON(), default=list)
+    exclusion_criteria = Column(EncryptedJSON(), default=list)
 
     # Data elements requested
     data_elements = Column(JSON, default=[])  # e.g., ["clinical_notes", "lab_results", "imaging"]
@@ -89,6 +95,7 @@ class RequirementsData(Base):
 
 class FeasibilityReport(Base):
     """Phenotype validation and feasibility analysis results"""
+
     __tablename__ = "feasibility_reports"
 
     id = Column(Integer, primary_key=True)
@@ -108,8 +115,8 @@ class FeasibilityReport(Base):
     data_availability = Column(JSON)  # Availability by data element
     overall_availability = Column(Float)
 
-    # Generated SQL
-    phenotype_sql = Column(Text)
+    # Generated SQL — encrypted at rest (Phase 3b): may contain inline patient identifiers
+    phenotype_sql = Column(EncryptedText())
 
     # Timing
     estimated_extraction_time_hours = Column(Float)
@@ -124,6 +131,7 @@ class FeasibilityReport(Base):
 
 class AgentExecution(Base):
     """Individual agent task execution log"""
+
     __tablename__ = "agent_executions"
 
     id = Column(Integer, primary_key=True)
@@ -154,6 +162,7 @@ class AgentExecution(Base):
 
 class Escalation(Base):
     """Human review escalations - both reactive (errors) and proactive (timeouts, complexity)"""
+
     __tablename__ = "escalations"
 
     id = Column(Integer, primary_key=True)
@@ -168,14 +177,18 @@ class Escalation(Base):
     task = Column(JSON)
 
     # NEW: Proactive escalation fields
-    escalation_reason = Column(String, nullable=True)  # timeout, low_feasibility, complexity, approval_pending, error
+    escalation_reason = Column(
+        String, nullable=True
+    )  # timeout, low_feasibility, complexity, approval_pending, error
     severity = Column(String, default="medium")  # low, medium, high, critical
     recommended_action = Column(Text, nullable=True)  # AI-suggested next steps
     auto_resolved = Column(Boolean, default=False)
     resolution_agent = Column(String, nullable=True)  # Which agent resolved it
 
     # Review
-    status = Column(String, default="pending_review")  # pending_review, approved, rejected, modified, auto_resolved
+    status = Column(
+        String, default="pending_review"
+    )  # pending_review, approved, rejected, modified, auto_resolved
     reviewed_by = Column(String, nullable=True)
     review_notes = Column(Text, nullable=True)
     resolution = Column(JSON, nullable=True)
@@ -186,6 +199,7 @@ class Escalation(Base):
 
 class Approval(Base):
     """Human approval tracking for critical decision points"""
+
     __tablename__ = "approvals"
 
     id = Column(Integer, primary_key=True)
@@ -193,7 +207,9 @@ class Approval(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     # Approval type
-    approval_type = Column(String, nullable=False)  # requirements, phenotype_sql, extraction, qa, scope_change
+    approval_type = Column(
+        String, nullable=False
+    )  # requirements, phenotype_sql, extraction, qa, scope_change
 
     # Request details
     submitted_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -201,7 +217,9 @@ class Approval(Base):
     approval_data = Column(JSON, nullable=False)  # What needs approval (SQL, requirements, etc.)
 
     # Review status
-    status = Column(String, default="pending", nullable=False)  # pending, approved, rejected, modified, timeout
+    status = Column(
+        String, default="pending", nullable=False
+    )  # pending, approved, rejected, modified, timeout
     reviewed_at = Column(DateTime, nullable=True)
     reviewed_by = Column(String, nullable=True)  # user_id or email of reviewer
     review_notes = Column(Text, nullable=True)
@@ -221,6 +239,7 @@ class Approval(Base):
 
 class DataDelivery(Base):
     """Data delivery tracking"""
+
     __tablename__ = "data_deliveries"
 
     id = Column(Integer, primary_key=True)
@@ -236,10 +255,18 @@ class DataDelivery(Base):
     data_elements = Column(JSON, default=[])
     file_list = Column(JSON, default=[])
 
+    # Preview extraction (NEW - Sprint X)
+    preview_data = Column(JSON, nullable=True)  # Preview extraction results (10 rows per element)
+    preview_qa_report = Column(JSON, nullable=True)  # QA report from preview validation
+
     # Delivery metadata (renamed from 'metadata' to avoid SQLAlchemy conflict)
     delivery_metadata = Column(JSON)  # Extraction date, methods, etc.
     data_dictionary = Column(JSON)
-    qa_report = Column(JSON)
+    qa_report = Column(JSON)  # Full data QA report
+
+    # Delivery approval (NEW - Sprint X)
+    delivery_approved_by = Column(String, nullable=True)  # Informatician who approved delivery
+    delivery_approved_at = Column(DateTime, nullable=True)  # When delivery was approved
 
     # Notification
     notification_sent = Column(Boolean, default=False)
@@ -249,37 +276,127 @@ class DataDelivery(Base):
     request = relationship("ResearchRequest", back_populates="delivery")
 
 
+class User(Base):
+    """User authentication and authorization"""
+
+    __tablename__ = "users"
+
+    id = Column(String, primary_key=True)  # USR-XXXXXXXX
+    email = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+
+    # Profile
+    full_name = Column(String, nullable=False)
+    department = Column(String)
+    role = Column(String, nullable=False, default="researcher")  # researcher, data_steward, admin
+
+    # Status
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_verified = Column(Boolean, default=False)  # Email verification status
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    last_login_at = Column(DateTime, nullable=True)
+
+    # Security
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime, nullable=True)  # Account lockout timestamp
+
+    # Preferences
+    notification_preferences = Column(JSON, default={})  # Email, SMS preferences
+
+    def __repr__(self):
+        return f"<User(email='{self.email}', role='{self.role}', active={self.is_active})>"
+
+
 class AuditLog(Base):
-    """Audit log for compliance and debugging - append-only event tracking"""
+    """
+    HIPAA-Compliant Audit Log for PHI Access Tracking
+
+    Tracks all system events with emphasis on PHI access per HIPAA requirements.
+    Append-only table for compliance and forensic analysis.
+
+    Standard Event Types:
+    - PHI_VIEW: Viewed PHI data (patient records, observations, etc.)
+    - PHI_EXPORT: Exported PHI data to external system
+    - PHI_SEARCH: Searched for patients/PHI data
+    - REQUEST_CREATE: Created new research request
+    - REQUEST_APPROVE: Approved research request
+    - REQUEST_REJECT: Rejected research request
+    - USER_LOGIN: User authentication
+    - USER_LOGOUT: User logged out
+    - USER_CREATE: New user created
+    - USER_UPDATE: User profile updated
+    - USER_DELETE: User deleted
+    - QUERY_EXECUTE: SQL-on-FHIR query executed
+    - DATA_EXTRACT: Data extraction performed
+    - DATA_DELIVER: Data delivered to researcher
+    - AGENT_STARTED: AI agent started execution
+    - AGENT_COMPLETED: AI agent completed execution
+    - AGENT_FAILED: AI agent failed
+    - STATE_CHANGED: Workflow state transition
+    - ERROR_OCCURRED: System error
+    """
+
     __tablename__ = "audit_logs"
 
     id = Column(Integer, primary_key=True)
     timestamp = Column(DateTime, default=datetime.now, nullable=False, index=True)
 
+    # User tracking (HIPAA required)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+
     # Request tracking
-    request_id = Column(String, ForeignKey("research_requests.id"), index=True)
+    request_id = Column(String, ForeignKey("research_requests.id"), nullable=True, index=True)
 
     # Event details
-    event_type = Column(String, nullable=False, index=True)  # state_changed, agent_started, error_occurred, etc.
+    event_type = Column(
+        String, nullable=False, index=True
+    )  # PHI_VIEW, REQUEST_CREATE, USER_LOGIN, etc. (see docstring)
+    action = Column(
+        String, nullable=True, index=True
+    )  # Specific action: view, create, update, delete, export
     agent_id = Column(String, nullable=True)
+
+    # Resource tracking (what was accessed)
+    resource_type = Column(
+        String, nullable=True, index=True
+    )  # Patient, Observation, Condition, ResearchRequest, User
+    resource_id = Column(String, nullable=True)  # ID of the specific resource accessed
+
+    # PHI access flag (HIPAA critical - indexed for fast queries)
+    phi_accessed = Column(Boolean, default=False, nullable=False, index=True)
+
+    # Request metadata (HIPAA audit trail)
+    ip_address = Column(String, nullable=True)  # Client IP address
+    user_agent = Column(String, nullable=True)  # Browser/client user agent
+
+    # Result tracking
+    result = Column(String, nullable=True)  # success, failure, partial, error
 
     # Event data (flexible JSON for different event types)
     event_data = Column(JSON, default={})
 
-    # Context (who/what triggered this)
+    # Legacy context field (kept for backwards compatibility)
     triggered_by = Column(String, nullable=True)  # user_id, agent_id, system
 
-    # Severity (for filtering)
+    # Severity (for filtering and alerting)
     severity = Column(String, default="info")  # debug, info, warning, error, critical
 
 
 class MaterializedViewMetadata(Base):
     """Metadata for materialized views in sqlonfhir schema"""
+
     __tablename__ = "materialized_view_metadata"
 
     id = Column(Integer, primary_key=True)
-    view_name = Column(String, unique=True, nullable=False, index=True)  # Name of the materialized view
-    created_at = Column(DateTime, default=datetime.now, nullable=False)  # When view was first created
+    view_name = Column(
+        String, unique=True, nullable=False, index=True
+    )  # Name of the materialized view
+    created_at = Column(
+        DateTime, default=datetime.now, nullable=False
+    )  # When view was first created
     last_refreshed_at = Column(DateTime, nullable=True)  # When view was last refreshed
     next_refresh_at = Column(DateTime, nullable=True)  # Scheduled next refresh time
 
@@ -317,7 +434,7 @@ class MaterializedViewMetadata(Base):
     @property
     def is_healthy(self) -> bool:
         """Check if view is in healthy state"""
-        return self.status == 'active' and not self.is_stale
+        return self.status == "active" and not self.is_stale
 
     @property
     def needs_refresh(self) -> bool:

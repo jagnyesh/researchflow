@@ -54,7 +54,6 @@ The requirements will be reviewed for medical accuracy before proceeding to phen
 Best regards,
 ResearchFlow System
             """,
-
             "phenotype_sql_review": """
 Subject: SQL Query Review Needed - {request_id}
 
@@ -74,7 +73,6 @@ IMPORTANT: This SQL will execute against the production FHIR database once appro
 Best regards,
 ResearchFlow System
             """,
-
             "extraction_notice": """
 Subject: Data Extraction Approved - {request_id}
 
@@ -91,7 +89,6 @@ You will receive another notification once extraction is complete and QA validat
 Best regards,
 ResearchFlow System
             """,
-
             "qa_complete": """
 Subject: QA Complete - Data Ready for Review - {request_id}
 
@@ -111,7 +108,6 @@ Please review the QA report and approve for delivery:
 Best regards,
 ResearchFlow System
             """,
-
             "scope_change_notification": """
 Subject: Scope Change Request - {request_id}
 
@@ -137,7 +133,7 @@ Please review and approve/reject in the Admin Dashboard:
 
 Best regards,
 ResearchFlow System
-            """
+            """,
         }
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,7 +168,7 @@ ResearchFlow System
             researcher_name=researcher_name,
             researcher_department=researcher_department,
             dashboard_url="http://localhost:8502",  # TODO: Get from config
-            approval_id=approval_id
+            approval_id=approval_id,
         )
 
         # TODO: Integrate with actual email service (MCP email server)
@@ -182,7 +178,7 @@ ResearchFlow System
         return {
             "email_sent": True,
             "email_type": "requirements_complete",
-            "recipient": "informatician@example.com"  # TODO: Get from config
+            "recipient": "informatician@example.com",  # TODO: Get from config
         }
 
     async def _send_sql_review_email(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -197,7 +193,7 @@ ResearchFlow System
             researcher_name=researcher_name,
             estimated_cohort=estimated_cohort,
             dashboard_url="http://localhost:8502",
-            approval_id=approval_id
+            approval_id=approval_id,
         )
 
         logger.info(f"[{self.agent_id}] Sending SQL review email for {request_id}")
@@ -206,7 +202,7 @@ ResearchFlow System
         return {
             "email_sent": True,
             "email_type": "phenotype_sql_review",
-            "recipient": "informatician@example.com"
+            "recipient": "informatician@example.com",
         }
 
     async def _send_extraction_notice(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -221,7 +217,7 @@ ResearchFlow System
             request_id=request_id,
             researcher_name=researcher_name,
             cohort_size=cohort_size,
-            data_elements=", ".join(data_elements) if data_elements else "N/A"
+            data_elements=", ".join(data_elements) if data_elements else "N/A",
         )
 
         logger.info(f"[{self.agent_id}] Sending extraction notice to {researcher_email}")
@@ -230,7 +226,7 @@ ResearchFlow System
         return {
             "email_sent": True,
             "email_type": "extraction_notice",
-            "recipient": researcher_email
+            "recipient": researcher_email,
         }
 
     async def _send_qa_complete_email(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -248,17 +244,13 @@ ResearchFlow System
             qa_status=qa_status,
             cohort_size=cohort_size,
             qa_summary=qa_summary,
-            dashboard_url="http://localhost:8501"  # Researcher portal
+            dashboard_url="http://localhost:8501",  # Researcher portal
         )
 
         logger.info(f"[{self.agent_id}] Sending QA complete email to {researcher_email}")
         logger.debug(f"Email body: {email_body}")
 
-        return {
-            "email_sent": True,
-            "email_type": "qa_complete",
-            "recipient": researcher_email
-        }
+        return {"email_sent": True, "email_type": "qa_complete", "recipient": researcher_email}
 
     async def _handle_scope_change(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -275,9 +267,7 @@ ResearchFlow System
 
         # Analyze impact
         impact_analysis = await self._analyze_scope_change_impact(
-            original_requirements,
-            requested_changes,
-            current_state
+            original_requirements, requested_changes, current_state
         )
 
         logger.info(f"[{self.agent_id}] Scope change impact: {impact_analysis['severity']}")
@@ -291,16 +281,14 @@ ResearchFlow System
             "requires_approval": True,
             "next_agent": None,  # Waits for approval
             "next_task": None,
-            "additional_context": {
-                "scope_change_impact": impact_analysis
-            }
+            "additional_context": {"scope_change_impact": impact_analysis},
         }
 
     async def _analyze_scope_change_impact(
         self,
         original_requirements: Dict[str, Any],
         requested_changes: Dict[str, Any],
-        current_state: str
+        current_state: str,
     ) -> Dict[str, Any]:
         """
         Analyze impact of scope changes
@@ -313,7 +301,7 @@ ResearchFlow System
             "requires_rework": False,
             "restart_from_state": None,
             "estimated_delay_hours": 0,
-            "affected_components": []
+            "affected_components": [],
         }
 
         # Check if inclusion/exclusion criteria changed
@@ -360,19 +348,21 @@ ResearchFlow System
             requested_changes=str(requested_changes),
             impact_analysis=str(impact_analysis),
             dashboard_url="http://localhost:8502",
-            approval_id=approval_id
+            approval_id=approval_id,
         )
 
         # Send to informatician and admin
         recipients = ["informatician@example.com", "admin@example.com"]
 
-        logger.info(f"[{self.agent_id}] Sending scope change notification to {len(recipients)} stakeholders")
+        logger.info(
+            f"[{self.agent_id}] Sending scope change notification to {len(recipients)} stakeholders"
+        )
         logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,
             "email_type": "scope_change_notification",
-            "recipients": recipients
+            "recipients": recipients,
         }
 
     async def _coordinate_approval(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -392,7 +382,7 @@ ResearchFlow System
             "phenotype_sql": "send_sql_review_email",
             "extraction": "send_extraction_notice",
             "qa": "send_qa_complete_email",
-            "scope_change": "send_scope_change_notification"
+            "scope_change": "send_scope_change_notification",
         }
 
         email_task = email_task_map.get(approval_type)
@@ -402,7 +392,7 @@ ResearchFlow System
         return {
             "approval_coordinated": True,
             "approval_type": approval_type,
-            "notification_sent": True
+            "notification_sent": True,
         }
 
     async def _handle_timeline_negotiation(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -422,7 +412,7 @@ ResearchFlow System
         return {
             "timeline_negotiated": True,
             "proposed_timeline": proposed_timeline,
-            "status": "pending_confirmation"
+            "status": "pending_confirmation",
         }
 
     async def _send_stakeholder_update(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -435,13 +425,11 @@ ResearchFlow System
         current_state = context.get("current_state", "Unknown")
         update_message = context.get("update_message", "Status update")
 
-        logger.info(f"[{self.agent_id}] Sending stakeholder update for {request_id}: {current_state}")
+        logger.info(
+            f"[{self.agent_id}] Sending stakeholder update for {request_id}: {current_state}"
+        )
 
         # TODO: Send to all stakeholders (researcher, informatician, admin)
         # For now, just log
 
-        return {
-            "update_sent": True,
-            "current_state": current_state,
-            "message": update_message
-        }
+        return {"update_sent": True, "current_state": current_state, "message": update_message}

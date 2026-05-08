@@ -16,7 +16,7 @@ from app.database.models import (
     AgentExecution,
     Escalation,
     RequirementsData,
-    Approval
+    Approval,
 )
 from app.orchestrator.workflow_engine import WorkflowState
 
@@ -24,14 +24,15 @@ from app.orchestrator.workflow_engine import WorkflowState
 # Import dashboard functions to test
 import sys
 import os
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.web_ui.admin_dashboard import (
+from app.web_ui.dashboard_helpers import (
     get_agent_metrics_from_db,
     get_all_requests_from_db,
     get_escalations_from_db,
     get_analytics_from_db,
-    AGENT_IDS
+    AGENT_IDS,
 )
 
 
@@ -64,7 +65,7 @@ async def _create_test_data():
             current_agent="requirements_agent",
             agents_involved=[],
             state_history=[],
-            created_at=datetime.now() - timedelta(days=2)
+            created_at=datetime.now() - timedelta(days=2),
         )
 
         req2 = ResearchRequest(
@@ -79,7 +80,7 @@ async def _create_test_data():
             agents_involved=[],
             state_history=[],
             created_at=datetime.now() - timedelta(days=5),
-            completed_at=datetime.now() - timedelta(days=1)
+            completed_at=datetime.now() - timedelta(days=1),
         )
 
         session.add(req1)
@@ -96,7 +97,7 @@ async def _create_test_data():
             duration_seconds=300.0,
             context={"request_id": "REQ-TEST-001"},
             result={},
-            retry_count=0
+            retry_count=0,
         )
 
         exec2 = AgentExecution(
@@ -109,7 +110,7 @@ async def _create_test_data():
             duration_seconds=300.0,
             context={"request_id": "REQ-TEST-001"},
             result={},
-            retry_count=0
+            retry_count=0,
         )
 
         exec3 = AgentExecution(
@@ -123,7 +124,7 @@ async def _create_test_data():
             context={"request_id": "REQ-TEST-002"},
             result={},
             error="Test error",
-            retry_count=1
+            retry_count=1,
         )
 
         session.add(exec1)
@@ -141,7 +142,7 @@ async def _create_test_data():
             severity="high",
             recommended_action="Review and retry",
             status="pending_review",
-            created_at=datetime.now()
+            created_at=datetime.now(),
         )
 
         session.add(escalation)
@@ -169,26 +170,26 @@ class TestAgentMetricsTab:
         assert all(agent_id in metrics for agent_id in AGENT_IDS)
 
         # Check requirements_agent metrics (has 2 executions: 1 success + 1 failed)
-        req_metrics = metrics['requirements_agent']
-        assert req_metrics['agent_id'] == 'requirements_agent'
-        assert req_metrics['total_tasks'] == 2  # 2 executions
-        assert req_metrics['successful_tasks'] == 1
-        assert req_metrics['failed_tasks'] == 1
-        assert req_metrics['success_rate'] == 0.5
-        assert req_metrics['avg_duration_seconds'] > 0
+        req_metrics = metrics["requirements_agent"]
+        assert req_metrics["agent_id"] == "requirements_agent"
+        assert req_metrics["total_tasks"] == 2  # 2 executions
+        assert req_metrics["successful_tasks"] == 1
+        assert req_metrics["failed_tasks"] == 1
+        assert req_metrics["success_rate"] == 0.5
+        assert req_metrics["avg_duration_seconds"] > 0
 
         # Check phenotype_agent metrics (has 1 execution)
-        pheno_metrics = metrics['phenotype_agent']
-        assert pheno_metrics['total_tasks'] == 1
-        assert pheno_metrics['successful_tasks'] == 1
-        assert pheno_metrics['failed_tasks'] == 0
-        assert pheno_metrics['success_rate'] == 1.0
+        pheno_metrics = metrics["phenotype_agent"]
+        assert pheno_metrics["total_tasks"] == 1
+        assert pheno_metrics["successful_tasks"] == 1
+        assert pheno_metrics["failed_tasks"] == 0
+        assert pheno_metrics["success_rate"] == 1.0
 
         # Check agents with no executions
-        calendar_metrics = metrics['calendar_agent']
-        assert calendar_metrics['total_tasks'] == 0
-        assert calendar_metrics['successful_tasks'] == 0
-        assert calendar_metrics['success_rate'] == 0
+        calendar_metrics = metrics["calendar_agent"]
+        assert calendar_metrics["total_tasks"] == 0
+        assert calendar_metrics["successful_tasks"] == 0
+        assert calendar_metrics["success_rate"] == 0
 
     @pytest.mark.asyncio
     async def test_agent_state_determination(self, setup_test_data):
@@ -197,7 +198,7 @@ class TestAgentMetricsTab:
 
         # All agents should be idle (no pending executions in test data)
         for agent_id, agent_metrics in metrics.items():
-            assert agent_metrics['state'] in ['idle', 'working']
+            assert agent_metrics["state"] in ["idle", "working"]
 
     @pytest.mark.asyncio
     async def test_metrics_with_no_data(self):
@@ -211,11 +212,11 @@ class TestAgentMetricsTab:
 
         # All metrics should be zero
         for agent_id, agent_metrics in metrics.items():
-            assert agent_metrics['total_tasks'] == 0
-            assert agent_metrics['successful_tasks'] == 0
-            assert agent_metrics['failed_tasks'] == 0
-            assert agent_metrics['success_rate'] == 0
-            assert agent_metrics['avg_duration_seconds'] == 0
+            assert agent_metrics["total_tasks"] == 0
+            assert agent_metrics["successful_tasks"] == 0
+            assert agent_metrics["failed_tasks"] == 0
+            assert agent_metrics["success_rate"] == 0
+            assert agent_metrics["avg_duration_seconds"] == 0
 
 
 class TestOverviewTab:
@@ -231,13 +232,13 @@ class TestOverviewTab:
 
         # Check request structure
         req = requests[0]
-        assert 'request_id' in req
-        assert 'current_state' in req
-        assert 'current_agent' in req
-        assert 'started_at' in req
-        assert 'researcher_info' in req
-        assert 'name' in req['researcher_info']
-        assert 'email' in req['researcher_info']
+        assert "request_id" in req
+        assert "current_state" in req
+        assert "current_agent" in req
+        assert "started_at" in req
+        assert "researcher_info" in req
+        assert "name" in req["researcher_info"]
+        assert "email" in req["researcher_info"]
 
     @pytest.mark.asyncio
     async def test_only_active_requests_returned(self, setup_test_data):
@@ -245,10 +246,10 @@ class TestOverviewTab:
         requests = await get_all_requests_from_db()
 
         # Should NOT include completed requests
-        request_ids = [r['request_id'] for r in requests]
+        request_ids = [r["request_id"] for r in requests]
 
         # REQ-TEST-001 is active (not completed)
-        assert any('REQ-TEST-001' in rid for rid in request_ids)
+        assert any("REQ-TEST-001" in rid for rid in request_ids)
 
         # REQ-TEST-002 is completed, might be filtered out depending on implementation
 
@@ -259,7 +260,7 @@ class TestOverviewTab:
 
         if len(requests) > 1:
             # Should be ordered by created_at desc
-            dates = [r['started_at'] for r in requests]
+            dates = [r["started_at"] for r in requests]
             assert dates == sorted(dates, reverse=True)
 
 
@@ -322,39 +323,39 @@ class TestAnalyticsTab:
         analytics = await get_analytics_from_db()
 
         # Check analytics structure
-        assert 'volume_by_date' in analytics
-        assert 'data_elements' in analytics
-        assert 'total_requests' in analytics
-        assert 'completed_requests' in analytics
+        assert "volume_by_date" in analytics
+        assert "data_elements" in analytics
+        assert "total_requests" in analytics
+        assert "completed_requests" in analytics
 
         # Should have at least 2 requests from test data
-        assert analytics['total_requests'] >= 2
+        assert analytics["total_requests"] >= 2
 
         # Should have 1 completed request
-        assert analytics['completed_requests'] >= 1
+        assert analytics["completed_requests"] >= 1
 
     @pytest.mark.asyncio
     async def test_volume_by_date_grouping(self, setup_test_data):
         """Test that request volume is grouped by date correctly"""
         analytics = await get_analytics_from_db()
 
-        volume_by_date = analytics['volume_by_date']
+        volume_by_date = analytics["volume_by_date"]
 
         # Should have data for multiple dates
         assert len(volume_by_date) > 0
 
         # Each date should have submitted and completed counts
         for date_key, counts in volume_by_date.items():
-            assert 'submitted' in counts
-            assert 'completed' in counts
-            assert counts['submitted'] >= counts['completed']  # Can't complete more than submitted
+            assert "submitted" in counts
+            assert "completed" in counts
+            assert counts["submitted"] >= counts["completed"]  # Can't complete more than submitted
 
     @pytest.mark.asyncio
     async def test_analytics_time_range(self, setup_test_data):
         """Test that analytics only includes last 30 days"""
         analytics = await get_analytics_from_db()
 
-        volume_by_date = analytics['volume_by_date']
+        volume_by_date = analytics["volume_by_date"]
 
         # All dates should be within last 30 days
         thirty_days_ago = (datetime.now() - timedelta(days=30)).date()
@@ -370,10 +371,10 @@ class TestAnalyticsTab:
         analytics = await get_analytics_from_db()
 
         # Should still return structure with empty/zero values
-        assert analytics['total_requests'] == 0
-        assert analytics['completed_requests'] == 0
-        assert len(analytics['volume_by_date']) == 0
-        assert len(analytics['data_elements']) == 0
+        assert analytics["total_requests"] == 0
+        assert analytics["completed_requests"] == 0
+        assert len(analytics["volume_by_date"]) == 0
+        assert len(analytics["data_elements"]) == 0
 
 
 class TestDashboardIntegration:
@@ -393,20 +394,18 @@ class TestDashboardIntegration:
             result = await session.execute(select(AgentExecution))
             all_executions = result.scalars().all()
 
-        total_tasks_from_metrics = sum(m['total_tasks'] for m in metrics.values())
+        total_tasks_from_metrics = sum(m["total_tasks"] for m in metrics.values())
         assert total_tasks_from_metrics == len(all_executions)
 
         # Total requests from analytics should match database
         async with get_db_session() as session:
             thirty_days_ago = datetime.now() - timedelta(days=30)
             result = await session.execute(
-                select(ResearchRequest).where(
-                    ResearchRequest.created_at >= thirty_days_ago
-                )
+                select(ResearchRequest).where(ResearchRequest.created_at >= thirty_days_ago)
             )
             recent_requests = result.scalars().all()
 
-        assert analytics['total_requests'] == len(recent_requests)
+        assert analytics["total_requests"] == len(recent_requests)
 
     @pytest.mark.asyncio
     async def test_dashboard_survives_restart(self, setup_test_data):
@@ -425,9 +424,9 @@ class TestDashboardIntegration:
 
         # Metrics should match
         for agent_id in AGENT_IDS:
-            assert metrics1[agent_id]['total_tasks'] == metrics2[agent_id]['total_tasks']
+            assert metrics1[agent_id]["total_tasks"] == metrics2[agent_id]["total_tasks"]
 
 
 if __name__ == "__main__":
     # Run tests
-    pytest.main([__file__, '-v'])
+    pytest.main([__file__, "-v"])

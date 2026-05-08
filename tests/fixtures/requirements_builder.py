@@ -38,9 +38,7 @@ class RequirementsBuilder:
 
     @staticmethod
     def build_condition(
-        description: str,
-        term: Optional[str] = None,
-        concept_type: str = 'condition'
+        description: str, term: Optional[str] = None, concept_type: str = "condition"
     ) -> Dict[str, Any]:
         """
         Build a single condition criterion
@@ -61,21 +59,14 @@ class RequirementsBuilder:
             term = description
 
         return {
-            'description': description,
-            'concepts': [
-                {
-                    'type': concept_type,
-                    'term': term
-                }
-            ],
-            'codes': []
+            "description": description,
+            "concepts": [{"type": concept_type, "term": term}],
+            "codes": [],
         }
 
     @staticmethod
     def build_demographic(
-        description: str,
-        term: Optional[str] = None,
-        details: str = ''
+        description: str, term: Optional[str] = None, details: str = ""
     ) -> Dict[str, Any]:
         """
         Build a demographic criterion (age, gender, race, etc.)
@@ -96,23 +87,14 @@ class RequirementsBuilder:
             term = description
 
         return {
-            'description': description,
-            'concepts': [
-                {
-                    'type': 'demographic',
-                    'term': term,
-                    'details': details
-                }
-            ],
-            'codes': []
+            "description": description,
+            "concepts": [{"type": "demographic", "term": term, "details": details}],
+            "codes": [],
         }
 
     @staticmethod
     def build_lab(
-        description: str,
-        term: Optional[str] = None,
-        operator: str = '',
-        value: str = ''
+        description: str, term: Optional[str] = None, operator: str = "", value: str = ""
     ) -> Dict[str, Any]:
         """
         Build a lab value criterion
@@ -132,21 +114,14 @@ class RequirementsBuilder:
         if term is None:
             term = description
 
-        concept = {
-            'type': 'lab',
-            'term': term
-        }
+        concept = {"type": "lab", "term": term}
 
         if operator:
-            concept['operator'] = operator
+            concept["operator"] = operator
         if value:
-            concept['value'] = value
+            concept["value"] = value
 
-        return {
-            'description': description,
-            'concepts': [concept],
-            'codes': []
-        }
+        return {"description": description, "concepts": [concept], "codes": []}
 
     @staticmethod
     def build_requirements(
@@ -160,7 +135,7 @@ class RequirementsBuilder:
         phi_level: Optional[str] = None,
         delivery_format: Optional[str] = None,
         estimated_cohort_size: Optional[int] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Build complete requirements dict
@@ -195,25 +170,25 @@ class RequirementsBuilder:
             )
         """
         requirements = {
-            'inclusion_criteria': inclusion or [],
-            'exclusion_criteria': exclusion or [],
-            'time_period': time_period or {},
-            'data_elements': data_elements or []
+            "inclusion_criteria": inclusion or [],
+            "exclusion_criteria": exclusion or [],
+            "time_period": time_period or {},
+            "data_elements": data_elements or [],
         }
 
         # Add optional fields if provided
         if study_title:
-            requirements['study_title'] = study_title
+            requirements["study_title"] = study_title
         if principal_investigator:
-            requirements['principal_investigator'] = principal_investigator
+            requirements["principal_investigator"] = principal_investigator
         if irb_number:
-            requirements['irb_number'] = irb_number
+            requirements["irb_number"] = irb_number
         if phi_level:
-            requirements['phi_level'] = phi_level
+            requirements["phi_level"] = phi_level
         if delivery_format:
-            requirements['delivery_format'] = delivery_format
+            requirements["delivery_format"] = delivery_format
         if estimated_cohort_size:
-            requirements['estimated_cohort_size'] = estimated_cohort_size
+            requirements["estimated_cohort_size"] = estimated_cohort_size
 
         # Add any additional kwargs
         requirements.update(kwargs)
@@ -226,7 +201,7 @@ class RequirementsBuilder:
         exclusion_str: Optional[List[str]] = None,
         time_period: Optional[Dict[str, str]] = None,
         data_elements: Optional[List[str]] = None,
-        **kwargs
+        **kwargs,
     ) -> Dict[str, Any]:
         """
         Build requirements from simple string lists (convenience method)
@@ -252,20 +227,14 @@ class RequirementsBuilder:
             )
         """
         # Convert strings to structured criteria
-        inclusion = [
-            RequirementsBuilder.build_condition(crit)
-            for crit in (inclusion_str or [])
-        ]
+        inclusion = [RequirementsBuilder.build_condition(crit) for crit in (inclusion_str or [])]
 
-        exclusion = [
-            RequirementsBuilder.build_condition(crit)
-            for crit in (exclusion_str or [])
-        ]
+        exclusion = [RequirementsBuilder.build_condition(crit) for crit in (exclusion_str or [])]
 
         return RequirementsBuilder.build_requirements(
             inclusion=inclusion,
             exclusion=exclusion,
             time_period=time_period,
             data_elements=data_elements,
-            **kwargs
+            **kwargs,
         )

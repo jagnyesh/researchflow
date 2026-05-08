@@ -14,10 +14,7 @@ import logging
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 
-from app.sql_on_fhir.transpiler import (
-    FHIRPathTranspiler,
-    ColumnExtractor
-)
+from app.sql_on_fhir.transpiler import FHIRPathTranspiler, ColumnExtractor
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +22,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SQLQuery:
     """Complete SQL query with metadata"""
+
     sql: str
     resource_type: str
     view_name: str
@@ -40,11 +38,7 @@ class SQLQueryBuilder:
     Generates executable PostgreSQL queries against HAPI FHIR database
     """
 
-    def __init__(
-        self,
-        transpiler: FHIRPathTranspiler,
-        extractor: ColumnExtractor
-    ):
+    def __init__(self, transpiler: FHIRPathTranspiler, extractor: ColumnExtractor):
         """
         Initialize SQL query builder
 
@@ -59,7 +53,7 @@ class SQLQueryBuilder:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
     ) -> SQLQuery:
         """
         Build complete SQL query from ViewDefinition
@@ -72,16 +66,13 @@ class SQLQueryBuilder:
         Returns:
             SQLQuery with complete executable SQL
         """
-        view_name = view_definition.get('name', 'unnamed')
-        resource_type = view_definition.get('resource', 'Unknown')
-        select_elements = view_definition.get('select', [])
-        where_elements = view_definition.get('where', [])
+        view_name = view_definition.get("name", "unnamed")
+        resource_type = view_definition.get("resource", "Unknown")
+        select_elements = view_definition.get("select", [])
+        where_elements = view_definition.get("where", [])
 
         # Extract columns and lateral joins
-        select_clause = self.extractor.extract_columns(
-            select_elements,
-            resource_type
-        )
+        select_clause = self.extractor.extract_columns(select_elements, resource_type)
 
         # Build FROM clause
         from_clause = self._build_from_clause(resource_type)
@@ -98,7 +89,7 @@ class SQLQueryBuilder:
             vd_where = self.extractor.extract_where_clause(where_elements)
             if vd_where:
                 # Extract just the conditions (remove "WHERE" prefix)
-                where_conditions.append(vd_where.replace('WHERE\n    ', ''))
+                where_conditions.append(vd_where.replace("WHERE\n    ", ""))
 
         # Add search parameter filters
         if search_params:
@@ -118,11 +109,7 @@ class SQLQueryBuilder:
             where_clause = "WHERE\n    " + "\n    AND ".join(where_conditions)
 
         # Build complete query
-        query_parts = [
-            select_clause.select_sql,
-            from_clause,
-            where_clause
-        ]
+        query_parts = [select_clause.select_sql, from_clause, where_clause]
 
         # Add LIMIT if specified
         if limit:
@@ -136,7 +123,7 @@ class SQLQueryBuilder:
             view_name=view_name,
             column_count=len(select_clause.columns),
             has_lateral_joins=bool(select_clause.lateral_joins),
-            has_where_clause=bool(where_elements or search_params)
+            has_where_clause=bool(where_elements or search_params),
         )
 
     def _build_from_clause(self, resource_type: str) -> str:
@@ -156,11 +143,7 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
 
         return from_clause
 
-    def _build_search_param_where(
-        self,
-        search_params: Dict[str, Any],
-        resource_type: str
-    ) -> str:
+    def _build_search_param_where(self, search_params: Dict[str, Any], resource_type: str) -> str:
         """
         Build WHERE conditions from FHIR search parameters
 
@@ -175,58 +158,48 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
 
         for param_name, param_value in search_params.items():
             # Handle common search parameters
-            if param_name == '_id':
+            if param_name == "_id":
                 conditions.append(f"r.res_id = '{param_value}'")
 
-            elif param_name == 'gender':
+            elif param_name == "gender":
                 # Use JSONB path for simple fields
-                conditions.append(
-                    f"v.res_text_vc::jsonb->>'gender' = '{param_value}'"
-                )
+                conditions.append(f"v.res_text_vc::jsonb->>'gender' = '{param_value}'")
 
-            elif param_name == 'birthdate' or param_name == 'birthdate_min' or param_name == 'birthdate_max':
+            elif (
+                param_name == "birthdate"
+                or param_name == "birthdate_min"
+                or param_name == "birthdate_max"
+            ):
                 # Date search with FHIR prefix support (ge, le, gt, lt, eq)
                 # Examples: "ge1995-01-01" means >= 1995-01-01
                 #           "le2005-12-31" means <= 2005-12-31
                 # birthdate_min and birthdate_max allow separate min/max constraints
                 if isinstance(param_value, str):
-                    if param_value.startswith('ge'):
+                    if param_value.startswith("ge"):
                         # Greater than or equal
                         date_val = param_value[2:]
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' >= '{date_val}'"
-                        )
-                    elif param_value.startswith('le'):
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' >= '{date_val}'")
+                    elif param_value.startswith("le"):
                         # Less than or equal
                         date_val = param_value[2:]
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' <= '{date_val}'"
-                        )
-                    elif param_value.startswith('gt'):
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' <= '{date_val}'")
+                    elif param_value.startswith("gt"):
                         # Greater than
                         date_val = param_value[2:]
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' > '{date_val}'"
-                        )
-                    elif param_value.startswith('lt'):
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' > '{date_val}'")
+                    elif param_value.startswith("lt"):
                         # Less than
                         date_val = param_value[2:]
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' < '{date_val}'"
-                        )
-                    elif param_value.startswith('eq'):
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' < '{date_val}'")
+                    elif param_value.startswith("eq"):
                         # Equal
                         date_val = param_value[2:]
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' = '{date_val}'"
-                        )
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' = '{date_val}'")
                     else:
                         # No prefix - exact match
-                        conditions.append(
-                            f"v.res_text_vc::jsonb->>'birthDate' = '{param_value}'"
-                        )
+                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' = '{param_value}'")
 
-            elif param_name == 'family':
+            elif param_name == "family":
                 # Name search - check in name array
                 conditions.append(
                     f"EXISTS (SELECT 1 FROM jsonb_array_elements(v.res_text_vc::jsonb->'name') AS name_elem "
@@ -236,16 +209,12 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
             else:
                 # Generic parameter - try JSONB path
                 logger.warning(f"Unknown search parameter: {param_name}, using generic JSONB match")
-                conditions.append(
-                    f"v.res_text_vc::jsonb->>'{param_name}' = '{param_value}'"
-                )
+                conditions.append(f"v.res_text_vc::jsonb->>'{param_name}' = '{param_value}'")
 
         return " AND ".join(conditions) if conditions else ""
 
     def build_count_query(
-        self,
-        view_definition: Dict[str, Any],
-        search_params: Optional[Dict[str, Any]] = None
+        self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> str:
         """
         Build COUNT query for feasibility checks
@@ -257,8 +226,8 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
         Returns:
             SQL COUNT query
         """
-        resource_type = view_definition.get('resource', 'Unknown')
-        where_elements = view_definition.get('where', [])
+        resource_type = view_definition.get("resource", "Unknown")
+        where_elements = view_definition.get("where", [])
 
         # Build WHERE clause (same logic as full query)
         where_conditions = []
@@ -266,7 +235,7 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
         if where_elements:
             vd_where = self.extractor.extract_where_clause(where_elements)
             if vd_where:
-                where_conditions.append(vd_where.replace('WHERE\n    ', ''))
+                where_conditions.append(vd_where.replace("WHERE\n    ", ""))
 
         if search_params:
             search_where = self._build_search_param_where(search_params, resource_type)
@@ -288,8 +257,7 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver
 
 
 def create_sql_query_builder(
-    transpiler: FHIRPathTranspiler,
-    extractor: ColumnExtractor
+    transpiler: FHIRPathTranspiler, extractor: ColumnExtractor
 ) -> SQLQueryBuilder:
     """
     Factory function to create SQL query builder

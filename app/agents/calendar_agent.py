@@ -47,9 +47,9 @@ class CalendarAgent(BaseAgent):
         Returns:
             Dict with meeting details and next routing
         """
-        request_id = context.get('request_id')
-        requirements = context.get('requirements')
-        feasibility_report = context.get('feasibility_report')
+        request_id = context.get("request_id")
+        requirements = context.get("requirements")
+        feasibility_report = context.get("feasibility_report")
 
         logger.info(f"[{self.agent_id}] Scheduling kickoff for {request_id}")
 
@@ -67,11 +67,11 @@ class CalendarAgent(BaseAgent):
             "meeting_id": f"MTG-{request_id}",
             "title": f"Data Request Kickoff - {requirements.get('study_title', 'Research Study')}",
             "attendees": attendees,
-            "datetime": meeting_slot['datetime'],
+            "datetime": meeting_slot["datetime"],
             "duration_minutes": 30,
             "agenda": agenda,
             "location": "Virtual (Teams/Zoom)",
-            "scheduled_at": datetime.now().isoformat()
+            "scheduled_at": datetime.now().isoformat(),
         }
 
         # Step 5: Send invites (simplified - in production use MCP email server)
@@ -87,15 +87,11 @@ class CalendarAgent(BaseAgent):
             "meeting": meeting,
             "next_agent": "extraction_agent",
             "next_task": "extract_data",
-            "additional_context": {
-                "meeting": meeting
-            }
+            "additional_context": {"meeting": meeting},
         }
 
     async def _identify_stakeholders(
-        self,
-        requirements: Dict,
-        feasibility_report: Dict
+        self, requirements: Dict, feasibility_report: Dict
     ) -> Dict[str, list]:
         """
         Identify required and optional attendees
@@ -103,42 +99,43 @@ class CalendarAgent(BaseAgent):
         Returns:
             Dict with 'required' and 'optional' attendee lists
         """
-        attendees = {
-            "required": [],
-            "optional": []
-        }
+        attendees = {"required": [], "optional": []}
 
         # Always include researcher
-        if requirements.get('principal_investigator'):
-            attendees['required'].append({
-                "name": requirements['principal_investigator'],
-                "role": "Principal Investigator",
-                "email": f"{requirements.get('principal_investigator', 'researcher').lower().replace(' ', '.')}@example.com"
-            })
+        if requirements.get("principal_investigator"):
+            attendees["required"].append(
+                {
+                    "name": requirements["principal_investigator"],
+                    "role": "Principal Investigator",
+                    "email": f"{requirements.get('principal_investigator', 'researcher').lower().replace(' ', '.')}@example.com",
+                }
+            )
 
         # Always include informaticist
-        attendees['required'].append({
-            "name": "Clinical Informaticist",
-            "role": "Data Specialist",
-            "email": "informaticist@example.com"
-        })
+        attendees["required"].append(
+            {
+                "name": "Clinical Informaticist",
+                "role": "Data Specialist",
+                "email": "informaticist@example.com",
+            }
+        )
 
         # Add biostatistician if cohort is large or complex
-        cohort_size = feasibility_report.get('estimated_cohort_size', 0)
+        cohort_size = feasibility_report.get("estimated_cohort_size", 0)
         if cohort_size > 200:
-            attendees['optional'].append({
-                "name": "Biostatistician",
-                "role": "Statistical Consultant",
-                "email": "biostatistician@example.com"
-            })
+            attendees["optional"].append(
+                {
+                    "name": "Biostatistician",
+                    "role": "Statistical Consultant",
+                    "email": "biostatistician@example.com",
+                }
+            )
 
         # Add data steward if dealing with identified data
-        if requirements.get('phi_level') == 'identified':
-            attendees['required'].append({
-                "name": "Data Steward",
-                "role": "Privacy Officer",
-                "email": "privacy@example.com"
-            })
+        if requirements.get("phi_level") == "identified":
+            attendees["required"].append(
+                {"name": "Data Steward", "role": "Privacy Officer", "email": "privacy@example.com"}
+            )
 
         return attendees
 
@@ -157,16 +154,9 @@ class CalendarAgent(BaseAgent):
         # calendar_server = self.mcp_registry.get_server('google_calendar')
         # availability = await calendar_server.find_common_slots(...)
 
-        return {
-            "datetime": meeting_time.isoformat(),
-            "timezone": "UTC"
-        }
+        return {"datetime": meeting_time.isoformat(), "timezone": "UTC"}
 
-    async def _generate_meeting_agenda(
-        self,
-        requirements: Dict,
-        feasibility_report: Dict
-    ) -> str:
+    async def _generate_meeting_agenda(self, requirements: Dict, feasibility_report: Dict) -> str:
         """
         Generate meeting agenda based on request details
 
@@ -209,11 +199,13 @@ Keep it professional and concise."""
                 prompt=prompt,
                 task_type="calendar",  # Non-critical task
                 temperature=0.7,
-                system=system_prompt
+                system=system_prompt,
             )
             return agenda.strip()
         except Exception as e:
-            logger.warning(f"[{self.agent_id}] Failed to generate LLM agenda: {str(e)}, using template")
+            logger.warning(
+                f"[{self.agent_id}] Failed to generate LLM agenda: {str(e)}, using template"
+            )
             # Fallback to template-based agenda
             agenda = f"""
 # Data Request Kickoff Meeting
@@ -248,4 +240,6 @@ Keep it professional and concise."""
         # email_server = self.mcp_registry.get_server('email')
         # await email_server.send_calendar_invite(meeting)
 
-        logger.info(f"[{self.agent_id}] Calendar invites sent to {len(meeting['attendees']['required'])} attendees")
+        logger.info(
+            f"[{self.agent_id}] Calendar invites sent to {len(meeting['attendees']['required'])} attendees"
+        )

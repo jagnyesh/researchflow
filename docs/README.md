@@ -144,12 +144,12 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Running specific test suites
 
 ### Test Results
-- **[sprints/SPRINT_05_5_TEST_RESULTS.md](sprints/SPRINT_05_5_TEST_RESULTS.md)** - Lambda architecture
+- **[sprints/archive/SPRINT_05_5_TEST_RESULTS.md](sprints/archive/SPRINT_05_5_TEST_RESULTS.md)** - Lambda architecture
   - 29 comprehensive tests
   - 100% pass rate
   - Performance benchmarks
 
-- **[sprints/E2E_TESTING_REPORT.md](sprints/E2E_TESTING_REPORT.md)** - End-to-end tests
+- **[sprints/archive/E2E_TESTING_REPORT.md](sprints/archive/E2E_TESTING_REPORT.md)** - End-to-end tests
   - Full workflow validation
   - Integration test coverage
 
@@ -167,34 +167,17 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
 
 ## 📋 Sprint Documentation
 
-ResearchFlow follows an agile sprint model. Track our progress:
+For current sprint state, blockers, and what's in flight, see **[../CONTEXT.md](../CONTEXT.md)** at repo root. For architectural decisions across sprints, see **[../DECISIONS.md](../DECISIONS.md)**. For upcoming work, see **[../BACKLOG.md](../BACKLOG.md)**.
 
-- **[sprints/SPRINT_TRACKER.md](sprints/SPRINT_TRACKER.md)** - Master tracker
-  - 18 total sprints planned
-  - 8 sprints completed (44.44%)
-  - Current: Sprint 6 (Security Baseline)
+### Active Sprint
+- **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** — Sprint 6.1 Security Baseline implementation plan
 
-### Completed Sprints
-1. [SPRINT_01_REQUIREMENTS_AGENT.md](sprints/SPRINT_01_REQUIREMENTS_AGENT.md) - Requirements Agent
-2. [SPRINT_02_SIMPLE_WORKFLOW.md](sprints/SPRINT_02_SIMPLE_WORKFLOW.md) - Simple Workflow
-3. [SPRINT_03_FULL_WORKFLOW.md](sprints/SPRINT_03_FULL_WORKFLOW.md) - Full Multi-Agent Workflow
-4. [SPRINT_04_5_MATERIALIZED_VIEWS.md](sprints/SPRINT_04_5_MATERIALIZED_VIEWS.md) - Materialized Views
-5. [SPRINT_05_LANGSMITH_OBSERVABILITY.md](sprints/SPRINT_05_LANGSMITH_OBSERVABILITY.md) - LangSmith Observability
-6. [SPRINT_05_5_SPEED_LAYER.md](sprints/SPRINT_05_5_SPEED_LAYER.md) - Lambda Architecture Speed Layer
-7. [SPRINT_05_COMPLETION_SUMMARY.md](sprints/SPRINT_05_COMPLETION_SUMMARY.md) - Sprint 5 summary
-8. [SPRINT_05_PROGRESS_REPORT.md](sprints/SPRINT_05_PROGRESS_REPORT.md) - Sprint 5 progress
+### Sprint Template
+- [sprints/SPRINT_TEMPLATE.md](sprints/SPRINT_TEMPLATE.md) — boilerplate for new sprint reports
 
-### Current Sprint
-- **[sprints/SPRINT_06_SECURITY_BASELINE.md](sprints/SPRINT_06_SECURITY_BASELINE.md)** - Security Baseline (3 weeks)
-  - Week 1: Authentication & Authorization (JWT, RBAC)
-  - Week 2: SQL Injection Prevention & Input Validation
-  - Week 3: PHI Audit Logging & Encryption
-  - Goal: HIPAA compliance
+### Historical sprint reports
 
-### Sprint Planning
-- [SPRINT_03_STATE_MAPPING.md](sprints/SPRINT_03_STATE_MAPPING.md) - State mapping
-- [SPRINT_04_DECISION.md](sprints/SPRINT_04_DECISION.md) - Sprint 4 decision
-- [SPRINT_TEMPLATE.md](sprints/SPRINT_TEMPLATE.md) - Sprint template
+Archived in **[sprints/archive/](sprints/archive/)**. The original master tracker lives there as `SPRINT_TRACKER_v1.md`. Don't load these into context unless researching a specific past decision; the distilled record is in `DECISIONS.md`.
 
 ---
 
@@ -225,7 +208,7 @@ ResearchFlow follows an agile sprint model. Track our progress:
   - Security best practices
   - Responsible disclosure
 
-- **[sprints/SPRINT_06_SECURITY_BASELINE.md](sprints/SPRINT_06_SECURITY_BASELINE.md)** - Security implementation
+- **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** - Security implementation (active)
   - HIPAA compliance checklist
   - Authentication & authorization
   - SQL injection prevention
@@ -442,4 +425,3 @@ MIT License - See [../LICENSE](../LICENSE)
 **Last Updated**: 2025-10-30
 **Documentation Version**: 2.0
 **Project Version**: Sprint 6 (Security Baseline)
-

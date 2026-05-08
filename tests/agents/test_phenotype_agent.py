@@ -23,12 +23,11 @@ from app.agents.phenotype_agent import PhenotypeValidationAgent
 # Test Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 def phenotype_agent():
     """Create PhenotypeValidationAgent with mock dependencies"""
-    agent = PhenotypeValidationAgent(
-        database_url="sqlite+aiosqlite:///:memory:"
-    )
+    agent = PhenotypeValidationAgent(database_url="sqlite+aiosqlite:///:memory:")
     return agent
 
 
@@ -36,27 +35,17 @@ def phenotype_agent():
 def sample_requirements():
     """Sample research requirements"""
     return {
-        "inclusion_criteria": [
-            "Diabetes mellitus type 2",
-            "Age >= 18 years",
-            "HbA1c > 8.0%"
-        ],
-        "exclusion_criteria": [
-            "Pregnant",
-            "Type 1 diabetes"
-        ],
+        "inclusion_criteria": ["Diabetes mellitus type 2", "Age >= 18 years", "HbA1c > 8.0%"],
+        "exclusion_criteria": ["Pregnant", "Type 1 diabetes"],
         "data_elements": [
             "Patient demographics (age, gender, race)",
             "Diabetes diagnosis date",
             "HbA1c test results (last 12 months)",
             "Current diabetes medications",
-            "BMI"
+            "BMI",
         ],
-        "time_period": {
-            "start": "2024-01-01",
-            "end": "2024-12-31"
-        },
-        "phi_level": "de-identified"
+        "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
+        "phi_level": "de-identified",
     }
 
 
@@ -64,10 +53,13 @@ def sample_requirements():
 # Test: SQL Generation
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
-@pytest.mark.skip(reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator")
+@pytest.mark.skip(
+    reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator"
+)
 async def test_sql_generation_basic(phenotype_agent, sample_requirements):
     """Test basic SQL generation from requirements"""
     # SQL generation is handled by SQLGenerator class (tested separately)
@@ -78,7 +70,9 @@ async def test_sql_generation_basic(phenotype_agent, sample_requirements):
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
-@pytest.mark.skip(reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator")
+@pytest.mark.skip(
+    reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator"
+)
 async def test_sql_includes_inclusion_criteria(phenotype_agent, sample_requirements):
     """Test SQL includes all inclusion criteria"""
     # SQL generation is handled by SQLGenerator class (tested separately)
@@ -89,7 +83,9 @@ async def test_sql_includes_inclusion_criteria(phenotype_agent, sample_requireme
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
-@pytest.mark.skip(reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator")
+@pytest.mark.skip(
+    reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator"
+)
 async def test_sql_includes_time_period(phenotype_agent, sample_requirements):
     """Test SQL includes time period filtering"""
     # SQL generation is handled by SQLGenerator class (tested separately)
@@ -100,6 +96,7 @@ async def test_sql_includes_time_period(phenotype_agent, sample_requirements):
 # ============================================================================
 # Test: Feasibility Scoring
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -122,7 +119,9 @@ async def test_feasibility_score_calculation_high():
 
     # Adjust to match agent's actual scoring (which is more generous)
     # Agent likely uses: cohort_weight=0.4, availability_weight=0.4, complexity_weight=0.2
-    expected_score = (cohort_size / 100 * 0.4) + (availability_factor * 0.4) + (complexity_penalty * 0.2)
+    expected_score = (
+        (cohort_size / 100 * 0.4) + (availability_factor * 0.4) + (complexity_penalty * 0.2)
+    )
     # (5.0 * 0.4) + (0.90 * 0.4) + (0.85 * 0.2) = 2.0 + 0.36 + 0.17 = 2.53 (capped at 1.0)
     expected_score = min(expected_score, 1.0)
 
@@ -146,7 +145,9 @@ async def test_feasibility_score_calculation_low():
     criteria_complexity = 0.8  # High complexity
 
     # Calculate score
-    expected_score = (min(cohort_size / 300, 1.0) + data_availability + (1 - criteria_complexity * 0.5)) / 3
+    expected_score = (
+        min(cohort_size / 300, 1.0) + data_availability + (1 - criteria_complexity * 0.5)
+    ) / 3
     # (0.05 + 0.40 + 0.60) / 3 = 0.35
 
     assert expected_score < 0.5, "Low feasibility should score < 0.5"
@@ -175,6 +176,7 @@ async def test_feasibility_threshold():
 # ============================================================================
 # Test: Cohort Size Estimation
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -228,6 +230,7 @@ async def test_cohort_size_small_warning():
 # Test: Data Availability Checks
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
@@ -237,21 +240,23 @@ async def test_data_availability_high(phenotype_agent):
     data_elements = ["Patient demographics", "HbA1c results"]
 
     # Mock availability checks
-    with patch.object(phenotype_agent, '_check_data_availability', new_callable=AsyncMock) as mock_check:
+    with patch.object(
+        phenotype_agent, "_check_data_availability", new_callable=AsyncMock
+    ) as mock_check:
         mock_check.return_value = {
-            'overall_availability': 0.90,
-            'by_element': {
-                'Patient demographics': {'availability': 0.95},
-                'HbA1c results': {'availability': 0.85}
-            }
+            "overall_availability": 0.90,
+            "by_element": {
+                "Patient demographics": {"availability": 0.95},
+                "HbA1c results": {"availability": 0.85},
+            },
         }
 
         # Execute
         availability = await phenotype_agent._check_data_availability(data_elements)
 
         # Verify
-        assert availability['overall_availability'] == 0.90
-        assert availability['by_element']['Patient demographics']['availability'] == 0.95
+        assert availability["overall_availability"] == 0.90
+        assert availability["by_element"]["Patient demographics"]["availability"] == 0.95
 
         print("✅ High data availability validated: 90%")
 
@@ -263,20 +268,22 @@ async def test_data_availability_low(phenotype_agent):
     """Test data availability check for low availability"""
 
     # Mock low availability
-    with patch.object(phenotype_agent, '_check_data_availability', new_callable=AsyncMock) as mock_check:
+    with patch.object(
+        phenotype_agent, "_check_data_availability", new_callable=AsyncMock
+    ) as mock_check:
         mock_check.return_value = {
-            'overall_availability': 0.30,
-            'by_element': {
-                'Genetic data': {'availability': 0.05},
-                'Social history': {'availability': 0.55}
-            }
+            "overall_availability": 0.30,
+            "by_element": {
+                "Genetic data": {"availability": 0.05},
+                "Social history": {"availability": 0.55},
+            },
         }
 
         # Execute
-        availability = await phenotype_agent._check_data_availability(['Genetic data'])
+        availability = await phenotype_agent._check_data_availability(["Genetic data"])
 
         # Verify low availability should reduce feasibility
-        assert availability['overall_availability'] < 0.5
+        assert availability["overall_availability"] < 0.5
 
         print("✅ Low data availability validated: 30%")
 
@@ -284,6 +291,7 @@ async def test_data_availability_low(phenotype_agent):
 # ============================================================================
 # Test: ViewDefinition Support
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.agents
@@ -294,9 +302,7 @@ async def test_viewdefinition_mode():
 
     # This is tested in test_sql_on_fhir_real_hapi.py
     # ViewDefinition mode is enabled when database_url points to HAPI FHIR
-    agent = PhenotypeValidationAgent(
-        database_url="postgresql://hapi:hapi@localhost:5433/hapi"
-    )
+    agent = PhenotypeValidationAgent(database_url="postgresql://hapi:hapi@localhost:5433/hapi")
 
     # ViewDefinition support is configured based on database URL
     # This test is intentionally skipped as it requires real HAPI DB
@@ -309,15 +315,18 @@ async def test_viewdefinition_mode():
 # Test: Error Handling
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
-@pytest.mark.skip(reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator")
+@pytest.mark.skip(
+    reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator"
+)
 async def test_sql_generation_error_handling(phenotype_agent):
     """Test error handling when SQL generation fails"""
 
     # Mock LLM error
-    with patch.object(phenotype_agent, 'llm_client') as mock_llm:
+    with patch.object(phenotype_agent, "llm_client") as mock_llm:
         mock_llm.generate_sql = AsyncMock(side_effect=Exception("LLM API timeout"))
 
         # Execute and expect error
@@ -337,7 +346,9 @@ async def test_database_error_handling(phenotype_agent):
     """Test error handling when database query fails"""
 
     # Mock database error
-    with patch.object(phenotype_agent.sql_adapter, 'execute_query', new_callable=AsyncMock) as mock_execute:
+    with patch.object(
+        phenotype_agent.sql_adapter, "execute_query", new_callable=AsyncMock
+    ) as mock_execute:
         mock_execute.side_effect = Exception("Database connection timeout")
 
         # Execute and expect error
@@ -353,6 +364,7 @@ async def test_database_error_handling(phenotype_agent):
 # Test: Execute Task (Main Entry Point)
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.integration
@@ -361,31 +373,33 @@ async def test_execute_task_validate_feasibility(phenotype_agent, sample_require
     """Test execute_task with validate_feasibility task"""
 
     # Mock all dependencies
-    with patch.object(phenotype_agent, '_generate_sql', new_callable=AsyncMock) as mock_sql, \
-         patch.object(phenotype_agent, '_estimate_cohort_size', new_callable=AsyncMock) as mock_cohort, \
-         patch.object(phenotype_agent, '_check_data_availability', new_callable=AsyncMock) as mock_availability:
+    with (
+        patch.object(phenotype_agent, "_generate_sql", new_callable=AsyncMock) as mock_sql,
+        patch.object(
+            phenotype_agent, "_estimate_cohort_size", new_callable=AsyncMock
+        ) as mock_cohort,
+        patch.object(
+            phenotype_agent, "_check_data_availability", new_callable=AsyncMock
+        ) as mock_availability,
+    ):
 
         # Setup mocks
         mock_sql.return_value = {
-            'sql_query': 'SELECT COUNT(*) FROM patient WHERE has_diabetes = true'
+            "sql_query": "SELECT COUNT(*) FROM patient WHERE has_diabetes = true"
         }
         mock_cohort.return_value = 347
-        mock_availability.return_value = {
-            'overall_availability': 0.87,
-            'by_element': {}
-        }
+        mock_availability.return_value = {"overall_availability": 0.87, "by_element": {}}
 
         # Execute task
         result = await phenotype_agent.execute_task(
-            task='validate_feasibility',
-            context={'requirements': sample_requirements}
+            task="validate_feasibility", context={"requirements": sample_requirements}
         )
 
         # Verify
-        assert result['feasible'] is True
-        assert result['estimated_cohort_size'] == 347
-        assert result['feasibility_score'] > 0.5
-        assert 'phenotype_sql' in result
+        assert result["feasible"] is True
+        assert result["estimated_cohort_size"] == 347
+        assert result["feasibility_score"] > 0.5
+        assert "phenotype_sql" in result
 
         print("✅ Execute task (validate_feasibility) validated")
         print(f"   Cohort: {result['estimated_cohort_size']}")
@@ -396,10 +410,13 @@ async def test_execute_task_validate_feasibility(phenotype_agent, sample_require
 # Test: Complex Scenarios
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.agents
 @pytest.mark.unit
-@pytest.mark.skip(reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator")
+@pytest.mark.skip(
+    reason="SQL generation tested in SQLGenerator tests - agent just calls sql_generator"
+)
 async def test_complex_criteria_sql_generation(phenotype_agent):
     """Test SQL generation for complex multi-condition criteria"""
 
@@ -408,25 +425,25 @@ async def test_complex_criteria_sql_generation(phenotype_agent):
             "Heart failure with reduced ejection fraction (HFrEF)",
             "Age 65-85 years",
             "Currently on ACE inhibitor or ARB",
-            "Serum creatinine < 2.0 mg/dL"
+            "Serum creatinine < 2.0 mg/dL",
         ],
         "exclusion_criteria": [
             "End-stage renal disease",
             "Hospice care",
-            "Life expectancy < 6 months"
+            "Life expectancy < 6 months",
         ],
         "data_elements": [
             "Echocardiogram results",
             "Medication list",
             "Lab values (creatinine, BNP)",
-            "Hospitalizations (last 12 months)"
-        ]
+            "Hospitalizations (last 12 months)",
+        ],
     }
 
     # Mock complex SQL
-    with patch.object(phenotype_agent, '_generate_sql', new_callable=AsyncMock) as mock_sql:
+    with patch.object(phenotype_agent, "_generate_sql", new_callable=AsyncMock) as mock_sql:
         mock_sql.return_value = {
-            'sql_query': '''
+            "sql_query": """
                 SELECT DISTINCT p.id
                 FROM patient p
                 JOIN condition c_hf ON p.id = c_hf.patient_id
@@ -438,16 +455,16 @@ async def test_complex_criteria_sql_generation(phenotype_agent):
                   AND (m.code IN (...))  -- ACE/ARB
                   AND CAST(o_cr.value AS FLOAT) < 2.0
                   AND NOT EXISTS (SELECT 1 FROM condition c2 WHERE c2.patient_id = p.id AND c2.code = '46177005')  -- ESRD
-            '''
+            """
         }
 
         result = await phenotype_agent._generate_sql(complex_requirements)
 
         # Verify SQL handles complexity
-        assert 'SELECT' in result['sql_query']
-        assert 'JOIN' in result['sql_query']
-        assert 'WHERE' in result['sql_query']
-        assert 'NOT EXISTS' in result['sql_query']  # Exclusion criteria
+        assert "SELECT" in result["sql_query"]
+        assert "JOIN" in result["sql_query"]
+        assert "WHERE" in result["sql_query"]
+        assert "NOT EXISTS" in result["sql_query"]  # Exclusion criteria
 
         print("✅ Complex criteria SQL generation validated")
 
@@ -455,6 +472,7 @@ async def test_complex_criteria_sql_generation(phenotype_agent):
 # ============================================================================
 # Summary
 # ============================================================================
+
 
 def test_phenotype_agent_coverage_summary():
     """
@@ -477,11 +495,11 @@ def test_phenotype_agent_coverage_summary():
     - Full workflow: test_full_workflow_e2e.py
     - SQL quality: test_sql_generation_quality.py
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PRIORITY 0: Phenotype Agent Unit Tests")
-    print("="*80)
+    print("=" * 80)
     print("✅ 15 test functions created")
     print("✅ Coverage: ~75% of critical paths")
     print("✅ Addresses Gap #2 (Agent Unit Tests) from TEST_SUITE_ORGANIZATION.md")
-    print("="*80)
+    print("=" * 80)
     assert True

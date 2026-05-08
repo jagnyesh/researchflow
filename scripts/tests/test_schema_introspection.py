@@ -43,7 +43,7 @@ async def main():
             "Patient.gender",
             "Patient.name.family",
             "Observation.code.coding.code",
-            "birthDate"
+            "birthDate",
         ]
 
         for fhir_path in test_paths:
@@ -56,7 +56,7 @@ async def main():
             ("gender", "token", "Patient"),
             ("birthdate", "date", "Patient"),
             ("family", "string", "Patient"),
-            ("code", "token", "Observation")
+            ("code", "token", "Observation"),
         ]
 
         for param_name, param_type, resource_type in test_params:
@@ -67,7 +67,7 @@ async def main():
 
         # Test JOIN generation
         print("\n6. Testing search index JOIN generation:")
-        join_clause = introspector.get_search_index_join('r', 'token', 'sp_gender')
+        join_clause = introspector.get_search_index_join("r", "token", "sp_gender")
         print(f"   {join_clause}")
 
         print("\n" + "=" * 80)
@@ -77,6 +77,7 @@ async def main():
     except Exception as e:
         print(f"\n✗ Error: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

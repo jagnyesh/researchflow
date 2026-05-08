@@ -43,8 +43,7 @@ from app.langchain_orchestrator.persistence import WorkflowPersistence
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 HEALTHCARE_DB_URL = os.getenv(
-    "HEALTHCARE_DB_URL",
-    "postgresql+asyncpg://jagnyesh@localhost:5432/healthcare_practice"
+    "HEALTHCARE_DB_URL", "postgresql+asyncpg://jagnyesh@localhost:5432/healthcare_practice"
 )
 HEALTHCARE_DB_SCHEMA = os.getenv("HEALTHCARE_DB_SCHEMA", "synthea")
 
@@ -56,6 +55,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def persistence():
@@ -76,32 +76,30 @@ def diabetes_extraction_request():
             "name": "Dr. Data Scientist",
             "department": "Clinical Analytics",
             "email": "datasci@research.edu",
-            "irb_protocol": "IRB-2025-EXTRACT-001"
+            "irb_protocol": "IRB-2025-EXTRACT-001",
         },
         "structured_requirements": {
             "cohort_criteria": {
-                "inclusion": [
-                    "Diabetes diagnosis (any type)",
-                    "Active in database"
-                ],
-                "exclusion": []
+                "inclusion": ["Diabetes diagnosis (any type)", "Active in database"],
+                "exclusion": [],
             },
             "data_elements": [
                 "Patient demographics",
                 "Diagnosis codes",
                 "HbA1c observations",
-                "Medications"
+                "Medications",
             ],
             "phi_level": "safe_harbor",
             "timeframe": "All available data",
-            "output_format": "CSV"
-        }
+            "output_format": "CSV",
+        },
     }
 
 
 # ============================================================================
 # Test 1: Extract Diabetes Patients to CSV
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -141,7 +139,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=diabetes_extraction_request["initial_request"],
-        researcher_info=diabetes_extraction_request["researcher_info"]
+        researcher_info=diabetes_extraction_request["researcher_info"],
     )
     print(f"  ✓ Request ID: {request_id}")
 
@@ -152,17 +150,14 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
 
     state_with_requirements = {
         **state_after_new,
-        'requirements': diabetes_extraction_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": diabetes_extraction_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     state_at_review = await workflow.run(state_with_requirements)
 
-    state_with_req_approval = {
-        **state_at_review,
-        'requirements_approved': True
-    }
+    state_with_req_approval = {**state_at_review, "requirements_approved": True}
 
     state_after_feasibility = await workflow.run(state_with_req_approval)
 
@@ -172,15 +167,12 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
     # ===== Step 4: Approve Phenotype and Schedule Kickoff =====
     print("\n[4/7] Approving phenotype and scheduling kickoff...")
 
-    state_with_phenotype_approval = {
-        **state_after_feasibility,
-        'phenotype_approved': True
-    }
+    state_with_phenotype_approval = {**state_after_feasibility, "phenotype_approved": True}
 
     state_after_kickoff = await workflow.run(state_with_phenotype_approval)
 
     print(f"  ✓ State: {state_after_kickoff['current_state']}")
-    assert state_after_kickoff['current_state'] == 'extraction_approval'
+    assert state_after_kickoff["current_state"] == "extraction_approval"
 
     # ===== Step 5: Run REAL Data Extraction =====
     print("\n[5/7] Running REAL data extraction...")
@@ -188,10 +180,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
 
     extraction_start = time.time()
 
-    state_with_extraction_approval = {
-        **state_after_kickoff,
-        'extraction_approved': True
-    }
+    state_with_extraction_approval = {**state_after_kickoff, "extraction_approved": True}
 
     state_after_extraction = await workflow.run(state_with_extraction_approval)
 
@@ -203,8 +192,8 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
     # ===== Step 6: Verify Extraction Results =====
     print("\n[6/7] Verifying extraction results...")
 
-    extraction_complete = state_after_extraction.get('extraction_complete', False)
-    data_summary = state_after_extraction.get('extracted_data_summary', {})
+    extraction_complete = state_after_extraction.get("extraction_complete", False)
+    data_summary = state_after_extraction.get("extracted_data_summary", {})
 
     print(f"  ✓ Extraction Complete: {extraction_complete}")
     print(f"  ✓ Data Summary: {data_summary}")
@@ -216,7 +205,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
     assert data_summary != {
         "total_patients": 150,
         "total_records": 5000,
-        "phi_removed": True
+        "phi_removed": True,
     }, "Should have real data summary, not stub"
 
     # ===== Step 7: Verify CSV Files Generated =====
@@ -232,15 +221,16 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
             print(f"    - {csv_file.name} ({file_size} bytes)")
 
             # Read and validate CSV contents
-            with open(csv_file, 'r') as f:
+            with open(csv_file, "r") as f:
                 reader = csv.DictReader(f)
                 rows = list(reader)
                 if rows:
                     print(f"      {len(rows)} rows, columns: {list(rows[0].keys())}")
                     # Verify de-identification (no real names/DOBs)
-                    if 'patient_name' in rows[0]:
-                        assert rows[0]['patient_name'] != rows[0].get('patient_id'), \
-                            "Patient names should be de-identified"
+                    if "patient_name" in rows[0]:
+                        assert rows[0]["patient_name"] != rows[0].get(
+                            "patient_id"
+                        ), "Patient names should be de-identified"
 
         assert len(csv_files) > 0, "Should have generated at least one CSV file"
     else:
@@ -265,6 +255,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
 # ============================================================================
 # Test 2: Verify De-identification
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -298,7 +289,7 @@ async def test_deidentification_safe_harbor(persistence, diabetes_extraction_req
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=diabetes_extraction_request["initial_request"],
-        researcher_info=diabetes_extraction_request["researcher_info"]
+        researcher_info=diabetes_extraction_request["researcher_info"],
     )
 
     # Fast-forward through all gates
@@ -307,24 +298,24 @@ async def test_deidentification_safe_harbor(persistence, diabetes_extraction_req
 
     state = {
         **state,
-        'requirements': diabetes_extraction_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": diabetes_extraction_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
     state = await workflow.run(state)  # requirements_review
 
-    state['requirements_approved'] = True
+    state["requirements_approved"] = True
     state = await workflow.run(state)  # feasibility_validation → phenotype_review
 
-    state['phenotype_approved'] = True
+    state["phenotype_approved"] = True
     state = await workflow.run(state)  # schedule_kickoff → extraction_approval
 
-    state['extraction_approved'] = True
+    state["extraction_approved"] = True
     state = await workflow.run(state)  # data_extraction
 
     # Handle state progression
-    if state['current_state'] == 'data_extraction':
-        state['extraction_complete'] = True
+    if state["current_state"] == "data_extraction":
+        state["extraction_complete"] = True
         state = await workflow.run(state)  # → qa_validation
 
     print(f"  ✓ State after extraction: {state['current_state']}")
@@ -332,7 +323,7 @@ async def test_deidentification_safe_harbor(persistence, diabetes_extraction_req
     # ===== Run QA Validation =====
     print("\n[2/3] Running REAL QA validation...")
 
-    if state['current_state'] == 'qa_validation':
+    if state["current_state"] == "qa_validation":
         state = await workflow.run(state)
 
     print(f"  ✓ State after QA: {state['current_state']}")
@@ -340,19 +331,19 @@ async def test_deidentification_safe_harbor(persistence, diabetes_extraction_req
     # ===== Verify QA Report =====
     print("\n[3/3] Verifying QA report for PHI scrubbing...")
 
-    qa_report = state.get('qa_report', {})
-    overall_status = state.get('overall_status')
+    qa_report = state.get("qa_report", {})
+    overall_status = state.get("overall_status")
 
     print(f"  ✓ Overall Status: {overall_status}")
     print(f"  ✓ QA Report: {qa_report}")
 
     # Check for PHI scrubbing validation
-    if 'checks' in qa_report and 'phi_scrubbing' in qa_report['checks']:
-        phi_check = qa_report['checks']['phi_scrubbing']
+    if "checks" in qa_report and "phi_scrubbing" in qa_report["checks"]:
+        phi_check = qa_report["checks"]["phi_scrubbing"]
         print(f"  ✓ PHI Scrubbing Check: {phi_check}")
 
-        assert phi_check.get('passed') is True, "PHI scrubbing should pass"
-        assert phi_check.get('phi_found', 0) == 0, "Should find no PHI in extracted data"
+        assert phi_check.get("passed") is True, "PHI scrubbing should pass"
+        assert phi_check.get("phi_found", 0) == 0, "Should find no PHI in extracted data"
     else:
         print("  ⚠️  PHI scrubbing check not in QA report (agent may use different structure)")
 

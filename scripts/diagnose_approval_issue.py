@@ -39,7 +39,7 @@ async def check_database():
 
             # Count pending approvals
             result = await session.execute(
-                select(func.count()).select_from(Approval).where(Approval.status == 'pending')
+                select(func.count()).select_from(Approval).where(Approval.status == "pending")
             )
             pending_count = result.scalar()
             print(f"  Pending approvals: {pending_count}")
@@ -48,7 +48,7 @@ async def check_database():
                 # Get pending approvals
                 result = await session.execute(
                     select(Approval)
-                    .where(Approval.status == 'pending')
+                    .where(Approval.status == "pending")
                     .order_by(Approval.submitted_at)
                 )
                 pending_approvals = result.scalars().all()
@@ -65,7 +65,7 @@ async def check_database():
                     print()
 
             # Check for approved/rejected approvals
-            for status in ['approved', 'rejected', 'modified']:
+            for status in ["approved", "rejected", "modified"]:
                 result = await session.execute(
                     select(func.count()).select_from(Approval).where(Approval.status == status)
                 )
@@ -107,14 +107,16 @@ async def check_requests():
 
                 # Show sample of requests waiting for approval
                 approval_states = [
-                    'requirements_review',
-                    'phenotype_review',
-                    'extraction_approval',
-                    'qa_review',
-                    'scope_change'
+                    "requirements_review",
+                    "phenotype_review",
+                    "extraction_approval",
+                    "qa_review",
+                    "scope_change",
                 ]
 
-                waiting_for_approval = [req for req in active_requests if req.current_state in approval_states]
+                waiting_for_approval = [
+                    req for req in active_requests if req.current_state in approval_states
+                ]
 
                 if waiting_for_approval:
                     print(f"\n  Requests waiting for approval ({len(waiting_for_approval)}):")
@@ -154,16 +156,16 @@ def check_api():
         response = requests.get(f"{api_base}/approvals/pending", timeout=5)
         if response.status_code == 200:
             data = response.json()
-            count = data.get('count', 0)
+            count = data.get("count", 0)
             print(f"✓ Approvals endpoint working")
             print(f"  Pending approvals returned by API: {count}")
 
             if count > 0:
-                approvals = data.get('approvals', [])
+                approvals = data.get("approvals", [])
                 print(f"\n  Approval Types:")
                 type_counts = {}
                 for approval in approvals:
-                    type_name = approval.get('approval_type', 'unknown')
+                    type_name = approval.get("approval_type", "unknown")
                     type_counts[type_name] = type_counts.get(type_name, 0) + 1
 
                 for type_name, count in sorted(type_counts.items()):
@@ -198,9 +200,7 @@ async def check_agent_activity():
         async with get_db_session() as session:
             # Get recent agent executions
             result = await session.execute(
-                select(AgentExecution)
-                .order_by(AgentExecution.started_at.desc())
-                .limit(10)
+                select(AgentExecution).order_by(AgentExecution.started_at.desc()).limit(10)
             )
             recent_executions = result.scalars().all()
 
@@ -210,11 +210,17 @@ async def check_agent_activity():
 
                 for exec in recent_executions:
                     age = datetime.now() - exec.started_at
-                    status_emoji = "✓" if exec.status == "success" else "✗" if exec.status == "failed" else "⏳"
+                    status_emoji = (
+                        "✓"
+                        if exec.status == "success"
+                        else "✗" if exec.status == "failed" else "⏳"
+                    )
 
                     print(f"    {status_emoji} {exec.agent_id}.{exec.task}")
                     print(f"       Request: {exec.request_id}")
-                    print(f"       Time: {exec.started_at.strftime('%H:%M:%S')} ({age.total_seconds()/60:.1f}m ago)")
+                    print(
+                        f"       Time: {exec.started_at.strftime('%H:%M:%S')} ({age.total_seconds()/60:.1f}m ago)"
+                    )
                     print(f"       Status: {exec.status}")
                     if exec.error:
                         print(f"       Error: {exec.error[:80]}...")
@@ -240,7 +246,7 @@ async def diagnose_specific_issue():
         async with get_db_session() as session:
             # Check if there are requests in "new_request" state
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.current_state == 'new_request')
+                select(ResearchRequest).where(ResearchRequest.current_state == "new_request")
             )
             new_requests = result.scalars().all()
 
@@ -255,13 +261,16 @@ async def diagnose_specific_issue():
 
             # Check if there are requests that transitioned but no approval created
             result = await session.execute(
-                select(ResearchRequest)
-                .where(ResearchRequest.current_state.in_([
-                    'requirements_review',
-                    'phenotype_review',
-                    'extraction_approval',
-                    'qa_review'
-                ]))
+                select(ResearchRequest).where(
+                    ResearchRequest.current_state.in_(
+                        [
+                            "requirements_review",
+                            "phenotype_review",
+                            "extraction_approval",
+                            "qa_review",
+                        ]
+                    )
+                )
             )
             requests_in_approval_state = result.scalars().all()
 
@@ -270,12 +279,14 @@ async def diagnose_specific_issue():
                 approval_result = await session.execute(
                     select(Approval)
                     .where(Approval.request_id == req.id)
-                    .where(Approval.status == 'pending')
+                    .where(Approval.status == "pending")
                 )
                 approval = approval_result.scalar_one_or_none()
 
                 if not approval:
-                    print(f"⚠ ISSUE FOUND: Request {req.id} is in '{req.current_state}' but has NO pending approval")
+                    print(
+                        f"⚠ ISSUE FOUND: Request {req.id} is in '{req.current_state}' but has NO pending approval"
+                    )
                     print(f"  This is a bug - approval should have been created")
                     print(f"  Researcher: {req.researcher_name}")
                     print(f"  State: {req.current_state}")
@@ -283,15 +294,13 @@ async def diagnose_specific_issue():
 
             # Check recent transitions to approval states
             result = await session.execute(
-                select(ResearchRequest)
-                .order_by(ResearchRequest.created_at.desc())
-                .limit(20)
+                select(ResearchRequest).order_by(ResearchRequest.created_at.desc()).limit(20)
             )
             recent_requests = result.scalars().all()
 
             approval_created_count = 0
             for req in recent_requests:
-                if 'review' in req.current_state or 'approval' in req.current_state:
+                if "review" in req.current_state or "approval" in req.current_state:
                     approval_result = await session.execute(
                         select(Approval).where(Approval.request_id == req.id)
                     )
@@ -314,6 +323,7 @@ async def diagnose_specific_issue():
     except Exception as e:
         print(f"❌ Diagnosis error: {str(e)}")
         import traceback
+
         traceback.print_exc()
         return False
 

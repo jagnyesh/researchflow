@@ -1,0 +1,61 @@
+# Pre-commit hooks for ResearchFlow
+# Install: pip install pre-commit
+# Setup: pre-commit install
+# Run manually: pre-commit run --all-files
+
+repos:
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-json
+      - id: check-merge-conflict
+      - id: detect-private-key
+        name: Detect private keys
+      - id: mixed-line-ending
+
+  # Secret detection
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        name: Detect secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            config/.env.example|
+            .*/test_.*\.py|
+            .*_test\.py|
+            docs/.*\.md|
+            README\.md|
+            CLAUDE\.md
+          )$
+
+  # Python code quality
+  - repo: https://github.com/psf/black
+    rev: 25.9.0
+    hooks:
+      - id: black
+        language_version: python3
+        exclude: |
+          (?x)^(
+            .*/migrations/.*
+          )$
+
+  # Security: Check for common security issues
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.8.6
+    hooks:
+      - id: bandit
+        args: ['-c', 'pyproject.toml']
+        additional_dependencies: ['bandit[toml]']
+        exclude: |
+          (?x)^(
+            tests/.*|
+            .*/test_.*\.py
+          )$

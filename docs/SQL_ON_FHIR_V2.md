@@ -14,20 +14,20 @@ ResearchFlow now includes a complete **SQL-on-FHIR v2** implementation that enab
 
 ```
 
- ResearchFlow Application 
+ ResearchFlow Application
 
- Phenotype Agent ViewDefinition 
- Manager 
+ Phenotype Agent ViewDefinition
+ Manager
 
- In-Memory 
- Runner 
+ In-Memory
+ Runner
 
- FHIR Client 
+ FHIR Client
 
- HAPI FHIR 
- Server 
+ HAPI FHIR
+ Server
 
- + Synthea Data 
+ + Synthea Data
 
 ```
 

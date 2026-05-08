@@ -396,4 +396,4 @@ You've successfully implemented a complete SQL-on-FHIR v2 system with:
 **ViewDefinitions created**: 5
 **Total columns defined**: 104
 
-Enjoy exploring FHIR data with SQL-on-FHIR v2! 
+Enjoy exploring FHIR data with SQL-on-FHIR v2!

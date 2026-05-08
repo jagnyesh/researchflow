@@ -18,11 +18,7 @@ import asyncio
 from datetime import datetime
 
 # Import the services that research_notebook.py uses
-from app.services.conversation_manager import (
-    ConversationManager,
-    UserIntent,
-    ConversationState
-)
+from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
 from app.services.query_interpreter import QueryInterpreter
 
@@ -30,6 +26,7 @@ from app.services.query_interpreter import QueryInterpreter
 # ============================================================================
 # Test Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_conversation_manager():
@@ -68,20 +65,21 @@ def mock_httpx_client():
 
     # Mock GET request (status check)
     get_response = AsyncMock()
-    get_response.json = AsyncMock(return_value={
-        "request_id": "REQ-TEST-123",
-        "current_state": "phenotype_review",
-        "status": "pending_approval"
-    })
+    get_response.json = AsyncMock(
+        return_value={
+            "request_id": "REQ-TEST-123",
+            "current_state": "phenotype_review",
+            "status": "pending_approval",
+        }
+    )
     get_response.raise_for_status = Mock()
     client.get = AsyncMock(return_value=get_response)
 
     # Mock POST request (submit)
     post_response = AsyncMock()
-    post_response.json = AsyncMock(return_value={
-        "request_id": "REQ-TEST-123",
-        "status": "submitted"
-    })
+    post_response.json = AsyncMock(
+        return_value={"request_id": "REQ-TEST-123", "status": "submitted"}
+    )
     post_response.raise_for_status = Mock()
     client.post = AsyncMock(return_value=post_response)
 
@@ -92,11 +90,11 @@ def mock_httpx_client():
 def sample_query_intent():
     """Sample query intent returned by QueryInterpreter"""
     return {
-        'inclusion_criteria': ['Diabetes mellitus type 2', 'Age >= 18'],
-        'exclusion_criteria': ['Pregnant'],
-        'data_elements': ['Patient demographics', 'HbA1c results', 'Diabetes medications'],
-        'time_period': {'start': '2024-01-01', 'end': '2024-12-31'},
-        'phi_level': 'de-identified'
+        "inclusion_criteria": ["Diabetes mellitus type 2", "Age >= 18"],
+        "exclusion_criteria": ["Pregnant"],
+        "data_elements": ["Patient demographics", "HbA1c results", "Diabetes medications"],
+        "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
+        "phi_level": "de-identified",
     }
 
 
@@ -104,21 +102,22 @@ def sample_query_intent():
 def sample_feasibility_data():
     """Sample feasibility data returned by FeasibilityService"""
     return {
-        'estimated_cohort': 347,
-        'feasibility_score': 0.87,
-        'data_availability': {
-            'Patient demographics': 0.95,
-            'HbA1c results': 0.82,
-            'Diabetes medications': 0.90
+        "estimated_cohort": 347,
+        "feasibility_score": 0.87,
+        "data_availability": {
+            "Patient demographics": 0.95,
+            "HbA1c results": 0.82,
+            "Diabetes medications": 0.90,
         },
-        'time_period': {'start': '2024-01-01', 'end': '2024-12-31'},
-        'sql_query': 'SELECT COUNT(DISTINCT patient_id) FROM patient WHERE ...'
+        "time_period": {"start": "2024-01-01", "end": "2024-12-31"},
+        "sql_query": "SELECT COUNT(DISTINCT patient_id) FROM patient WHERE ...",
     }
 
 
 # ============================================================================
 # Test: Chat Interface Submission
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
@@ -128,7 +127,7 @@ async def test_chat_query_submission(
     mock_query_interpreter,
     mock_feasibility_service,
     sample_query_intent,
-    sample_feasibility_data
+    sample_feasibility_data,
 ):
     """
     Test: Chat interface query submission workflow
@@ -167,13 +166,13 @@ Would you like to submit a formal data request?
 
     # Create mock session state
     session_state = {
-        'messages': [],
-        'conversation_manager': mock_conversation_manager,
-        'feasibility_service': mock_feasibility_service,
-        'query_interpreter': mock_query_interpreter,
-        'conversation_state': ConversationState.INITIAL,
-        'pending_feasibility': None,
-        'last_query_intent': None
+        "messages": [],
+        "conversation_manager": mock_conversation_manager,
+        "feasibility_service": mock_feasibility_service,
+        "query_interpreter": mock_query_interpreter,
+        "conversation_state": ConversationState.INITIAL,
+        "pending_feasibility": None,
+        "last_query_intent": None,
     }
 
     # Execute: Detect intent
@@ -183,34 +182,33 @@ Would you like to submit a formal data request?
     # Execute: Interpret query
     query_intent = await mock_query_interpreter.interpret_query(user_query)
     assert query_intent == sample_query_intent, "Query intent should be extracted"
-    assert 'inclusion_criteria' in query_intent
-    assert 'data_elements' in query_intent
+    assert "inclusion_criteria" in query_intent
+    assert "data_elements" in query_intent
 
     # Execute: Feasibility check
     feasibility_data = await mock_feasibility_service.execute_feasibility_check(query_intent)
-    assert feasibility_data['estimated_cohort'] == 347
-    assert feasibility_data['feasibility_score'] == 0.87
+    assert feasibility_data["estimated_cohort"] == 347
+    assert feasibility_data["feasibility_score"] == 0.87
 
     # Verify: Feasibility service called with correct data
     mock_feasibility_service.execute_feasibility_check.assert_called_once()
 
     # Execute: Format response
     response = mock_conversation_manager.format_feasibility_response(
-        cohort_size=feasibility_data['estimated_cohort'],
-        feasibility_data=feasibility_data
+        cohort_size=feasibility_data["estimated_cohort"], feasibility_data=feasibility_data
     )
 
     # Verify: Response formatted
     mock_conversation_manager.format_feasibility_response.assert_called_once()
 
     # Verify: Session state should be updated
-    session_state['pending_feasibility'] = feasibility_data
-    session_state['last_query_intent'] = query_intent
-    session_state['conversation_state'] = ConversationState.AWAITING_CONFIRMATION
+    session_state["pending_feasibility"] = feasibility_data
+    session_state["last_query_intent"] = query_intent
+    session_state["conversation_state"] = ConversationState.AWAITING_CONFIRMATION
 
-    assert session_state['conversation_state'] == ConversationState.AWAITING_CONFIRMATION
-    assert session_state['pending_feasibility'] is not None
-    assert session_state['last_query_intent'] is not None
+    assert session_state["conversation_state"] == ConversationState.AWAITING_CONFIRMATION
+    assert session_state["pending_feasibility"] is not None
+    assert session_state["last_query_intent"] is not None
 
     print("✅ Chat query submission workflow validated")
 
@@ -218,6 +216,7 @@ Would you like to submit a formal data request?
 # ============================================================================
 # Test: Intent Detection
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
@@ -287,13 +286,11 @@ async def test_intent_detection_confirmation(mock_conversation_manager):
 # Test: Feasibility Display
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
-async def test_feasibility_display_formatting(
-    mock_conversation_manager,
-    sample_feasibility_data
-):
+async def test_feasibility_display_formatting(mock_conversation_manager, sample_feasibility_data):
     """Test feasibility results are formatted and displayed correctly"""
 
     # Mock formatting
@@ -315,8 +312,8 @@ Would you like to submit a formal data request? (yes/no)
 
     # Execute
     response = mock_conversation_manager.format_feasibility_response(
-        cohort_size=sample_feasibility_data['estimated_cohort'],
-        feasibility_data=sample_feasibility_data
+        cohort_size=sample_feasibility_data["estimated_cohort"],
+        feasibility_data=sample_feasibility_data,
     )
 
     # Verify
@@ -332,16 +329,10 @@ Would you like to submit a formal data request? (yes/no)
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
-async def test_feasibility_low_cohort_warning(
-    mock_conversation_manager
-):
+async def test_feasibility_low_cohort_warning(mock_conversation_manager):
     """Test warning message for low cohort size (< 10 patients)"""
 
-    low_cohort_data = {
-        'estimated_cohort': 7,
-        'feasibility_score': 0.45,
-        'data_availability': {}
-    }
+    low_cohort_data = {"estimated_cohort": 7, "feasibility_score": 0.45, "data_availability": {}}
 
     # Mock warning response
     mock_conversation_manager.format_feasibility_response.return_value = """
@@ -361,8 +352,7 @@ Would you still like to proceed? (yes/no)
 
     # Execute
     response = mock_conversation_manager.format_feasibility_response(
-        cohort_size=low_cohort_data['estimated_cohort'],
-        feasibility_data=low_cohort_data
+        cohort_size=low_cohort_data["estimated_cohort"], feasibility_data=low_cohort_data
     )
 
     # Verify
@@ -376,14 +366,12 @@ Would you still like to proceed? (yes/no)
 # Test: Convert to Formal Request Flow
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
 async def test_convert_to_formal_request(
-    mock_conversation_manager,
-    sample_query_intent,
-    sample_feasibility_data,
-    mock_httpx_client
+    mock_conversation_manager, sample_query_intent, sample_feasibility_data, mock_httpx_client
 ):
     """
     Test: Convert exploratory query to formal request
@@ -398,12 +386,10 @@ async def test_convert_to_formal_request(
     """
     # Setup session state
     session_state = {
-        'conversation_state': ConversationState.AWAITING_CONFIRMATION,
-        'pending_feasibility': sample_feasibility_data,
-        'last_query_intent': sample_query_intent,
-        'messages': [
-            {"role": "user", "content": "How many patients with diabetes?"}
-        ]
+        "conversation_state": ConversationState.AWAITING_CONFIRMATION,
+        "pending_feasibility": sample_feasibility_data,
+        "last_query_intent": sample_query_intent,
+        "messages": [{"role": "user", "content": "How many patients with diabetes?"}],
     }
 
     # Mock confirmation detection
@@ -414,13 +400,13 @@ async def test_convert_to_formal_request(
     expected_structured_requirements = {
         "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
         "principal_investigator": "Research Notebook User",
-        "inclusion_criteria": sample_query_intent['inclusion_criteria'],
-        "exclusion_criteria": sample_query_intent['exclusion_criteria'],
-        "data_elements": sample_query_intent['data_elements'],
-        "time_period": sample_feasibility_data['time_period'],
-        "estimated_cohort_size": sample_feasibility_data['estimated_cohort'],
+        "inclusion_criteria": sample_query_intent["inclusion_criteria"],
+        "exclusion_criteria": sample_query_intent["exclusion_criteria"],
+        "data_elements": sample_query_intent["data_elements"],
+        "time_period": sample_feasibility_data["time_period"],
+        "estimated_cohort_size": sample_feasibility_data["estimated_cohort"],
         "delivery_format": "CSV",
-        "phi_level": "de-identified"
+        "phi_level": "de-identified",
     }
 
     # Execute: Submit to API (mocked)
@@ -432,20 +418,20 @@ async def test_convert_to_formal_request(
             "researcher_email": "researcher@hospital.org",
             "researcher_department": "Clinical Research",
             "irb_number": "IRB-NOTEBOOK-001",
-            "initial_request": session_state['messages'][-1]["content"],
-            "structured_requirements": expected_structured_requirements
-        }
+            "initial_request": session_state["messages"][-1]["content"],
+            "structured_requirements": expected_structured_requirements,
+        },
     )
     submit_result = await submit_response.json()
 
     # Process request
-    request_id = submit_result['request_id']
+    request_id = submit_result["request_id"]
     process_response = await mock_httpx_client.post(
         f"http://localhost:8000/research/process/{request_id}",
         json={
             "structured_requirements": expected_structured_requirements,
-            "skip_conversation": True
-        }
+            "skip_conversation": True,
+        },
     )
 
     # Verify: API calls made
@@ -455,11 +441,11 @@ async def test_convert_to_formal_request(
     assert request_id == "REQ-TEST-123"
 
     # Verify: Session state updated
-    session_state['pending_request_id'] = request_id
-    session_state['conversation_state'] = ConversationState.AWAITING_APPROVAL
+    session_state["pending_request_id"] = request_id
+    session_state["conversation_state"] = ConversationState.AWAITING_APPROVAL
 
-    assert session_state['pending_request_id'] == "REQ-TEST-123"
-    assert session_state['conversation_state'] == ConversationState.AWAITING_APPROVAL
+    assert session_state["pending_request_id"] == "REQ-TEST-123"
+    assert session_state["conversation_state"] == ConversationState.AWAITING_APPROVAL
 
     print("✅ Convert to formal request flow validated")
     print(f"   Request ID: {request_id}")
@@ -468,17 +454,14 @@ async def test_convert_to_formal_request(
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
-async def test_rejection_after_feasibility(
-    mock_conversation_manager,
-    sample_feasibility_data
-):
+async def test_rejection_after_feasibility(mock_conversation_manager, sample_feasibility_data):
     """Test user rejection after feasibility check"""
 
     # Setup session state
     session_state = {
-        'conversation_state': ConversationState.AWAITING_CONFIRMATION,
-        'pending_feasibility': sample_feasibility_data,
-        'last_query_intent': {'inclusion_criteria': ['Diabetes']},
+        "conversation_state": ConversationState.AWAITING_CONFIRMATION,
+        "pending_feasibility": sample_feasibility_data,
+        "last_query_intent": {"inclusion_criteria": ["Diabetes"]},
     }
 
     # Mock rejection detection
@@ -492,14 +475,14 @@ async def test_rejection_after_feasibility(
     assert is_rejected is True
 
     # Execute: Clear session state
-    session_state['pending_feasibility'] = None
-    session_state['last_query_intent'] = None
-    session_state['conversation_state'] = ConversationState.INITIAL
+    session_state["pending_feasibility"] = None
+    session_state["last_query_intent"] = None
+    session_state["conversation_state"] = ConversationState.INITIAL
 
     # Verify: State cleared
-    assert session_state['pending_feasibility'] is None
-    assert session_state['last_query_intent'] is None
-    assert session_state['conversation_state'] == ConversationState.INITIAL
+    assert session_state["pending_feasibility"] is None
+    assert session_state["last_query_intent"] is None
+    assert session_state["conversation_state"] == ConversationState.INITIAL
 
     print("✅ Rejection workflow validated")
 
@@ -507,6 +490,7 @@ async def test_rejection_after_feasibility(
 # ============================================================================
 # Test: Session State Persistence
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
@@ -516,33 +500,33 @@ async def test_session_state_persistence_across_interactions():
 
     # Simulate session state (Streamlit session_state)
     session_state = {
-        'messages': [],
-        'conversation_state': ConversationState.INITIAL,
-        'pending_feasibility': None,
-        'pending_request_id': None,
-        'last_query_intent': None
+        "messages": [],
+        "conversation_state": ConversationState.INITIAL,
+        "pending_feasibility": None,
+        "pending_request_id": None,
+        "last_query_intent": None,
     }
 
     # Interaction 1: User query
-    session_state['messages'].append({"role": "user", "content": "Diabetes patients"})
-    session_state['messages'].append({"role": "assistant", "content": "Found 347 patients"})
-    session_state['conversation_state'] = ConversationState.AWAITING_CONFIRMATION
-    session_state['pending_feasibility'] = {'estimated_cohort': 347}
+    session_state["messages"].append({"role": "user", "content": "Diabetes patients"})
+    session_state["messages"].append({"role": "assistant", "content": "Found 347 patients"})
+    session_state["conversation_state"] = ConversationState.AWAITING_CONFIRMATION
+    session_state["pending_feasibility"] = {"estimated_cohort": 347}
 
-    assert len(session_state['messages']) == 2
-    assert session_state['conversation_state'] == ConversationState.AWAITING_CONFIRMATION
+    assert len(session_state["messages"]) == 2
+    assert session_state["conversation_state"] == ConversationState.AWAITING_CONFIRMATION
 
     # Interaction 2: User confirmation
-    session_state['messages'].append({"role": "user", "content": "yes"})
-    session_state['pending_request_id'] = "REQ-TEST-123"
-    session_state['conversation_state'] = ConversationState.AWAITING_APPROVAL
+    session_state["messages"].append({"role": "user", "content": "yes"})
+    session_state["pending_request_id"] = "REQ-TEST-123"
+    session_state["conversation_state"] = ConversationState.AWAITING_APPROVAL
 
-    assert len(session_state['messages']) == 3
-    assert session_state['pending_request_id'] == "REQ-TEST-123"
+    assert len(session_state["messages"]) == 3
+    assert session_state["pending_request_id"] == "REQ-TEST-123"
 
     # Interaction 3: Status check (state should still be preserved)
-    assert session_state['pending_request_id'] == "REQ-TEST-123"
-    assert session_state['conversation_state'] == ConversationState.AWAITING_APPROVAL
+    assert session_state["pending_request_id"] == "REQ-TEST-123"
+    assert session_state["conversation_state"] == ConversationState.AWAITING_APPROVAL
 
     print("✅ Session state persistence validated across 3 interactions")
 
@@ -557,29 +541,29 @@ async def test_session_state_initialization():
     session_state = {}
 
     # Initialize (simulate function)
-    if 'messages' not in session_state:
-        session_state['messages'] = []
-    if 'conversation_state' not in session_state:
-        session_state['conversation_state'] = ConversationState.INITIAL
-    if 'pending_feasibility' not in session_state:
-        session_state['pending_feasibility'] = None
-    if 'pending_request_id' not in session_state:
-        session_state['pending_request_id'] = None
-    if 'last_query_intent' not in session_state:
-        session_state['last_query_intent'] = None
+    if "messages" not in session_state:
+        session_state["messages"] = []
+    if "conversation_state" not in session_state:
+        session_state["conversation_state"] = ConversationState.INITIAL
+    if "pending_feasibility" not in session_state:
+        session_state["pending_feasibility"] = None
+    if "pending_request_id" not in session_state:
+        session_state["pending_request_id"] = None
+    if "last_query_intent" not in session_state:
+        session_state["last_query_intent"] = None
 
     # Verify: All required keys exist
-    assert 'messages' in session_state
-    assert 'conversation_state' in session_state
-    assert 'pending_feasibility' in session_state
-    assert 'pending_request_id' in session_state
-    assert 'last_query_intent' in session_state
+    assert "messages" in session_state
+    assert "conversation_state" in session_state
+    assert "pending_feasibility" in session_state
+    assert "pending_request_id" in session_state
+    assert "last_query_intent" in session_state
 
     # Verify: Default values
-    assert session_state['messages'] == []
-    assert session_state['conversation_state'] == ConversationState.INITIAL
-    assert session_state['pending_feasibility'] is None
-    assert session_state['pending_request_id'] is None
+    assert session_state["messages"] == []
+    assert session_state["conversation_state"] == ConversationState.INITIAL
+    assert session_state["pending_feasibility"] is None
+    assert session_state["pending_request_id"] is None
 
     print("✅ Session state initialization validated")
 
@@ -588,20 +572,15 @@ async def test_session_state_initialization():
 # Test: Status Check Flow
 # ============================================================================
 
+
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
-async def test_status_check_with_active_request(
-    mock_conversation_manager,
-    mock_httpx_client
-):
+async def test_status_check_with_active_request(mock_conversation_manager, mock_httpx_client):
     """Test status check when user has active request"""
 
     # Setup session state with active request
-    session_state = {
-        'pending_request_id': "REQ-TEST-123",
-        'messages': []
-    }
+    session_state = {"pending_request_id": "REQ-TEST-123", "messages": []}
 
     # Mock status formatting
     mock_conversation_manager.format_approval_status.return_value = """
@@ -622,13 +601,12 @@ async def test_status_check_with_active_request(
     status_data = await response.json()
 
     # Verify: Status retrieved
-    assert status_data['request_id'] == "REQ-TEST-123"
-    assert status_data['current_state'] == "phenotype_review"
+    assert status_data["request_id"] == "REQ-TEST-123"
+    assert status_data["current_state"] == "phenotype_review"
 
     # Execute: Format status message
     status_message = mock_conversation_manager.format_approval_status(
-        request_id=status_data['request_id'],
-        current_state=status_data['current_state']
+        request_id=status_data["request_id"], current_state=status_data["current_state"]
     )
 
     # Verify: Status formatted
@@ -645,13 +623,10 @@ async def test_status_check_without_active_request(mock_conversation_manager):
     """Test status check when user has no active request"""
 
     # Setup session state without active request
-    session_state = {
-        'pending_request_id': None,
-        'messages': []
-    }
+    session_state = {"pending_request_id": None, "messages": []}
 
     # Execute: Check for active request
-    if session_state['pending_request_id'] is None:
+    if session_state["pending_request_id"] is None:
         message = "You don't have any active requests. Ask a research question to get started!"
     else:
         message = "Checking status..."
@@ -665,6 +640,7 @@ async def test_status_check_without_active_request(mock_conversation_manager):
 # ============================================================================
 # Test: Dashboard Visibility Integration
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
@@ -682,20 +658,21 @@ async def test_notebook_to_dashboard_visibility(mock_httpx_client):
     request_id = "REQ-NOTEBOOK-123"
 
     # Mock: Submit request
-    mock_httpx_client.post.return_value.json = AsyncMock(return_value={
-        "request_id": request_id,
-        "status": "submitted"
-    })
+    mock_httpx_client.post.return_value.json = AsyncMock(
+        return_value={"request_id": request_id, "status": "submitted"}
+    )
 
     # Mock: Get pending approvals
-    mock_httpx_client.get.return_value.json = AsyncMock(return_value=[
-        {
-            "request_id": request_id,
-            "approval_type": "phenotype_sql",
-            "current_state": "phenotype_review",
-            "created_at": datetime.now().isoformat()
-        }
-    ])
+    mock_httpx_client.get.return_value.json = AsyncMock(
+        return_value=[
+            {
+                "request_id": request_id,
+                "approval_type": "phenotype_sql",
+                "current_state": "phenotype_review",
+                "created_at": datetime.now().isoformat(),
+            }
+        ]
+    )
 
     # Execute: Submit request
     # Submit
@@ -707,12 +684,12 @@ async def test_notebook_to_dashboard_visibility(mock_httpx_client):
     approvals_data = await approvals_response.json()
 
     # Verify: Request submitted
-    assert submit_data['request_id'] == request_id
+    assert submit_data["request_id"] == request_id
 
     # Verify: Request visible in approvals
     assert len(approvals_data) > 0
-    assert approvals_data[0]['request_id'] == request_id
-    assert approvals_data[0]['approval_type'] == 'phenotype_sql'
+    assert approvals_data[0]["request_id"] == request_id
+    assert approvals_data[0]["approval_type"] == "phenotype_sql"
 
     print("✅ Research notebook → Admin Dashboard visibility validated")
     print(f"   Request {request_id} visible in pending approvals")
@@ -721,6 +698,7 @@ async def test_notebook_to_dashboard_visibility(mock_httpx_client):
 # ============================================================================
 # Test: Error Handling
 # ============================================================================
+
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
@@ -776,6 +754,7 @@ async def test_feasibility_check_error_handling(mock_feasibility_service):
 # Summary
 # ============================================================================
 
+
 def test_priority_0_coverage_summary():
     """
     Summary of Priority 0 (Critical) test coverage for research_notebook.py
@@ -799,11 +778,11 @@ def test_priority_0_coverage_summary():
     - Multi-user concurrent session tests
     - Performance/load tests
     """
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("PRIORITY 0: Research Notebook Integration Tests")
-    print("="*80)
+    print("=" * 80)
     print("✅ 16 test functions created")
     print("✅ Coverage: ~85% of critical paths")
     print("✅ Addresses Gap #1 from TEST_SUITE_ORGANIZATION.md")
-    print("="*80)
+    print("=" * 80)
     assert True

@@ -63,10 +63,12 @@ class MaterializedViewService:
         hapi_db_client = await create_hapi_db_client()
 
         # Create async session for metadata tracking
-        engine = create_async_engine(database_url, echo=False)
-        async_session_maker = sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
+        # Bug #11 Part 5 fix (CRITICAL): Use get_hapi_engine() and get_hapi_session_factory()
+        # instead of creating engine directly to prevent "Queue bound to different loop" errors
+        from app.database import get_hapi_engine, get_hapi_session_factory
+
+        engine = get_hapi_engine()
+        async_session_maker = get_hapi_session_factory()
         session = async_session_maker()
 
         return cls(hapi_db_client, session)
@@ -93,32 +95,34 @@ class MaterializedViewService:
             pg_views = await self.db_client.execute_query(sql)
 
             # Get metadata from our tracking table
-            result = await self.session.execute(
-                select(MaterializedViewMetadata)
-            )
+            result = await self.session.execute(select(MaterializedViewMetadata))
             metadata_map = {m.view_name: m for m in result.scalars().all()}
 
             # Combine PostgreSQL data with our metadata
             views = []
             for pg_view in pg_views:
-                view_name = pg_view['view_name']
+                view_name = pg_view["view_name"]
                 metadata = metadata_map.get(view_name)
 
                 # Get row count
                 count_sql = f"SELECT COUNT(*) as count FROM {self.SCHEMA_NAME}.{view_name}"
                 count_result = await self.db_client.execute_query(count_sql)
-                row_count = count_result[0]['count'] if count_result else 0
+                row_count = count_result[0]["count"] if count_result else 0
 
                 view_info = {
                     "view_name": view_name,
                     "row_count": row_count,
-                    "size": pg_view.get('size'),
-                    "size_bytes": pg_view.get('size_bytes'),
+                    "size": pg_view.get("size"),
+                    "size_bytes": pg_view.get("size_bytes"),
                     "status": metadata.status if metadata else "unknown",
-                    "last_refreshed_at": metadata.last_refreshed_at.isoformat() if metadata and metadata.last_refreshed_at else None,
+                    "last_refreshed_at": (
+                        metadata.last_refreshed_at.isoformat()
+                        if metadata and metadata.last_refreshed_at
+                        else None
+                    ),
                     "is_stale": metadata.is_stale if metadata else False,
                     "staleness_hours": metadata.staleness_hours if metadata else None,
-                    "resource_type": metadata.resource_type if metadata else None
+                    "resource_type": metadata.resource_type if metadata else None,
                 }
 
                 views.append(view_info)
@@ -152,14 +156,10 @@ class MaterializedViewService:
             """
 
             result = await self.db_client.execute_query(exists_sql)
-            exists = result[0]['exists'] if result else False
+            exists = result[0]["exists"] if result else False
 
             if not exists:
-                return {
-                    "view_name": view_name,
-                    "exists": False,
-                    "status": "not_found"
-                }
+                return {"view_name": view_name, "exists": False, "status": "not_found"}
 
             # Get metadata
             stmt = select(MaterializedViewMetadata).where(
@@ -171,7 +171,7 @@ class MaterializedViewService:
             # Get row count and size
             count_sql = f"SELECT COUNT(*) as count FROM {self.SCHEMA_NAME}.{view_name}"
             count_result = await self.db_client.execute_query(count_sql)
-            row_count = count_result[0]['count'] if count_result else 0
+            row_count = count_result[0]["count"] if count_result else 0
 
             size_sql = f"""
                 SELECT pg_size_pretty(pg_total_relation_size('{self.SCHEMA_NAME}.{view_name}')) as size,
@@ -184,16 +184,22 @@ class MaterializedViewService:
                 "view_name": view_name,
                 "exists": True,
                 "row_count": row_count,
-                "size": size_info.get('size'),
-                "size_bytes": size_info.get('size_bytes'),
+                "size": size_info.get("size"),
+                "size_bytes": size_info.get("size_bytes"),
                 "status": metadata.status if metadata else "active",
-                "created_at": metadata.created_at.isoformat() if metadata and metadata.created_at else None,
-                "last_refreshed_at": metadata.last_refreshed_at.isoformat() if metadata and metadata.last_refreshed_at else None,
+                "created_at": (
+                    metadata.created_at.isoformat() if metadata and metadata.created_at else None
+                ),
+                "last_refreshed_at": (
+                    metadata.last_refreshed_at.isoformat()
+                    if metadata and metadata.last_refreshed_at
+                    else None
+                ),
                 "is_stale": metadata.is_stale if metadata else False,
                 "staleness_hours": metadata.staleness_hours if metadata else None,
                 "needs_refresh": metadata.needs_refresh if metadata else False,
                 "auto_refresh_enabled": metadata.auto_refresh_enabled if metadata else True,
-                "refresh_interval_hours": metadata.refresh_interval_hours if metadata else 24
+                "refresh_interval_hours": metadata.refresh_interval_hours if metadata else 24,
             }
 
             return status
@@ -230,26 +236,29 @@ class MaterializedViewService:
             # Get updated row count
             count_sql = f"SELECT COUNT(*) as count FROM {self.SCHEMA_NAME}.{view_name}"
             count_result = await self.db_client.execute_query(count_sql)
-            row_count = count_result[0]['count'] if count_result else 0
+            row_count = count_result[0]["count"] if count_result else 0
 
             # Get size
             size_sql = f"""
                 SELECT pg_total_relation_size('{self.SCHEMA_NAME}.{view_name}') as size_bytes
             """
             size_result = await self.db_client.execute_query(size_sql)
-            size_bytes = size_result[0]['size_bytes'] if size_result else 0
+            size_bytes = size_result[0]["size_bytes"] if size_result else 0
 
             # Update metadata
-            await self._update_metadata(view_name, {
-                "status": "active",
-                "last_refreshed_at": datetime.now(),
-                "refresh_duration_ms": refresh_duration_ms,
-                "row_count": row_count,
-                "size_bytes": size_bytes,
-                "is_stale": False,
-                "staleness_hours": 0.0,
-                "error_message": None
-            })
+            await self._update_metadata(
+                view_name,
+                {
+                    "status": "active",
+                    "last_refreshed_at": datetime.now(),
+                    "refresh_duration_ms": refresh_duration_ms,
+                    "row_count": row_count,
+                    "size_bytes": size_bytes,
+                    "is_stale": False,
+                    "staleness_hours": 0.0,
+                    "error_message": None,
+                },
+            )
 
             logger.info(
                 f"✓ Refreshed view '{view_name}' in {refresh_duration_ms:.1f}ms "
@@ -261,7 +270,7 @@ class MaterializedViewService:
                 "success": True,
                 "refresh_duration_ms": refresh_duration_ms,
                 "row_count": row_count,
-                "size_bytes": size_bytes
+                "size_bytes": size_bytes,
             }
 
         except Exception as e:
@@ -269,16 +278,9 @@ class MaterializedViewService:
             logger.error(f"Failed to refresh view '{view_name}': {error_msg}")
 
             # Update metadata with error
-            await self._update_metadata(view_name, {
-                "status": "failed",
-                "error_message": error_msg
-            })
+            await self._update_metadata(view_name, {"status": "failed", "error_message": error_msg})
 
-            return {
-                "view_name": view_name,
-                "success": False,
-                "error": error_msg
-            }
+            return {"view_name": view_name, "success": False, "error": error_msg}
 
     async def refresh_all_views(self) -> Dict[str, Any]:
         """
@@ -294,10 +296,10 @@ class MaterializedViewService:
         fail_count = 0
 
         for view in views_list:
-            view_name = view['view_name']
+            view_name = view["view_name"]
             result = await self.refresh_view(view_name)
 
-            if result['success']:
+            if result["success"]:
                 success_count += 1
             else:
                 fail_count += 1
@@ -308,12 +310,10 @@ class MaterializedViewService:
             "total_views": len(views_list),
             "success": success_count,
             "failed": fail_count,
-            "results": results
+            "results": results,
         }
 
-        logger.info(
-            f"Refreshed all views: {success_count} succeeded, {fail_count} failed"
-        )
+        logger.info(f"Refreshed all views: {success_count} succeeded, {fail_count} failed")
 
         return summary
 
@@ -343,7 +343,7 @@ class MaterializedViewService:
                 "total_checked": len(all_metadata),
                 "stale_views": 0,
                 "refreshed": 0,
-                "results": []
+                "results": [],
             }
 
         logger.info(f"Found {len(stale_views)} stale views to refresh")
@@ -354,14 +354,14 @@ class MaterializedViewService:
             result = await self.refresh_view(metadata.view_name)
             results.append(result)
 
-        success_count = sum(1 for r in results if r['success'])
+        success_count = sum(1 for r in results if r["success"])
 
         summary = {
             "total_checked": len(all_metadata),
             "stale_views": len(stale_views),
             "refreshed": success_count,
             "failed": len(stale_views) - success_count,
-            "results": results
+            "results": results,
         }
 
         return summary

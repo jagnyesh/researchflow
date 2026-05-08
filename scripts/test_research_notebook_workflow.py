@@ -31,21 +31,14 @@ async def test_research_notebook_workflow():
             "study_title": f"Test Research Notebook Query - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
             "principal_investigator": "Research Notebook User",
             "inclusion_criteria": [
-                {
-                    "description": "Patients with diabetes",
-                    "concepts": ["diabetes"],
-                    "codes": []
-                }
+                {"description": "Patients with diabetes", "concepts": ["diabetes"], "codes": []}
             ],
             "exclusion_criteria": [],
             "data_elements": ["demographics", "conditions", "labs"],
-            "time_period": {
-                "start": "2023-01-01",
-                "end": "2023-12-31"
-            },
+            "time_period": {"start": "2023-01-01", "end": "2023-12-31"},
             "estimated_cohort_size": 5,
             "delivery_format": "CSV",
-            "phi_level": "de-identified"
+            "phi_level": "de-identified",
         }
 
         submit_response = await client.post(
@@ -56,8 +49,8 @@ async def test_research_notebook_workflow():
                 "researcher_department": "Clinical Research",
                 "irb_number": "IRB-TEST-001",
                 "initial_request": "Test query for patients with diabetes",
-                "structured_requirements": structured_requirements
-            }
+                "structured_requirements": structured_requirements,
+            },
         )
 
         submit_response.raise_for_status()
@@ -72,10 +65,7 @@ async def test_research_notebook_workflow():
 
         process_response = await client.post(
             f"{API_BASE_URL}/research/process/{request_id}",
-            json={
-                "structured_requirements": structured_requirements,
-                "skip_conversation": True
-            }
+            json={"structured_requirements": structured_requirements, "skip_conversation": True},
         )
 
         process_response.raise_for_status()
@@ -93,9 +83,7 @@ async def test_research_notebook_workflow():
         # Step 3: Check if approval was created
         print(f"\n[Step 3] Checking for approval creation...")
 
-        approvals_response = await client.get(
-            f"{API_BASE_URL}/approvals/request/{request_id}"
-        )
+        approvals_response = await client.get(f"{API_BASE_URL}/approvals/request/{request_id}")
         approvals_response.raise_for_status()
         approvals_result = approvals_response.json()
 

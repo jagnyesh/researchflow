@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class TableColumn:
     """Database column information"""
+
     name: str
     data_type: str
     is_nullable: bool
@@ -31,6 +32,7 @@ class TableColumn:
 @dataclass
 class SearchParamIndex:
     """Search parameter index table information"""
+
     table_name: str
     param_type: str  # string, date, token, quantity, uri, coords, number
     columns: List[TableColumn]
@@ -47,6 +49,7 @@ class HAPISchema:
         search_indexes: Search parameter index tables
         resource_types: Set of available FHIR resource types
     """
+
     resource_table: Dict[str, TableColumn]
     version_table: Dict[str, TableColumn]
     search_indexes: Dict[str, SearchParamIndex]
@@ -87,8 +90,8 @@ class HAPISchemaIntrospector:
         logger.info("Introspecting HAPI database schema...")
 
         # Get table schemas
-        resource_table = await self._introspect_table('hfj_resource')
-        version_table = await self._introspect_table('hfj_res_ver')
+        resource_table = await self._introspect_table("hfj_resource")
+        version_table = await self._introspect_table("hfj_res_ver")
 
         # Get search parameter index tables
         search_indexes = await self._introspect_search_indexes()
@@ -100,12 +103,14 @@ class HAPISchemaIntrospector:
             resource_table=resource_table,
             version_table=version_table,
             search_indexes=search_indexes,
-            resource_types=resource_types
+            resource_types=resource_types,
         )
 
         self._schema_cache = schema
-        logger.info(f"Schema introspection complete: {len(resource_types)} resource types, "
-                   f"{len(search_indexes)} search index tables")
+        logger.info(
+            f"Schema introspection complete: {len(resource_types)} resource types, "
+            f"{len(search_indexes)} search index tables"
+        )
 
         return schema
 
@@ -137,11 +142,11 @@ class HAPISchemaIntrospector:
         columns = {}
         for row in rows:
             col = TableColumn(
-                name=row['column_name'],
-                data_type=row['data_type'],
-                is_nullable=(row['is_nullable'] == 'YES'),
-                max_length=row.get('character_maximum_length'),
-                numeric_precision=row.get('numeric_precision')
+                name=row["column_name"],
+                data_type=row["data_type"],
+                is_nullable=(row["is_nullable"] == "YES"),
+                max_length=row.get("character_maximum_length"),
+                numeric_precision=row.get("numeric_precision"),
             )
             columns[col.name] = col
 
@@ -156,13 +161,13 @@ class HAPISchemaIntrospector:
         """
         # Known HAPI search parameter index tables
         search_param_tables = {
-            'hfj_spidx_string': 'string',
-            'hfj_spidx_date': 'date',
-            'hfj_spidx_token': 'token',
-            'hfj_spidx_quantity': 'quantity',
-            'hfj_spidx_uri': 'uri',
-            'hfj_spidx_coords': 'coords',
-            'hfj_spidx_number': 'number'
+            "hfj_spidx_string": "string",
+            "hfj_spidx_date": "date",
+            "hfj_spidx_token": "token",
+            "hfj_spidx_quantity": "quantity",
+            "hfj_spidx_uri": "uri",
+            "hfj_spidx_coords": "coords",
+            "hfj_spidx_number": "number",
         }
 
         indexes = {}
@@ -184,9 +189,7 @@ class HAPISchemaIntrospector:
                 columns_list = list(columns_dict.values())
 
                 index = SearchParamIndex(
-                    table_name=table_name,
-                    param_type=param_type,
-                    columns=columns_list
+                    table_name=table_name, param_type=param_type, columns=columns_list
                 )
                 indexes[table_name] = index
 
@@ -206,13 +209,10 @@ class HAPISchemaIntrospector:
             ORDER BY res_type
         """
         rows = await self.db_client.execute_query(sql)
-        return {row['res_type'] for row in rows}
+        return {row["res_type"] for row in rows}
 
     async def get_search_param_column(
-        self,
-        param_name: str,
-        param_type: str,
-        resource_type: str
+        self, param_name: str, param_type: str, resource_type: str
     ) -> Optional[str]:
         """
         Map FHIR search parameter to database column
@@ -227,12 +227,12 @@ class HAPISchemaIntrospector:
         """
         # Common column mappings by param type
         column_mappings = {
-            'string': 'sp_value_normalized',  # Normalized string value
-            'date': 'sp_value_low',  # Date range low value
-            'token': 'sp_value',  # Token value (code, identifier)
-            'quantity': 'sp_value',  # Numeric quantity value
-            'uri': 'sp_uri',  # URI value
-            'number': 'sp_value',  # Numeric value
+            "string": "sp_value_normalized",  # Normalized string value
+            "date": "sp_value_low",  # Date range low value
+            "token": "sp_value",  # Token value (code, identifier)
+            "quantity": "sp_value",  # Numeric quantity value
+            "uri": "sp_uri",  # URI value
+            "number": "sp_value",  # Numeric value
         }
 
         return column_mappings.get(param_type)
@@ -248,19 +248,19 @@ class HAPISchemaIntrospector:
             PostgreSQL JSONB path expression (e.g., "res_text_vc::jsonb->'gender'")
         """
         # Remove resource type prefix if present
-        if '.' in fhir_path:
-            parts = fhir_path.split('.', 1)
+        if "." in fhir_path:
+            parts = fhir_path.split(".", 1)
             path = parts[1]
         else:
             path = fhir_path
 
         # Convert to JSONB path operators
         # Simple case: direct field access
-        if '.' not in path:
+        if "." not in path:
             return f"v.res_text_vc::jsonb->'{path}'"
 
         # Nested path: field1.field2.field3
-        path_parts = path.split('.')
+        path_parts = path.split(".")
         jsonb_path = "v.res_text_vc::jsonb"
 
         for i, part in enumerate(path_parts):
@@ -273,12 +273,7 @@ class HAPISchemaIntrospector:
 
         return jsonb_path
 
-    def get_search_index_join(
-        self,
-        resource_alias: str,
-        param_type: str,
-        index_alias: str
-    ) -> str:
+    def get_search_index_join(self, resource_alias: str, param_type: str, index_alias: str) -> str:
         """
         Generate JOIN clause for search parameter index table
 
@@ -327,8 +322,14 @@ class HAPISchemaIntrospector:
         print(f"\nSearch Parameter Indexes ({len(schema.search_indexes)} tables):")
         for table_name, index in schema.search_indexes.items():
             print(f"  {table_name} ({index.param_type}):")
-            key_columns = ['res_id', 'sp_name', 'sp_value', 'sp_value_normalized',
-                          'sp_value_low', 'sp_value_high']
+            key_columns = [
+                "res_id",
+                "sp_name",
+                "sp_value",
+                "sp_value_normalized",
+                "sp_value_low",
+                "sp_value_high",
+            ]
             for col in index.columns:
                 if col.name in key_columns:
                     print(f"    - {col.name}: {col.data_type}")

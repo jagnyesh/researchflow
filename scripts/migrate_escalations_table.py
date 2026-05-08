@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 def migrate_escalations_table():
     """Add missing columns to escalations table"""
-    db_path = 'dev.db'
+    db_path = "dev.db"
 
     if not os.path.exists(db_path):
         print(f"❌ Database not found: {db_path}")
@@ -36,11 +36,11 @@ def migrate_escalations_table():
 
     # Columns to add with their SQL definitions
     new_columns = {
-        'escalation_reason': 'VARCHAR',
-        'severity': 'VARCHAR DEFAULT "medium"',
-        'recommended_action': 'TEXT',
-        'auto_resolved': 'BOOLEAN DEFAULT 0',
-        'resolution_agent': 'VARCHAR'
+        "escalation_reason": "VARCHAR",
+        "severity": 'VARCHAR DEFAULT "medium"',
+        "recommended_action": "TEXT",
+        "auto_resolved": "BOOLEAN DEFAULT 0",
+        "resolution_agent": "VARCHAR",
     }
 
     # Add missing columns

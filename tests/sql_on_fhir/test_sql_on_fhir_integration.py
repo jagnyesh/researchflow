@@ -21,6 +21,7 @@ from typing import List, Dict, Any
 # Add app to path
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.clients.fhir_client import FHIRClient
@@ -71,6 +72,7 @@ async def runner(fhir_client):
 # Connection Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_fhir_server_connection(fhir_client):
     """Test that FHIR server is reachable and returns metadata"""
@@ -98,6 +100,7 @@ async def test_fhir_server_has_data(fhir_client):
 # ViewDefinition Loading Tests
 # ============================================================================
 
+
 def test_view_definitions_exist(view_definition_manager):
     """Test that ViewDefinitions are available"""
     view_names = view_definition_manager.list()
@@ -122,10 +125,7 @@ def test_patient_demographics_structure(view_definition_manager):
     assert len(view_def["select"]) > 0
 
     # Count columns
-    total_columns = sum(
-        len(select_elem.get("column", []))
-        for select_elem in view_def["select"]
-    )
+    total_columns = sum(len(select_elem.get("column", [])) for select_elem in view_def["select"])
 
     print(f"\n✓ patient_demographics ViewDefinition loaded")
     print(f"  Total select elements: {len(view_def['select'])}")
@@ -136,6 +136,7 @@ def test_patient_demographics_structure(view_definition_manager):
 # Simple ViewDefinition Execution Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_patient_demographics_view(fhir_client, view_definition_manager, runner):
     """Test patient_demographics ViewDefinition execution"""
@@ -143,10 +144,7 @@ async def test_patient_demographics_view(fhir_client, view_definition_manager, r
     view_def = view_definition_manager.load("patient_demographics")
 
     # Execute ViewDefinition
-    results = await runner.execute(
-        view_def,
-        max_resources=MAX_TEST_RESOURCES
-    )
+    results = await runner.execute(view_def, max_resources=MAX_TEST_RESOURCES)
 
     assert len(results) > 0, "No results returned from patient_demographics view"
 
@@ -173,10 +171,7 @@ async def test_observation_labs_view(fhir_client, view_definition_manager, runne
     view_def = view_definition_manager.load("observation_labs")
 
     # Execute ViewDefinition
-    results = await runner.execute(
-        view_def,
-        max_results=MAX_TEST_RESOURCES
-    )
+    results = await runner.execute(view_def, max_results=MAX_TEST_RESOURCES)
 
     if len(results) == 0:
         pytest.skip("No lab observations found in FHIR server")
@@ -201,16 +196,14 @@ async def test_observation_labs_view(fhir_client, view_definition_manager, runne
 # FHIRPath Expression Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_forEach_iteration(fhir_client, view_definition_manager, runner):
     """Test forEach iteration in ViewDefinitions (patient names)"""
     view_def = view_definition_manager.load("patient_demographics")
 
     # Execute ViewDefinition
-    results = await runner.execute(
-        view_def,
-        max_results=10
-    )
+    results = await runner.execute(view_def, max_results=10)
 
     assert len(results) > 0
 
@@ -233,10 +226,7 @@ async def test_forEachOrNull_behavior(fhir_client, view_definition_manager, runn
     view_def = view_definition_manager.load("patient_demographics")
 
     # Execute ViewDefinition
-    results = await runner.execute(
-        view_def,
-        max_results=20
-    )
+    results = await runner.execute(view_def, max_results=20)
 
     assert len(results) > 0
 
@@ -261,10 +251,7 @@ async def test_where_clause_filtering(fhir_client, view_definition_manager, runn
     view_def = view_definition_manager.load("patient_demographics")
 
     # patient_demographics has where clause: "active = true or active.exists().not()"
-    results = await runner.execute(
-        view_def,
-        max_resources=MAX_TEST_RESOURCES
-    )
+    results = await runner.execute(view_def, max_resources=MAX_TEST_RESOURCES)
 
     # Fetch all patients without filtering
     all_patients = await fhir_client.search("Patient", max_results=MAX_TEST_RESOURCES)
@@ -280,16 +267,14 @@ async def test_where_clause_filtering(fhir_client, view_definition_manager, runn
 # Complex FHIRPath Expression Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_complex_fhirpath_expressions(fhir_client, view_definition_manager, runner):
     """Test complex FHIRPath expressions (type filtering, chaining)"""
     view_def = view_definition_manager.load("observation_labs")
 
     # Execute ViewDefinition
-    results = await runner.execute(
-        view_def,
-        max_results=20
-    )
+    results = await runner.execute(view_def, max_results=20)
 
     if len(results) == 0:
         pytest.skip("No lab observations to test complex expressions")
@@ -318,6 +303,7 @@ async def test_complex_fhirpath_expressions(fhir_client, view_definition_manager
 # Search Parameter Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_view_with_search_params(fhir_client, view_definition_manager, runner):
     """Test ViewDefinition execution with FHIR search parameters"""
@@ -325,15 +311,11 @@ async def test_view_with_search_params(fhir_client, view_definition_manager, run
 
     # Execute with gender filter
     results_female = await runner.execute(
-        view_def,
-        search_params={"gender": "female"},
-        max_resources=MAX_TEST_RESOURCES
+        view_def, search_params={"gender": "female"}, max_resources=MAX_TEST_RESOURCES
     )
 
     results_male = await runner.execute(
-        view_def,
-        search_params={"gender": "male"},
-        max_resources=MAX_TEST_RESOURCES
+        view_def, search_params={"gender": "male"}, max_resources=MAX_TEST_RESOURCES
     )
 
     print(f"\n✓ Search parameters working")
@@ -351,15 +333,13 @@ async def test_view_with_search_params(fhir_client, view_definition_manager, run
 # Data Type Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_data_types_in_results(fhir_client, view_definition_manager, runner):
     """Test that various FHIR data types are correctly extracted"""
     view_def = view_definition_manager.load("observation_labs")
 
-    results = await runner.execute(
-        view_def,
-        max_results=20
-    )
+    results = await runner.execute(view_def, max_results=20)
 
     if len(results) == 0:
         pytest.skip("No observations to test data types")
@@ -379,6 +359,7 @@ async def test_data_types_in_results(fhir_client, view_definition_manager, runne
 # Performance Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_large_result_set(fhir_client, view_definition_manager, runner):
     """Test ViewDefinition execution with larger result set"""
@@ -388,10 +369,7 @@ async def test_large_result_set(fhir_client, view_definition_manager, runner):
 
     start_time = time.time()
 
-    results = await runner.execute(
-        view_def,
-        max_resources=200  # Larger set
-    )
+    results = await runner.execute(view_def, max_resources=200)  # Larger set
 
     elapsed_time = time.time() - start_time
 
@@ -408,6 +386,7 @@ async def test_large_result_set(fhir_client, view_definition_manager, runner):
 # Error Handling Tests
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_invalid_resource_type(fhir_client, view_definition_manager):
     """Test handling of invalid resource type"""
@@ -415,7 +394,7 @@ async def test_invalid_resource_type(fhir_client, view_definition_manager):
     invalid_view = view_definition_manager.create_from_template(
         resource_type="InvalidResourceType",
         name="test_invalid",
-        columns=[{"name": "id", "path": "id"}]
+        columns=[{"name": "id", "path": "id"}],
     )
 
     runner_instance = InMemoryRunner(fhir_client)

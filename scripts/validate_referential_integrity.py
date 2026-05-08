@@ -26,6 +26,7 @@ from datetime import datetime
 @dataclass
 class ValidationResult:
     """Result of a single validation test"""
+
     test_name: str
     passed: bool
     total_count: int = 0
@@ -47,6 +48,7 @@ class ValidationResult:
 @dataclass
 class IntegrityReport:
     """Complete referential integrity report"""
+
     schema_name: str
     timestamp: datetime
     overall_passed: bool
@@ -146,10 +148,10 @@ class ReferentialIntegrityValidator:
             overall_passed=overall_passed,
             results=self.results,
             summary={
-                'total_tests': len(self.results),
-                'passed_tests': sum(1 for r in self.results if r.passed),
-                'failed_tests': sum(1 for r in self.results if not r.passed),
-            }
+                "total_tests": len(self.results),
+                "passed_tests": sum(1 for r in self.results if r.passed),
+                "failed_tests": sum(1 for r in self.results if not r.passed),
+            },
         )
 
         return report
@@ -162,48 +164,55 @@ class ReferentialIntegrityValidator:
 
         try:
             # Check if views exist
-            condition_exists = await self._check_view_exists('condition_simple')
-            patient_exists = await self._check_view_exists('patient_demographics')
+            condition_exists = await self._check_view_exists("condition_simple")
+            patient_exists = await self._check_view_exists("patient_demographics")
 
             if not condition_exists or not patient_exists:
-                self.results.append(ValidationResult(
-                    test_name="Patient References in Conditions",
-                    passed=False,
-                    errors=["Required views do not exist"]
-                ))
+                self.results.append(
+                    ValidationResult(
+                        test_name="Patient References in Conditions",
+                        passed=False,
+                        errors=["Required views do not exist"],
+                    )
+                )
                 return
 
             # Get total condition count
             total_result = await self.conn.fetchrow(
                 f"SELECT COUNT(*) as count FROM {self.schema_name}.condition_simple WHERE patient_id IS NOT NULL"
             )
-            total_count = total_result['count']
+            total_count = total_result["count"]
 
             # Count conditions with valid patient references
-            valid_result = await self.conn.fetchrow(f"""
+            valid_result = await self.conn.fetchrow(
+                f"""
                 SELECT COUNT(*) as count
                 FROM {self.schema_name}.condition_simple c
                 INNER JOIN {self.schema_name}.patient_demographics p
                     ON c.patient_id = p.patient_id
                 WHERE c.patient_id IS NOT NULL
-            """)
-            valid_count = valid_result['count']
+            """
+            )
+            valid_count = valid_result["count"]
 
             # Find orphaned conditions (patient_id doesn't exist in patients)
-            orphaned_result = await self.conn.fetchrow(f"""
+            orphaned_result = await self.conn.fetchrow(
+                f"""
                 SELECT COUNT(*) as count
                 FROM {self.schema_name}.condition_simple c
                 LEFT JOIN {self.schema_name}.patient_demographics p
                     ON c.patient_id = p.patient_id
                 WHERE c.patient_id IS NOT NULL
                   AND p.patient_id IS NULL
-            """)
-            orphaned_count = orphaned_result['count']
+            """
+            )
+            orphaned_count = orphaned_result["count"]
 
             # Get sample orphaned records
             sample_errors = []
             if orphaned_count > 0:
-                orphaned_samples = await self.conn.fetch(f"""
+                orphaned_samples = await self.conn.fetch(
+                    f"""
                     SELECT c.id, c.patient_id, c.patient_ref, c.icd10_code
                     FROM {self.schema_name}.condition_simple c
                     LEFT JOIN {self.schema_name}.patient_demographics p
@@ -211,7 +220,8 @@ class ReferentialIntegrityValidator:
                     WHERE c.patient_id IS NOT NULL
                       AND p.patient_id IS NULL
                     LIMIT 5
-                """)
+                """
+                )
                 sample_errors = [dict(row) for row in orphaned_samples]
 
             execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
@@ -219,7 +229,9 @@ class ReferentialIntegrityValidator:
             passed = orphaned_count == 0
             warnings = []
             if orphaned_count > 0:
-                warnings.append(f"Found {orphaned_count} conditions referencing non-existent patients")
+                warnings.append(
+                    f"Found {orphaned_count} conditions referencing non-existent patients"
+                )
 
             result = ValidationResult(
                 test_name="Patient References in Conditions",
@@ -230,7 +242,7 @@ class ReferentialIntegrityValidator:
                 orphaned_count=orphaned_count,
                 execution_time_ms=execution_time_ms,
                 warnings=warnings,
-                sample_errors=sample_errors
+                sample_errors=sample_errors,
             )
 
             self.results.append(result)
@@ -238,9 +250,7 @@ class ReferentialIntegrityValidator:
 
         except Exception as e:
             result = ValidationResult(
-                test_name="Patient References in Conditions",
-                passed=False,
-                errors=[str(e)]
+                test_name="Patient References in Conditions", passed=False, errors=[str(e)]
             )
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
@@ -252,47 +262,55 @@ class ReferentialIntegrityValidator:
         start_time = asyncio.get_event_loop().time()
 
         try:
-            obs_exists = await self._check_view_exists('observation_labs')
-            patient_exists = await self._check_view_exists('patient_demographics')
+            obs_exists = await self._check_view_exists("observation_labs")
+            patient_exists = await self._check_view_exists("patient_demographics")
 
             if not obs_exists or not patient_exists:
-                self.results.append(ValidationResult(
-                    test_name="Patient References in Observations",
-                    passed=False,
-                    errors=["Required views do not exist"]
-                ))
+                self.results.append(
+                    ValidationResult(
+                        test_name="Patient References in Observations",
+                        passed=False,
+                        errors=["Required views do not exist"],
+                    )
+                )
                 return
 
             total_result = await self.conn.fetchrow(
                 f"SELECT COUNT(*) as count FROM {self.schema_name}.observation_labs WHERE patient_id IS NOT NULL"
             )
-            total_count = total_result['count']
+            total_count = total_result["count"]
 
-            valid_result = await self.conn.fetchrow(f"""
+            valid_result = await self.conn.fetchrow(
+                f"""
                 SELECT COUNT(*) as count
                 FROM {self.schema_name}.observation_labs o
                 INNER JOIN {self.schema_name}.patient_demographics p
                     ON o.patient_id = p.patient_id
                 WHERE o.patient_id IS NOT NULL
-            """)
-            valid_count = valid_result['count']
+            """
+            )
+            valid_count = valid_result["count"]
 
-            orphaned_result = await self.conn.fetchrow(f"""
+            orphaned_result = await self.conn.fetchrow(
+                f"""
                 SELECT COUNT(*) as count
                 FROM {self.schema_name}.observation_labs o
                 LEFT JOIN {self.schema_name}.patient_demographics p
                     ON o.patient_id = p.patient_id
                 WHERE o.patient_id IS NOT NULL
                   AND p.patient_id IS NULL
-            """)
-            orphaned_count = orphaned_result['count']
+            """
+            )
+            orphaned_count = orphaned_result["count"]
 
             execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
 
             passed = orphaned_count == 0
             warnings = []
             if orphaned_count > 0:
-                warnings.append(f"Found {orphaned_count} observations referencing non-existent patients")
+                warnings.append(
+                    f"Found {orphaned_count} observations referencing non-existent patients"
+                )
 
             result = ValidationResult(
                 test_name="Patient References in Observations",
@@ -301,7 +319,7 @@ class ReferentialIntegrityValidator:
                 valid_count=valid_count,
                 orphaned_count=orphaned_count,
                 execution_time_ms=execution_time_ms,
-                warnings=warnings
+                warnings=warnings,
             )
 
             self.results.append(result)
@@ -309,9 +327,7 @@ class ReferentialIntegrityValidator:
 
         except Exception as e:
             result = ValidationResult(
-                test_name="Patient References in Observations",
-                passed=False,
-                errors=[str(e)]
+                test_name="Patient References in Observations", passed=False, errors=[str(e)]
             )
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
@@ -324,25 +340,29 @@ class ReferentialIntegrityValidator:
 
         try:
             # Check condition_simple.patient_ref format
-            condition_result = await self.conn.fetchrow(f"""
+            condition_result = await self.conn.fetchrow(
+                f"""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN patient_ref LIKE 'Patient/%' THEN 1 ELSE 0 END) as valid_format
                 FROM {self.schema_name}.condition_simple
                 WHERE patient_ref IS NOT NULL
-            """)
+            """
+            )
 
             # Check observation_labs.patient_ref format
-            obs_result = await self.conn.fetchrow(f"""
+            obs_result = await self.conn.fetchrow(
+                f"""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE WHEN patient_ref LIKE 'Patient/%' THEN 1 ELSE 0 END) as valid_format
                 FROM {self.schema_name}.observation_labs
                 WHERE patient_ref IS NOT NULL
-            """)
+            """
+            )
 
-            total_refs = condition_result['total'] + obs_result['total']
-            valid_refs = condition_result['valid_format'] + obs_result['valid_format']
+            total_refs = condition_result["total"] + obs_result["total"]
+            valid_refs = condition_result["valid_format"] + obs_result["valid_format"]
             invalid_refs = total_refs - valid_refs
 
             execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
@@ -350,7 +370,9 @@ class ReferentialIntegrityValidator:
             passed = invalid_refs == 0
             errors = []
             if invalid_refs > 0:
-                errors.append(f"Found {invalid_refs} references not following 'Patient/{{id}}' format")
+                errors.append(
+                    f"Found {invalid_refs} references not following 'Patient/{{id}}' format"
+                )
 
             result = ValidationResult(
                 test_name="FHIR Reference Format Consistency",
@@ -359,7 +381,7 @@ class ReferentialIntegrityValidator:
                 valid_count=valid_refs,
                 invalid_count=invalid_refs,
                 execution_time_ms=execution_time_ms,
-                errors=errors
+                errors=errors,
             )
 
             self.results.append(result)
@@ -367,9 +389,7 @@ class ReferentialIntegrityValidator:
 
         except Exception as e:
             result = ValidationResult(
-                test_name="FHIR Reference Format Consistency",
-                passed=False,
-                errors=[str(e)]
+                test_name="FHIR Reference Format Consistency", passed=False, errors=[str(e)]
             )
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
@@ -382,7 +402,8 @@ class ReferentialIntegrityValidator:
 
         try:
             # Check condition_simple
-            condition_result = await self.conn.fetchrow(f"""
+            condition_result = await self.conn.fetchrow(
+                f"""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE
@@ -391,10 +412,12 @@ class ReferentialIntegrityValidator:
                     END) as consistent
                 FROM {self.schema_name}.condition_simple
                 WHERE patient_ref IS NOT NULL AND patient_id IS NOT NULL
-            """)
+            """
+            )
 
             # Check observation_labs
-            obs_result = await self.conn.fetchrow(f"""
+            obs_result = await self.conn.fetchrow(
+                f"""
                 SELECT
                     COUNT(*) as total,
                     SUM(CASE
@@ -403,10 +426,11 @@ class ReferentialIntegrityValidator:
                     END) as consistent
                 FROM {self.schema_name}.observation_labs
                 WHERE patient_ref IS NOT NULL AND patient_id IS NOT NULL
-            """)
+            """
+            )
 
-            total_records = condition_result['total'] + obs_result['total']
-            consistent_records = condition_result['consistent'] + obs_result['consistent']
+            total_records = condition_result["total"] + obs_result["total"]
+            consistent_records = condition_result["consistent"] + obs_result["consistent"]
             inconsistent_records = total_records - consistent_records
 
             execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
@@ -425,7 +449,7 @@ class ReferentialIntegrityValidator:
                 valid_count=consistent_records,
                 invalid_count=inconsistent_records,
                 execution_time_ms=execution_time_ms,
-                errors=errors
+                errors=errors,
             )
 
             self.results.append(result)
@@ -433,9 +457,7 @@ class ReferentialIntegrityValidator:
 
         except Exception as e:
             result = ValidationResult(
-                test_name="Dual Column Consistency",
-                passed=False,
-                errors=[str(e)]
+                test_name="Dual Column Consistency", passed=False, errors=[str(e)]
             )
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
@@ -472,21 +494,17 @@ class ReferentialIntegrityValidator:
             result_obj = ValidationResult(
                 test_name="JOIN Performance",
                 passed=passed,
-                total_count=result['count'],
-                valid_count=result['count'],
+                total_count=result["count"],
+                valid_count=result["count"],
                 execution_time_ms=join_time_ms,
-                warnings=warnings
+                warnings=warnings,
             )
 
             self.results.append(result_obj)
             print(f"  ✓ Completed (JOIN time: {join_time_ms:.2f}ms)\n")
 
         except Exception as e:
-            result = ValidationResult(
-                test_name="JOIN Performance",
-                passed=False,
-                errors=[str(e)]
-            )
+            result = ValidationResult(test_name="JOIN Performance", passed=False, errors=[str(e)])
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
 
@@ -501,28 +519,32 @@ class ReferentialIntegrityValidator:
             patient_count_result = await self.conn.fetchrow(
                 f"SELECT COUNT(*) as count FROM {self.schema_name}.patient_demographics"
             )
-            patient_count = patient_count_result['count']
+            patient_count = patient_count_result["count"]
 
             # Get condition counts
             condition_count_result = await self.conn.fetchrow(
                 f"SELECT COUNT(*) as count FROM {self.schema_name}.condition_simple WHERE patient_id IS NOT NULL"
             )
-            condition_count = condition_count_result['count']
+            condition_count = condition_count_result["count"]
 
             # Get patients with conditions
-            patients_with_conditions_result = await self.conn.fetchrow(f"""
+            patients_with_conditions_result = await self.conn.fetchrow(
+                f"""
                 SELECT COUNT(DISTINCT patient_id) as count
                 FROM {self.schema_name}.condition_simple
                 WHERE patient_id IS NOT NULL
-            """)
-            patients_with_conditions = patients_with_conditions_result['count']
+            """
+            )
+            patients_with_conditions = patients_with_conditions_result["count"]
 
             execution_time_ms = (asyncio.get_event_loop().time() - start_time) * 1000
 
             # Cardinality test: conditions should be >= patients with conditions (1:N)
             passed = condition_count >= patients_with_conditions
 
-            ratio = condition_count / patients_with_conditions if patients_with_conditions > 0 else 0
+            ratio = (
+                condition_count / patients_with_conditions if patients_with_conditions > 0 else 0
+            )
 
             warnings = []
             warnings.append(f"Patients: {patient_count:,}")
@@ -536,7 +558,7 @@ class ReferentialIntegrityValidator:
                 total_count=condition_count,
                 valid_count=condition_count,
                 execution_time_ms=execution_time_ms,
-                warnings=warnings
+                warnings=warnings,
             )
 
             self.results.append(result)
@@ -544,24 +566,26 @@ class ReferentialIntegrityValidator:
 
         except Exception as e:
             result = ValidationResult(
-                test_name="Relationship Cardinality",
-                passed=False,
-                errors=[str(e)]
+                test_name="Relationship Cardinality", passed=False, errors=[str(e)]
             )
             self.results.append(result)
             print(f"  ✗ Failed: {e}\n")
 
     async def _check_view_exists(self, view_name: str) -> bool:
         """Check if materialized view exists"""
-        result = await self.conn.fetchrow(f"""
+        result = await self.conn.fetchrow(
+            f"""
             SELECT EXISTS (
                 SELECT 1
                 FROM pg_matviews
                 WHERE schemaname = $1 AND matviewname = $2
             ) as exists
-        """, self.schema_name, view_name)
+        """,
+            self.schema_name,
+            view_name,
+        )
 
-        return result['exists']
+        return result["exists"]
 
 
 async def main():

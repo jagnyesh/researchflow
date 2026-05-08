@@ -1,6 +1,7 @@
 """
 Pytest configuration for test database isolation
 """
+
 import os
 import sys
 import pytest
@@ -14,7 +15,16 @@ sys.path.insert(0, project_root)
 # Set test database before importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 
-from app.database import init_db, get_db_session, engine
+# Phase 3b: deterministic Fernet key for the test session — DO NOT USE IN PRODUCTION.
+# Set before model import so EncryptedText/EncryptedJSON columns can resolve their
+# key callable on first ORM operation. Generated once with `Fernet.generate_key()`
+# and pinned for reproducibility.
+os.environ.setdefault(
+    "ENCRYPTION_KEY_PRIMARY",
+    "v3J2vUqXk-8CqeI4ZwPVbMx1L_8aJpqg-FTH0nKZQxA=",  # pragma: allowlist secret
+)
+
+from app.database import init_db, get_db_session, get_engine
 from app.database.models import Base
 
 
@@ -41,6 +51,7 @@ async def clean_database():
         await session.execute(text("DELETE FROM requirements_data"))
         await session.execute(text("DELETE FROM feasibility_reports"))
         await session.execute(text("DELETE FROM research_requests"))
+        await session.execute(text("DELETE FROM audit_logs"))
         await session.commit()
 
     yield
@@ -51,3 +62,22 @@ async def clean_database():
 def init_test_db(event_loop):
     """Initialize test database schema once"""
     event_loop.run_until_complete(init_db())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def session_audit_redis(event_loop):
+    """Provide a default fakeredis client for the audit pipeline (Issue #2).
+
+    Without this, the audit middleware fails-closed (5xx) on every PHI request
+    because no audit Redis is configured. Tests that need their own fakeredis
+    instance (e.g. to assert RPUSH content) override this with a function-scoped
+    fixture that save/restores around it.
+    """
+    import fakeredis.aioredis
+    from app.security import audit_middleware as am
+
+    fake = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    am.set_audit_redis(fake)
+    yield fake
+    am.set_audit_redis(None)
+    event_loop.run_until_complete(fake.aclose())

@@ -29,8 +29,8 @@ from app.services.approval_service import ApprovalService
 def orchestrator():
     """Create orchestrator with required agents"""
     orch = ResearchRequestOrchestrator()
-    orch.register_agent('requirements_agent', RequirementsAgent())
-    orch.register_agent('phenotype_agent', PhenotypeValidationAgent())
+    orch.register_agent("requirements_agent", RequirementsAgent())
+    orch.register_agent("phenotype_agent", PhenotypeValidationAgent())
     return orch
 
 
@@ -57,10 +57,10 @@ class TestNaturalLanguageToSQL:
         )
 
         researcher_info = {
-            'name': 'Dr. Test Smith',
-            'email': 'test.smith@hospital.org',
-            'department': 'Cardiology',
-            'irb_number': 'IRB-2024-TEST-001'
+            "name": "Dr. Test Smith",
+            "email": "test.smith@hospital.org",
+            "department": "Cardiology",
+            "irb_number": "IRB-2024-TEST-001",
         }
 
         print(f"\n{'='*80}")
@@ -70,8 +70,7 @@ class TestNaturalLanguageToSQL:
         print(f"Researcher: {researcher_info['name']}")
 
         request_id = await orchestrator.process_new_request(
-            researcher_request=natural_language_query,
-            researcher_info=researcher_info
+            researcher_request=natural_language_query, researcher_info=researcher_info
         )
 
         print(f"Request ID: {request_id}")
@@ -86,9 +85,7 @@ class TestNaturalLanguageToSQL:
 
         async with get_db_session() as session:
             result = await session.execute(
-                select(RequirementsData).where(
-                    RequirementsData.request_id == request_id
-                )
+                select(RequirementsData).where(RequirementsData.request_id == request_id)
             )
             requirements_data = result.scalar_one_or_none()
 
@@ -102,11 +99,13 @@ class TestNaturalLanguageToSQL:
             print(f"  PHI Level: {requirements.get('phi_level', 'Not specified')}")
 
             # Assertions
-            criteria_str = ' '.join(requirements.get('inclusion_criteria', [])).lower()
-            assert any(term in criteria_str for term in ['heart failure', 'hf', 'chf']), \
-                "Heart failure not found in inclusion criteria"
-            assert any(term in criteria_str for term in ['diabetes', 'dm']), \
-                "Diabetes not found in inclusion criteria"
+            criteria_str = " ".join(requirements.get("inclusion_criteria", [])).lower()
+            assert any(
+                term in criteria_str for term in ["heart failure", "hf", "chf"]
+            ), "Heart failure not found in inclusion criteria"
+            assert any(
+                term in criteria_str for term in ["diabetes", "dm"]
+            ), "Diabetes not found in inclusion criteria"
         else:
             print("\n⚠️  Requirements not yet extracted - waiting longer...")
             await asyncio.sleep(2)
@@ -121,16 +120,14 @@ class TestNaturalLanguageToSQL:
 
         async with get_db_session() as session:
             result = await session.execute(
-                select(FeasibilityReport).where(
-                    FeasibilityReport.request_id == request_id
-                )
+                select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
             )
             feasibility_report = result.scalar_one_or_none()
 
         if feasibility_report:
-            sql = feasibility_report.report.get('phenotype_sql', 'No SQL found')
-            estimated_cohort = feasibility_report.report.get('estimated_cohort_size', 0)
-            feasibility_score = feasibility_report.report.get('feasibility_score', 0)
+            sql = feasibility_report.report.get("phenotype_sql", "No SQL found")
+            estimated_cohort = feasibility_report.report.get("estimated_cohort_size", 0)
+            feasibility_score = feasibility_report.report.get("feasibility_score", 0)
 
             print(f"\nFeasibility Score: {feasibility_score:.2f}")
             print(f"Estimated Cohort Size: {estimated_cohort}")
@@ -141,26 +138,22 @@ class TestNaturalLanguageToSQL:
             print(f"{'='*80}\n")
 
             # Assertions - SQL structure
-            assert 'SELECT' in sql, "SQL missing SELECT clause"
-            assert 'FROM' in sql, "SQL missing FROM clause"
-            assert 'patient' in sql.lower(), "SQL doesn't query patient table"
+            assert "SELECT" in sql, "SQL missing SELECT clause"
+            assert "FROM" in sql, "SQL missing FROM clause"
+            assert "patient" in sql.lower(), "SQL doesn't query patient table"
 
             # Assertions - Criteria inclusion (flexible)
             sql_lower = sql.lower()
             # Check for heart failure (might be coded as ICD-10 I50.x or text)
-            has_heart_failure = any(term in sql_lower for term in [
-                'heart failure', 'i50', 'chf', 'cardiac failure'
-            ])
+            has_heart_failure = any(
+                term in sql_lower for term in ["heart failure", "i50", "chf", "cardiac failure"]
+            )
 
             # Check for diabetes (might be coded as ICD-10 E11.x or text)
-            has_diabetes = any(term in sql_lower for term in [
-                'diabetes', 'e11', 'dm', 'diabetic'
-            ])
+            has_diabetes = any(term in sql_lower for term in ["diabetes", "e11", "dm", "diabetic"])
 
             # Check for time filter
-            has_time_filter = any(term in sql_lower for term in [
-                '2024', 'recordeddate', 'date'
-            ])
+            has_time_filter = any(term in sql_lower for term in ["2024", "recordeddate", "date"])
 
             print("\nSQL Validation:")
             print(f"  ✓ Heart failure criteria: {'✅' if has_heart_failure else '❌'}")
@@ -189,10 +182,7 @@ class TestNaturalLanguageToSQL:
             approvals = await approval_service.get_pending_approvals()
 
             # Find approvals for this request
-            request_approvals = [
-                a for a in approvals
-                if a.request_id == request_id
-            ]
+            request_approvals = [a for a in approvals if a.request_id == request_id]
 
         if request_approvals:
             approval = request_approvals[0]
@@ -204,14 +194,14 @@ class TestNaturalLanguageToSQL:
             print(f"  Submitted By: {approval.submitted_by}")
 
             # Assertions
-            assert approval.approval_type == 'phenotype_sql', \
-                f"Expected phenotype_sql approval, got {approval.approval_type}"
-            assert approval.status == 'pending', \
-                f"Expected pending status, got {approval.status}"
+            assert (
+                approval.approval_type == "phenotype_sql"
+            ), f"Expected phenotype_sql approval, got {approval.approval_type}"
+            assert approval.status == "pending", f"Expected pending status, got {approval.status}"
 
             # Verify approval data contains SQL
             approval_data = approval.approval_data
-            if 'sql_query' in approval_data:
+            if "sql_query" in approval_data:
                 print(f"\n  SQL in approval: {len(approval_data['sql_query'])} characters")
 
             print("\n✅ Approval successfully created for SQL review!")
@@ -243,9 +233,9 @@ class TestNaturalLanguageToSQL:
         query = "I need female patients over age 65"
 
         researcher_info = {
-            'name': 'Dr. Jane Doe',
-            'email': 'jane.doe@hospital.org',
-            'irb_number': 'IRB-2024-TEST-002'
+            "name": "Dr. Jane Doe",
+            "email": "jane.doe@hospital.org",
+            "irb_number": "IRB-2024-TEST-002",
         }
 
         print(f"\n{'='*80}")
@@ -260,25 +250,22 @@ class TestNaturalLanguageToSQL:
         # Check SQL generated
         async with get_db_session() as session:
             result = await session.execute(
-                select(FeasibilityReport).where(
-                    FeasibilityReport.request_id == request_id
-                )
+                select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
             )
             report = result.scalar_one_or_none()
 
         if report:
-            sql = report.report.get('phenotype_sql', '')
+            sql = report.report.get("phenotype_sql", "")
             print(f"\nGenerated SQL:\n{sql}\n")
 
             # Verify SQL includes gender and age filters
             sql_lower = sql.lower()
-            assert 'gender' in sql_lower or 'sex' in sql_lower, \
-                "SQL missing gender filter"
+            assert "gender" in sql_lower or "sex" in sql_lower, "SQL missing gender filter"
 
             # Age might be calculated from birthdate
-            has_age_filter = any(term in sql_lower for term in [
-                'age', 'birthdate', '65', 'date_sub', 'datediff'
-            ])
+            has_age_filter = any(
+                term in sql_lower for term in ["age", "birthdate", "65", "date_sub", "datediff"]
+            )
             assert has_age_filter, "SQL missing age filter"
 
             print("✅ SQL generated successfully with gender and age filters")
@@ -293,9 +280,9 @@ class TestNaturalLanguageToSQL:
         query = "I need COVID-19 patients from 2023"
 
         researcher_info = {
-            'name': 'Dr. Test',
-            'email': 'test@hospital.org',
-            'irb_number': 'IRB-2024-TEST-003'
+            "name": "Dr. Test",
+            "email": "test@hospital.org",
+            "irb_number": "IRB-2024-TEST-003",
         }
 
         request_id = await orchestrator.process_new_request(query, researcher_info)
@@ -303,24 +290,22 @@ class TestNaturalLanguageToSQL:
 
         async with get_db_session() as session:
             result = await session.execute(
-                select(FeasibilityReport).where(
-                    FeasibilityReport.request_id == request_id
-                )
+                select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
             )
             report = result.scalar_one_or_none()
 
         if report:
-            sql = report.report.get('phenotype_sql', '')
+            sql = report.report.get("phenotype_sql", "")
 
             print(f"\nSQL Syntax Validation:")
 
             # Basic syntax checks
             checks = {
-                "Has SELECT": 'SELECT' in sql,
-                "Has FROM": 'FROM' in sql,
-                "Balanced parentheses": sql.count('(') == sql.count(')'),
+                "Has SELECT": "SELECT" in sql,
+                "Has FROM": "FROM" in sql,
+                "Balanced parentheses": sql.count("(") == sql.count(")"),
                 "Not empty": len(sql) > 0,
-                "Has patient table": 'patient' in sql.lower()
+                "Has patient table": "patient" in sql.lower(),
             }
 
             for check, passed in checks.items():

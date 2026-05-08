@@ -1,0 +1,362 @@
+{
+  "requirements_simple": [
+    {
+      "id": "req_simple_001",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "I need data for all patients with diabetes.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_002",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "Give me patients with hypertension.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_003",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "I want to find all COVID-19 positive patients.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_004",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "Show me patients with asthma.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_005",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "I need data for patients who had a stroke.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_006",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "Get me all patients with depression diagnosis.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_007",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "I want patients diagnosed with COPD.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_008",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "Show me patients with heart failure.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_009",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "I need all patients with chronic kidney disease.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_simple_010",
+      "agent_type": "requirements",
+      "complexity": "simple",
+      "input": "Get me patients with rheumatoid arthritis.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    }
+  ],
+  "requirements_moderate": [
+    {
+      "id": "req_moderate_001",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "I need patients with diabetes who are over 65 years old and have HbA1c > 8.0, for the last 2 years.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_002",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "Give me hypertensive patients aged 40-60, excluding those with diabetes, from January 2023 onwards.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_003",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "I want COVID-19 patients who were hospitalized, with severity score > 5, between March 2020 and December 2021.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_004",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "Show me asthma patients with ER visits in the past year, excluding those with COPD diagnosis.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_005",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "I need stroke patients aged 50+, with LDL > 130 mg/dL, diagnosed after 2022. Include demographics and lab values.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_006",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "Get depression patients on SSRI medications, aged 18-45, with PHQ-9 score > 15 in the last 6 months.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_007",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "I want COPD patients with FEV1 < 50%, excluding current smokers, from the past 3 years. Include pulmonary function tests.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_008",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "Show me heart failure patients with LVEF < 40%, on ACE inhibitors, hospitalized in 2023. De-identified data only.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_009",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "I need chronic kidney disease stage 3+ patients, with eGFR < 60, excluding dialysis patients, diagnosed after Jan 2022.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_moderate_010",
+      "agent_type": "requirements",
+      "complexity": "moderate",
+      "input": "Get rheumatoid arthritis patients on biologic therapy, with CRP > 10 mg/L, aged 30-70, from the past 18 months.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    }
+  ],
+  "requirements_complex": [
+    {
+      "id": "req_complex_001",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "I'm studying cardiovascular outcomes in diabetic patients with complex comorbidities. Need patients with type 2 diabetes AND (hypertension OR hyperlipidemia) who had MI or stroke between 2020-2023, excluding those with cancer history. Include longitudinal data: demographics, diagnoses, medications, lab values (HbA1c, lipid panel, creatinine), and cardiovascular events. PHI level: limited dataset.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_002",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Need help with a study on treatment-resistant depression. Want patients with depression diagnosis, tried at least 3 different antidepressants, still have PHQ-9 > 15 after 6 months, age 18-65. Also looking for their therapy history, suicide risk assessments, and comorbid anxiety or substance abuse. Not sure about timeline - maybe last 5 years?",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_003",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Looking at pneumonia outcomes in elderly patients during COVID pandemic. Need patients 65+ with pneumonia diagnosis (viral OR bacterial) from March 2020 to Dec 2022, with at least one comorbidity (COPD, heart failure, diabetes, immunosuppression). Want to see hospitalization length, ICU admission, ventilator use, 30-day mortality. Exclude nursing home residents. Full PHI needed for follow-up.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_004",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "I want to study medication adherence patterns. Specifically looking for patients on polypharmacy (5+ chronic medications) for conditions like diabetes, hypertension, hyperlipidemia. Need their prescription refill data, lab monitoring results, ER visits or hospitalizations potentially related to non-adherence. Time period unclear - should I look at 1 year or 2 years? Also not sure what data elements are available.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_005",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Research on diabetic nephropathy progression. Need type 1 OR type 2 diabetes patients with baseline eGFR 60-90 who progressed to CKD stage 3+ (eGFR < 60) over time. Must have at least 3 creatinine measurements spanning 2+ years. Want to analyze factors: HbA1c control, BP control (target <130/80), ACE-I/ARB use, proteinuria levels. Exclude patients with AKI episodes. Need serial lab values and medication history. Unclear on PHI level - what's recommended?",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_006",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Pediatric asthma exacerbation risk factors study. Need children (age 5-17) with asthma diagnosis who had at least 1 ER visit or hospitalization for asthma exacerbation in past 2 years. Looking at: controller medication adherence (ICS usage), seasonal patterns, environmental triggers (smoking exposure), comorbid allergic rhinitis or eczema, BMI, lung function tests. Exclude cystic fibrosis and other chronic lung diseases. Want visit-level detail for exacerbations.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_007",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Looking at surgical site infections after orthopedic procedures. Need patients who underwent hip or knee replacement surgery between 2021-2023. Want to identify SSI cases (within 90 days post-op) and compare to controls. Risk factors to examine: diabetes, obesity (BMI > 35), immunosuppression, smoking, prophylactic antibiotic timing, ASA score. Need surgical details, infection cultures if available, readmissions. Not sure about data availability or how to define infection cases precisely.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_008",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Study on anticoagulation in atrial fibrillation patients. Need AFib patients (paroxysmal, persistent, or permanent) with CHA2DS2-VASc score >= 2, looking at: who's on anticoagulation (warfarin vs DOACs), INR control for warfarin patients, bleeding events (major and minor), stroke/TIA events, medication switches. Time period 2019-2024. Exclude patients with mechanical valves or significant valvular disease. Want longitudinal data to track outcomes over time. Also interested in age subgroups: 65-75 vs 75+.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_009",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "I need data for a cancer survivorship study but I'm not exactly sure what's feasible. Looking at breast cancer survivors (stage I-III, completed primary treatment) and their long-term comorbidities. Specifically interested in: cardiovascular disease development (especially if they got anthracyclines or radiation), diabetes onset, osteoporosis/fractures, depression/anxiety. Need treatment details, follow-up duration of at least 5 years. Age at diagnosis should be under 65. Not sure if genetic data is available or if that's needed. PHI concerns for long-term follow-up.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    },
+    {
+      "id": "req_complex_010",
+      "agent_type": "requirements",
+      "complexity": "complex",
+      "input": "Complex multi-condition study: patients with metabolic syndrome components (need 3+ of: obesity BMI>30, hypertension, prediabetes/diabetes, dyslipidemia TG>150 or HDL<40). Want to track progression to cardiovascular events (MI, stroke, revascularization) or development of full diabetes. Looking at interventions: lifestyle modification programs, metformin use, statins, BP meds. Need baseline and serial measurements over 3-5 years. Exclude existing CVD at baseline. Want to stratify by age, gender, race/ethnicity. Unclear on exact data elements needed for lifestyle modifications.",
+      "expected_output_keys": ["requirements_complete", "next_question", "extracted_requirements", "completeness_score", "missing_fields", "conversation_history"]
+    }
+  ],
+  "calendar_standard": [
+    {
+      "id": "cal_standard_001",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "I need to schedule a project kickoff meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_002",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Let's set up a status update meeting for next week.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_003",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Schedule a data delivery meeting for the research team.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_004",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "I need to arrange a feasibility review meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_005",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Set up a data quality review session.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_006",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Schedule a requirements clarification meeting with the PI.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_007",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "I need to book a phenotype validation meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_008",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Let's arrange a data extraction planning meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_009",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "Schedule a final deliverable review meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_standard_010",
+      "agent_type": "calendar",
+      "complexity": "standard",
+      "input": "I need to set up a project closeout meeting.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    }
+  ],
+  "calendar_complex": [
+    {
+      "id": "cal_complex_001",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Schedule a kickoff meeting with PI Dr. Smith, data analyst team (3 people), IRB coordinator, and CTSI biostatistician. Need 90 minutes. Prefer Tuesdays or Thursdays between 2-5pm. Must be before end of month.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_002",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Set up recurring bi-weekly status meetings for the next 6 months, involving research team and data engineering. Mondays or Wednesdays, 1 hour, afternoon preferred.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_003",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Need to coordinate a data quality review with multiple stakeholders: clinical informaticist, data steward, PI, and QA team lead. 2 hours needed. Everyone works remote in different time zones (EST, CST, PST). Next 2 weeks.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_004",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Schedule a series of 3 meetings: (1) requirements gathering with PI, (2) phenotype validation with clinical team, (3) data delivery planning with research coordinators. Space them 1 week apart, starting mid-next month.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_005",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "I need to set up an urgent feasibility review before the grant deadline (2 weeks). Requires: statistician for power calc review, data warehouse manager for data availability check, IRB rep for timeline discussion. 2 hour meeting, need to accommodate senior leadership schedules.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_006",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Arrange a data governance review meeting with: CDO office, privacy officer, security team, legal counsel, and research compliance. This is for a project involving sensitive data. Need 90 minutes. Specific attendees have conflicts most days, need to find a common slot.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_007",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Schedule a complex multi-site research meeting: local PI and team, collaborating institutions (Harvard, Stanford, UCSF), coordinating center staff. Need to align across 3 time zones. Virtual meeting, 2 hours, recurring monthly for next year. First meeting should be in next 3 weeks.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_008",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Need to organize a workshop-style meeting for SQL-on-FHIR training: invite clinical researchers (10-15 people), informaticists, data analysts. Half-day session (4 hours), needs hands-on lab time. Looking for next month, need room with computers or BYOD setup. Hybrid meeting preferred.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_009",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Set up a steering committee meeting for multi-year research program. Attendees: 5 PIs from different departments, department chairs (3), sponsored programs office, grants administrator. Quarterly recurring meeting, 90 minutes. First meeting needs to be before fiscal year end. In-person preferred but hybrid capability needed.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    },
+    {
+      "id": "cal_complex_010",
+      "agent_type": "calendar",
+      "complexity": "complex",
+      "input": "Schedule an IRB continuing review prep meeting. Need: PI, research coordinator, regulatory specialist, study team members (variable availability), and optional IRB liaison. 2 hours. Must be at least 60 days before continuing review due date (March 15). Need to finalize SAE reports and protocol amendments first, so not before Feb 1. Some attendees only available mornings, others only afternoons.",
+      "expected_output_keys": ["meeting_scheduled", "meeting_details", "next_agent", "next_task", "requires_approval", "approval_type", "additional_context"]
+    }
+  ]
+}

@@ -1,13 +1,9 @@
 from fastapi import APIRouter
-from pydantic import BaseModel
+
 from ..mcp.store import FileContextStore
+from ..schemas.mcp import ContextRequest
 
 router = APIRouter(prefix="/mcp")
-
-
-class ContextRequest(BaseModel):
-    request_id: str
-    context: dict
 
 
 @router.post("/context")

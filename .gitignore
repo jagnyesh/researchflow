@@ -171,6 +171,14 @@ local_data/
 temp/
 tmp/
 
+# Exception: keep data/deliveries directory structure
+!data/
+!data/deliveries/
+!data/deliveries/.gitkeep
+# But exclude actual delivery files
+data/deliveries/*
+!data/deliveries/.gitkeep
+
 # Instance folder
 instance/
 
@@ -252,3 +260,10 @@ benchmarks/
 
 # Miscellaneous enhancements folder (archived development docs)
 docs/misc_enhancements/
+test_agent_comparison_results.json
+.gstack/
+.claude/hooks/posttooluse.log
+
+# SQLite WAL/SHM runtime artifacts — checkpointer files mutate on every test run
+data/test_checkpoints.db-shm
+data/test_checkpoints.db-wal

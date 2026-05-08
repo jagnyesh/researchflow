@@ -98,7 +98,7 @@ Cache Statistics:
 **[x] Result:** Cache working perfectly
 - First query: 0.057s (cache MISS)
 - Second query: 0.000s (cache HIT)
-- **Speedup: 1464.6x!** 
+- **Speedup: 1464.6x!**
 
 ---
 
@@ -266,7 +266,7 @@ All planned improvements have been implemented and tested:
 ### Real-World Scenario
 **Dashboard refresh:**
 - Before: 0.057s per query
-- After: 0.000s (cached) = **Instant!** 
+- After: 0.000s (cached) = **Instant!**
 
 **Large dataset (100 resources):**
 - Before: 0.053s (sequential)

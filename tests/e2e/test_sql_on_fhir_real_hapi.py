@@ -40,16 +40,14 @@ from app.langchain_orchestrator.persistence import WorkflowPersistence
 # Configuration
 # ============================================================================
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite+aiosqlite:///./dev.db"
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 HAPI_FHIR_URL = "http://localhost:8081/fhir"
 
 
 # ============================================================================
 # Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def persistence():
@@ -71,31 +69,27 @@ def diabetes_request():
             "name": "Dr. Sarah Chen",
             "department": "Endocrinology Research",
             "email": "schen@researchhospital.edu",
-            "irb_protocol": "IRB-2025-DM-001"
+            "irb_protocol": "IRB-2025-DM-001",
         },
         "structured_requirements": {
             "cohort_criteria": {
                 "inclusion": [
                     "Type 2 Diabetes diagnosis (ICD-10: E11.x)",
                     "Age 40-70 years",
-                    "HbA1c test in last 12 months"
+                    "HbA1c test in last 12 months",
                 ],
-                "exclusion": [
-                    "Type 1 Diabetes (E10.x)",
-                    "Pregnancy",
-                    "End-stage renal disease"
-                ]
+                "exclusion": ["Type 1 Diabetes (E10.x)", "Pregnancy", "End-stage renal disease"],
             },
             "data_elements": [
                 "Patient demographics (age, gender, race)",
                 "Diabetes diagnosis date",
                 "HbA1c test results (last 12 months)",
                 "Current diabetes medications",
-                "BMI"
+                "BMI",
             ],
             "phi_level": "safe_harbor",
-            "timeframe": "Last 12 months"
-        }
+            "timeframe": "Last 12 months",
+        },
     }
 
 
@@ -112,7 +106,7 @@ def restrictive_request():
             "name": "Dr. Rare Disease",
             "department": "Rare Disease Research",
             "email": "rare@research.edu",
-            "irb_protocol": "IRB-2025-RARE-001"
+            "irb_protocol": "IRB-2025-RARE-001",
         },
         "structured_requirements": {
             "cohort_criteria": {
@@ -120,23 +114,21 @@ def restrictive_request():
                     "Sarcoidosis diagnosis",
                     "Hemochromatosis diagnosis",
                     "Porphyria diagnosis",
-                    "Age < 25 years"
+                    "Age < 25 years",
                 ],
-                "exclusion": []
+                "exclusion": [],
             },
-            "data_elements": [
-                "Patient demographics",
-                "Diagnosis dates"
-            ],
+            "data_elements": ["Patient demographics", "Diagnosis dates"],
             "phi_level": "safe_harbor",
-            "timeframe": "All time"
-        }
+            "timeframe": "All time",
+        },
     }
 
 
 # ============================================================================
 # Test 1: Real Feasibility - Diabetes Cohort
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -171,7 +163,7 @@ async def test_real_feasibility_diabetes(persistence, diabetes_request):
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=diabetes_request["initial_request"],
-        researcher_info=diabetes_request["researcher_info"]
+        researcher_info=diabetes_request["researcher_info"],
     )
     print(f"  ✓ Request ID: {request_id}")
 
@@ -181,14 +173,14 @@ async def test_real_feasibility_diabetes(persistence, diabetes_request):
 
     state_with_requirements = {
         **state_after_new,
-        'requirements': diabetes_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": diabetes_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     state_at_review = await workflow.run(state_with_requirements)
     print(f"  ✓ State: {state_at_review['current_state']}")
-    assert state_at_review['current_state'] == 'requirements_review'
+    assert state_at_review["current_state"] == "requirements_review"
 
     # ===== Step 4: Approve Requirements and Run REAL Feasibility =====
     print("\n[4/5] Approving requirements and running REAL feasibility validation...")
@@ -196,10 +188,7 @@ async def test_real_feasibility_diabetes(persistence, diabetes_request):
 
     feasibility_start = time.time()
 
-    state_with_approval = {
-        **state_at_review,
-        'requirements_approved': True
-    }
+    state_with_approval = {**state_at_review, "requirements_approved": True}
 
     state_after_feasibility = await workflow.run(state_with_approval)
 
@@ -211,13 +200,13 @@ async def test_real_feasibility_diabetes(persistence, diabetes_request):
     # ===== Step 5: Verify Real Agent Results =====
     print("\n[5/5] Verifying REAL agent results...")
 
-    assert state_after_feasibility['current_state'] == 'phenotype_review'
+    assert state_after_feasibility["current_state"] == "phenotype_review"
 
     # Check real feasibility results
-    feasible = state_after_feasibility.get('feasible')
-    cohort_size = state_after_feasibility.get('estimated_cohort_size')
-    phenotype_sql = state_after_feasibility.get('phenotype_sql')
-    feasibility_score = state_after_feasibility.get('feasibility_score')
+    feasible = state_after_feasibility.get("feasible")
+    cohort_size = state_after_feasibility.get("estimated_cohort_size")
+    phenotype_sql = state_after_feasibility.get("phenotype_sql")
+    feasibility_score = state_after_feasibility.get("feasibility_score")
 
     print(f"  ✓ Feasible: {feasible}")
     print(f"  ✓ Estimated Cohort Size: {cohort_size}")
@@ -254,6 +243,7 @@ async def test_real_feasibility_diabetes(persistence, diabetes_request):
 # Test 2: Real Feasibility - Not Feasible Path
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.asyncio
 async def test_real_feasibility_not_feasible(persistence, restrictive_request):
@@ -283,7 +273,7 @@ async def test_real_feasibility_not_feasible(persistence, restrictive_request):
     initial_state = await persistence.create_initial_state(
         request_id=request_id,
         researcher_request=restrictive_request["initial_request"],
-        researcher_info=restrictive_request["researcher_info"]
+        researcher_info=restrictive_request["researcher_info"],
     )
 
     print("\n[3/4] Processing to feasibility validation...")
@@ -291,25 +281,22 @@ async def test_real_feasibility_not_feasible(persistence, restrictive_request):
 
     state_with_requirements = {
         **state_after_new,
-        'requirements': restrictive_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": restrictive_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     state_at_review = await workflow.run(state_with_requirements)
 
-    state_with_approval = {
-        **state_at_review,
-        'requirements_approved': True
-    }
+    state_with_approval = {**state_at_review, "requirements_approved": True}
 
     print("\n[4/4] Running REAL feasibility validation (should fail)...")
     state_after_feasibility = await workflow.run(state_with_approval)
 
     # ===== Verify Not Feasible Result =====
-    feasible = state_after_feasibility.get('feasible')
-    cohort_size = state_after_feasibility.get('estimated_cohort_size')
-    final_state = state_after_feasibility['current_state']
+    feasible = state_after_feasibility.get("feasible")
+    cohort_size = state_after_feasibility.get("estimated_cohort_size")
+    final_state = state_after_feasibility["current_state"]
 
     print(f"\n  ✓ Feasible: {feasible}")
     print(f"  ✓ Cohort Size: {cohort_size}")
@@ -317,8 +304,10 @@ async def test_real_feasibility_not_feasible(persistence, restrictive_request):
 
     # This test depends on real agent behavior - cohort may be too small
     # We verify that the agent actually ran (not stub values)
-    assert final_state in ['phenotype_review', 'not_feasible'], \
-        "Should route to phenotype_review or not_feasible"
+    assert final_state in [
+        "phenotype_review",
+        "not_feasible",
+    ], "Should route to phenotype_review or not_feasible"
 
     elapsed_time = time.time() - start_time
 
@@ -336,6 +325,7 @@ async def test_real_feasibility_not_feasible(persistence, restrictive_request):
 # ============================================================================
 # Test 3: Performance Benchmark - Real vs Stub
 # ============================================================================
+
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
@@ -362,22 +352,19 @@ async def test_performance_benchmark_real_vs_stub(persistence, diabetes_request)
     state_stub = await persistence.create_initial_state(
         request_id=request_id_stub,
         researcher_request=diabetes_request["initial_request"],
-        researcher_info=diabetes_request["researcher_info"]
+        researcher_info=diabetes_request["researcher_info"],
     )
 
     state_after_new_stub = await workflow_stub.run(state_stub)
     state_with_req_stub = {
         **state_after_new_stub,
-        'requirements': diabetes_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": diabetes_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     state_review_stub = await workflow_stub.run(state_with_req_stub)
-    state_approved_stub = {
-        **state_review_stub,
-        'requirements_approved': True
-    }
+    state_approved_stub = {**state_review_stub, "requirements_approved": True}
 
     result_stub = await workflow_stub.run(state_approved_stub)
 
@@ -397,22 +384,19 @@ async def test_performance_benchmark_real_vs_stub(persistence, diabetes_request)
     state_real = await persistence.create_initial_state(
         request_id=request_id_real,
         researcher_request=diabetes_request["initial_request"],
-        researcher_info=diabetes_request["researcher_info"]
+        researcher_info=diabetes_request["researcher_info"],
     )
 
     state_after_new_real = await workflow_real.run(state_real)
     state_with_req_real = {
         **state_after_new_real,
-        'requirements': diabetes_request["structured_requirements"],
-        'requirements_complete': True,
-        'completeness_score': 1.0
+        "requirements": diabetes_request["structured_requirements"],
+        "requirements_complete": True,
+        "completeness_score": 1.0,
     }
 
     state_review_real = await workflow_real.run(state_with_req_real)
-    state_approved_real = {
-        **state_review_real,
-        'requirements_approved': True
-    }
+    state_approved_real = {**state_review_real, "requirements_approved": True}
 
     result_real = await workflow_real.run(state_approved_real)
 
@@ -420,7 +404,7 @@ async def test_performance_benchmark_real_vs_stub(persistence, diabetes_request)
 
     print(f"  ✓ Real mode completed in {real_duration:.2f}s")
     print(f"  ✓ Cohort size: {result_real.get('estimated_cohort_size')}")
-    sql_real = result_real.get('phenotype_sql', '')
+    sql_real = result_real.get("phenotype_sql", "")
     print(f"  ✓ SQL: {sql_real[:50]}...")
 
     # ===== Comparison =====
@@ -432,12 +416,15 @@ async def test_performance_benchmark_real_vs_stub(persistence, diabetes_request)
     print(f"Stub Mode:  {stub_duration:6.2f}s  (placeholder SQL)")
     print(f"Real Mode:  {real_duration:6.2f}s  (real SQL generation)")
     print(f"Slowdown:   {slowdown:6.2f}x")
-    print(f"\nReal SQL is {'real' if sql_real != 'SELECT * FROM Patient WHERE ...' else 'still stub'}")
+    print(
+        f"\nReal SQL is {'real' if sql_real != 'SELECT * FROM Patient WHERE ...' else 'still stub'}"
+    )
     print("=" * 80)
 
     # Verify real mode actually used agents
-    assert sql_real != "SELECT * FROM Patient WHERE ...", \
-        "Real mode should generate actual SQL, not stub"
+    assert (
+        sql_real != "SELECT * FROM Patient WHERE ..."
+    ), "Real mode should generate actual SQL, not stub"
 
 
 # ============================================================================

@@ -32,7 +32,7 @@ class ResultsRenderer:
         cell_number: int,
         query_intent: Any,
         execution_time_ms: float = 0.0,
-        sql_queries: Optional[Dict[str, str]] = None
+        sql_queries: Optional[Dict[str, str]] = None,
     ):
         """
         Render query details cell
@@ -111,7 +111,7 @@ class ResultsRenderer:
         resource_type: str = "Patient",
         max_display: int = 20,
         show_stats: bool = True,
-        show_charts: bool = True
+        show_charts: bool = True,
     ):
         """
         Render results cell with data table, stats, and visualizations
@@ -154,12 +154,7 @@ class ResultsRenderer:
                 st.caption(f"Showing all {total_records:,} records")
 
             # Display table
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=False,
-                height=400
-            )
+            st.dataframe(df, use_container_width=True, hide_index=False, height=400)
 
             # Download buttons
             ResultsRenderer._render_download_buttons(rows, df, cell_number)
@@ -185,10 +180,12 @@ class ResultsRenderer:
         # Gender distribution
         if stats.gender_distribution:
             total = stats.total_count
-            gender_text = " | ".join([
-                f"{g.capitalize()}: {c} ({c/total*100:.0f}%)"
-                for g, c in sorted(stats.gender_distribution.items())
-            ])
+            gender_text = " | ".join(
+                [
+                    f"{g.capitalize()}: {c} ({c/total*100:.0f}%)"
+                    for g, c in sorted(stats.gender_distribution.items())
+                ]
+            )
             with cols[1]:
                 st.metric("Gender", gender_text)
 
@@ -197,16 +194,12 @@ class ResultsRenderer:
             age = stats.age_stats
             age_text = f"{age['min']:.0f}-{age['max']:.0f} yrs"
             with cols[2]:
-                st.metric(
-                    "Age Range",
-                    age_text,
-                    delta=f"μ={age['mean']:.1f}"
-                )
+                st.metric("Age Range", age_text, delta=f"μ={age['mean']:.1f}")
 
         # Date range
         if stats.date_range:
             date_info = stats.date_range
-            span_days = date_info['span_days']
+            span_days = date_info["span_days"]
             span_text = f"{span_days} days" if span_days < 365 else f"{span_days//365} yrs"
             with cols[3]:
                 st.metric("Date Span", span_text)
@@ -219,7 +212,7 @@ class ResultsRenderer:
                 with cond_cols[idx]:
                     st.metric(
                         condition[:30] + "..." if len(condition) > 30 else condition,
-                        f"{count} ({count/stats.total_count*100:.0f}%)"
+                        f"{count} ({count/stats.total_count*100:.0f}%)",
                     )
 
     @staticmethod
@@ -234,7 +227,7 @@ class ResultsRenderer:
                 label="Download CSV",
                 data=csv,
                 file_name=f"results_cell_{cell_number}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+                mime="text/csv",
             )
 
         with col2:
@@ -244,7 +237,7 @@ class ResultsRenderer:
                 label="Download JSON",
                 data=json_str,
                 file_name=f"results_cell_{cell_number}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json"
+                mime="application/json",
             )
 
     @staticmethod
@@ -260,19 +253,19 @@ class ResultsRenderer:
                     fig = px.pie(
                         values=list(stats.gender_distribution.values()),
                         names=[g.capitalize() for g in stats.gender_distribution.keys()],
-                        title="Gender Distribution"
+                        title="Gender Distribution",
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
             # Age distribution histogram
-            if stats.age_stats and 'birth_date' in df.columns:
+            if stats.age_stats and "birth_date" in df.columns:
                 with viz_cols[1]:
                     st.markdown("**Age Distribution**")
 
                     # Calculate ages
                     current_year = datetime.now().year
                     ages = []
-                    for bd in df['birth_date'].dropna():
+                    for bd in df["birth_date"].dropna():
                         try:
                             birth_year = int(str(bd)[:4])
                             age = current_year - birth_year
@@ -286,7 +279,7 @@ class ResultsRenderer:
                             x=ages,
                             nbins=20,
                             title="Age Distribution",
-                            labels={'x': 'Age (years)', 'y': 'Count'}
+                            labels={"x": "Age (years)", "y": "Count"},
                         )
                         st.plotly_chart(fig, use_container_width=True)
 
@@ -298,9 +291,9 @@ class ResultsRenderer:
                 fig = px.bar(
                     x=list(top_conditions.values()),
                     y=list(top_conditions.keys()),
-                    orientation='h',
+                    orientation="h",
                     title="Top 10 Conditions",
-                    labels={'x': 'Count', 'y': 'Condition'}
+                    labels={"x": "Count", "y": "Condition"},
                 )
                 fig.update_layout(height=400)
                 st.plotly_chart(fig, use_container_width=True)

@@ -55,7 +55,7 @@ class HybridRunner:
         db_client: HAPIDBClient,
         redis_client: Optional[RedisClient] = None,
         enable_cache: bool = True,
-        cache_ttl_seconds: int = 300
+        cache_ttl_seconds: int = 300,
     ):
         """
         Initialize hybrid runner
@@ -97,7 +97,7 @@ class HybridRunner:
         self,
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
-        max_resources: Optional[int] = None
+        max_resources: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute ViewDefinition using best available method with speed layer merge
@@ -115,7 +115,7 @@ class HybridRunner:
             2. If enabled, query speed layer (Redis) for recent data
             3. Merge results and deduplicate
         """
-        view_name = view_definition.get('name')
+        view_name = view_definition.get("name")
 
         # Step 1: Query batch layer
         view_exists = await self._check_view_exists(view_name)
@@ -127,9 +127,7 @@ class HybridRunner:
 
             try:
                 batch_result = await self.materialized_runner.execute(
-                    view_definition,
-                    search_params=search_params,
-                    max_resources=max_resources
+                    view_definition, search_params=search_params, max_resources=max_resources
                 )
             except Exception as e:
                 logger.warning(
@@ -140,9 +138,7 @@ class HybridRunner:
                 postgres_runner = await self._get_postgres_runner()
                 self._postgres_queries += 1
                 batch_result = await postgres_runner.execute(
-                    view_definition,
-                    search_params=search_params,
-                    max_resources=max_resources
+                    view_definition, search_params=search_params, max_resources=max_resources
                 )
         else:
             # Fallback to PostgresRunner
@@ -150,9 +146,7 @@ class HybridRunner:
             self._postgres_queries += 1
             postgres_runner = await self._get_postgres_runner()
             batch_result = await postgres_runner.execute(
-                view_definition,
-                search_params=search_params,
-                max_resources=max_resources
+                view_definition, search_params=search_params, max_resources=max_resources
             )
 
         # Step 2: Query speed layer for recent data (if enabled)
@@ -160,9 +154,7 @@ class HybridRunner:
             try:
                 self._speed_layer_queries += 1
                 speed_result = await self.speed_layer_runner.execute(
-                    view_definition,
-                    search_params=search_params,
-                    max_resources=max_resources
+                    view_definition, search_params=search_params, max_resources=max_resources
                 )
 
                 # Step 3: Merge results (if speed layer has data)
@@ -179,9 +171,7 @@ class HybridRunner:
         return batch_result
 
     async def execute_count(
-        self,
-        view_definition: Dict[str, Any],
-        search_params: Optional[Dict[str, Any]] = None
+        self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:
         """
         Execute COUNT query using best available method
@@ -193,7 +183,7 @@ class HybridRunner:
         Returns:
             Count of matching resources/rows
         """
-        view_name = view_definition.get('name')
+        view_name = view_definition.get("name")
 
         # Check if materialized view exists
         view_exists = await self._check_view_exists(view_name)
@@ -204,8 +194,7 @@ class HybridRunner:
 
             try:
                 return await self.materialized_runner.execute_count(
-                    view_definition,
-                    search_params=search_params
+                    view_definition, search_params=search_params
                 )
             except Exception as e:
                 logger.warning(
@@ -219,10 +208,7 @@ class HybridRunner:
 
         postgres_runner = await self._get_postgres_runner()
 
-        return await postgres_runner.execute_count(
-            view_definition,
-            search_params=search_params
-        )
+        return await postgres_runner.execute_count(view_definition, search_params=search_params)
 
     def get_schema(self, view_definition: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -265,9 +251,7 @@ class HybridRunner:
         total_queries = self._materialized_queries + self._postgres_queries
 
         materialized_pct = (
-            (self._materialized_queries / total_queries * 100)
-            if total_queries > 0
-            else 0.0
+            (self._materialized_queries / total_queries * 100) if total_queries > 0 else 0.0
         )
 
         stats = {
@@ -278,7 +262,7 @@ class HybridRunner:
             "speed_layer_queries": self._speed_layer_queries,
             "materialized_percentage": materialized_pct,
             "speed_layer_enabled": self.use_speed_layer,
-            "views_cached": len(self._view_exists_cache)
+            "views_cached": len(self._view_exists_cache),
         }
 
         # Add sub-runner stats if available
@@ -317,7 +301,7 @@ class HybridRunner:
 
         try:
             result = await self.db_client.execute_query(sql)
-            exists = result[0]['exists'] if result else False
+            exists = result[0]["exists"] if result else False
 
             # Cache result
             self._view_exists_cache[view_name] = exists
@@ -349,7 +333,7 @@ class HybridRunner:
             self._postgres_runner = PostgresRunner(
                 self.db_client,
                 enable_cache=self.enable_cache,
-                cache_ttl_seconds=self.cache_ttl_seconds
+                cache_ttl_seconds=self.cache_ttl_seconds,
             )
 
             logger.debug("Initialized PostgresRunner for fallback")
@@ -357,9 +341,7 @@ class HybridRunner:
         return self._postgres_runner
 
     def _merge_batch_and_speed_results(
-        self,
-        batch_result: List[Dict[str, Any]],
-        speed_result: Dict[str, Any]
+        self, batch_result: List[Dict[str, Any]], speed_result: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
         """
         Merge batch and speed layer results.

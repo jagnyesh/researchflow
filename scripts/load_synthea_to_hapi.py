@@ -24,7 +24,7 @@ FHIR_SERVER = "http://localhost:8081/fhir"
 SYNTHEA_DIR = Path("/Users/jagnyesh/Development/sql_practice/synthea/output/fhir")
 TIMEOUT = 30.0
 BATCH_DELAY = 0.5  # seconds between batches
-BATCH_SIZE = 10    # bundles per batch before delay
+BATCH_SIZE = 10  # bundles per batch before delay
 
 
 async def check_server_health() -> bool:

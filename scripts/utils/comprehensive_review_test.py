@@ -29,10 +29,12 @@ def load_view_definition(name: str) -> dict:
     """Load ViewDefinition from JSON file"""
     path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
-        'app', 'sql_on_fhir', 'view_definitions',
-        f'{name}.json'
+        "app",
+        "sql_on_fhir",
+        "view_definitions",
+        f"{name}.json",
     )
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         return json.load(f)
 
 
@@ -55,7 +57,8 @@ async def main():
 
     print("\n📋 IMPLEMENTATION OVERVIEW")
     print("-" * 80)
-    print("""
+    print(
+        """
 This test demonstrates the complete in-database ViewDefinition runner:
 
 ✅ Phase 1: Database Foundation
@@ -76,7 +79,8 @@ This test demonstrates the complete in-database ViewDefinition runner:
 
 Total: ~2,860 lines of code (2,040 production + 820 tests)
 All tests passing ✓
-""")
+"""
+    )
 
     try:
         # Setup
@@ -94,7 +98,7 @@ All tests passing ✓
         print(f"  - Cache TTL: {runner.cache_ttl_seconds}s")
 
         # Load ViewDefinition
-        view_def = load_view_definition('patient_simple')
+        view_def = load_view_definition("patient_simple")
 
         print(f"\n✓ ViewDefinition loaded")
         print(f"  - Name: {view_def['name']}")
@@ -117,26 +121,32 @@ All tests passing ✓
         if results:
             print(f"\n  Sample data (first 3 patients):")
             for i, row in enumerate(results[:3], 1):
-                id_val = row.get('id') or 'N/A'
+                id_val = row.get("id") or "N/A"
                 id_str = id_val[:8] if isinstance(id_val, str) else str(id_val)
-                print(f"    {i}. ID={id_str:8} "
-                      f"Gender={str(row.get('gender', 'N/A')):6} "
-                      f"Active={str(row.get('active', 'N/A')):5} "
-                      f"DOB={row.get('birth_date', 'N/A')}")
+                print(
+                    f"    {i}. ID={id_str:8} "
+                    f"Gender={str(row.get('gender', 'N/A')):6} "
+                    f"Active={str(row.get('active', 'N/A')):5} "
+                    f"DOB={row.get('birth_date', 'N/A')}"
+                )
 
         # Test 2: Search Parameter Filtering
         print_section("3. SEARCH PARAMETER FILTERING")
 
         print("\nTest 3.1: Filter by gender=male")
         start = datetime.now()
-        male_results = await runner.execute(view_def, search_params={'gender': 'male'}, max_resources=5)
+        male_results = await runner.execute(
+            view_def, search_params={"gender": "male"}, max_resources=5
+        )
         male_time = (datetime.now() - start).total_seconds() * 1000
 
         print(f"✓ Found {len(male_results)} male patients in {male_time:.2f}ms")
 
         print("\nTest 3.2: Filter by gender=female")
         start = datetime.now()
-        female_results = await runner.execute(view_def, search_params={'gender': 'female'}, max_resources=5)
+        female_results = await runner.execute(
+            view_def, search_params={"gender": "female"}, max_resources=5
+        )
         female_time = (datetime.now() - start).total_seconds() * 1000
 
         print(f"✓ Found {len(female_results)} female patients in {female_time:.2f}ms")
@@ -157,7 +167,7 @@ All tests passing ✓
         cached_time = (datetime.now() - start).total_seconds() * 1000
         print(f"✓ Execution time: {cached_time:.2f}ms ({len(cached_result)} rows)")
 
-        speedup = first_time / cached_time if cached_time > 0 else float('inf')
+        speedup = first_time / cached_time if cached_time > 0 else float("inf")
         print(f"\n📊 Cache Speedup: {speedup:.1f}x faster")
         print(f"   Time saved: {first_time - cached_time:.2f}ms")
 
@@ -178,8 +188,8 @@ All tests passing ✓
         print(f"✓ Total patients: {total_count} (executed in {count_time:.2f}ms)")
 
         print("\nTest 5.2: Count by gender")
-        male_count = await runner.execute_count(view_def, search_params={'gender': 'male'})
-        female_count = await runner.execute_count(view_def, search_params={'gender': 'female'})
+        male_count = await runner.execute_count(view_def, search_params={"gender": "male"})
+        female_count = await runner.execute_count(view_def, search_params={"gender": "female"})
 
         print(f"✓ Male patients: {male_count}")
         print(f"✓ Female patients: {female_count}")
@@ -216,12 +226,20 @@ All tests passing ✓
         in_memory_filtered = 400  # ms
         in_memory_count = 800  # ms
 
-        print(f"│ Simple SELECT (10 rows) │ ~{in_memory_simple:4d}ms     │ {exec_time:7.2f}ms  │ {in_memory_simple/exec_time:5.0f}x    │")
-        print(f"│ With search params      │ ~{in_memory_filtered:4d}ms     │ {male_time:7.2f}ms  │ {in_memory_filtered/male_time:5.0f}x    │")
-        print(f"│ COUNT query             │ ~{in_memory_count:4d}ms     │ {count_time:7.2f}ms  │ {in_memory_count/count_time:5.0f}x    │")
+        print(
+            f"│ Simple SELECT (10 rows) │ ~{in_memory_simple:4d}ms     │ {exec_time:7.2f}ms  │ {in_memory_simple/exec_time:5.0f}x    │"
+        )
+        print(
+            f"│ With search params      │ ~{in_memory_filtered:4d}ms     │ {male_time:7.2f}ms  │ {in_memory_filtered/male_time:5.0f}x    │"
+        )
+        print(
+            f"│ COUNT query             │ ~{in_memory_count:4d}ms     │ {count_time:7.2f}ms  │ {in_memory_count/count_time:5.0f}x    │"
+        )
 
         if cached_time > 0:
-            print(f"│ Cached query            │ ~{in_memory_simple:4d}ms     │ {cached_time:7.2f}ms  │ {'∞':>5s}    │")
+            print(
+                f"│ Cached query            │ ~{in_memory_simple:4d}ms     │ {cached_time:7.2f}ms  │ {'∞':>5s}    │"
+            )
 
         print("└─────────────────────────┴──────────────┴─────────────┴──────────┘")
 
@@ -237,7 +255,8 @@ All tests passing ✓
 
         print("\n📋 SUMMARY OF RESULTS")
         print("-" * 80)
-        print(f"""
+        print(
+            f"""
 ✅ Database Connection: Working
    - Connected to HAPI FHIR PostgreSQL
    - Connection pool: {db_client.pool.get_size()} connections active
@@ -270,22 +289,28 @@ All tests passing ✓
    - {exec_stats['total_queries']} queries tracked
    - Average time: {exec_stats['average_execution_time_ms']:.2f}ms
    - Runner type: {exec_stats['runner_type']}
-""")
+"""
+        )
 
         print("\n🚀 PERFORMANCE ACHIEVEMENTS")
         print("-" * 80)
-        avg_speedup = (in_memory_simple + in_memory_filtered + in_memory_count) / (exec_time + male_time + count_time)
-        print(f"""
+        avg_speedup = (in_memory_simple + in_memory_filtered + in_memory_count) / (
+            exec_time + male_time + count_time
+        )
+        print(
+            f"""
 Average Speedup: {avg_speedup:.0f}x faster than in-memory approach
 
 Best case (cached): Instant (∞x faster)
 Typical case: {in_memory_simple/exec_time:.0f}x faster
 COUNT queries: {in_memory_count/count_time:.0f}x faster
-""")
+"""
+        )
 
         print("\n📦 DELIVERABLES")
         print("-" * 80)
-        print("""
+        print(
+            """
 ✅ Components Built:
    1. HAPI DB Client (340 lines)
    2. Schema Introspector (280 lines)
@@ -304,11 +329,13 @@ COUNT queries: {in_memory_count/count_time:.0f}x faster
    - Architecture diagrams
    - Usage examples
    - Integration instructions
-""")
+"""
+        )
 
         print("\n🎯 NEXT STEPS")
         print("-" * 80)
-        print("""
+        print(
+            """
 Ready for Production Integration:
 
 1. Update .env:
@@ -324,7 +351,8 @@ Optional:
 - Add multi-resource JOINs (Phase 3.2)
 - Advanced FHIRPath features
 - Production benchmarking
-""")
+"""
+        )
 
         print("\n" + "=" * 80)
         print("  ✓ REVIEW COMPLETE - PostgresRunner Ready for Deployment!")
@@ -333,6 +361,7 @@ Optional:
     except Exception as e:
         print(f"\n✗ Test failed: {e}")
         import traceback
+
         traceback.print_exc()
 
     finally:

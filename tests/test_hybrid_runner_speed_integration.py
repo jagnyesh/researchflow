@@ -37,6 +37,7 @@ from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 # Fixtures
 # ============================================================================
 
+
 @pytest.fixture
 async def db_client():
     """Create HAPI database client"""
@@ -70,7 +71,7 @@ async def hybrid_runner(db_client, redis_client):
     return HybridRunner(
         db_client=db_client,
         redis_client=redis_client,
-        enable_cache=False  # Disable caching for tests
+        enable_cache=False,  # Disable caching for tests
     )
 
 
@@ -89,15 +90,15 @@ def sample_patients():
             "id": "speed-patient-001",
             "gender": "male",
             "birthDate": "1990-05-15",
-            "name": [{"family": "SpeedTest", "given": ["John"]}]
+            "name": [{"family": "SpeedTest", "given": ["John"]}],
         },
         {
             "resourceType": "Patient",
             "id": "speed-patient-002",
             "gender": "female",
             "birthDate": "1995-08-20",
-            "name": [{"family": "SpeedTest", "given": ["Jane"]}]
-        }
+            "name": [{"family": "SpeedTest", "given": ["Jane"]}],
+        },
     ]
 
 
@@ -105,22 +106,20 @@ def sample_patients():
 # Test 1: Batch Layer Query (Materialized View)
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_batch_layer_query(hybrid_runner, view_def_manager):
     """Test that HybridRunner queries batch layer (materialized view)"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 1: Batch Layer Query (Materialized View)")
-    print("="*60)
+    print("=" * 60)
 
     # Load patient_simple ViewDefinition
     view_def = view_def_manager.load("patient_simple")
     print(f"✓ Loaded ViewDefinition: {view_def['name']}")
 
     # Execute query (should use MaterializedViewRunner)
-    result = await hybrid_runner.execute(
-        view_definition=view_def,
-        max_resources=10
-    )
+    result = await hybrid_runner.execute(view_definition=view_def, max_resources=10)
 
     # Verify results
     assert isinstance(result, list), "❌ Result should be a list"
@@ -146,18 +145,19 @@ async def test_batch_layer_query(hybrid_runner, view_def_manager):
 # Test 2: Speed Layer Query Integration
 # ============================================================================
 
+
 @pytest.mark.asyncio
-async def test_speed_layer_query_integration(redis_client, hybrid_runner, view_def_manager, sample_patients):
+async def test_speed_layer_query_integration(
+    redis_client, hybrid_runner, view_def_manager, sample_patients
+):
     """Test that HybridRunner queries both batch and speed layers"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 2: Speed Layer Query Integration")
-    print("="*60)
+    print("=" * 60)
 
     # Cache patients in Redis (speed layer)
     for patient in sample_patients:
-        await redis_client.set_fhir_resource(
-            "Patient", patient["id"], patient, ttl_hours=24
-        )
+        await redis_client.set_fhir_resource("Patient", patient["id"], patient, ttl_hours=24)
 
     print(f"✓ Cached {len(sample_patients)} patients in Redis (speed layer)")
 
@@ -167,11 +167,10 @@ async def test_speed_layer_query_integration(redis_client, hybrid_runner, view_d
 
     # Re-create runner to pick up env var
     from app.clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
+
     db_client = await create_hapi_db_client()
     hybrid_runner_with_speed = HybridRunner(
-        db_client=db_client,
-        redis_client=redis_client,
-        enable_cache=False
+        db_client=db_client, redis_client=redis_client, enable_cache=False
     )
 
     try:
@@ -179,10 +178,7 @@ async def test_speed_layer_query_integration(redis_client, hybrid_runner, view_d
         view_def = view_def_manager.load("patient_simple")
 
         # Execute query (should query both layers)
-        result = await hybrid_runner_with_speed.execute(
-            view_definition=view_def,
-            max_resources=100
-        )
+        result = await hybrid_runner_with_speed.execute(view_definition=view_def, max_resources=100)
 
         # Verify results
         assert isinstance(result, list), "❌ Result should be a list"
@@ -216,18 +212,17 @@ async def test_speed_layer_query_integration(redis_client, hybrid_runner, view_d
 # Test 3: Speed Layer Disabled
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_speed_layer_disabled(redis_client, view_def_manager, sample_patients):
     """Test that HybridRunner respects USE_SPEED_LAYER=false"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 3: Speed Layer Disabled (USE_SPEED_LAYER=false)")
-    print("="*60)
+    print("=" * 60)
 
     # Cache patients in Redis
     for patient in sample_patients:
-        await redis_client.set_fhir_resource(
-            "Patient", patient["id"], patient, ttl_hours=24
-        )
+        await redis_client.set_fhir_resource("Patient", patient["id"], patient, ttl_hours=24)
 
     print(f"✓ Cached {len(sample_patients)} patients in Redis")
 
@@ -237,11 +232,10 @@ async def test_speed_layer_disabled(redis_client, view_def_manager, sample_patie
 
     # Create runner with speed layer disabled
     from app.clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
+
     db_client = await create_hapi_db_client()
     hybrid_runner_no_speed = HybridRunner(
-        db_client=db_client,
-        redis_client=redis_client,
-        enable_cache=False
+        db_client=db_client, redis_client=redis_client, enable_cache=False
     )
 
     try:
@@ -249,10 +243,7 @@ async def test_speed_layer_disabled(redis_client, view_def_manager, sample_patie
         view_def = view_def_manager.load("patient_simple")
 
         # Execute query (should NOT query speed layer)
-        result = await hybrid_runner_no_speed.execute(
-            view_definition=view_def,
-            max_resources=10
-        )
+        result = await hybrid_runner_no_speed.execute(view_definition=view_def, max_resources=10)
 
         # Verify results
         assert isinstance(result, list), "❌ Result should be a list"
@@ -286,12 +277,13 @@ async def test_speed_layer_disabled(redis_client, view_def_manager, sample_patie
 # Test 4: View Existence Checking
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_view_existence_checking(hybrid_runner, view_def_manager):
     """Test that HybridRunner correctly checks for materialized view existence"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 4: View Existence Checking")
-    print("="*60)
+    print("=" * 60)
 
     # Test with a view that exists
     view_def_exists = view_def_manager.load("patient_simple")
@@ -302,11 +294,7 @@ async def test_view_existence_checking(hybrid_runner, view_def_manager):
     print(f"✓ View '{view_name_exists}' exists: {exists}")
 
     # Test with a view that doesn't exist
-    fake_view_def = {
-        "name": "nonexistent_view_12345",
-        "resource": "Patient",
-        "select": []
-    }
+    fake_view_def = {"name": "nonexistent_view_12345", "resource": "Patient", "select": []}
     fake_view_name = fake_view_def["name"]
 
     exists_fake = await hybrid_runner._check_view_exists(fake_view_name)
@@ -330,28 +318,24 @@ async def test_view_existence_checking(hybrid_runner, view_def_manager):
 # Test 5: Statistics Tracking
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_statistics_tracking(redis_client, hybrid_runner, view_def_manager, sample_patients):
     """Test that HybridRunner tracks statistics correctly"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 5: Statistics Tracking")
-    print("="*60)
+    print("=" * 60)
 
     # Cache patients in Redis
     for patient in sample_patients:
-        await redis_client.set_fhir_resource(
-            "Patient", patient["id"], patient, ttl_hours=24
-        )
+        await redis_client.set_fhir_resource("Patient", patient["id"], patient, ttl_hours=24)
 
     # Load ViewDefinition
     view_def = view_def_manager.load("patient_simple")
 
     # Execute multiple queries
     for i in range(3):
-        result = await hybrid_runner.execute(
-            view_definition=view_def,
-            max_resources=5
-        )
+        result = await hybrid_runner.execute(view_definition=view_def, max_resources=5)
         print(f"✓ Query {i+1} completed: {len(result)} rows")
 
     # Get statistics
@@ -369,7 +353,9 @@ async def test_statistics_tracking(redis_client, hybrid_runner, view_def_manager
 
     # Verify statistics
     assert stats["runner_type"] == "hybrid", "❌ Wrong runner type"
-    assert stats["total_queries"] >= 3, f"❌ Should have at least 3 total queries, got {stats['total_queries']}"
+    assert (
+        stats["total_queries"] >= 3
+    ), f"❌ Should have at least 3 total queries, got {stats['total_queries']}"
     assert stats["speed_layer_queries"] >= 3, f"❌ Should have at least 3 speed layer queries"
     assert "materialized_runner_stats" in stats, "❌ Missing materialized_runner_stats"
 
@@ -380,18 +366,19 @@ async def test_statistics_tracking(redis_client, hybrid_runner, view_def_manager
 # Test 6: Gender Filter with Both Layers
 # ============================================================================
 
+
 @pytest.mark.asyncio
-async def test_gender_filter_both_layers(redis_client, hybrid_runner, view_def_manager, sample_patients):
+async def test_gender_filter_both_layers(
+    redis_client, hybrid_runner, view_def_manager, sample_patients
+):
     """Test filtering with both batch and speed layers"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 6: Gender Filter with Both Layers")
-    print("="*60)
+    print("=" * 60)
 
     # Cache patients in Redis (1 male, 1 female)
     for patient in sample_patients:
-        await redis_client.set_fhir_resource(
-            "Patient", patient["id"], patient, ttl_hours=24
-        )
+        await redis_client.set_fhir_resource("Patient", patient["id"], patient, ttl_hours=24)
 
     print(f"✓ Cached {len(sample_patients)} patients (1 male, 1 female)")
 
@@ -400,18 +387,14 @@ async def test_gender_filter_both_layers(redis_client, hybrid_runner, view_def_m
 
     # Query for male patients
     result_male = await hybrid_runner.execute(
-        view_definition=view_def,
-        search_params={"gender": "male"},
-        max_resources=100
+        view_definition=view_def, search_params={"gender": "male"}, max_resources=100
     )
 
     print(f"✓ Male patients query returned {len(result_male)} rows")
 
     # Query for female patients
     result_female = await hybrid_runner.execute(
-        view_definition=view_def,
-        search_params={"gender": "female"},
-        max_resources=100
+        view_definition=view_def, search_params={"gender": "female"}, max_resources=100
     )
 
     print(f"✓ Female patients query returned {len(result_female)} rows")
@@ -433,12 +416,15 @@ async def test_gender_filter_both_layers(redis_client, hybrid_runner, view_def_m
 # Test 7: Time-based Speed Layer Query
 # ============================================================================
 
+
 @pytest.mark.asyncio
-async def test_time_based_speed_layer(redis_client, hybrid_runner, view_def_manager, sample_patients):
+async def test_time_based_speed_layer(
+    redis_client, hybrid_runner, view_def_manager, sample_patients
+):
     """Test that speed layer only returns recent data"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 7: Time-based Speed Layer Query")
-    print("="*60)
+    print("=" * 60)
 
     # Cache old patient
     await redis_client.set_fhir_resource(
@@ -463,10 +449,7 @@ async def test_time_based_speed_layer(redis_client, hybrid_runner, view_def_mana
     view_def = view_def_manager.load("patient_simple")
 
     # Execute query - speed layer should query with default 24h lookback
-    result = await hybrid_runner.execute(
-        view_definition=view_def,
-        max_resources=100
-    )
+    result = await hybrid_runner.execute(view_definition=view_def, max_resources=100)
 
     # Verify results
     assert len(result) > 0, "❌ Should return results"
@@ -484,12 +467,13 @@ async def test_time_based_speed_layer(redis_client, hybrid_runner, view_def_mana
 # Test 8: Empty Speed Layer
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_empty_speed_layer(hybrid_runner, view_def_manager):
     """Test HybridRunner with empty Redis cache"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 8: Empty Speed Layer")
-    print("="*60)
+    print("=" * 60)
 
     # Don't cache anything in Redis
 
@@ -497,10 +481,7 @@ async def test_empty_speed_layer(hybrid_runner, view_def_manager):
     view_def = view_def_manager.load("patient_simple")
 
     # Execute query (should work with batch layer only)
-    result = await hybrid_runner.execute(
-        view_definition=view_def,
-        max_resources=10
-    )
+    result = await hybrid_runner.execute(view_definition=view_def, max_resources=10)
 
     # Verify results from batch layer
     assert isinstance(result, list), "❌ Result should be a list"
@@ -520,12 +501,13 @@ async def test_empty_speed_layer(hybrid_runner, view_def_manager):
 # Test 9: Multiple ViewDefinitions
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_multiple_view_definitions(hybrid_runner, view_def_manager):
     """Test HybridRunner with different ViewDefinitions"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 9: Multiple ViewDefinitions")
-    print("="*60)
+    print("=" * 60)
 
     # Test multiple view definitions
     view_names = ["patient_simple", "condition_simple"]
@@ -534,10 +516,7 @@ async def test_multiple_view_definitions(hybrid_runner, view_def_manager):
         view_def = view_def_manager.load(view_name)
         print(f"\n  Testing {view_name}...")
 
-        result = await hybrid_runner.execute(
-            view_definition=view_def,
-            max_resources=5
-        )
+        result = await hybrid_runner.execute(view_definition=view_def, max_resources=5)
 
         assert isinstance(result, list), f"❌ Result for {view_name} should be a list"
         print(f"  ✓ {view_name}: {len(result)} rows")
@@ -558,19 +537,17 @@ async def test_multiple_view_definitions(hybrid_runner, view_def_manager):
 # Test 10: Clear View Cache
 # ============================================================================
 
+
 @pytest.mark.asyncio
 async def test_clear_view_cache(hybrid_runner, view_def_manager):
     """Test clearing the view existence cache"""
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("TEST 10: Clear View Cache")
-    print("="*60)
+    print("=" * 60)
 
     # Query a view to populate cache
     view_def = view_def_manager.load("patient_simple")
-    result = await hybrid_runner.execute(
-        view_definition=view_def,
-        max_resources=5
-    )
+    result = await hybrid_runner.execute(view_definition=view_def, max_resources=5)
 
     # Check cache is populated
     stats_before = hybrid_runner.get_statistics()
@@ -587,10 +564,7 @@ async def test_clear_view_cache(hybrid_runner, view_def_manager):
     print(f"✓ Views cached after clear: {stats_after['views_cached']}")
 
     # Query again to repopulate
-    result2 = await hybrid_runner.execute(
-        view_definition=view_def,
-        max_resources=5
-    )
+    result2 = await hybrid_runner.execute(view_definition=view_def, max_resources=5)
 
     stats_final = hybrid_runner.get_statistics()
     assert stats_final["views_cached"] > 0, "❌ Cache should be repopulated"

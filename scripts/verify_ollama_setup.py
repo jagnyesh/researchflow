@@ -15,11 +15,11 @@ from dotenv import load_dotenv
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Color codes for terminal output
-GREEN = '\033[92m'
-YELLOW = '\033[93m'
-RED = '\033[91m'
-BLUE = '\033[94m'
-RESET = '\033[0m'
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+BLUE = "\033[94m"
+RESET = "\033[0m"
 
 
 def print_header(text):
@@ -87,7 +87,7 @@ def check_ollama_api():
     print_header("STEP 3: Ollama API Check")
 
     load_dotenv()
-    base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
     try:
         response = requests.get(f"{base_url}/api/tags", timeout=5)
@@ -95,13 +95,13 @@ def check_ollama_api():
             print_success(f"Ollama API responding at {base_url}")
 
             data = response.json()
-            models = data.get('models', [])
+            models = data.get("models", [])
             print_success(f"Found {len(models)} installed model(s)")
 
             for model in models:
-                name = model.get('name', 'unknown')
-                size_bytes = model.get('size', 0)
-                size_gb = size_bytes / (1024 ** 3)
+                name = model.get("name", "unknown")
+                size_bytes = model.get("size", 0)
+                size_gb = size_bytes / (1024**3)
                 print(f"  • {name} ({size_gb:.2f} GB)")
 
             return True, models
@@ -124,36 +124,36 @@ def check_env_configuration():
     load_dotenv()
 
     # Check ANTHROPIC_API_KEY
-    anthropic_key = os.getenv('ANTHROPIC_API_KEY')
-    if anthropic_key and anthropic_key.startswith('sk-ant-'):
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    if anthropic_key and anthropic_key.startswith("sk-ant-"):
         print_success(f"ANTHROPIC_API_KEY: {anthropic_key[:20]}...")
     else:
         print_warning("ANTHROPIC_API_KEY not set or invalid")
 
     # Check SECONDARY_LLM_PROVIDER
-    provider = os.getenv('SECONDARY_LLM_PROVIDER', 'anthropic')
+    provider = os.getenv("SECONDARY_LLM_PROVIDER", "anthropic")
     print_success(f"SECONDARY_LLM_PROVIDER: {provider}")
 
     # Check provider-specific config
-    if provider == 'ollama':
-        ollama_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
+    if provider == "ollama":
+        ollama_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         print_success(f"OLLAMA_BASE_URL: {ollama_url}")
 
-        model = os.getenv('SECONDARY_LLM_MODEL', 'not set')
-        if model and model != 'not set':
+        model = os.getenv("SECONDARY_LLM_MODEL", "not set")
+        if model and model != "not set":
             print_success(f"SECONDARY_LLM_MODEL: {model}")
         else:
             print_warning("SECONDARY_LLM_MODEL not set (will use default)")
 
-    elif provider == 'openai':
-        openai_key = os.getenv('OPENAI_API_KEY')
-        if openai_key and openai_key.startswith('sk-'):
+    elif provider == "openai":
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and openai_key.startswith("sk-"):
             print_success(f"OPENAI_API_KEY: {openai_key[:20]}...")
         else:
             print_error("OPENAI_API_KEY not set but SECONDARY_LLM_PROVIDER=openai")
 
     # Check fallback setting
-    fallback = os.getenv('ENABLE_LLM_FALLBACK', 'true')
+    fallback = os.getenv("ENABLE_LLM_FALLBACK", "true")
     print_success(f"ENABLE_LLM_FALLBACK: {fallback}")
 
     return True
@@ -164,12 +164,12 @@ def check_recommended_models(installed_models):
     print_header("STEP 5: Recommended Models Check")
 
     recommended = {
-        'llama3.2:3b': '2GB - Fastest, good for testing',
-        'llama3:8b': '4.7GB - Best balance (recommended)',
-        'phi3.5': '2.2GB - Microsoft, very fast',
+        "llama3.2:3b": "2GB - Fastest, good for testing",
+        "llama3:8b": "4.7GB - Best balance (recommended)",
+        "phi3.5": "2.2GB - Microsoft, very fast",
     }
 
-    installed_names = [m.get('name', '') for m in installed_models]
+    installed_names = [m.get("name", "") for m in installed_models]
 
     print("Checking for recommended models:\n")
 
@@ -194,8 +194,8 @@ def test_ollama_inference():
     print_header("STEP 6: Ollama Inference Test")
 
     load_dotenv()
-    base_url = os.getenv('OLLAMA_BASE_URL', 'http://localhost:11434')
-    model = os.getenv('SECONDARY_LLM_MODEL', 'llama3:8b')
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    model = os.getenv("SECONDARY_LLM_MODEL", "llama3:8b")
 
     try:
         print(f"Testing inference with model: {model}")
@@ -203,17 +203,13 @@ def test_ollama_inference():
 
         response = requests.post(
             f"{base_url}/api/generate",
-            json={
-                "model": model,
-                "prompt": "Say hello in one sentence",
-                "stream": False
-            },
-            timeout=30
+            json={"model": model, "prompt": "Say hello in one sentence", "stream": False},
+            timeout=30,
         )
 
         if response.status_code == 200:
             data = response.json()
-            generated_text = data.get('response', '').strip()
+            generated_text = data.get("response", "").strip()
 
             if generated_text:
                 print_success("Inference successful!")
@@ -250,13 +246,13 @@ def main():
     results = {}
 
     # Run all checks
-    results['binary'] = check_ollama_binary()
-    results['service'] = check_ollama_service()
+    results["binary"] = check_ollama_binary()
+    results["service"] = check_ollama_service()
     api_ok, models = check_ollama_api()
-    results['api'] = api_ok
-    results['config'] = check_env_configuration()
-    results['models'] = check_recommended_models(models) if api_ok else False
-    results['inference'] = test_ollama_inference() if api_ok and models else False
+    results["api"] = api_ok
+    results["config"] = check_env_configuration()
+    results["models"] = check_recommended_models(models) if api_ok else False
+    results["inference"] = test_ollama_inference() if api_ok and models else False
 
     # Summary
     print_header("VERIFICATION SUMMARY")
