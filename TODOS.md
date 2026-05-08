@@ -50,6 +50,9 @@ These are scaffolding for the Sprint 8 prompt-optimization work (BACKLOG.md: 73%
 - `tests/test_referential_integrity.py` — needs Postgres
 - `tests/test_full_workflow_e2e.py` — needs `psycopg2` (also missing from `requirements-dev.txt`)
 - `tests/test_sql_adapter.py` — DB-dependent
+- `tests/test_redis_client.py` — needs Redis on localhost:6379
+- `tests/test_speed_layer_runner.py` — needs Redis (Lambda speed layer)
+- `tests/test_hybrid_runner_speed_integration.py` — needs Redis + Postgres (Lambda hybrid runner)
 - `tests/sql_on_fhir/test_sql_on_fhir_integration.py` — needs HAPI FHIR + Postgres
 - `tests/e2e/` (entire directory)
 - `tests/integration/` (entire directory)
