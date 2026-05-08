@@ -116,7 +116,7 @@ async def get_checkpointer() -> AsyncSqliteSaver:
     import asyncio
     import gc
 
-    global _checkpointer_instance, _checkpointer_context_manager, _checkpointer_creation_loop_id, _checkpointer_mutex
+    global _checkpointer_instance, _checkpointer_context_manager, _checkpointer_creation_loop_id
 
     # Get current event loop information
     try:
@@ -244,7 +244,7 @@ async def clear_checkpointer_cache(db_path: str = None):
         # Next get_checkpointer() call will create new instance
         ```
     """
-    global _checkpointer_instance, _checkpointer_context_manager, _checkpointer_creation_loop_id, _checkpointer_mutex
+    global _checkpointer_instance, _checkpointer_context_manager, _checkpointer_creation_loop_id
 
     with _checkpointer_mutex:
         if _checkpointer_instance is not None and _checkpointer_context_manager is not None:

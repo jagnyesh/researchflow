@@ -11,6 +11,7 @@ Validates feasibility of research requests by:
 from typing import Dict, Any, List
 import logging
 import os
+import traceback
 from .base_agent import BaseAgent
 from ..utils.sql_generator import SQLGenerator
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
