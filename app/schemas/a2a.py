@@ -6,7 +6,6 @@ from pydantic import Field
 
 from app.schemas import PHIInputModel
 
-
 # Service-token credentials: bounded length, non-empty.
 ServiceCredential = Annotated[str, Field(min_length=1, max_length=200)]
 

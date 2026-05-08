@@ -17,7 +17,6 @@ from pydantic import BaseModel
 
 from .auth import decode_access_token
 
-
 # HTTP Bearer token scheme (Authorization: Bearer <token>)
 security = HTTPBearer()
 

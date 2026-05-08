@@ -30,7 +30,6 @@ from app.database.models import User as UserModel
 from app.schemas.auth import LoginRequest
 from sqlalchemy import select
 
-
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
 

@@ -5,7 +5,6 @@ from typing import Literal, Optional
 from app.schemas import EmailStr, PHIInputModel, ShortText
 from app.schemas.auth import PasswordField
 
-
 # Role discipline: researchers can submit/view, data stewards can approve, admins can manage.
 Role = Literal["researcher", "data_steward", "admin"]
 

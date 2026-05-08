@@ -3,7 +3,6 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
-
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
 # HAPI FHIR database URL - used for FHIR data queries (patient demographics, conditions, etc.)
 # Uses asyncpg driver for async PostgreSQL connections

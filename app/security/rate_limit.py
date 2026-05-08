@@ -17,7 +17,6 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 from fastapi import Request, FastAPI
 
-
 # Create limiter instance
 # Key function: Uses client IP address for rate limit tracking
 # Default limits can be overridden per endpoint

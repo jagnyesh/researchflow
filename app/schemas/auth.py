@@ -6,7 +6,6 @@ from pydantic import Field
 
 from app.schemas import EmailStr, PHIInputModel
 
-
 # Password fields: bound length to prevent 1MB request bodies; no minimum length
 # enforcement here (that's Phase 1.3 password-policy territory).
 PasswordField = Annotated[str, Field(min_length=1, max_length=200)]
