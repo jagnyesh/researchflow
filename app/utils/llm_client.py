@@ -31,7 +31,7 @@ class LLMClient:
     and medical terminology mapping.
     """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-7-sonnet-20250219"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "claude-sonnet-4-6"):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         self.model = model
 
@@ -273,7 +273,7 @@ Return JSON:
         # Sprint 8 Optimization 2: Use Haiku for simple classification (10x cheaper)
         # Haiku 3.5 is sufficient for medical term classification
         # Cost: ~$0.0001 per call vs ~$0.001 with Sonnet (90% savings)
-        return await self.extract_structured_json(prompt, "", model="claude-3-5-haiku-20241022")
+        return await self.extract_structured_json(prompt, "", model="claude-haiku-4-5-20251001")
 
     async def extract_medical_concepts_batch(
         self, criteria_list: list[str]
@@ -327,7 +327,7 @@ Return JSON array with one entry per criterion (in same order):
   ]
 }}"""
 
-        result = await self.extract_structured_json(prompt, "", model="claude-3-5-haiku-20241022")
+        result = await self.extract_structured_json(prompt, "", model="claude-haiku-4-5-20251001")
 
         # Extract results array
         results = result.get("results", [])
