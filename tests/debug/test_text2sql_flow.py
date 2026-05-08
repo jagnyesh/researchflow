@@ -149,14 +149,18 @@ class Text2SQLTester:
 
         # Add filters as inclusion criteria
         for key, value in intent.filters.items():
-            requirements["inclusion_criteria"].append({
-                "text": f"{key}: {value}",
-                "concepts": [{
-                    "term": str(value),
-                    "type": self._infer_concept_type(key),
-                    "details": f"From query: {user_query}",
-                }]
-            })
+            requirements["inclusion_criteria"].append(
+                {
+                    "text": f"{key}: {value}",
+                    "concepts": [
+                        {
+                            "term": str(value),
+                            "type": self._infer_concept_type(key),
+                            "details": f"From query: {user_query}",
+                        }
+                    ],
+                }
+            )
 
         return requirements
 

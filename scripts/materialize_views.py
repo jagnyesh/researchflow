@@ -94,9 +94,7 @@ class ViewMaterializer:
 
             # Generate SQL using the runner's query builder
             logger.info(f"  Generating SQL for {resource_type}...")
-            query = self.runner.builder.build_query(
-                view_definition=view_def
-            )
+            query = self.runner.builder.build_query(view_definition=view_def)
 
             generated_sql = query.sql
 

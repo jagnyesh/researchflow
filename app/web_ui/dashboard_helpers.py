@@ -50,16 +50,14 @@ async def get_agent_metrics_from_db() -> List[Dict[str, Any]]:
 
             # Count successful executions
             success_query = select(func.count(AgentExecution.id)).where(
-                AgentExecution.agent_id == agent_id,
-                AgentExecution.status == "completed"
+                AgentExecution.agent_id == agent_id, AgentExecution.status == "completed"
             )
             success_result = await session.execute(success_query)
             successful = success_result.scalar() or 0
 
             # Count failed executions
             failed_query = select(func.count(AgentExecution.id)).where(
-                AgentExecution.agent_id == agent_id,
-                AgentExecution.status == "failed"
+                AgentExecution.agent_id == agent_id, AgentExecution.status == "failed"
             )
             failed_result = await session.execute(failed_query)
             failed = failed_result.scalar() or 0
@@ -67,13 +65,15 @@ async def get_agent_metrics_from_db() -> List[Dict[str, Any]]:
             # Calculate success rate
             success_rate = (successful / total * 100) if total > 0 else 0
 
-            metrics.append({
-                "agent_id": agent_id,
-                "total_executions": total,
-                "successful": successful,
-                "failed": failed,
-                "success_rate": round(success_rate, 1),
-            })
+            metrics.append(
+                {
+                    "agent_id": agent_id,
+                    "total_executions": total,
+                    "successful": successful,
+                    "failed": failed,
+                    "success_rate": round(success_rate, 1),
+                }
+            )
 
         return metrics
 
@@ -93,7 +93,9 @@ async def get_all_requests_from_db() -> List[Dict[str, Any]]:
         return [
             {
                 "id": req.id,
-                "title": req.initial_request[:100] if req.initial_request else "Untitled",  # Use first 100 chars of request
+                "title": (
+                    req.initial_request[:100] if req.initial_request else "Untitled"
+                ),  # Use first 100 chars of request
                 "status": req.current_state,
                 "workflow_state": req.current_state,
                 "created_at": req.created_at,
@@ -156,12 +158,14 @@ async def get_analytics_from_db() -> Dict[str, Any]:
         completed = completed_result.scalar() or 0
 
         in_progress_query = select(func.count(ResearchRequest.id)).where(
-            ResearchRequest.current_state.in_([
-                WorkflowState.REQUIREMENTS_GATHERING,
-                WorkflowState.FEASIBILITY_VALIDATION,
-                WorkflowState.DATA_EXTRACTION,
-                WorkflowState.QA_VALIDATION,
-            ])
+            ResearchRequest.current_state.in_(
+                [
+                    WorkflowState.REQUIREMENTS_GATHERING,
+                    WorkflowState.FEASIBILITY_VALIDATION,
+                    WorkflowState.DATA_EXTRACTION,
+                    WorkflowState.QA_VALIDATION,
+                ]
+            )
         )
         in_progress_result = await session.execute(in_progress_query)
         in_progress = in_progress_result.scalar() or 0
@@ -184,5 +188,7 @@ async def get_analytics_from_db() -> Dict[str, Any]:
             "in_progress_requests": in_progress,
             "total_agent_executions": total_executions,
             "open_escalations": open_escalations,
-            "completion_rate": round((completed / total_requests * 100) if total_requests > 0 else 0, 1),
+            "completion_rate": round(
+                (completed / total_requests * 100) if total_requests > 0 else 0, 1
+            ),
         }

@@ -29,9 +29,7 @@ async def test_query_interpreter_condition_filter():
     interpreter = QueryInterpreter()
 
     # Parse diabetes query
-    intent = await interpreter.interpret_query(
-        "Show me patients with type 2 diabetes"
-    )
+    intent = await interpreter.interpret_query("Show me patients with type 2 diabetes")
 
     # Verify query intent
     assert intent.query_type in ["list", "filter"]
@@ -45,13 +43,10 @@ async def test_query_interpreter_lab_results():
     interpreter = QueryInterpreter()
 
     # Parse lab query
-    intent = await interpreter.interpret_query(
-        "Find patients with hemoglobin less than 12"
-    )
+    intent = await interpreter.interpret_query("Find patients with hemoglobin less than 12")
 
     # Verify query intent
     assert "observation_labs" in intent.view_definitions
     assert any(
-        "hemoglobin" in str(f).lower() or "hb" in str(f).lower()
-        for f in intent.filters.values()
+        "hemoglobin" in str(f).lower() or "hb" in str(f).lower() for f in intent.filters.values()
     )
