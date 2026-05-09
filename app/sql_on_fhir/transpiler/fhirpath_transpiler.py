@@ -183,6 +183,37 @@ class FHIRPathTranspiler:
         return "true"
 
     @staticmethod
+    def _split_top_level_dots(expr: str) -> List[str]:
+        """Split a FHIRPath expression on `.` at top level only.
+
+        Bug 15 fix (issue #16): naive `expr.split(".")` breaks paths containing
+        quoted URLs like `where(system='http://terminology.hl7.org/...')`. The
+        URL's dots get split too, producing fragments the function-call regex
+        can't recognize. This helper preserves quoted strings and parenthesized
+        argument lists as single segments.
+
+        Used by _transpile_simple_path. Same logic shape as _split_top_level_kw
+        but splits on `.` instead of a string keyword.
+        """
+        parts: List[str] = []
+        depth = 0
+        in_quote = False
+        last = 0
+        for i, ch in enumerate(expr):
+            if ch == "'":
+                in_quote = not in_quote
+            elif not in_quote:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                elif depth == 0 and ch == ".":
+                    parts.append(expr[last:i])
+                    last = i + 1
+        parts.append(expr[last:])
+        return parts
+
+    @staticmethod
     def _split_top_level_kw(expr: str, sep: str) -> List[str]:
         """Split `expr` on `sep` at top level only (skipping inside parens).
 
@@ -235,7 +266,10 @@ class FHIRPathTranspiler:
             variants = ", ".join(f"{base}{op}'{v}'" for v in self._CHOICE_FIELDS[fhir_path])
             return FHIRPathExpression(path=fhir_path, sql=f"COALESCE({variants})")
 
-        segments = fhir_path.split(".")
+        # Bug 15 fix (issue #16): split on `.` at top level only, preserving quoted
+        # strings and parenthesized arg lists. Naive split broke URLs in
+        # where(system='http://...').
+        segments = self._split_top_level_dots(fhir_path)
 
         # Bug 4/6 fix (issue #12): function-call segments like split('/'), last(),
         # replace('Patient/', '') need real function dispatch, not literal JSON-key
@@ -469,35 +503,48 @@ class FHIRPathTranspiler:
         Returns:
             FHIRPathExpression accessing first array element
         """
-        # Remove .first() and access [0]
-        base_path = fhir_path.replace(".first()", "")
+        # Bug 14 fix (issue #16): handle middle-position .first(). Previously did
+        # naive `replace(".first()", "")` which strips ALL .first() occurrences.
+        # For `dosageInstruction.first().text`, that produced `dosageInstruction.text`
+        # — lost array-indexing semantics. Now we find the FIRST .first(), split
+        # there, take element 0 of the prefix, and recursively dispatch the suffix
+        # with that as context. Multi-.first() patterns like
+        # `dosageInstruction.first().doseAndRate.first().dose...` recurse naturally
+        # through transpile().
+        idx = fhir_path.find(".first()")
+        if idx == -1:
+            return self._transpile_simple_path(fhir_path, as_text, context_path)
 
-        # Bug 13 fix (issue #12): if a MID-PATH segment is already a known array
-        # field, Bug 3's array-position logic already took element 0 there. The
-        # prefix resolves to a scalar; .first() is redundant. Adding ->>0 on a
-        # scalar produces "operator is not unique" or returns NULL.
-        # Example: `clinicalStatus.coding.code.first()` — coding is in ARRAY_FIELDS
-        # (mid-path), so prefix is ...->'coding'->0->'code' (first coding's code).
-        # vs. `given.first()` (no mid-path arrays) — .first() IS needed to take
-        # element 0 of the given[] array.
-        # Initial Bug 13 fix checked the LAST segment, which was wrong: it bypassed
-        # array-indexing for `given.first()` (regressed patient_demographics in #12).
-        segments_no_first = base_path.split(".")
-        has_mid_path_array = any(seg in self._ARRAY_FIELDS for seg in segments_no_first[:-1])
+        prefix = fhir_path[:idx]
+        after = fhir_path[idx + len(".first()") :]  # starts with "." or empty
+
+        # Middle-position .first() — Bug 14
+        if after:
+            suffix = after.lstrip(".")
+            prefix_expr = self._transpile_simple_path(
+                prefix, as_text=False, context_path=context_path
+            )
+            middle_sql = f"({prefix_expr.sql})->0"
+            return self.transpile(suffix, as_text=as_text, context_path=middle_sql)
+
+        # End-of-path .first() — apply Bug 13 + Bug 7 logic
+        # Bug 13 (issue #12): if a MID-PATH segment is in _ARRAY_FIELDS, Bug 3's
+        # array-position logic already took element 0 there. Prefix already resolves
+        # to scalar; .first() is redundant. Example: `clinicalStatus.coding.code.first()`
+        # — coding is in ARRAY_FIELDS (mid-path), prefix is ...->'coding'->0->'code'.
+        # vs. `given.first()` (no mid-path arrays) — .first() IS needed.
+        prefix_segments = self._split_top_level_dots(prefix)
+        has_mid_path_array = any(seg in self._ARRAY_FIELDS for seg in prefix_segments[:-1])
         if has_mid_path_array:
-            return self._transpile_simple_path(base_path, as_text, context_path)
+            return self._transpile_simple_path(prefix, as_text, context_path)
 
-        # Transpile base path (jsonb result for array indexing)
-        base_expr = self._transpile_simple_path(base_path, False, context_path)
-
-        # Bug 7 fix (issue #11): respect as_text. Previously both branches emitted ->0
-        # (jsonb). When called from a text context (column rendering, COALESCE for
-        # string concat in Bug 8), we need ->>0 to coerce to text. The dead-code
-        # if/else made every .first() return jsonb regardless of caller intent.
+        prefix_expr = self._transpile_simple_path(prefix, False, context_path)
+        # Bug 7 (issue #11): respect as_text. Previously dead-code if/else always
+        # emitted ->0 (jsonb), broke text-context callers like COALESCE in concat.
         if as_text:
-            sql = f"({base_expr.sql})->>0"
+            sql = f"({prefix_expr.sql})->>0"
         else:
-            sql = f"({base_expr.sql})->0"
+            sql = f"({prefix_expr.sql})->0"
 
         return FHIRPathExpression(path=fhir_path, sql=sql)
 
