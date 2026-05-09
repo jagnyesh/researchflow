@@ -77,6 +77,51 @@ These are scaffolding for the Sprint 8 prompt-optimization work (BACKLOG.md: 73%
 
 ---
 
+## CRITICAL — SQL-on-FHIR pipeline unimplemented (blocks portfolio sprint)
+
+**Priority:** P0 (blocks portfolio demo + any cohort-discovery use case)
+**Component:** `app/utils/sql_generator.py`, `scripts/materialize_views.py`, `app/sql_on_fhir/`
+**Discovered:** 2026-05-09 via /investigate during portfolio sprint Day 0 dry run prep
+**Symptom:** Every cohort query against real Synthea data returns 0 patients. Agent stack appears to work end-to-end via LangSmith traces, but actual SQL execution layer fails silently.
+
+**Root causes (cascading, in failure order):**
+
+1. **`scripts/materialize_views.py` is broken** — passes FHIRPath expressions directly into Postgres `CREATE MATERIALIZED VIEW` SQL. Postgres can't parse FHIRPath. Result: 6/7 view creations fail with `syntax error at or near "/"`; 1 succeeds (`patient_simple`) but with 0 rows because the underlying SELECT also doesn't translate FHIRPath → SQL.
+
+2. **`app/utils/sql_generator.py:35-46` hardcoded to query the (broken) materialized views.** `use_materialized_views=True` by default; the legacy `False` mode targets a `patient`/`condition`/`observation` schema that also doesn't exist in HAPI's actual table layout (`HFJ_RESOURCE`, `HFJ_RES_VER`, etc.).
+
+3. **`SQLGenerator._build_criteria_conditions:303-340` has no `medication` concept handler.** Medication criteria (e.g., "patients on metformin") are silently dropped.
+
+4. **`SQLGenerator` has no `encounter` concept handler; no encounter view definition exists** in `app/sql_on_fhir/view_definitions/`. Encounter-count criteria ("≥3 encounters in past 12 months") cannot be represented.
+
+5. **`SQLGenerator.condition_code_column = "icd10_display"` (sql_generator.py:45)** — but `condition_simple.icd10_display` is populated from `code.coding.where(system='http://hl7.org/fhir/sid/icd-10-cm').display.first()`. Synthea uses SNOMED, not ICD-10. So `icd10_display` is NULL for every Synthea condition. Should query `snomed_display` or `code_text`.
+
+**Fix scope estimate:** 1-2 weeks of real engineering, not "polish work."
+
+**Fix sketches (in dependency order):**
+
+a) **Replace materialize_views.py FHIRPath→SQL translator**, OR rewrite the views as raw SQL against HAPI's actual `HFJ_*` tables (skip the FHIRPath spec layer entirely). 1-3 days.
+
+b) **Add medication concept handler** in `_build_criteria_conditions`. Should query the `medication_requests` view (which has a JSON definition but is currently broken-on-create per (a)). ~3-4 hours.
+
+c) **Add encounter view definition + concept handler** + `_build_encounter_clause` method. ~3-4 hours.
+
+d) **Fix the column-mapping bug** — either change `condition_code_column = "code_text"` (1 line) or add a code-system-aware fallback. ~30 min.
+
+e) **End-to-end integration test** against real Synthea data that asserts cohort > 0 for a basic query. Required regression guard. ~2-3 hours.
+
+**Alternative path to evaluate first (~1 hour spike):**
+Switch the orchestrator to use `InMemoryRunner` (`app/sql_on_fhir/runner/in_memory_runner.py`) instead of `MaterializedViewRunner`. InMemoryRunner uses `fhirpathpy` to evaluate FHIRPath against fetched FHIR resources directly — bypasses the broken batch layer entirely. May work without the multi-week fix. Worth a 1-hour spike before committing to the deeper rewrite.
+
+**Suggested next steps:**
+1. `/office-hours` to scope the SQL-on-FHIR fix sprint properly.
+2. `/plan-eng-review` once design is rough-drafted.
+3. `/to-issues` to break the fix into tickets.
+
+**Portfolio sprint impact:** Day 0 dry run is BLOCKED until at least the InMemoryRunner spike or the SQLGenerator surgery completes. Multi-week deferral.
+
+---
+
 ## CI infrastructure debt resolved in PR #8
 
 **Priority:** Done as of PR #8 (`feature/sprint6-security-baseline` → `main`)
