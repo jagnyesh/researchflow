@@ -1,32 +1,51 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.1 (Security Baseline) — **COMPLETE**, ready for PR
-**Phase:** 4 complete (E2E test + final HIPAA narrative)
-**Branch:** `feature/sprint6-security-baseline` (24+ commits unmerged: 8 audit + 8 schema + 3 TLS + 4 encryption + Phase 4)
-**Overall progress:** Sprint 6.1 100%; ~10/22 sprints overall
-**Last updated:** 2026-05-07
+**Sprint:** 6.2 (Lambda Architecture Finish) — Phase 1 COMPLETE, gate PROCEED, Phase 2 next
+**Phase:** 1.5 gate cleared 2026-05-09 (issue #14 milestone). Phase 1.6 (issue #15) up next.
+**Branch:** `feature/lambda-finish` (12 commits since main `f931164`)
+**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08 as squash `f931164`. Sprint 6.2 Phase 1 done; Phase 2 ahead. ~11/22 sprints overall.
+**Last updated:** 2026-05-09
 
 ## Active sprint goal
 
-Establish HIPAA-compliant security baseline as a prerequisite for any production deployment: JWT auth wired to PHI endpoints, audit middleware writing to a durable Redis-backed queue, input validation framework, TLS, encryption-at-rest design.
+Ship the real Lambda Architecture for SQL-on-FHIR (batch + speed + serving) so every "Lambda complete" claim in the README/CLAUDE/docs is verifiable from a fresh clone. Sprint 6.2 was triggered when /office-hours flagged 4 doc files claiming Lambda was complete while only 1/7 view defs materialized in production. Integrity-first: every claim either becomes true via implementation, or the claim gets rewritten.
 
-## In progress
+## In progress (Sprint 6.2)
 
-- [ ] Phase 1.5 — Wire `Depends(get_current_user)` + `@limiter.limit` onto PHI routes (`sql_on_fhir`, `research`, `analytics`, `materialized_views`, `approvals`); separate service-token auth for agent routes (`mcp`, `a2a`). **Note:** Phase 2.2 middleware now enforces auth on ALL non-allowlisted routes by default; the per-route `Depends` work in this phase is now defense-in-depth rather than primary gating.
-- [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
-- [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
-- [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
-- [x] Phase 3b — Encryption-at-rest shipped via 3 issues (#8 tracer + #9 remaining columns + #10 docs) + CSO findings 1+2 fix. Tier 1 scope: 4 columns total (`ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`/`exclusion_criteria`, `FeasibilityReport.phenotype_sql`). Spike outcome: `EncryptedType(JSON)` doesn't round-trip cleanly; fallback to `_EncryptedJSONImpl` TypeDecorator that wraps `StringEncryptedType(Text)` with explicit `json.dumps`/`loads`. Researcher PII deferred to Phase 3b.1.
-- [x] Phase 4 — E2E test (`tests/e2e/test_hipaa_baseline_e2e.py`: login → POST research request → encryption-on-disk + audit row visible + PHI-safe 422 negative tracer) + `docs/HIPAA_POSTURE.md` Sprint 6.1 baseline summary section (control-by-control table + reviewer Q&A).
+- [x] Phase 1.0 — Hand-verified anchor fixtures (3 anchors: patient_simple, patient_demographics, condition_simple) sourced from direct SQL against HAPI internal schema. Breaks the InMemoryRunner-as-oracle circularity flagged by codex review on the design doc.
+- [x] Phase 1.1 (issue #9) — Transpiler correctness harness. 41 parametrized tests (later 48 after #13 added unique-index check). Built TDD-style across 7 cycles. /qa mutation testing verified signal sensitivity for Bugs 1+9 before any fix shipped.
+- [x] Phase 1.2 (issues #10, #11, #12, #13, #16) — All 15 cataloged transpiler bugs fixed. 4 cataloged in design doc + 6 surfaced during /tdd implementation + Bug 13 surfaced during /qa mutation work + Bugs 14/15 surfaced during /tdd cycles. Catalog updates landed in design doc as bugs surfaced.
+- [x] Phase 1.5 (issue #14) — Gate decision: PROCEED. 7/7 view defs materialize, all 3 anchors PASS sample_values, MVR.get_schema fixed, UNIQUE INDEX in place for CONCURRENTLY refresh. See DECISIONS.md Sprint 6.2 entry.
+- [ ] Phase 1.6 (issue #15) — Switch streamlit demo from InMemoryRunner-bypass back to HybridRunner→MaterializedViewRunner path. Verify "female + diabetes" cohort returns 15 patients with <100ms latency.
+- [ ] Phase 2.0 — Poll-based speed layer improvements (Q4 from /plan-eng-review: scoped DOWN from push-based Subscription to improving the existing FHIRSubscriptionService poll interval to 30s + use r.fhir_id correctly + remove "fake" docstring). Plus on-demand POST /materialized_views/refresh endpoint with CONCURRENTLY (decision 2A).
+- [ ] Phase 2.1 — Validate HybridRunner.execute() merge + dedup against materialized + speed-layer overlap. Decision 9A (Redis access pattern: HSET vs sorted-set) decided at implementation time after reading existing merge code.
+- [ ] Phase 2.2 — Doc rewrite. README/CLAUDE/CONTEXT/DECISIONS Lambda claims updated to reality with cite-able tests/runbooks per claim. Delete docs/HealthLakeVsResearchFlowComparison.md (currently false). Re-enable 5 ignored Lambda test files in pytest.ini.
+- [ ] Phase 2.3 — Sprint close. Single squash PR to main (cohesive-PR strategy per Sprint 6.1 pattern).
 
-**Estimated remaining:** 0 days. Sprint 6.1 ships as one PR.
+**Estimated remaining:** ~7 days for Phase 1.6 + 2.0 + 2.1 + 2.2 + 2.3 (per revised budget in design doc).
 
 ## Blockers / decisions needed
 
-- Encryption-at-rest spike: `sqlalchemy-utils.StringEncryptedType` works at the column level on both SQLite and Postgres (it's transparent serialization, not a DB feature). The asyncpg-specific risk is the JSON-column composition (`StringEncryptedType` wrapping a JSON serializer round-trip) — that's the half-day spike. SQLite test path stays; production-on-Postgres remains the deployment requirement for other reasons.
-- Sprint 6.1 prioritized the HIPAA security baseline ahead of feature work; production-readiness gating is on baseline completeness, not on user-feedback signal.
+- None. Phase 1.5 gate cleared 2026-05-09 — see DECISIONS.md Sprint 6.2 entry. Phase 2 work proceeds per design doc.
+- One follow-on observation: observation_labs WHERE clause uses `category.coding.where(system='X' and code='Y').exists()` pattern that `transpile_where_predicate` doesn't support. View materializes (Bug 15 fix) but returns 0 rows because the WHERE evaluates to false. Not a Phase 1 blocker (no anchor depends on it), but a future-issue when observation analytics matter.
 
-## What just shipped
+## What just shipped (Sprint 6.2)
+
+Phase 1 (15 transpiler bugs, 7/7 view defs materialize, harness 48/48 PASS):
+
+- `df2fc49` (2026-05-09) — Issue #16: Bugs 14+15 close transpiler scope, 7/7 materialize
+- `d294d6f` (2026-05-09) — Issue #13: UNIQUE INDEX + Bug 9 MVR.get_schema
+- `aff19c1` (2026-05-09) — Issue #12: condition_simple anchor PASS — function-call parser (Bugs 4/5/6/13)
+- `2fd9e71` (2026-05-09) — Issue #11: patient_demographics anchor PASS — 7 fixes (Bugs 2/3/7/8/10/11/12)
+- `57f3cd4` (2026-05-09) — Issue #10: Bug 1 — resolve id from r.fhir_id
+- `749471c` (2026-05-09) — /cso fix — Bug 9 regression test added to harness
+- `f5e2b0f` (2026-05-09) — Issue #9: Phase 1.1 transpiler correctness harness (TDD-built across 7 cycles)
+- `c9d0a4e` (2026-05-09) — fixture: deceased_date for patient 144735 (Bug 2 half-coverage close)
+- `b4d723a` (2026-05-09) — TODOS update from /plan-eng-review (decision 9A: speed-layer Redis pattern deferred)
+- `27a8e19` (2026-05-09) — fixture: remove unverified country values (5A from /plan-eng-review)
+- `d1fe384` (2026-05-09) — Phase 1.0: hand-verified anchor fixtures
+
+## What just shipped (Sprint 6.1, for context — squash-merged 2026-05-08 as f931164)
 
 Sprint 6.1 Phase 3b — encryption-at-rest (3 commits, 12 encryption tests, ready for merge):
 
