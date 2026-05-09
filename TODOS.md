@@ -77,6 +77,23 @@ These are scaffolding for the Sprint 8 prompt-optimization work (BACKLOG.md: 73%
 
 ---
 
+## Sprint 6.2 (lambda-finish) — Phase 2.1 design decision deferred
+
+**Priority:** P2
+**Component:** `app/sql_on_fhir/runner/speed_layer_runner.py`, `app/sql_on_fhir/runner/hybrid_runner.py`
+**Decision needed:** Speed-layer Redis access pattern for HybridRunner merge + dedup.
+
+Two options surface during Phase 2.1 implementation:
+
+- **(a) Per-resource HSET**: `HSET cache:resource:{type}:{id} → JSON`. Read by enumerating MV result IDs then `HMGET`. Simple; requires HybridRunner to know which IDs to fetch before reading cache.
+- **(b) Per-resource-type sorted set with versionId score**: `ZADD cache:resource:{type} versionId json`. Range queries by recency; supports "fresher wins" dedup natively. More complex, better merge semantics.
+
+**Why deferred:** Plan didn't specify; both work at the no-prod-users-yet scale; choice depends on what `HybridRunner.execute()`'s existing merge code already implies. Read the existing code in Phase 2.1 to see which pattern the merge logic naturally fits, then commit.
+
+**Surfaced by:** /plan-eng-review on feature/lambda-finish, 2026-05-09 (Q9).
+
+---
+
 ## CI infrastructure debt resolved in PR #8
 
 **Priority:** Done as of PR #8 (`feature/sprint6-security-baseline` → `main`)
