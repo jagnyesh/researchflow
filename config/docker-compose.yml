@@ -132,8 +132,9 @@ services:
     image: conceptant/synthea-fhir:latest
     container_name: synthea-generator
     environment:
-      # Generate 100 patients
-      - POPULATION=100
+      # Generate 10000 patients (portfolio sprint Day -1 — design doc requires
+      # ≥10k for credible cohort counts in the canonical demo query)
+      - POPULATION=10000
       # Target HAPI FHIR server
       - FHIR_SERVER=http://hapi-fhir:8080/fhir
       # State to generate data for
