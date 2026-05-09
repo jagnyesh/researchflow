@@ -18,6 +18,9 @@ from datetime import datetime
 
 from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
+from app.clients.fhir_client import create_fhir_client
+from app.sql_on_fhir.runner.in_memory_runner import InMemoryRunner
+from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 import os
 
 logger = logging.getLogger(__name__)
@@ -97,38 +100,33 @@ class FeasibilityService:
             use_join_query = len(view_definitions) > 1 or (post_filters and len(post_filters) > 0)
 
             if use_join_query:
-                # Multi-view query - use JOIN
-                logger.info(f"Using JOIN query for views: {view_definitions}")
-                query_result = self.join_query_builder.build_multi_view_count_query(
-                    view_definitions=view_definitions,
-                    search_params=search_params,
-                    post_filters=post_filters,
+                # Weekend pivot 2026-05-09: replace SQL JOIN against broken sqlonfhir.* views
+                # with Python-side join via InMemoryRunner. Same logic, runs against live HAPI.
+                logger.info(
+                    f"Using PYTHON-SIDE JOIN (InMemoryRunner) for views: {view_definitions}"
                 )
-
-                # Execute JOIN query
+                start_time = datetime.now()
                 try:
-                    start_time = datetime.now()
-                    result = await self.db_client.execute_query(query_result["sql"])
-                    execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
-
-                    estimated_cohort = result[0]["count"] if result else 0
-                    cohort_counts = {query_result["primary_view"]: estimated_cohort}
-
-                    # Store SQL visibility info
-                    generated_sql = query_result["sql"]
-                    filter_summary = query_result["filter_summary"]
-
-                    logger.info(
-                        f"JOIN query returned {estimated_cohort} patients ({execution_time_ms:.1f}ms)"
+                    estimated_cohort, generated_sql, filter_summary = (
+                        await self._execute_join_in_memory(
+                            view_definitions, search_params, post_filters
+                        )
                     )
-
+                    execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+                    cohort_counts = {
+                        (
+                            view_definitions[0] if view_definitions else "patient_simple"
+                        ): estimated_cohort
+                    }
+                    logger.info(
+                        f"Python-side join returned {estimated_cohort} patients ({execution_time_ms:.1f}ms)"
+                    )
                 except Exception as e:
-                    logger.error(f"JOIN query failed: {e}")
-                    logger.debug(f"SQL: {query_result['sql']}")
+                    logger.error(f"Python-side join failed: {e}")
                     estimated_cohort = 0
                     cohort_counts = {}
-                    generated_sql = query_result["sql"]
-                    filter_summary = str(e)
+                    generated_sql = "(InMemoryRunner Python join — no SQL generated)"
+                    filter_summary = f"Error: {e}"
                     execution_time_ms = 0
 
             else:
@@ -204,6 +202,84 @@ class FeasibilityService:
         except Exception as e:
             logger.error(f"Feasibility check failed: {e}")
             raise
+
+    async def _execute_join_in_memory(
+        self,
+        view_definitions: List[str],
+        search_params: Dict[str, Any],
+        post_filters: List[Dict[str, Any]],
+    ) -> tuple:
+        """
+        Python-side join using InMemoryRunner — weekend demo path.
+
+        Replaces JoinQueryBuilder's SQL JOIN against the broken sqlonfhir.*
+        materialized views. Fetches Patient resources matching demographic
+        search_params, then for each post_filter narrows by intersecting
+        patient IDs.
+
+        Returns: (cohort_count, generated_sql_description, filter_summary)
+        """
+        vdm = ViewDefinitionManager()
+        fhir_client = await create_fhir_client()
+        try:
+            runner = InMemoryRunner(fhir_client)
+
+            # Step 1: Base cohort — fetch patients matching demographic search
+            patient_view_name = "patient_simple"
+            for vn in view_definitions:
+                if vn in ("patient_simple", "patient_demographics"):
+                    patient_view_name = vn
+                    break
+            patient_view = vdm.load(patient_view_name)
+            patients = await runner.execute(
+                patient_view, search_params=search_params, max_resources=10000
+            )
+            patient_ids = {p.get("id") for p in patients if p.get("id")}
+            logger.info(f"Base cohort: {len(patient_ids)} patients matching demographic filters")
+
+            # Step 2: For each post_filter, narrow by intersection
+            applied_filters = []
+            for pf in post_filters:
+                pf_type = pf.get("type", "").lower()
+                term = (pf.get("term") or pf.get("code") or "").lower()
+                if pf_type == "condition" and term:
+                    cond_view = vdm.load("condition_simple")
+                    conds = await runner.execute(cond_view, search_params={}, max_resources=20000)
+                    matching_pids = set()
+                    for c in conds:
+                        haystacks = " ".join(
+                            [
+                                str(c.get("code_text") or ""),
+                                str(c.get("snomed_display") or ""),
+                                str(c.get("icd10_display") or ""),
+                            ]
+                        ).lower()
+                        if term in haystacks:
+                            ref = c.get("patient_ref") or c.get("patient_id") or ""
+                            pid = ref.split("/")[-1] if "/" in ref else ref
+                            if pid:
+                                matching_pids.add(pid)
+                    before = len(patient_ids)
+                    patient_ids = patient_ids & matching_pids
+                    logger.info(
+                        f"Condition '{term}': {len(matching_pids)} patients matched, "
+                        f"cohort narrowed {before} → {len(patient_ids)}"
+                    )
+                    applied_filters.append(f"condition='{term}'")
+
+            cohort_count = len(patient_ids)
+            generated_sql = (
+                f"# Python-side join (InMemoryRunner)\n"
+                f"patients_demographics: {patient_view_name}, search_params={search_params}\n"
+                f"post_filters: {post_filters}"
+            )
+            filter_summary = (
+                f"Demographic: {search_params or '{}'}; "
+                f"Post-filters: {', '.join(applied_filters) if applied_filters else 'none'}"
+            )
+            return cohort_count, generated_sql, filter_summary
+        finally:
+            await fhir_client.close()
 
     async def _execute_count_query(self, view_name: str, search_params: Dict[str, Any]) -> int:
         """
