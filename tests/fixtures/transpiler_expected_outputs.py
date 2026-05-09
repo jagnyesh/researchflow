@@ -29,6 +29,22 @@ Critical transpiler-relevant facts captured during oracle generation:
    icd10_code and icd10_display columns must evaluate to NULL for all rows
    (transpiler should not crash on the where(system=...) filter; the filter
    should match no codings and .first() should yield NULL).
+
+Field-coverage note: every value in `sample_rows` is sourced from a direct
+SQL query captured in the Phase 1.0 commit message. The view def's `country`
+column is omitted from sample_rows — it was not part of the original anchor
+queries and adding it post-hoc would weaken the "hand-verified" oracle
+guarantee that distinguishes anchors from InMemoryRunner-derived expectations.
+The harness only asserts fields present in sample_rows; it ignores extra
+columns the materialized view emits. (Caught by /plan-eng-review as a real
+contamination of the integrity claim — fixed before Phase 1.1 starts.)
+
+Synthea data version: counts and sample IDs are pinned to the load present in
+hapi-postgres on 2026-05-09. If HAPI is reloaded with a different Synthea
+seed or population size, every anchor will FAIL with mismatched counts; that
+is the correct failure mode (the fixture is the data contract). Per /plan-eng-
+review decision 6A, docker-compose pins the Synthea seed so reloads are
+deterministic against this fixture.
 """
 
 PATIENT_SIMPLE = {
@@ -81,7 +97,6 @@ PATIENT_DEMOGRAPHICS = {
             "city": "Chicago",
             "state": "IL",
             "postal_code": "60651",
-            "country": "US",
         },
         "143687": {
             "id": "143687",
@@ -100,7 +115,6 @@ PATIENT_DEMOGRAPHICS = {
             "city": "Alton",
             "state": "IL",
             "postal_code": "62024",
-            "country": "US",
         },
         "144735": {
             "id": "144735",
@@ -118,7 +132,6 @@ PATIENT_DEMOGRAPHICS = {
             "city": "Romeoville",
             "state": "IL",
             "postal_code": "60441",
-            "country": "US",
         },
     },
     "key_column": "id",
