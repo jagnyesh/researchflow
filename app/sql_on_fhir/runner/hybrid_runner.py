@@ -163,7 +163,9 @@ class HybridRunner:
                         f"Merging batch layer ({len(batch_result)} rows) with "
                         f"speed layer ({speed_result['total_count']} patients)"
                     )
-                    return self._merge_batch_and_speed_results(batch_result, speed_result)
+                    return self._merge_batch_and_speed_results(
+                        batch_result, speed_result, view_definition
+                    )
 
             except Exception as e:
                 logger.warning(f"Speed layer query failed for '{view_name}': {e}. Using batch only")
@@ -341,34 +343,91 @@ class HybridRunner:
         return self._postgres_runner
 
     def _merge_batch_and_speed_results(
-        self, batch_result: List[Dict[str, Any]], speed_result: Dict[str, Any]
+        self,
+        batch_result: List[Dict[str, Any]],
+        speed_result: Dict[str, Any],
+        view_definition: Dict[str, Any],
     ) -> List[Dict[str, Any]]:
         """
-        Merge batch and speed layer results.
+        Merge batch and speed layer results, deduplicating by FHIR id.
 
-        For now, returns batch_result as-is since speed layer provides
-        patient IDs but not full row data. Future enhancement: append
-        speed layer resources as new rows.
+        Issue #19: previously a no-op (returned batch_result unchanged); the
+        Lambda Architecture's "fresher wins" guarantee depends on this method
+        actually merging. Cache resources are converted to view-def-shaped rows
+        via InMemoryRunner's row-extraction logic, then deduped against the
+        batch result by id.
+
+        Dedup policy: cache version wins on id collision. The cache holds the
+        most-recently-polled state of each resource (per issue #17), so it's
+        fresher than the materialized view by definition. Batch rows whose id
+        is in the cache are dropped; cache rows replace them. Batch rows whose
+        id is NOT in the cache pass through unchanged.
 
         Args:
             batch_result: Rows from batch layer (materialized views)
-            speed_result: Results from speed layer (Redis)
+            speed_result: Results from speed layer (Redis), shape:
+                          {total_count, resources: [FHIR resource dicts], ...}
+            view_definition: ViewDefinition (needed to extract column-shaped
+                             rows from raw FHIR resources)
 
         Returns:
-            Merged result list
+            Merged + deduped row list. Cache rows first (fresher), then
+            non-overlapping batch rows.
         """
-        # Note: Speed layer currently returns patient_ids, not full rows
-        # For compatibility with existing code that expects List[Dict],
-        # we return batch_result unchanged
-        #
-        # Future enhancement: Convert speed_result resources to row format
-        # and append to batch_result
+        cache_resources = speed_result.get("resources", [])
+        if not cache_resources:
+            # No-merge fast path — preserves the "no overhead when cache empty"
+            # behavior that test_merge_empty_cache_returns_batch_unchanged pins.
+            return batch_result
+
+        cache_rows = self._extract_rows_from_resources(cache_resources, view_definition)
+        cache_ids = {row.get("id") for row in cache_rows if row.get("id") is not None}
+
+        # Drop batch rows whose id is in the cache (cache wins)
+        deduped_batch = [row for row in batch_result if row.get("id") not in cache_ids]
+
+        merged = cache_rows + deduped_batch
         logger.info(
-            f"Merge summary: batch={len(batch_result)} rows, "
-            f"speed={speed_result.get('total_count', 0)} patients "
-            f"(speed layer patient IDs available but not merged into rows yet)"
+            "Merge: batch=%d → %d after dedup; cache=%d → %d rows; total=%d",
+            len(batch_result),
+            len(deduped_batch),
+            len(cache_resources),
+            len(cache_rows),
+            len(merged),
         )
-        return batch_result
+        return merged
+
+    def _extract_rows_from_resources(
+        self, resources: List[Dict[str, Any]], view_definition: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """Convert raw FHIR resources to view-def-shaped rows.
+
+        Reuses InMemoryRunner's per-resource transformation logic
+        (`_transform_resource`) so the column-extraction semantics stay
+        consistent across the speed-layer-merge path and the InMemory query
+        path. Reaching into a private method is intentional but a refactor
+        candidate — long-term, _transform_resource should be a module-level
+        function shared by both runners.
+
+        InMemoryRunner is constructed with `fhir_client=None` because we
+        only use the in-memory transformation path; the client is only
+        touched by InMemoryRunner.execute() which we don't call.
+        """
+        from app.sql_on_fhir.runner.in_memory_runner import InMemoryRunner
+
+        extractor = InMemoryRunner(fhir_client=None)
+        all_rows: List[Dict[str, Any]] = []
+        for resource in resources:
+            try:
+                rows = extractor._transform_resource(resource, view_definition)
+                all_rows.extend(rows)
+            except Exception as e:
+                logger.warning(
+                    "Failed to extract row from cached resource id=%s: %s",
+                    resource.get("id"),
+                    e,
+                )
+        return all_rows
 
     def clear_view_cache(self):
         """
