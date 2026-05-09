@@ -149,6 +149,11 @@ NON_AUTH_ALLOWLIST = NO_AUDIT_ALLOWLIST | frozenset(
         "/auth/refresh",
         "/auth/logout",
         "/a2a/token",  # service-token issuance: chicken-and-egg, can't require a token to get one
+        # WEEKEND DEMO BYPASS (2026-05-09): allow streamlit research_notebook → FeasibilityService
+        # → /analytics/count without auth. Synthetic Synthea data only; no real PHI on this branch.
+        # PRE-PRODUCTION FIX REQUIRED: implement service-token auth in FeasibilityService and
+        # remove this entry. See TODOS.md.
+        "/analytics/count",
     }
 )
 

@@ -151,6 +151,27 @@ class InMemoryRunner:
 
         return rows
 
+    async def execute_count(
+        self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
+    ) -> int:
+        """
+        Execute COUNT query for feasibility checks.
+
+        InMemoryRunner has no native COUNT(*) — fetches all rows then returns len().
+        For accurate counts uses the same execute() path with no max_resources cap.
+        Slower than PostgresRunner.execute_count() but works without DB-side views.
+
+        Added 2026-05-09 weekend pivot — analytics.py /analytics/count endpoint
+        calls runner.execute_count() and PhenotypeAgent flows through it via
+        FeasibilityService when VIEWDEF_RUNNER=in_memory.
+        """
+        view_name = view_definition.get("name")
+        logger.info(f"Executing COUNT (via fetch + len) for '{view_name}'")
+        rows = await self.execute(view_definition, search_params=search_params, max_resources=None)
+        count = len(rows)
+        logger.info(f"InMemoryRunner COUNT for '{view_name}': {count}")
+        return count
+
     async def _fetch_resources(
         self,
         resource_type: str,
