@@ -28,6 +28,7 @@ from tests.fixtures.transpiler_expected_outputs import (
 from tests.transpiler_harness import (
     execute_select,
     explain_parses,
+    has_unique_index_on_id,
     materialized_columns,
     query_count,
     query_sample,
@@ -121,6 +122,29 @@ async def test_sample_values_anchor(view_name, key_val, materialized_views):
     }
     assert not mismatches, f"Field mismatches for {view_name}/{key_val}:\n" + "\n".join(
         f"  {k}: expected={v['expected']!r}, actual={v['actual']!r}" for k, v in mismatches.items()
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("view_name", ALL_VIEW_DEFS)
+async def test_unique_index_on_id(view_name, materialized_views):
+    """Decision 8A (issue #13): UNIQUE INDEX on id required for CONCURRENTLY refresh.
+
+    Without it, REFRESH MATERIALIZED VIEW CONCURRENTLY in Phase 2.0 takes an
+    exclusive lock that blocks readers for the full refresh duration. The
+    harness MUST verify this stays wired across refactors — otherwise a future
+    change to materialize_views.py could quietly drop the index and break
+    Phase 2.0's no-downtime refresh guarantee.
+
+    SKIPS for views that haven't materialized yet (no view → no index makes
+    sense; the underlying materialization failure shows up in test_view_exists).
+    """
+    if not await view_exists(view_name):
+        pytest.skip(f"view-not-yet-materialized: sqlonfhir.{view_name}")
+    assert await has_unique_index_on_id(view_name), (
+        f"sqlonfhir.{view_name} missing UNIQUE INDEX on id. "
+        f"REFRESH MATERIALIZED VIEW CONCURRENTLY will fail; Phase 2.0 refresh "
+        f"endpoint will block readers. Check materialize_views.py emits the index."
     )
 
 

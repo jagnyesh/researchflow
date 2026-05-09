@@ -39,6 +39,35 @@ async def view_exists(view_name: str) -> bool:
         await conn.close()
 
 
+async def has_unique_index_on_id(view_name: str) -> bool:
+    """True iff sqlonfhir.<view_name> has a UNIQUE INDEX on the `id` column.
+
+    Required for REFRESH MATERIALIZED VIEW CONCURRENTLY (Phase 2.0). Without
+    it, refresh takes an exclusive lock that blocks readers. Issue #13
+    decision 8A wires this into materialize_views.py; this helper lets the
+    harness verify the wiring stays correct under future refactors.
+    """
+    conn = await asyncpg.connect(HAPI_DB_URL)
+    try:
+        row = await conn.fetchrow(
+            """
+            SELECT 1
+            FROM pg_indexes pi
+            JOIN pg_class c ON c.relname = pi.indexname
+            JOIN pg_index i ON i.indexrelid = c.oid
+            WHERE pi.schemaname = $1
+              AND pi.tablename = $2
+              AND i.indisunique
+              AND pi.indexdef ILIKE '%(id)'
+            """,
+            SCHEMA,
+            view_name,
+        )
+        return row is not None
+    finally:
+        await conn.close()
+
+
 async def materialized_columns(view_name: str) -> set[str]:
     """Names of columns present in the materialized view (empty set if view missing).
 

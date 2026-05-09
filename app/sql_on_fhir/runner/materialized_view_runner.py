@@ -214,26 +214,31 @@ class MaterializedViewRunner:
         """
         schema = {}
 
-        # Extract select columns from ViewDefinition
+        # Bug 9 fix (issue #13): SQL-on-FHIR v2 spec defines `column` as an ARRAY
+        # of {name, path, ...} objects, not a string. The previous code's
+        # `isinstance(column_name, str)` check was always False, so this method
+        # returned {} for every view def. Production callsites at
+        # app/api/analytics.py:294 + :511 silently consumed the empty schema.
+        # Iterate the column array correctly and walk every select block
+        # (top-level + forEach), mirroring how column_extractor.py parses view defs.
         for select_item in view_definition.get("select", []):
-            column_name = select_item.get("column")
+            for col_def in select_item.get("column", []):
+                column_name = col_def.get("name")
+                if not column_name:
+                    continue
 
-            # Skip if column_name is None or not a string
-            if not column_name or not isinstance(column_name, str):
-                continue
+                # Best-effort type inference from the column name. Unchanged from
+                # the prior implementation — the only observable bug was the
+                # always-empty result.
+                column_type = "string"
+                if any(kw in column_name.lower() for kw in ["date", "time"]):
+                    column_type = "datetime"
+                elif any(kw in column_name.lower() for kw in ["count", "age"]):
+                    column_type = "integer"
+                elif any(kw in column_name.lower() for kw in ["value", "score"]):
+                    column_type = "float"
 
-            # Infer type from FHIRPath or use string as default
-            column_type = "string"
-
-            # Common type mappings
-            if any(keyword in column_name.lower() for keyword in ["date", "time"]):
-                column_type = "datetime"
-            elif any(keyword in column_name.lower() for keyword in ["count", "age"]):
-                column_type = "integer"
-            elif any(keyword in column_name.lower() for keyword in ["value", "score"]):
-                column_type = "float"
-
-            schema[column_name] = column_type
+                schema[column_name] = column_type
 
         return schema
 
