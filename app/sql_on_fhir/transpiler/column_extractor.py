@@ -120,10 +120,14 @@ class ColumnExtractor:
             path = col_def.get("path", "")
             description = col_def.get("description")
 
-            # Handle special functions
-            if path == "getResourceKey()":
-                # Resource key is the FHIR ID
-                sql_expr = f"v.res_text_vc::jsonb->>'id'"
+            # Handle resource id (Bug 1 fix, issue #10)
+            # HAPI stores the FHIR logical id in hfj_resource.fhir_id, NOT in the JSON body.
+            # Both `path: "id"` and `path: "getResourceKey()"` resolve to the same value at
+            # the top-level resource. Nested ids (inside forEach contexts, e.g. `coding[].id`)
+            # bypass this branch and go through the transpiler, where they correctly resolve
+            # to `context->>'id'` against the iteration element.
+            if path == "getResourceKey()" or path == "id":
+                sql_expr = "r.fhir_id"
             else:
                 # Transpile FHIRPath to SQL
                 expr = self.transpiler.transpile(path, as_text=True)
