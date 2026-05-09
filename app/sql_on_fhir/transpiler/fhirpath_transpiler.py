@@ -105,6 +105,99 @@ class FHIRPathTranspiler:
         # Simple field path (most common case)
         return self._transpile_simple_path(fhir_path, as_text, context_path)
 
+    def transpile_where_predicate(self, expr: str) -> str:
+        """Transpile a FHIRPath boolean expression for use in a SQL WHERE clause.
+
+        Bug 11 fix (issue #11): the previous implementation routed where-clause paths
+        through `transpile()` which treats them as field navigation, producing SQL like
+        `jsonb->'active = true or active'->'not()' IS NOT NULL` (literal JSON-key access).
+        WHERE-clause expressions are predicates, not paths.
+
+        Supported patterns (the only ones used in current view defs that we're targeting):
+        - Boolean OR: `<a> or <b>` recursively transpiled and joined with SQL OR
+        - Boolean AND: `<a> and <b>` recursively transpiled and joined with SQL AND
+        - Field equality: `field = value` -> `jsonb->>'field' = '<value>'`
+        - Existence: `field.exists()` -> `jsonb->'field' IS NOT NULL`
+        - Negated existence: `field.exists().not()` -> `jsonb->'field' IS NULL`
+
+        Unsupported patterns (used by 4 of 7 view defs, blocked by issue #12+ scope):
+        `field in (a | b | c)`, `path.where(condition).exists()` with multi-arg condition,
+        `$this in (...)`. Logs a warning and returns SQL `true` so the where clause
+        becomes a no-op rather than producing a syntax error.
+
+        Returns: bare predicate SQL (no surrounding parens).
+        """
+        expr = expr.strip()
+        if not expr:
+            return "true"
+
+        # Split on top-level boolean operators (lowest precedence first).
+        # We only split on " or "/" and " surrounded by spaces so quoted strings or
+        # field-name substrings don't trigger false splits. Top-level only — no paren
+        # nesting in the patterns we support today.
+        for op_kw, op_sql in ((" or ", " OR "), (" and ", " AND ")):
+            parts = self._split_top_level_kw(expr, op_kw)
+            if len(parts) > 1:
+                return op_sql.join(f"({self.transpile_where_predicate(p)})" for p in parts)
+
+        # Single term: dispatch by suffix
+        if expr.endswith(".exists().not()"):
+            path = expr[: -len(".exists().not()")]
+            inner = self._transpile_simple_path(path, as_text=False, context_path=None).sql
+            return f"{inner} IS NULL"
+
+        if expr.endswith(".exists()"):
+            path = expr[: -len(".exists()")]
+            inner = self._transpile_simple_path(path, as_text=False, context_path=None).sql
+            return f"{inner} IS NOT NULL"
+
+        # field = value (handle both 'true'/'false' literals and quoted strings)
+        if " = " in expr:
+            left, right = expr.split(" = ", 1)
+            left_sql = self._transpile_simple_path(
+                left.strip(), as_text=True, context_path=None
+            ).sql
+            right = right.strip()
+            if right in ("true", "false"):
+                return f"{left_sql} = '{right}'"
+            if right.startswith("'") and right.endswith("'"):
+                return f"{left_sql} = {right}"
+            # Bare identifier or number — quote it
+            return f"{left_sql} = '{right}'"
+
+        logger.warning("Unsupported where-clause pattern, emitting 'true' (no-op): %s", expr)
+        return "true"
+
+    @staticmethod
+    def _split_top_level_kw(expr: str, sep: str) -> List[str]:
+        """Split `expr` on `sep` at top level only (skipping inside parens).
+
+        Used by transpile_where_predicate to split on top-level boolean operators
+        without splitting inside nested function calls or quoted strings.
+        """
+        parts: List[str] = []
+        depth = 0
+        in_quote = False
+        i = 0
+        last = 0
+        while i < len(expr):
+            ch = expr[i]
+            if ch == "'":
+                in_quote = not in_quote
+            elif not in_quote:
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                elif depth == 0 and expr[i : i + len(sep)] == sep:
+                    parts.append(expr[last:i])
+                    last = i + len(sep)
+                    i += len(sep)
+                    continue
+            i += 1
+        parts.append(expr[last:])
+        return [p.strip() for p in parts if p.strip()]
+
     def _transpile_simple_path(
         self, fhir_path: str, as_text: bool, context_path: Optional[str]
     ) -> FHIRPathExpression:
@@ -119,6 +212,15 @@ class FHIRPathTranspiler:
         Returns:
             FHIRPathExpression with JSONB path
         """
+        # Bug 2 fix (issue #11): top-level FHIR [x] choice field. Coalesce across
+        # all known variants. Only fires when there's no context (top-level access);
+        # nested choice fields are rare and not currently used by any view def.
+        if not context_path and fhir_path in self._CHOICE_FIELDS:
+            base = f"{self.resource_alias}.{self.resource_column}::jsonb"
+            op = "->>" if as_text else "->"
+            variants = ", ".join(f"{base}{op}'{v}'" for v in self._CHOICE_FIELDS[fhir_path])
+            return FHIRPathExpression(path=fhir_path, sql=f"COALESCE({variants})")
+
         # Start with resource or context
         if context_path:
             base = context_path
@@ -131,25 +233,32 @@ class FHIRPathTranspiler:
         # Build JSONB navigation
         sql_parts = [base]
 
+        # Bug 3 fix (issue #11): array-typed FHIR fields need ->'segment'->0 (navigate
+        # to the array, then take element 0), not ->0->'segment' (which evaluates ->0
+        # on the resource OBJECT, returning NULL). The previous order produced
+        # syntactically valid but semantically NULL SQL for every plain `name.X` /
+        # `address.X` path outside forEach. forEach contexts use _transpile_where_clause
+        # which already handles arrays correctly, so this bug only fires for non-forEach
+        # paths.
+        ARRAY_FIELDS = {"name", "address", "telecom", "identifier", "coding"}
+
         for i, segment in enumerate(segments):
             is_last = i == len(segments) - 1
+            is_array = segment in ARRAY_FIELDS
 
-            # Handle array access (assume first element for simple paths)
-            # In FHIR, many fields like "name" and "address" are arrays
-            if segment in ["name", "address", "telecom", "identifier", "coding"]:
-                # Access first element of array
-                sql_parts.append(f"->0")
-                # Then access the field
-                if is_last and as_text:
-                    sql_parts.append(f"->>'{segment}'")
-                else:
-                    sql_parts.append(f"->'{segment}'")
+            # Field access first
+            if is_last and as_text and not is_array:
+                sql_parts.append(f"->>'{segment}'")
             else:
-                # Simple field access
+                sql_parts.append(f"->'{segment}'")
+
+            # Then take first element if it's a known array field AND there's more
+            # path to traverse (or we need text of the first element)
+            if is_array:
                 if is_last and as_text:
-                    sql_parts.append(f"->>'{segment}'")
+                    sql_parts.append("->>0")
                 else:
-                    sql_parts.append(f"->'{segment}'")
+                    sql_parts.append("->0")
 
         sql = "".join(sql_parts)
 
@@ -206,6 +315,16 @@ class FHIRPathTranspiler:
 
         # Parse condition (simple equality only for now)
         condition_sql = self._parse_where_condition(condition, array_alias)
+
+        # Bug 10 fix (issue #11): trailing .first() in result_path is already implied
+        # by LIMIT 1 below. Previously, result_path was passed verbatim, producing
+        # SQL like `SELECT elem->'first()'` (literal JSON-key access, always NULL).
+        # `name.where(use='official').first()` collapses result_path to None;
+        # `coding.where(system='X').first().code` strips the .first() prefix.
+        if result_path == "first()":
+            result_path = None
+        elif result_path and result_path.startswith("first()."):
+            result_path = result_path[len("first().") :]
 
         # Build subquery
         if result_path:
@@ -276,13 +395,27 @@ class FHIRPathTranspiler:
         # Transpile base path
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
-        # Add [0] access
+        # Bug 7 fix (issue #11): respect as_text. Previously both branches emitted ->0
+        # (jsonb). When called from a text context (column rendering, COALESCE for
+        # string concat in Bug 8), we need ->>0 to coerce to text. The dead-code
+        # if/else made every .first() return jsonb regardless of caller intent.
         if as_text:
-            sql = f"({base_expr.sql})->0"
+            sql = f"({base_expr.sql})->>0"
         else:
             sql = f"({base_expr.sql})->0"
 
         return FHIRPathExpression(path=fhir_path, sql=sql)
+
+    # Bug 2 fix (issue #11): FHIR R4 [x] choice fields are stored under
+    # `<base><Type>` keys (e.g., `deceasedBoolean`, `deceasedDateTime`), not under
+    # the bare `deceased` key. The transpiler doesn't know FHIR resource definitions,
+    # so we hardcode the choice variants for the fields actually used by current
+    # view defs. Patient.deceased[x] is the only one in scope. Extend this map as
+    # other view defs add resources with [x] fields (e.g., Observation.value[x],
+    # Patient.multipleBirth[x]).
+    _CHOICE_FIELDS: Dict[str, List[str]] = {
+        "deceased": ["deceasedDateTime", "deceasedBoolean"],
+    }
 
     def _transpile_exists(self, fhir_path: str, context_path: Optional[str]) -> FHIRPathExpression:
         """
@@ -296,8 +429,16 @@ class FHIRPathTranspiler:
             FHIRPathExpression with boolean check
         """
         base_path = fhir_path.replace(".exists()", "")
-        base_expr = self._transpile_simple_path(base_path, False, context_path)
 
+        # Bug 2: choice-type field. Check ANY variant exists.
+        if base_path in self._CHOICE_FIELDS and not context_path:
+            base = f"{self.resource_alias}.{self.resource_column}::jsonb"
+            checks = " OR ".join(
+                f"{base}->'{variant}' IS NOT NULL" for variant in self._CHOICE_FIELDS[base_path]
+            )
+            return FHIRPathExpression(path=fhir_path, sql=f"({checks})")
+
+        base_expr = self._transpile_simple_path(base_path, False, context_path)
         sql = f"({base_expr.sql} IS NOT NULL)"
 
         return FHIRPathExpression(path=fhir_path, sql=sql)

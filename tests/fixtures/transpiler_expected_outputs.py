@@ -80,6 +80,13 @@ PATIENT_DEMOGRAPHICS = {
     "oracle_source": "hand-verified-sql",
     "expected_row_count": 361,
     "sample_rows": {
+        # Address fields are None because Synthea addresses have no `use` field;
+        # the view def's `address.where(use = 'home').first()` legitimately returns
+        # no match. Phase 1.0 fixture incorrectly sourced from `address[0].X` (no
+        # filter) — corrected during issue #11 implementation when /tdd materialized
+        # patient_demographics for the first time and the values diverged from the
+        # view def's actual semantics. Same fidelity-gap class as the country bug
+        # caught by /cso. The view def, not the data, defines correctness.
         "142387": {
             "id": "142387",
             "patient_id": "142387",
@@ -93,10 +100,10 @@ PATIENT_DEMOGRAPHICS = {
             "full_name": "Valda518 Abbott774",
             "phone": "555-377-9242",
             "email": None,
-            "address_line": "593 Ratke Manor",
-            "city": "Chicago",
-            "state": "IL",
-            "postal_code": "60651",
+            "address_line": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
         },
         "143687": {
             "id": "143687",
@@ -111,10 +118,10 @@ PATIENT_DEMOGRAPHICS = {
             "full_name": "Wendell199 Runte676",
             "phone": "555-643-1794",
             "email": None,
-            "address_line": "447 Tromp Estate Unit 24",
-            "city": "Alton",
-            "state": "IL",
-            "postal_code": "62024",
+            "address_line": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
         },
         "144735": {
             "id": "144735",
@@ -129,10 +136,10 @@ PATIENT_DEMOGRAPHICS = {
             "full_name": "Ozzie259 Schiller186",
             "phone": "555-976-9197",
             "email": None,
-            "address_line": "1091 Grimes Lodge",
-            "city": "Romeoville",
-            "state": "IL",
-            "postal_code": "60441",
+            "address_line": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
         },
     },
     "key_column": "id",
