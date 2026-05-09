@@ -152,6 +152,46 @@ async def test_parse_only(view_name, materialized_views):
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Bug 9 regression: MVR.get_schema() v2-spec compliance
+#
+# /cso audit on f5e2b0f caught this coverage gap: the rest of the harness uses
+# its own materialized_columns() and view_def_columns() helpers, both of which
+# bypass MaterializedViewRunner.get_schema() entirely. A wrong fix to
+# MVR.get_schema() in issue #13 would PASS the rest of the harness while
+# silently producing garbage for app/api/analytics.py:294 and :511 which
+# consume the runner's schema directly. This test exercises MVR.get_schema()
+# directly, against the same column-set the harness already trusts.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("view_name", ALL_VIEW_DEFS)
+def test_mvr_get_schema_matches_view_def(view_name):
+    """Bug 9 regression: MVR.get_schema() must return columns matching the view def.
+
+    EXPECTED to FAIL today across all 7 view defs — current implementation
+    expects `column` to be a string but the v2 spec defines it as an array,
+    so the function returns {} for every view def. Issue #13 fix flips this
+    to PASS.
+
+    Sync test (get_schema is sync, doesn't touch db_client — see line 202+
+    of materialized_view_runner.py). No fixture dependency.
+    """
+    from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
+
+    vd = _load_view_def(view_name)
+    expected = view_def_columns(vd)
+    runner = MaterializedViewRunner(db_client=None)
+    actual = set(runner.get_schema(vd).keys())
+    missing = expected - actual
+    assert not missing, (
+        f"MVR.get_schema() returned {actual} for {view_name}; "
+        f"missing {missing} from view def's column declarations. "
+        f"Production callsites at app/api/analytics.py:294 + :511 silently "
+        f"consume this empty/incomplete result."
+    )
+
+
 @pytest.mark.asyncio
 async def test_bug3_array_position_regression():
     """Bug 3 regression: plain `name.family` (no forEach) must yield real text, not NULL.
