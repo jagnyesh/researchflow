@@ -156,6 +156,16 @@ class FHIRSubscriptionService:
                 logger.warning("Failed to parse %s/%s JSON: %s", resource_type, fhir_id, e)
                 continue
 
+            # HAPI strips `id` from the JSON body it stores in res_text_vc — same
+            # root cause as Bug 1 in the materialized-view path. Augment the
+            # resource dict so downstream consumers (HybridRunner._merge via
+            # InMemoryRunner._transform_resource) can extract `path: "id"`
+            # successfully via fhirpathpy. Without this, every cached resource's
+            # extracted row has id=None, breaking dedup-by-id in the merge.
+            # Discovered during issue #19's pre-#20 e2e pass.
+            if isinstance(resource_data, dict) and "id" not in resource_data:
+                resource_data["id"] = fhir_id
+
             try:
                 await self.redis_client.set_fhir_resource(
                     resource_type, fhir_id, resource_data, ttl_hours=ttl_hours

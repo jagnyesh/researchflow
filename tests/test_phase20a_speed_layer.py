@@ -80,3 +80,16 @@ async def test_polling_caches_patients_by_fhir_id():
         f"fhir_id, so downstream consumers can't find resources by their FHIR "
         f"logical id."
     )
+
+    # Regression for the e2e bug found pre-#20: HAPI strips `id` from the JSON
+    # body it stores in res_text_vc. If the service doesn't augment the resource
+    # dict with `id = fhir_id` before caching, downstream HybridRunner's merge
+    # extracts id=None for every cache row, breaking dedup-by-id (silent failure
+    # — produces duplicates in merged results without any error message).
+    cached_resource = cached.get("resource", cached)
+    assert cached_resource.get("id") == target_fhir_id, (
+        f"Cached resource missing 'id' field (got {cached_resource.get('id')!r}). "
+        f"HAPI strips id from JSON; FHIRSubscriptionService must augment the "
+        f"resource dict with id=fhir_id before caching, or downstream merge "
+        f"dedup breaks silently."
+    )
