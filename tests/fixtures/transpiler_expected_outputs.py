@@ -123,6 +123,7 @@ PATIENT_DEMOGRAPHICS = {
             "birth_date": "1925-04-16",
             "gender": "male",
             "deceased": True,
+            "deceased_date": "2001-02-03T01:13:45-06:00",
             "family_name": "Schiller186",
             "given_name": "Ozzie259",
             "full_name": "Ozzie259 Schiller186",
