@@ -15,8 +15,8 @@
         },
         {
           "name": "patient_id",
-          "path": "getResourceKey()",
-          "description": "Patient resource key"
+          "path": "id",
+          "description": "Patient resource id (workaround: getResourceKey() not implemented in fhirpathpy 4.x)"
         },
         {
           "name": "active",

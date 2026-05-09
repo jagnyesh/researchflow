@@ -41,26 +41,15 @@ class PhenotypeValidationAgent(BaseAgent):
         self.sql_generator = SQLGenerator(use_materialized_views=True)
         self.sql_adapter = SQLonFHIRAdapter(database_url)
         self.view_definition_manager = ViewDefinitionManager()
-        # Use legacy SQL for cohort counting (ViewDefinition Python filtering is broken - returns 0)
-        # But skip detailed data availability checks (query non-existent tables)
-        # Default to 90% data availability for HAPI FHIR materialized views
-        self.use_view_definitions = False  # Toggle to use ViewDefinitions instead of legacy SQL
-
-        # Initialize ViewDefinition runner if using ViewDefinitions
-        if self.use_view_definitions and database_url:
-            logger.info(f"[{self.agent_id}] Initializing PostgresRunner for HAPI FHIR database")
-
-            # HAPIDBClient uses asyncpg directly, which doesn't understand SQLAlchemy URL schemes
-            # Strip '+asyncpg' suffix if present
-            hapi_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-
-            self.hapi_db_client = HAPIDBClient(connection_url=hapi_url)
-            self.postgres_runner = PostgresRunner(
-                db_client=self.hapi_db_client, enable_cache=True, cache_ttl_seconds=300
-            )
-        else:
-            self.hapi_db_client = None
-            self.postgres_runner = None
+        # Weekend pivot 2026-05-09: switched from PostgresRunner (queries broken
+        # sqlonfhir.* materialized views, all empty) to InMemoryRunner (fhirpathpy
+        # against live HAPI). InMemoryRunner spike confirmed 250 rows returned for
+        # patient_demographics. See TODOS.md P0 for the multi-week fix sprint.
+        self.use_view_definitions = True
+        self.hapi_db_client = None
+        self.postgres_runner = None  # Kept for compat; weekend path uses in_memory_runner
+        # InMemoryRunner needs a per-call FHIR client (created in _estimate_cohort_size).
+        # No init-time runner instance because fhir_client is async-context-managed.
 
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute phenotype validation task"""
@@ -242,30 +231,35 @@ class PhenotypeValidationAgent(BaseAgent):
             Estimated patient count
         """
         try:
-            if self.use_view_definitions and self.postgres_runner:
-                # Use ViewDefinition approach (SQL-on-FHIR v2)
-                logger.info(f"[{self.agent_id}] Using ViewDefinition to estimate cohort size")
+            if self.use_view_definitions:
+                # Weekend pivot: use InMemoryRunner (fhirpathpy against live HAPI)
+                # instead of PostgresRunner (queries broken sqlonfhir.* materialized views).
+                logger.info(f"[{self.agent_id}] Using InMemoryRunner to estimate cohort size")
 
-                # Build search parameters from requirements
+                # Build search parameters from requirements (passed to HAPI as FHIR search)
                 search_params = {}
                 if requirements:
                     search_params = self._build_search_params_from_requirements(requirements)
-                    logger.info(
-                        f"[{self.agent_id}] Filtering patients with search_params: {search_params}"
-                    )
+                    logger.info(f"[{self.agent_id}] HAPI search params: {search_params}")
 
-                # Load patient_simple ViewDefinition
+                # Load patient_simple ViewDefinition (single select, no forEach → one row per patient).
+                # patient_demographics has forEach for telecom/address, multiplies rows.
                 view_def = self.view_definition_manager.load("patient_simple")
 
-                # Execute ViewDefinition with filters
-                results = await self.postgres_runner.execute(
-                    view_definition=view_def,
-                    search_params=search_params,
-                    max_resources=None,  # No limit - get full count
-                )
+                # Create FHIR client + InMemoryRunner per call (async-context-managed)
+                fhir_client = await create_fhir_client()
+                try:
+                    runner = InMemoryRunner(fhir_client)
+                    results = await runner.execute(
+                        view_definition=view_def,
+                        search_params=search_params,
+                        max_resources=10000,  # Cap for safety
+                    )
+                finally:
+                    await fhir_client.close()
 
                 logger.info(
-                    f"[{self.agent_id}] ViewDefinition returned {len(results)} patients after SQL filtering"
+                    f"[{self.agent_id}] InMemoryRunner returned {len(results)} patients (post HAPI search)"
                 )
 
                 # Apply Python post-filtering for criteria not supported by search_params
@@ -501,7 +495,7 @@ class PhenotypeValidationAgent(BaseAgent):
             Set of patient IDs (as strings)
         """
         try:
-            if not self.use_view_definitions or not self.postgres_runner:
+            if not self.use_view_definitions:
                 logger.warning(
                     f"[{self.agent_id}] ViewDefinitions not enabled, skipping condition filtering"
                 )
@@ -510,11 +504,16 @@ class PhenotypeValidationAgent(BaseAgent):
             # Load condition_simple ViewDefinition
             view_def = self.view_definition_manager.load("condition_simple")
 
-            # Execute query to get all conditions
+            # Execute query to get all conditions via InMemoryRunner (weekend pivot)
             logger.info(f"[{self.agent_id}] Querying conditions for '{condition_term}'...")
-            results = await self.postgres_runner.execute(
-                view_definition=view_def, search_params={}, max_resources=None
-            )
+            fhir_client = await create_fhir_client()
+            try:
+                runner = InMemoryRunner(fhir_client)
+                results = await runner.execute(
+                    view_definition=view_def, search_params={}, max_resources=20000
+                )
+            finally:
+                await fhir_client.close()
 
             logger.info(f"[{self.agent_id}] Found {len(results)} total conditions in database")
 
