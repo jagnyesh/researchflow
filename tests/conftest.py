@@ -36,6 +36,30 @@ def event_loop():
     loop.close()
 
 
+@pytest.fixture(scope="session")
+def materialized_views():
+    """Run scripts/materialize_views.py --create once per test session.
+
+    Used by tests/test_transpiler_correctness.py to materialize the 7
+    SQL-on-FHIR view defs against hapi-postgres before the harness
+    queries them. Autouse=False — only fires when a test requests it,
+    so other test files don't pay the cost.
+    """
+    import subprocess
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    result = subprocess.run(
+        [sys.executable, "scripts/materialize_views.py", "--create"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+    )
+    # Don't fail on script errors — the harness DESIGN is that broken view
+    # defs FAIL their checks (not crash the suite). The script returns
+    # non-zero when N/7 fail; that's expected baseline state.
+    yield result
+
+
 @pytest.fixture(scope="function", autouse=False)
 async def clean_database():
     """Clean database before each test - call explicitly if needed"""
