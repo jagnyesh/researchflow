@@ -12,14 +12,15 @@ Provides:
 - Batch operations
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import logging
 import os
-import subprocess
+import subprocess  # nosec B404 - used only with hardcoded script path in /create-all
 import asyncio
 
+from ..security.dependencies import require_role
 from ..services.materialized_view_service import MaterializedViewService
 
 logger = logging.getLogger(__name__)
@@ -186,15 +187,23 @@ async def refresh_view(view_name: str):
 
 
 @router.post("/refresh-all", response_model=RefreshAllResponse)
-async def refresh_all_views(background_tasks: BackgroundTasks):
+async def refresh_all_views(
+    background_tasks: BackgroundTasks,
+    _admin=Depends(require_role("admin")),
+):
     """
-    Refresh all materialized views
+    Refresh all materialized views in parallel via REFRESH MATERIALIZED VIEW
+    CONCURRENTLY (issue #18).
 
-    This can be a long-running operation for large datasets.
-    Consider using background_tasks for async execution.
+    Admin-role gated (issue #18 + decision 2A). Sprint 6.1's audit middleware
+    already enforces auth (returns 401 for unauthenticated callers); this
+    additional gate returns 403 for authenticated-but-non-admin callers,
+    matching the pattern used in app/api/users.py for admin-only routes.
 
     Returns:
-        Summary of refresh operations for all views
+        Summary of refresh operations for all views (per-view success/error,
+        durations). Per-view error isolation: one failed view doesn't abort
+        the others — see refresh_all_views in materialized_view_service.
 
     Example:
         POST /analytics/materialized-views/refresh-all

@@ -991,13 +991,14 @@ def main():
     # Main area with tabs
     with col_main:
         # Tabs
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
             [
                 "📊 Overview",
                 "🤖 Agent Metrics",
                 "✋ Pending Approvals",
                 "🚨 Escalations",
                 "📈 Analytics",
+                "🗄️ Materialized Views",
             ]
         )
 
@@ -1015,6 +1016,9 @@ def main():
 
         with tab5:
             show_analytics()
+
+        with tab6:
+            show_materialized_views()
 
     # Auto-refresh logic
     if auto_refresh:
@@ -1853,6 +1857,74 @@ def show_escalations():
                         st.error("Rejected")
     else:
         st.success("No pending escalations - all systems nominal!")
+
+
+def show_materialized_views():
+    """Issue #18: admin tab for managing the Lambda Architecture's batch layer.
+
+    Triggers POST /analytics/materialized-views/refresh-all (CONCURRENTLY +
+    parallel via asyncio.gather, per #18). Renders per-view results.
+
+    NOTE on auth: admin endpoint requires admin-role JWT (Sprint 6.1 audit
+    middleware enforces auth on this route). The dashboard-from-streamlit
+    auth path is a known-incomplete dev-mode pattern shared by the rest of
+    this dashboard (e.g., line 119's /research/{id}/delivery call) — fixing
+    streamlit→API auth is out of scope for #18 and tracked separately. In
+    dev with audit middleware bypass (e.g., REDIS_AUDIT_URL unset), the
+    button works; in production, it returns 401/403.
+    """
+    st.header("🗄️ Materialized Views (Lambda Batch Layer)")
+    st.caption(
+        "Materialized views in `sqlonfhir.*` schema. Refresh runs CONCURRENTLY "
+        "so cohort queries aren't blocked during refresh."
+    )
+
+    api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+
+    if st.button("🔄 Refresh all materialized views", type="primary"):
+        with st.spinner("Refreshing 7 views in parallel..."):
+            try:
+                response = httpx.post(
+                    f"{api_url}/analytics/materialized-views/refresh-all",
+                    timeout=120.0,
+                )
+                if response.status_code == 401:
+                    st.error(
+                        "Authentication required. Streamlit→API auth flow not yet "
+                        "wired (known dev-mode limitation; same pattern as other "
+                        "admin actions in this dashboard)."
+                    )
+                elif response.status_code == 403:
+                    st.error("Admin role required to refresh materialized views.")
+                elif response.status_code != 200:
+                    st.error(f"Refresh failed (HTTP {response.status_code}): {response.text}")
+                else:
+                    data = response.json()
+                    st.success(
+                        f"✅ Refreshed {data['success']}/{data['total_views']} views"
+                        + (f" ({data['failed']} failed)" if data["failed"] else "")
+                    )
+                    # Per-view results table
+                    rows = []
+                    for r in data["results"]:
+                        rows.append(
+                            {
+                                "View": r["view_name"],
+                                "Status": "✅" if r["success"] else "❌",
+                                "Duration (ms)": (
+                                    f"{r.get('refresh_duration_ms', 0):.0f}"
+                                    if r["success"]
+                                    else "—"
+                                ),
+                                "Rows": (f"{r.get('row_count', 0):,}" if r["success"] else "—"),
+                                "Error": r.get("error", ""),
+                            }
+                        )
+                    st.dataframe(pd.DataFrame(rows), use_container_width=True)
+            except httpx.TimeoutException:
+                st.error("Refresh timed out after 120 seconds.")
+            except Exception as e:
+                st.error(f"Unexpected error: {e}")
 
 
 def show_analytics():
