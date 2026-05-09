@@ -165,6 +165,20 @@ class FHIRPathTranspiler:
             # Bare identifier or number — quote it
             return f"{left_sql} = '{right}'"
 
+        # field in (a | b | c) — issue #12 extension to Bug 11.
+        # Used by procedure_history, medication_requests, observation_labs WHERE
+        # clauses for status enums. FHIRPath uses `|` as the union operator inside
+        # parens; we map to SQL IN list.
+        in_match = re.match(r"^(\S+)\s+in\s+\((.+)\)$", expr)
+        if in_match:
+            field_path = in_match.group(1)
+            values_blob = in_match.group(2)
+            field_sql = self._transpile_simple_path(field_path, as_text=True, context_path=None).sql
+            # Split values on |, strip quotes/whitespace
+            values = [v.strip().strip("'\"") for v in values_blob.split("|")]
+            value_list = ", ".join(f"'{v}'" for v in values)
+            return f"{field_sql} IN ({value_list})"
+
         logger.warning("Unsupported where-clause pattern, emitting 'true' (no-op): %s", expr)
         return "true"
 
@@ -221,14 +235,30 @@ class FHIRPathTranspiler:
             variants = ", ".join(f"{base}{op}'{v}'" for v in self._CHOICE_FIELDS[fhir_path])
             return FHIRPathExpression(path=fhir_path, sql=f"COALESCE({variants})")
 
+        segments = fhir_path.split(".")
+
+        # Bug 4/6 fix (issue #12): function-call segments like split('/'), last(),
+        # replace('Patient/', '') need real function dispatch, not literal JSON-key
+        # access. Find the first function call, transpile the prefix as text (since
+        # text functions consume text), then chain the function calls.
+        for i, seg in enumerate(segments):
+            if self._FUNCTION_CALL_RE.match(seg):
+                prefix_path = ".".join(segments[:i])
+                if prefix_path:
+                    prefix_sql = self._transpile_simple_path(
+                        prefix_path, as_text=True, context_path=context_path
+                    ).sql
+                else:
+                    prefix_sql = context_path or (
+                        f"{self.resource_alias}.{self.resource_column}::jsonb"
+                    )
+                return self._apply_function_chain(prefix_sql, segments[i:], fhir_path)
+
         # Start with resource or context
         if context_path:
             base = context_path
         else:
             base = f"{self.resource_alias}.{self.resource_column}::jsonb"
-
-        # Split path into segments
-        segments = fhir_path.split(".")
 
         # Build JSONB navigation
         sql_parts = [base]
@@ -240,11 +270,9 @@ class FHIRPathTranspiler:
         # `address.X` path outside forEach. forEach contexts use _transpile_where_clause
         # which already handles arrays correctly, so this bug only fires for non-forEach
         # paths.
-        ARRAY_FIELDS = {"name", "address", "telecom", "identifier", "coding"}
-
         for i, segment in enumerate(segments):
             is_last = i == len(segments) - 1
-            is_array = segment in ARRAY_FIELDS
+            is_array = segment in self._ARRAY_FIELDS
 
             # Field access first
             if is_last and as_text and not is_array:
@@ -263,6 +291,54 @@ class FHIRPathTranspiler:
         sql = "".join(sql_parts)
 
         return FHIRPathExpression(path=fhir_path, sql=sql)
+
+    def _apply_function_chain(
+        self, prefix_sql: str, fn_segments: List[str], orig_path: str
+    ) -> FHIRPathExpression:
+        """Apply chained string/array function calls starting from a text expression.
+
+        Bug 4 + Bug 6 fix (issue #12). Each segment is matched as `funcname(args)`
+        and dispatched to its SQL equivalent. The chain starts from a text
+        expression (callers pass prefix_sql with as_text=True semantics) since
+        Postgres functions like split/replace consume text.
+
+        Supported:
+        - split(sep) → regexp_split_to_array(text, sep) returning text[]
+        - last() → arr[array_length(arr, 1)] (assumes preceding result is text[])
+        - replace(from, to) → replace(text, from, to)
+
+        Unsupported function names log a warning and emit literal JSON-key access
+        (preserves the bug-style output so it stays visible).
+        """
+        current = prefix_sql
+        for seg in fn_segments:
+            m = self._FUNCTION_CALL_RE.match(seg)
+            if not m:
+                # Field access after a function call — uncommon; preserve as JSON nav
+                current = f"({current})->'{seg}'"
+                continue
+            fn = m.group(1)
+            args = m.group(2)
+            if fn == "split":
+                # split('sep') → regexp_split_to_array(text, 'sep')
+                current = f"regexp_split_to_array({current}, {args.strip()})"
+            elif fn == "last":
+                # last() → arr[array_length(arr, 1)]
+                current = f"({current})[array_length({current}, 1)]"
+            elif fn == "replace":
+                # replace('from', 'to') → replace(text, 'from', 'to')
+                current = f"replace({current}, {args})"
+            else:
+                logger.warning(
+                    "Unsupported function in path: %s in %s — column will be NULL",
+                    seg,
+                    orig_path,
+                )
+                # Return NULL rather than malformed SQL. View still materializes;
+                # column is NULL until the function is supported. Common unsupported:
+                # ofType(Type), conformsTo(profile), iif(cond, a, b), aggregate().
+                return FHIRPathExpression(path=orig_path, sql="NULL")
+        return FHIRPathExpression(path=orig_path, sql=current)
 
     def _transpile_where_clause(
         self, fhir_path: str, as_text: bool, context_path: Optional[str]
@@ -316,15 +392,19 @@ class FHIRPathTranspiler:
         # Parse condition (simple equality only for now)
         condition_sql = self._parse_where_condition(condition, array_alias)
 
-        # Bug 10 fix (issue #11): trailing .first() in result_path is already implied
-        # by LIMIT 1 below. Previously, result_path was passed verbatim, producing
-        # SQL like `SELECT elem->'first()'` (literal JSON-key access, always NULL).
-        # `name.where(use='official').first()` collapses result_path to None;
-        # `coding.where(system='X').first().code` strips the .first() prefix.
+        # Bug 10 + Bug 5 fix (issues #11 + #12): trailing .first() in result_path is
+        # already implied by LIMIT 1 below. Previously, result_path was passed
+        # verbatim, producing SQL like `SELECT elem->'first()'` (literal JSON-key
+        # access, always NULL).
+        # - `name.where(use='official').first()` → result_path None (Bug 10)
+        # - `coding.where(system='X').first().code` → strip prefix (Bug 10)
+        # - `coding.where(system='X').code.first()` → strip suffix (Bug 5)
         if result_path == "first()":
             result_path = None
         elif result_path and result_path.startswith("first()."):
             result_path = result_path[len("first().") :]
+        elif result_path and result_path.endswith(".first()"):
+            result_path = result_path[: -len(".first()")]
 
         # Build subquery
         if result_path:
@@ -392,7 +472,22 @@ class FHIRPathTranspiler:
         # Remove .first() and access [0]
         base_path = fhir_path.replace(".first()", "")
 
-        # Transpile base path
+        # Bug 13 fix (issue #12): if a MID-PATH segment is already a known array
+        # field, Bug 3's array-position logic already took element 0 there. The
+        # prefix resolves to a scalar; .first() is redundant. Adding ->>0 on a
+        # scalar produces "operator is not unique" or returns NULL.
+        # Example: `clinicalStatus.coding.code.first()` — coding is in ARRAY_FIELDS
+        # (mid-path), so prefix is ...->'coding'->0->'code' (first coding's code).
+        # vs. `given.first()` (no mid-path arrays) — .first() IS needed to take
+        # element 0 of the given[] array.
+        # Initial Bug 13 fix checked the LAST segment, which was wrong: it bypassed
+        # array-indexing for `given.first()` (regressed patient_demographics in #12).
+        segments_no_first = base_path.split(".")
+        has_mid_path_array = any(seg in self._ARRAY_FIELDS for seg in segments_no_first[:-1])
+        if has_mid_path_array:
+            return self._transpile_simple_path(base_path, as_text, context_path)
+
+        # Transpile base path (jsonb result for array indexing)
         base_expr = self._transpile_simple_path(base_path, False, context_path)
 
         # Bug 7 fix (issue #11): respect as_text. Previously both branches emitted ->0
@@ -416,6 +511,16 @@ class FHIRPathTranspiler:
     _CHOICE_FIELDS: Dict[str, List[str]] = {
         "deceased": ["deceasedDateTime", "deceasedBoolean"],
     }
+
+    # FHIR fields that are arrays in the spec — when navigated via simple paths,
+    # implicit-first-element semantics apply (Bug 3 + Bug 13). Promoted to
+    # class-level (was local to _transpile_simple_path) so _transpile_first can
+    # also consult it for the scalar-leaf check.
+    _ARRAY_FIELDS = frozenset({"name", "address", "telecom", "identifier", "coding"})
+
+    # Function-call segments in path expressions. Recognized in _transpile_simple_path
+    # via _FUNCTION_CALL_RE and dispatched to _apply_function_chain (Bug 4/6, issue #12).
+    _FUNCTION_CALL_RE = re.compile(r"^(\w+)\((.*)\)$")
 
     def _transpile_exists(self, fhir_path: str, context_path: Optional[str]) -> FHIRPathExpression:
         """
