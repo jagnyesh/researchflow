@@ -1,9 +1,10 @@
-"""FHIR subscription service for capturing resource changes."""
+"""Speed-layer poller for the Lambda Architecture's near-real-time tier."""
 
 import asyncio
+import json
 import logging
-from typing import Dict, List, Any
 from datetime import datetime, timedelta
+from typing import Any, Dict, List
 
 from app.cache.redis_client import RedisClient
 from app.clients.hapi_db_client import HAPIDBClient
@@ -12,192 +13,155 @@ logger = logging.getLogger(__name__)
 
 
 class FHIRSubscriptionService:
-    """
-    Mock FHIR subscription service.
+    """Speed-layer for the Lambda Architecture: polls HAPI's hfj_resource for
+    recent changes and writes them to Redis with a 24-hour TTL.
 
-    Polls FHIR database for recent changes and writes to Redis speed layer.
-    Future: Replace with real FHIR Subscription resource.
+    The class name (`FHIRSubscriptionService`) is a misnomer — it does NOT
+    use HAPI's Subscription resource. Per /office-hours decision Q4 (2026-05-09,
+    issue #17), we ship polling as the production speed-layer pattern. The
+    Subscription resource exists on this HAPI instance but the activation
+    worker isn't enabled in the docker-compose config, and enabling it would
+    require docker-compose changes + webhook auth + idempotency — 3-4 days
+    of work to ship "real-time push" when polling at 30s satisfies the
+    Lambda Architecture's "<1 minute freshness" guarantee.
+
+    HybridRunner reads from this Redis cache and merges with materialized-view
+    results to serve cohort queries with batch-layer scale + speed-layer
+    freshness.
+
+    Cache keys: `fhir:<lowercase-type>:<fhir-id>` (matches RedisClient's key
+    format). The fhir-id is HAPI's `hfj_resource.fhir_id` column — the FHIR
+    logical id, NOT the internal `res_id` bigint. Downstream consumers
+    (HybridRunner, SpeedLayerRunner) match against materialized-view rows by
+    FHIR id, so cache keys must use the same identifier.
     """
+
+    # Resource types polled, with per-type TTL. Observations get a shorter TTL
+    # because they're high-volume and individually less important to retain;
+    # Patient/Condition are referenced by every cohort query.
+    _POLLED_TYPES: Dict[str, int] = {
+        "Patient": 24,
+        "Condition": 24,
+        "Observation": 12,
+    }
 
     def __init__(
-        self, hapi_client: HAPIDBClient, redis_client: RedisClient, poll_interval_minutes: int = 5
+        self,
+        hapi_client: HAPIDBClient,
+        redis_client: RedisClient,
+        poll_interval_seconds: int = 30,
     ):
         self.hapi_client = hapi_client
         self.redis_client = redis_client
-        self.poll_interval = poll_interval_minutes
+        # Issue #17: dropped from 300s (5min) to 30s. The Lambda Architecture's
+        # "<1 minute freshness" claim requires polling at least once per minute;
+        # 30s gives margin. Older callers that passed poll_interval_minutes will
+        # break — that's intentional, the unit changed.
+        self.poll_interval_seconds = poll_interval_seconds
+        # Backward-compat alias for any code still reading .poll_interval
+        self.poll_interval = poll_interval_seconds
         self.last_sync_time = datetime.utcnow() - timedelta(hours=24)
         self._running = False
 
     async def start(self):
-        """Start the subscription service."""
+        """Run the polling loop until stop() is called."""
         self._running = True
-        logger.info("[FHIRSubscriptionService] Starting...")
+        logger.info("[FHIRSubscriptionService] Starting (interval=%ds)", self.poll_interval_seconds)
 
         while self._running:
             try:
                 await self._poll_and_cache()
-                await asyncio.sleep(self.poll_interval * 60)
+                await asyncio.sleep(self.poll_interval_seconds)
             except Exception as e:
                 logger.error(f"[FHIRSubscriptionService] Error: {e}")
                 await asyncio.sleep(60)  # Wait 1 min before retry
 
     def stop(self):
-        """Stop the subscription service."""
+        """Stop the polling loop after the current iteration."""
         self._running = False
         logger.info("[FHIRSubscriptionService] Stopped")
 
     async def _poll_and_cache(self):
-        """Poll FHIR for recent changes and cache in Redis."""
+        """One polling cycle: fetch recent resources for each tracked type and
+        write them to Redis. Updates `last_sync_time` after a successful run.
+
+        Per-type errors are logged but don't abort the cycle — one failed
+        resource type shouldn't drop all the others.
+        """
         logger.info("[FHIRSubscriptionService] Polling for recent FHIR changes...")
 
-        # Query FHIR for resources updated since last sync
-        recent_patients = await self._fetch_recent_patients()
-        recent_conditions = await self._fetch_recent_conditions()
-        recent_observations = await self._fetch_recent_observations()
+        cycle_started_at = datetime.utcnow()
+        per_type_counts: Dict[str, int] = {}
 
-        # Cache in Redis
-        for patient in recent_patients:
-            await self.redis_client.set_fhir_resource(
-                "Patient", patient["id"], patient, ttl_hours=24
-            )
+        for resource_type, ttl_hours in self._POLLED_TYPES.items():
+            count = await self._fetch_and_cache(resource_type, ttl_hours)
+            per_type_counts[resource_type] = count
 
-        for condition in recent_conditions:
-            await self.redis_client.set_fhir_resource(
-                "Condition", condition["id"], condition, ttl_hours=24
-            )
-
-        for observation in recent_observations:
-            await self.redis_client.set_fhir_resource(
-                "Observation",
-                observation["id"],
-                observation,
-                ttl_hours=12,  # Shorter TTL for observations
-            )
-
-        total_cached = len(recent_patients) + len(recent_conditions) + len(recent_observations)
-
+        total_cached = sum(per_type_counts.values())
         logger.info(
-            f"[FHIRSubscriptionService] Cached {total_cached} resources "
-            f"(Patients: {len(recent_patients)}, Conditions: {len(recent_conditions)}, "
-            f"Observations: {len(recent_observations)})"
+            "[FHIRSubscriptionService] Cached %d resources (%s)",
+            total_cached,
+            ", ".join(f"{k}: {v}" for k, v in per_type_counts.items()),
         )
 
-        # Update last sync time
-        self.last_sync_time = datetime.utcnow()
+        # Advance the sync watermark only after a full successful cycle —
+        # a partial failure leaves the watermark stale so the missed window
+        # gets re-polled next cycle.
+        self.last_sync_time = cycle_started_at
 
-    async def _fetch_recent_patients(self) -> List[Dict[str, Any]]:
-        """
-        Fetch patients updated since last sync.
+    async def _fetch_and_cache(self, resource_type: str, ttl_hours: int) -> int:
+        """Fetch resources of `resource_type` updated since last sync, write
+        each to Redis keyed by FHIR logical id. Returns count cached.
 
-        Uses HAPI FHIR database structure to query recent Patient resources.
+        Issue #17 fixes three bugs from the prior implementation:
+        - SQL placeholder `%s` (psycopg2) → `$1` (asyncpg, what the HAPIDBClient
+          actually uses). The prior code crashed at every poll cycle with
+          "syntax error at %".
+        - `res_text_vc` is on `hfj_res_ver`, NOT `hfj_resource`. The prior SQL
+          referenced a non-existent column. Now JOINs the version table.
+        - Cache key uses `r.fhir_id` (FHIR logical id) not the internal
+          `res_id` bigint. Without this fix, downstream consumers that match
+          against materialized-view ids find nothing.
         """
-        query = """
-            SELECT
-                res_id as id,
-                res_text_vc as resource
-            FROM hfj_resource
-            WHERE res_type = 'Patient'
-              AND res_updated > %s
-            ORDER BY res_updated DESC
+        sql = """
+            SELECT r.fhir_id, v.res_text_vc
+            FROM hfj_resource r
+            JOIN hfj_res_ver v ON v.res_id = r.res_id AND v.res_ver = r.res_ver
+            WHERE r.res_type = $1
+              AND r.res_deleted_at IS NULL
+              AND r.res_updated > $2
+            ORDER BY r.res_updated DESC
             LIMIT 100
         """
 
         try:
-            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
-
-            resources = []
-            for row in results:
-                try:
-                    import json
-
-                    resource = (
-                        json.loads(row["resource"])
-                        if isinstance(row["resource"], str)
-                        else row["resource"]
-                    )
-                    resources.append(resource)
-                except Exception as e:
-                    logger.warning(f"Failed to parse Patient resource: {e}")
-
-            return resources
+            results = await self.hapi_client.execute_query(
+                sql, (resource_type, self.last_sync_time)
+            )
         except Exception as e:
-            logger.error(f"Failed to fetch recent patients: {e}")
-            return []
+            logger.error("Failed to fetch recent %s resources: %s", resource_type, e)
+            return 0
 
-    async def _fetch_recent_conditions(self) -> List[Dict[str, Any]]:
-        """
-        Fetch conditions updated since last sync.
+        cached = 0
+        for row in results:
+            fhir_id = row.get("fhir_id")
+            if not fhir_id:
+                logger.warning("%s row missing fhir_id; skipping", resource_type)
+                continue
 
-        Uses HAPI FHIR database structure to query recent Condition resources.
-        """
-        query = """
-            SELECT
-                res_id as id,
-                res_text_vc as resource
-            FROM hfj_resource
-            WHERE res_type = 'Condition'
-              AND res_updated > %s
-            ORDER BY res_updated DESC
-            LIMIT 100
-        """
+            raw = row.get("res_text_vc")
+            try:
+                resource_data = json.loads(raw) if isinstance(raw, str) else raw
+            except (TypeError, ValueError) as e:
+                logger.warning("Failed to parse %s/%s JSON: %s", resource_type, fhir_id, e)
+                continue
 
-        try:
-            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
+            try:
+                await self.redis_client.set_fhir_resource(
+                    resource_type, fhir_id, resource_data, ttl_hours=ttl_hours
+                )
+                cached += 1
+            except Exception as e:
+                logger.warning("Failed to cache %s/%s: %s", resource_type, fhir_id, e)
 
-            resources = []
-            for row in results:
-                try:
-                    import json
-
-                    resource = (
-                        json.loads(row["resource"])
-                        if isinstance(row["resource"], str)
-                        else row["resource"]
-                    )
-                    resources.append(resource)
-                except Exception as e:
-                    logger.warning(f"Failed to parse Condition resource: {e}")
-
-            return resources
-        except Exception as e:
-            logger.error(f"Failed to fetch recent conditions: {e}")
-            return []
-
-    async def _fetch_recent_observations(self) -> List[Dict[str, Any]]:
-        """
-        Fetch observations updated since last sync.
-
-        Uses HAPI FHIR database structure to query recent Observation resources.
-        """
-        query = """
-            SELECT
-                res_id as id,
-                res_text_vc as resource
-            FROM hfj_resource
-            WHERE res_type = 'Observation'
-              AND res_updated > %s
-            ORDER BY res_updated DESC
-            LIMIT 100
-        """
-
-        try:
-            results = await self.hapi_client.execute_query(query, (self.last_sync_time,))
-
-            resources = []
-            for row in results:
-                try:
-                    import json
-
-                    resource = (
-                        json.loads(row["resource"])
-                        if isinstance(row["resource"], str)
-                        else row["resource"]
-                    )
-                    resources.append(resource)
-                except Exception as e:
-                    logger.warning(f"Failed to parse Observation resource: {e}")
-
-            return resources
-        except Exception as e:
-            logger.error(f"Failed to fetch recent observations: {e}")
-            return []
+        return cached
