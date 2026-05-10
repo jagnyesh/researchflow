@@ -7,6 +7,7 @@ Executes data extraction from clinical data warehouse using multi-source orchest
 from typing import Dict, Any
 import logging
 import pandas as pd
+from langsmith import traceable
 from .base_agent import BaseAgent
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
 from ..services.file_storage import FileStorageService
@@ -32,6 +33,7 @@ class DataExtractionAgent(BaseAgent):
         self.sql_adapter = SQLonFHIRAdapter(database_url)
         self.file_storage = FileStorageService()
 
+    @traceable(tags=["extraction-agent", "agent-execution"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data extraction task"""
         if task == "extract_data":

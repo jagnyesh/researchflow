@@ -8,6 +8,7 @@ Uses MultiLLMClient for intelligent agenda generation and stakeholder identifica
 from typing import Dict, Any
 import logging
 from datetime import datetime, timedelta
+from langsmith import traceable
 from .base_agent import BaseAgent
 from ..utils.multi_llm_client import MultiLLMClient
 
@@ -30,6 +31,7 @@ class CalendarAgent(BaseAgent):
         super().__init__(agent_id="calendar_agent", orchestrator=orchestrator)
         self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
 
+    @traceable(tags=["calendar-agent", "agent-execution"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute calendar scheduling task"""
         if task == "schedule_kickoff_meeting":

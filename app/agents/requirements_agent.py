@@ -8,6 +8,7 @@ Validates completeness and routes to phenotype validation when ready.
 from typing import Dict, Any
 import logging
 from datetime import datetime
+from langsmith import traceable
 from .base_agent import BaseAgent
 from ..utils.llm_client import LLMClient
 
@@ -31,6 +32,7 @@ class RequirementsAgent(BaseAgent):
         self.llm_client = LLMClient()
         self.conversation_state = {}  # Store conversation state per request
 
+    @traceable(tags=["requirements-agent", "agent-execution"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute requirements gathering task"""
         if task == "gather_requirements":
