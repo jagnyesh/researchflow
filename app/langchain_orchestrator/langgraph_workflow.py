@@ -1188,17 +1188,20 @@ class FullWorkflow:
         state["current_state"] = "qa_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists
+        # Create approval request if not exists.
+        # The qa_approved state flag is the post-QA delivery gate; bridge
+        # canonicalizes it as "delivery" approval (see approval_bridge.py
+        # APPROVAL_TYPE_TO_STATE).
         if state.get("qa_approved") is None:
-            logger.info(f"[FullWorkflow] Creating QA approval request in database...")
+            logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
             await create_approval_from_state(
-                state["request_id"], "qa", state, database_url=DATABASE_URL
+                state["request_id"], "delivery", state, database_url=DATABASE_URL
             )
 
         # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for QA approval decision...")
+        logger.info(f"[FullWorkflow] Checking for delivery approval decision...")
         state = await check_approval_status(
-            state["request_id"], "qa", state, database_url=DATABASE_URL
+            state["request_id"], "delivery", state, database_url=DATABASE_URL
         )
 
         logger.info(f"[FullWorkflow] QA approved: {state.get('qa_approved', 'pending')}")
