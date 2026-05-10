@@ -27,6 +27,7 @@ import os
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
+from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
 from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
@@ -172,6 +173,7 @@ class HybridRunner:
 
         return batch_result
 
+    @traceable(tags=["hybrid-runner", "count"])
     async def execute_count(
         self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:

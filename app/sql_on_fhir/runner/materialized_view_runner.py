@@ -30,6 +30,7 @@ Performance:
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
 
@@ -162,6 +163,7 @@ class MaterializedViewRunner:
             logger.debug(f"Failed SQL:\n{sql}")
             raise RuntimeError(f"Materialized view query failed: {e}")
 
+    @traceable(tags=["materialized-view-runner", "count"])
     async def execute_count(
         self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:
