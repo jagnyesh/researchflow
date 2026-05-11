@@ -88,12 +88,20 @@ jobs:
         pip install -r config/requirements.txt
         pip install -r config/requirements-dev.txt
 
-    - name: Bring up the full docker-compose stack
+    # Bring up services with working in-container healthchecks first; --wait
+    # gates on those. hapi-fhir is distroless (no shell/curl), so it can't
+    # have a working CMD-SHELL healthcheck — start it without --wait and let
+    # seed.sh poll /fhir/metadata from the host.
+    - name: Bring up hapi-db, redis, redis-audit
       run: |
         docker compose -f config/docker-compose.yml up -d --wait \
-          hapi-db hapi-fhir redis redis-audit
+          hapi-db redis redis-audit
 
-    - name: Seed HAPI with test fixture
+    - name: Start hapi-fhir (no in-container healthcheck — distroless image)
+      run: |
+        docker compose -f config/docker-compose.yml up -d hapi-fhir
+
+    - name: Seed HAPI with test fixture (script waits for HAPI to be ready)
       run: |
         ./scripts/seed.sh http://localhost:8081/fhir
 

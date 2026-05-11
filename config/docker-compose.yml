@@ -81,15 +81,13 @@ services:
     depends_on:
       hapi-db:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/fhir/metadata || exit 1"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      # On a cold CI runner, HAPI's Flyway migrations against an empty hapi-db
-      # plus Spring boot can take 90-120s before /fhir/metadata responds.
-      # start_period gives that grace before failed checks count toward retries.
-      start_period: 120s
+    # No in-container healthcheck: hapiproject/hapi is a distroless image
+    # (no shell, no curl, no wget — verified 2026-05-11). Readiness has to
+    # be probed from the host. CI does this in scripts/seed.sh (waits for
+    # /fhir/metadata to return 200 before POSTing the fixture bundle).
+    # Local `make docker-up` shows hapi-fhir as "running" instead of the
+    # previous misleading "unhealthy" status the broken curl-based check
+    # produced.
 
   # PostgreSQL database for HAPI FHIR
   hapi-db:
