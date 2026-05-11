@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pytest
 
+pytestmark = pytest.mark.requires_services
+
 from tests.fixtures.transpiler_expected_outputs import (
     ANCHOR_EXPECTATIONS,
     NON_ANCHOR_VIEW_DEFS,

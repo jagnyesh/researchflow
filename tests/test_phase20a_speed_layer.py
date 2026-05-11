@@ -13,6 +13,8 @@ from datetime import datetime, timedelta
 
 import pytest
 
+pytestmark = pytest.mark.requires_services
+
 from app.cache.redis_client import RedisClient
 from app.clients.hapi_db_client import HAPIDBClient
 from app.services.fhir_subscription_service import FHIRSubscriptionService

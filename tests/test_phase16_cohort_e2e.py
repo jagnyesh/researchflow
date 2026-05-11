@@ -10,18 +10,29 @@ Issue #9's harness verifies the materialized views are CORRECT (per-row,
 per-column). This test verifies the production CONSUMPTION path actually
 hits those views and meets Phase 1.6's latency criterion.
 
-Note on cohort size: the Phase 1.6 issue body said "15 patients" based on
-the weekend-hack baseline (which used InMemoryRunner with a narrow text
-match). The production MV path uses `code_text ILIKE '%diabetes%'` which
-is broader (catches "Diabetic retinopathy" etc.) and returns 60. Both are
-valid interpretations of "patients with diabetes" — clinical strictness
-is a separate concern from this test, which just verifies the path works
-end-to-end with reasonable cohort and fast latency.
+Cohort sizes are tied to the 5-patient hand-curated fixture in
+tests/fixtures/hapi_seed/bundle.json (replaced the Synthea-based dump on
+2026-05-11 per /plan-eng-review). The JoinQueryBuilder OR-matches across
+icd10_code + code_text (3-column fallback from CONTEXT.md), so:
+
+- Female + diabetes (E1%): cohort=1 (just fixture-patient-d). Patient B is
+  female with hypertension SNOMED-only — code_text="Essential hypertension
+  (disorder)" doesn't match '%diabetes%' so she's excluded.
+- Male + hypertension (I10%): cohort=2 (fixture-patient-a via icd10_code
+  I10; fixture-patient-e via code_text ILIKE '%hypertens%'). Patient E
+  has SNOMED-only coding so the I10% column-match fails, but the OR-fallback
+  on code_text catches "Essential hypertension (disorder)". Patient C is
+  male with diabetes only — excluded.
+
+The icd10_code NULL path (Bugs #4/5/6 coverage for filter-no-match) stays
+exercised by patients B/E whose icd10_* columns are NULL in condition_simple.
 """
 
 import time
 
 import pytest
+
+pytestmark = pytest.mark.requires_services
 
 from app.services.feasibility_service import FeasibilityService
 
@@ -69,17 +80,20 @@ async def test_canonical_query_hits_mv_path(materialized_views):
 async def test_canonical_query_returns_nonempty_cohort(materialized_views):
     """The MV-based JOIN returns a real cohort (proves the views have data).
 
-    Doesn't assert exact size — see file docstring for why. Asserts cohort
-    is in a clinically reasonable range (>=10 for a 361-patient Synthea
-    dataset, <=200 for a sanity-check upper bound).
+    Asserts cohort is exactly 1 against the 5-patient fixture: only
+    fixture-patient-d is female AND has a Condition with ICD-10 E11.9.
+    fixture-patient-c is male (filtered out by gender) and patient B has
+    hypertension as SNOMED-only (no ICD-10, so the E1% LIKE filter
+    yields NULL).
     """
     fs = FeasibilityService()
     result = await fs.execute_feasibility_check(CANONICAL_QUERY_INTENT)
 
     cohort = result.get("estimated_cohort", 0)
-    assert 10 <= cohort <= 200, (
-        f"Expected cohort in [10, 200] for 361-patient Synthea dataset; got {cohort}. "
-        f"Below range = views likely empty; above = filter not applying correctly."
+    assert cohort == 1, (
+        f"Expected cohort=1 (just fixture-patient-d) for the 5-patient fixture; "
+        f"got {cohort}. 0 = filter regressed or fixture-d's icd10_code is missing; "
+        f">1 = unintended cross-gender match."
     )
 
 
@@ -153,9 +167,11 @@ async def test_male_hypertension_regression_hits_mv_path(materialized_views):
     ), f"Male+hypertension query must JOIN condition_simple MV; got SQL:\n{sql}"
 
     cohort = result.get("estimated_cohort", 0)
-    assert 1 <= cohort <= 361, (
-        f"Expected non-zero cohort within Synthea's 361 patients; got {cohort}. "
-        f"0 = filter regressed; >361 = filter not applying."
+    assert cohort == 2, (
+        f"Expected cohort=2 (fixture-patient-a + fixture-patient-e) for the 5-patient fixture; "
+        f"got {cohort}. The JoinQueryBuilder ORs icd10_code LIKE 'I10%' with code_text ILIKE '%hypertens%', "
+        f"so patient A matches via ICD-10 and patient E matches via code_text. "
+        f"<2 = OR-fallback regressed; >2 = unintended cross-gender or diabetes match."
     )
 
 

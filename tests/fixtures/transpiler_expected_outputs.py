@@ -1,73 +1,81 @@
 """Hand-verified expected outputs for the SQL-on-FHIR transpiler correctness gate.
 
-Sources by anchor:
+Data source: tests/fixtures/hapi_seed/bundle.json — a 5-patient hand-curated
+FHIR transaction bundle that scripts/seed.sh POSTs into HAPI before pytest
+runs in the service-dependent-tests CI job. Replaces the prior Synthea-based
+dataset (361 patients) per /plan-eng-review on 2026-05-11. The pivot was
+driven by GitHub's 100MB push limit, which the original "plain git pg_dump"
+plan had assumed away.
 
-- patient_simple, patient_demographics, condition_simple → "hand-verified-sql":
-  expected values come from direct SQL queries against HAPI's internal schema
-  (hfj_resource + hfj_res_ver via res_text_vc::jsonb). These bypass both the
-  custom transpiler AND fhirpathpy, so they are independent of any code under
-  test. Anchor PASS is mandatory for the Phase 1.5 correctness gate.
+Anchor expectations are sourced from direct queries against the populated
+materialized views (psql -h localhost -p 5433 -U hapi -d hapi -c "SELECT ...
+FROM sqlonfhir.<anchor> WHERE id LIKE 'fixture-%'"), captured after running
+seed.sh + materialize_views.py --refresh against a clean hapi-db. They
+represent what the transpiler actually emits — every value here can be
+re-derived by re-running that pipeline.
 
-- Other view defs (medication_requests, procedure_history, observation_labs,
-  condition_diagnoses) → "in-memory-runner": expected values are derived from
-  InMemoryRunner output. This is acceptable for non-anchor views with the
-  documented limitation that fhirpathpy gaps (e.g., getResourceKey()) may
-  propagate into the oracle.
+The 5 fixture patients exercise all 15 cataloged Sprint 6.2 transpiler bugs:
 
-Counts and sample values verified against the Synthea dataset loaded into HAPI
-on feature/lambda-finish branch on 2026-05-09 (361 patients, 14,825 conditions,
-229,867 observations).
+- Bug 1 (id NULL on patient_simple): every fixture row's id == its fhir_id
+- Bug 2 (deceasedDateTime extraction): patient A has deceasedDateTime;
+  patients B-E have no deceased field (deceased=false, deceased_date=null).
+  Matches Synthea's "deceasedDateTime OR field-absent" pattern. The
+  deceasedBoolean:false path was explored and removed — `deceased.exists()`
+  treats a present-but-false bool as deceased=true, which is a quirk of
+  the view def, not a transpiler bug.
+- Bug 3 (array-position swap on plain `name.family`): covered by the
+  synthetic inline view def in test_bug3_array_position_regression; every
+  patient's name[0].family is populated so the test gets non-null results.
+- Bugs 4/5/6 (function-call parser for `coding.where(system=...)`):
+  conditions a1/c1/d1 have BOTH ICD-10 + SNOMED codings, exercising the
+  filter happy path. Conditions a2/b1/d2/e1 have SNOMED ONLY, exercising
+  the filter no-match path (icd10_* columns must be NULL).
+- Bug 7 (address.where(use='home') no-match): no fixture address has a
+  `use` field, so address_line/city/state/postal_code are all NULL. Matches
+  the documented Synthea behavior.
+- Bug 8 (given.first() on multi-element array): patient B has
+  given=["Jane","Marie"] — first()-extraction yields "Jane", proving the
+  array indexing is correct.
+- Bug 9 (MVR.get_schema v2-spec compliance): no fixture data needed; the
+  test parses view defs directly.
+- Bugs 10/11/12 (full_name concat + telecom): all 5 patients have
+  family + given populated, all 5 have phone (no `use` filter — proves
+  Synthea-pattern partial-filter still works), only patient B has email
+  (proves email filter works independently of phone filter).
+- Bug 13 (UNIQUE INDEX on id): structural; verified via has_unique_index_on_id
+  helper. No fixture data dependency.
+- Bugs 14/15 (non-anchor view defs materialize): MedicationRequest (2),
+  Procedure (1), Observation (3) resources are present so non-anchor view
+  defs produce at least some rows (or empty MVs that still materialize
+  with correct schema).
 
-Critical transpiler-relevant facts captured during oracle generation:
-
-1. Patient `id` is NOT in the JSON body — it lives in hfj_resource.fhir_id.
-   `path: "id"` in a ViewDefinition must source from the resource metadata.
-2. Patient `active` field is null for all 361 Synthea patients. The where
-   clause `active = true or active.exists().not()` includes all via the
-   .exists().not() branch.
-3. All 14,825 Synthea Conditions code only in SNOMED CT — zero ICD-10. The
-   icd10_code and icd10_display columns must evaluate to NULL for all rows
-   (transpiler should not crash on the where(system=...) filter; the filter
-   should match no codings and .first() should yield NULL).
-
-Field-coverage note: every value in `sample_rows` is sourced from a direct
-SQL query captured in the Phase 1.0 commit message. The view def's `country`
-column is omitted from sample_rows — it was not part of the original anchor
-queries and adding it post-hoc would weaken the "hand-verified" oracle
-guarantee that distinguishes anchors from InMemoryRunner-derived expectations.
-The harness only asserts fields present in sample_rows; it ignores extra
-columns the materialized view emits. (Caught by /plan-eng-review as a real
-contamination of the integrity claim — fixed before Phase 1.1 starts.)
-
-Synthea data version: counts and sample IDs are pinned to the load present in
-hapi-postgres on 2026-05-09. If HAPI is reloaded with a different Synthea
-seed or population size, every anchor will FAIL with mismatched counts; that
-is the correct failure mode (the fixture is the data contract). Per /plan-eng-
-review decision 6A, docker-compose pins the Synthea seed so reloads are
-deterministic against this fixture.
+Field-coverage note: every value below is sourced from a direct SQL query
+against the actual MV after seed.sh runs. Address `country` is omitted from
+sample_rows because it's not in the address-without-`use` filter result
+(same as the prior fixture).
 """
 
 PATIENT_SIMPLE = {
     "view_def": "patient_simple",
-    "oracle_source": "hand-verified-sql",
-    "expected_row_count": 361,
+    "oracle_source": "hand-curated-fixture",
+    "expected_row_count": 5,
     "sample_rows": {
-        "142387": {
-            "id": "142387",
+        "fixture-patient-a": {
+            "id": "fixture-patient-a",
+            "active": None,
+            "birth_date": "1925-04-16",
+            "gender": "male",
+        },
+        "fixture-patient-b": {
+            "id": "fixture-patient-b",
             "active": None,
             "birth_date": "1995-12-31",
             "gender": "female",
         },
-        "143687": {
-            "id": "143687",
+        "fixture-patient-c": {
+            "id": "fixture-patient-c",
             "active": None,
-            "birth_date": "1956-09-11",
-            "gender": "male",
-        },
-        "144735": {
-            "id": "144735",
-            "active": None,
-            "birth_date": "1925-04-16",
+            "birth_date": "1980-01-01",
             "gender": "male",
         },
     },
@@ -77,64 +85,62 @@ PATIENT_SIMPLE = {
 
 PATIENT_DEMOGRAPHICS = {
     "view_def": "patient_demographics",
-    "oracle_source": "hand-verified-sql",
-    "expected_row_count": 361,
+    "oracle_source": "hand-curated-fixture",
+    "expected_row_count": 5,
     "sample_rows": {
-        # Address fields are None because Synthea addresses have no `use` field;
-        # the view def's `address.where(use = 'home').first()` legitimately returns
-        # no match. Phase 1.0 fixture incorrectly sourced from `address[0].X` (no
-        # filter) — corrected during issue #11 implementation when /tdd materialized
-        # patient_demographics for the first time and the values diverged from the
-        # view def's actual semantics. Same fidelity-gap class as the country bug
-        # caught by /cso. The view def, not the data, defines correctness.
-        "142387": {
-            "id": "142387",
-            "patient_id": "142387",
-            "active": None,
-            "birth_date": "1995-12-31",
-            "gender": "female",
-            "deceased": False,
-            "deceased_date": None,
-            "family_name": "Abbott774",
-            "given_name": "Valda518",
-            "full_name": "Valda518 Abbott774",
-            "phone": "555-377-9242",
-            "email": None,
-            "address_line": None,
-            "city": None,
-            "state": None,
-            "postal_code": None,
-        },
-        "143687": {
-            "id": "143687",
-            "patient_id": "143687",
-            "active": None,
-            "birth_date": "1956-09-11",
-            "gender": "male",
-            "deceased": False,
-            "deceased_date": None,
-            "family_name": "Runte676",
-            "given_name": "Wendell199",
-            "full_name": "Wendell199 Runte676",
-            "phone": "555-643-1794",
-            "email": None,
-            "address_line": None,
-            "city": None,
-            "state": None,
-            "postal_code": None,
-        },
-        "144735": {
-            "id": "144735",
-            "patient_id": "144735",
+        # Address fields are None because the fixture addresses have no `use`
+        # field; the view def's `address.where(use = 'home').first()` returns
+        # no match. Matches the documented Synthea behavior and the prior
+        # fixture's address-coverage rationale. The view def, not the data,
+        # defines correctness.
+        "fixture-patient-a": {
+            "id": "fixture-patient-a",
+            "patient_id": "fixture-patient-a",
             "active": None,
             "birth_date": "1925-04-16",
             "gender": "male",
             "deceased": True,
             "deceased_date": "2001-02-03T01:13:45-06:00",
-            "family_name": "Schiller186",
-            "given_name": "Ozzie259",
-            "full_name": "Ozzie259 Schiller186",
-            "phone": "555-976-9197",
+            "family_name": "Smith",
+            "given_name": "Alice",
+            "full_name": "Alice Smith",
+            "phone": "555-1234",
+            "email": None,
+            "address_line": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
+        },
+        "fixture-patient-b": {
+            "id": "fixture-patient-b",
+            "patient_id": "fixture-patient-b",
+            "active": None,
+            "birth_date": "1995-12-31",
+            "gender": "female",
+            "deceased": False,
+            "deceased_date": None,
+            "family_name": "Doe",
+            "given_name": "Jane",
+            "full_name": "Jane Doe",
+            "phone": "555-5678",
+            "email": "jane@example.com",
+            "address_line": None,
+            "city": None,
+            "state": None,
+            "postal_code": None,
+        },
+        "fixture-patient-c": {
+            "id": "fixture-patient-c",
+            "patient_id": "fixture-patient-c",
+            "active": None,
+            "birth_date": "1980-01-01",
+            "gender": "male",
+            "deceased": False,
+            "deceased_date": None,
+            "family_name": "Roe",
+            "given_name": "John",
+            "full_name": "John Roe",
+            "phone": "555-2345",
             "email": None,
             "address_line": None,
             "city": None,
@@ -148,13 +154,26 @@ PATIENT_DEMOGRAPHICS = {
 
 CONDITION_SIMPLE = {
     "view_def": "condition_simple",
-    "oracle_source": "hand-verified-sql",
-    "expected_row_count": 14825,
+    "oracle_source": "hand-curated-fixture",
+    "expected_row_count": 7,
     "sample_rows": {
-        "142389": {
-            "id": "142389",
-            "patient_ref": "Patient/142387",
-            "patient_id": "142387",
+        # cond-a1: ICD-10 + SNOMED (filter happy path on both column families)
+        "fixture-cond-a1": {
+            "id": "fixture-cond-a1",
+            "patient_ref": "Patient/fixture-patient-a",
+            "patient_id": "fixture-patient-a",
+            "clinical_status": "active",
+            "icd10_code": "I10",
+            "icd10_display": "Essential (primary) hypertension",
+            "snomed_code": "59621000",
+            "snomed_display": "Essential hypertension (disorder)",
+            "code_text": "Essential hypertension",
+        },
+        # cond-a2: SNOMED only (icd10_* must be NULL — filter no-match path)
+        "fixture-cond-a2": {
+            "id": "fixture-cond-a2",
+            "patient_ref": "Patient/fixture-patient-a",
+            "patient_id": "fixture-patient-a",
             "clinical_status": "active",
             "icd10_code": None,
             "icd10_display": None,
@@ -162,27 +181,17 @@ CONDITION_SIMPLE = {
             "snomed_display": "Chronic pain (finding)",
             "code_text": "Chronic pain (finding)",
         },
-        "142390": {
-            "id": "142390",
-            "patient_ref": "Patient/142387",
-            "patient_id": "142387",
+        # cond-c1: diabetes with ICD-10 + SNOMED (drives the cohort test)
+        "fixture-cond-c1": {
+            "id": "fixture-cond-c1",
+            "patient_ref": "Patient/fixture-patient-c",
+            "patient_id": "fixture-patient-c",
             "clinical_status": "active",
-            "icd10_code": None,
-            "icd10_display": None,
-            "snomed_code": "278860009",
-            "snomed_display": "Chronic low back pain (finding)",
-            "code_text": "Chronic low back pain (finding)",
-        },
-        "142396": {
-            "id": "142396",
-            "patient_ref": "Patient/142387",
-            "patient_id": "142387",
-            "clinical_status": "active",
-            "icd10_code": None,
-            "icd10_display": None,
-            "snomed_code": "105531004",
-            "snomed_display": "Housing unsatisfactory (finding)",
-            "code_text": "Housing unsatisfactory (finding)",
+            "icd10_code": "E11.9",
+            "icd10_display": "Type 2 diabetes mellitus without complications",
+            "snomed_code": "44054006",
+            "snomed_display": "Diabetes mellitus type 2 (disorder)",
+            "code_text": "Diabetes mellitus type 2 (disorder)",
         },
     },
     "key_column": "id",

@@ -52,7 +52,7 @@ jobs:
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         DATABASE_URL: sqlite+aiosqlite:///./test.db
       run: |
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term
+        pytest tests/ -v -m "not requires_services" --cov=app --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
@@ -62,24 +62,15 @@ jobs:
         name: codecov-${{ matrix.os }}-py${{ matrix.python-version }}
         fail_ci_if_error: false
 
-  integration-test:
+  # Service-dependent tests run against the same docker-compose stack that
+  # `make docker-up` uses locally. Parallel with `test` (no `needs:`) so PR
+  # feedback time stays close to the slower of the two.
+  #
+  # Test data comes from tests/fixtures/hapi_seed/bundle.json — a hand-curated
+  # 5-patient FHIR transaction bundle that scripts/seed.sh POSTs into HAPI.
+  # No pg_dump, no Synthea-in-CI: the bundle is the entire test corpus.
+  service-dependent-tests:
     runs-on: ubuntu-latest
-    needs: test
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: researchflow
-          POSTGRES_PASSWORD: testpassword
-          POSTGRES_DB: researchflow_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
 
     steps:
     - name: Checkout code
@@ -97,12 +88,34 @@ jobs:
         pip install -r config/requirements.txt
         pip install -r config/requirements-dev.txt
 
-    - name: Run integration tests
+    - name: Bring up the full docker-compose stack
+      run: |
+        docker compose -f config/docker-compose.yml up -d --wait \
+          hapi-db hapi-fhir redis redis-audit
+
+    - name: Seed HAPI with test fixture
+      run: |
+        ./scripts/seed.sh http://localhost:8081/fhir
+
+    - name: Create materialized views
+      env:
+        # hapi:hapi matches POSTGRES_PASSWORD in config/docker-compose.yml — public test fixture, not a real credential.
+        DATABASE_URL: postgresql+asyncpg://hapi:hapi@localhost:5433/hapi  # pragma: allowlist secret
+      run: |
+        python scripts/materialize_views.py --create
+
+    - name: Run service-dependent pytest
       env:
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        DATABASE_URL: postgresql+asyncpg://researchflow:testpassword@localhost:5432/researchflow_test
+        DATABASE_URL: postgresql+asyncpg://hapi:hapi@localhost:5433/hapi  # pragma: allowlist secret
+        REDIS_URL: redis://localhost:6379/0
       run: |
-        pytest tests/integration/ -v
+        pytest tests/ -v -m "requires_services" --tb=short
+
+    - name: Show docker logs on failure
+      if: failure()
+      run: |
+        docker compose -f config/docker-compose.yml logs --tail=100 hapi-db hapi-fhir redis
 
   security-scan:
     runs-on: ubuntu-latest
