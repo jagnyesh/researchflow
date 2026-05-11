@@ -17,15 +17,41 @@ from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import logging
 import os
+import re
 import subprocess  # nosec B404 - used only with hardcoded script path in /create-all
 import asyncio
 
 from ..security.dependencies import require_role
 from ..services.materialized_view_service import MaterializedViewService
+from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics/materialized-views", tags=["materialized-views"])
+
+
+# View names must be lowercase ASCII identifiers (letters, digits, underscores
+# starting with a letter). Defense-in-depth regex on top of the allowlist
+# check below — even if someone adds a malformed JSON file under
+# app/sql_on_fhir/view_definitions/, this guard refuses to interpolate it
+# into raw SQL.
+_VIEW_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
+
+
+def _validate_view_name(view_name: str) -> None:
+    """Reject path-param view names that aren't on the server-side allowlist.
+
+    Defends against SQL injection in routes like POST /{view_name}/refresh and
+    DELETE /{view_name} where view_name flows into f-string-interpolated
+    DROP/REFRESH statements. Both branches return 404 (not 422) so callers
+    cannot distinguish "malformed name" from "unknown view" — same response
+    surface as GET /{view_name}/status when the view doesn't exist.
+    """
+    if not _VIEW_NAME_RE.match(view_name):
+        raise HTTPException(status_code=404, detail=f"Materialized view '{view_name}' not found")
+    manager = ViewDefinitionManager()
+    if view_name not in manager.list():
+        raise HTTPException(status_code=404, detail=f"Materialized view '{view_name}' not found")
 
 
 # Pydantic models for request/response
@@ -154,21 +180,17 @@ async def get_view_status(view_name: str):
 
 
 @router.post("/{view_name}/refresh", response_model=ViewRefreshResponse)
-async def refresh_view(view_name: str):
+async def refresh_view(
+    view_name: str,
+    _admin=Depends(require_role("admin")),
+):
     """
     Refresh a specific materialized view
 
-    This re-computes the view with latest data from HAPI database.
-
-    Args:
-        view_name: Name of the view to refresh
-
-    Returns:
-        Refresh result with timing and row count
-
-    Example:
-        POST /analytics/materialized-views/patient_demographics/refresh
+    Admin-role gated (issue #26). Validates view_name against the server-side
+    allowlist before any SQL is built — see _validate_view_name docstring.
     """
+    _validate_view_name(view_name)
     try:
         service = await get_service()
         try:
@@ -231,9 +253,11 @@ async def refresh_all_views(
 
 
 @router.post("/refresh-stale")
-async def refresh_stale_views():
+async def refresh_stale_views(_admin=Depends(require_role("admin"))):
     """
     Check for stale views and refresh them
+
+    Admin-role gated (issue #26).
 
     Only refreshes views that are configured for auto-refresh
     and have exceeded their staleness threshold.
@@ -268,9 +292,12 @@ async def refresh_stale_views():
 
 
 @router.post("/create-all")
-async def create_all_views():
+async def create_all_views(_admin=Depends(require_role("admin"))):
     """
     Create all materialized views from ViewDefinitions
+
+    Admin-role gated (issue #26). Spawns a long-running subprocess; only
+    admin should be able to trigger that.
 
     This runs the scripts/create_materialized_views.py script
     to create all views in the 'sqlonfhir' schema.
@@ -322,27 +349,32 @@ async def create_all_views():
 
 
 @router.delete("/{view_name}")
-async def drop_view(view_name: str):
+async def drop_view(
+    view_name: str,
+    _admin=Depends(require_role("admin")),
+):
     """
     Drop a materialized view
 
+    Admin-role gated (issue #26). Validates view_name against the server-side
+    allowlist before any SQL is built — _validate_view_name returns 404 for
+    unknown or malformed names, so injection payloads like
+    DELETE /analytics/materialized-views/x;DROP%20TABLE%20users--
+    never reach db_client.execute_query.
+
     WARNING: This permanently deletes the view and its data.
-
-    Args:
-        view_name: Name of the view to drop
-
-    Returns:
-        Success confirmation
-
-    Example:
-        DELETE /analytics/materialized-views/patient_demographics
     """
+    _validate_view_name(view_name)
     try:
         service = await get_service()
         try:
             logger.info(f"Dropping view '{view_name}' via API")
 
-            # Execute DROP MATERIALIZED VIEW
+            # Execute DROP MATERIALIZED VIEW. view_name has already passed the
+            # _VIEW_NAME_RE regex AND the ViewDefinitionManager.list() allowlist;
+            # f-string interpolation here is post-validation. Defense-in-depth
+            # via dynamic identifier quoting is out of scope (would need a
+            # psycopg2 dependency just for sql.Identifier).
             drop_sql = f"DROP MATERIALIZED VIEW IF EXISTS sqlonfhir.{view_name} CASCADE"
             await service.db_client.execute_query(drop_sql)
 
