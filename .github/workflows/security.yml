@@ -30,7 +30,10 @@ jobs:
 
     - name: Run Safety check
       run: |
-        safety check --json --output safety-report.json || true
+        # safety 3.7+ repurposed --output to mean FORMAT (screen|text|json|bare|html),
+        # not filename. Use stdout redirect to write the report file. Mirrors the
+        # pattern used in tests.yml and security-scan.yml.
+        safety check --json > safety-report.json || true
         cat safety-report.json
 
     - name: Run pip-audit
