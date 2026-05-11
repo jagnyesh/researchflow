@@ -36,25 +36,31 @@ class TestCaseSensitiveMatching:
         """
         sql, params = sql_generator._build_condition_clause("diabetes", include=True)
 
-        # Verify LOWER() is used on both sides of LIKE
-        assert "LOWER(c.icd10_display)" in sql, "Should use LOWER() on column"
+        # Verify LOWER() is used on both sides of LIKE for each matched column
+        assert "LOWER(c.code_text)" in sql, "Should use LOWER() on code_text"
+        assert "LOWER(c.icd10_display)" in sql, "Should use LOWER() on icd10_display"
+        assert "LOWER(c.snomed_display)" in sql, "Should use LOWER() on snomed_display"
         assert "LIKE LOWER(" in sql, "Should use LOWER() on parameter"
 
         # Verify EXISTS pattern (not INNER JOIN which can create duplicates)
         assert "EXISTS" in sql
         assert "SELECT 1 FROM" in sql
 
-    def test_condition_clause_uses_icd10_display_column(self, sql_generator):
+    def test_condition_clause_matches_all_three_code_columns(self, sql_generator):
         """
-        Test that condition matching uses icd10_display column for semantic clarity
-
-        Changed from generic 'code_text' to specific 'icd10_display' on 2025-11-10
-        to align with FHIR standards and manual query conventions.
+        Test that condition matching ORs across code_text, icd10_display,
+        snomed_display so SNOMED-only datasets (Synthea) match alongside
+        ICD-10 datasets. Regression for the cohort=0 symptom on synthetic
+        HAPI data even though condition_simple has 14k+ rows.
         """
         sql, params = sql_generator._build_condition_clause("diabetes", include=True)
 
-        # Verify icd10_display column is used
-        assert "icd10_display" in sql, "Should use icd10_display column (not code_text)"
+        # All three columns must be in the OR'd predicate
+        assert "code_text" in sql
+        assert "icd10_display" in sql
+        assert "snomed_display" in sql
+        # And they must be OR'd (any-match), not AND'd
+        assert " OR " in sql
 
     def test_diabetes_query_generation(self, sql_generator):
         """

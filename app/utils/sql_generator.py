@@ -40,9 +40,14 @@ class SQLGenerator:
             self.observation_table = "observation_labs"
             # Column mappings for materialized views
             self.patient_id_column = "patient_id"  # Not "id"
-            # Use icd10_display for semantic clarity (ICD-10 specific field)
-            # Note: code_text contains identical data but is less specific
-            self.condition_code_column = "icd10_display"  # Was: "code_text"
+            # condition_simple stores the same diagnosis under three columns
+            # depending on the source coding system. Match against all three:
+            # ICD-10-coded data populates icd10_display, SNOMED-coded data
+            # (Synthea) populates snomed_display, code_text is the canonical
+            # free-text from FHIR code.text and is populated regardless. A
+            # prior change to a single column (icd10_display) silently zeroed
+            # the cohort on SNOMED-source datasets.
+            self.condition_code_columns = ("code_text", "icd10_display", "snomed_display")
             self.observation_code_column = "code"
         else:
             # Legacy HAPI FHIR schema (deprecated)
@@ -52,8 +57,13 @@ class SQLGenerator:
             self.observation_table = "observation"
             # Column mappings for legacy schema
             self.patient_id_column = "id"
-            self.condition_code_column = "code_display"
+            self.condition_code_columns = ("code_display",)
             self.observation_code_column = "code_display"
+
+        # Back-compat alias for callers that still read condition_code_column.
+        # Keep the most semantically informative single column for any code
+        # path that still expects a single string.
+        self.condition_code_column = self.condition_code_columns[0]
 
     def _get_param_name(self, prefix: str = "p") -> str:
         """Generate unique parameter name"""
@@ -370,21 +380,26 @@ class SQLGenerator:
         Returns:
             Tuple of (SQL condition string, parameters dict)
         """
-        # Simplified: In production, would use ICD-10/SNOMED codes
         operator = "EXISTS" if include else "NOT EXISTS"
         param_name = self._get_param_name("condition")
         params = {param_name: f"%{condition_term}%"}
 
         condition_table = self._build_table_name(self.condition_table)
-        condition_col = self.condition_code_column
         patient_id_col = self.patient_id_column
+
+        # OR across every diagnosis-text column the MV exposes so SNOMED-
+        # only, ICD-10-only, and mixed deployments all match. Mirrors the
+        # text-matching pattern in app/agents/phenotype_agent.py.
+        col_match = " OR ".join(
+            f"LOWER(c.{col}) LIKE LOWER(:{param_name})" for col in self.condition_code_columns
+        )
 
         # nosec B608 - Table/column names from validated configuration, parameters are bound
         # CRITICAL: LOWER() is required for case-insensitive matching (see docstring)
         sql = f"""{operator} (
         SELECT 1 FROM {condition_table} c
         WHERE c.patient_id = p.{patient_id_col}
-        AND LOWER(c.{condition_col}) LIKE LOWER(:{param_name})
+        AND ({col_match})
     )"""
 
         return sql, params
