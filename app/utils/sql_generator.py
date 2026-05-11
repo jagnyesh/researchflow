@@ -314,8 +314,9 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(condition_params)
 
-                elif concept_type == "demographics":
-                    # Build demographic query
+                elif concept_type in ("demographic", "demographics"):
+                    # Accept both singular ("demographic" — what the LLM
+                    # extractor and RequirementsBuilder produce) and plural.
                     condition, demo_params = self._build_demographic_clause(
                         term, concept.get("details", "")
                     )
@@ -387,6 +388,34 @@ class SQLGenerator:
 
         return sql, params
 
+    @staticmethod
+    def _parse_age_details(details: str) -> Tuple[Any, Any]:
+        """
+        Parse an age comparison from free-form details.
+
+        Accepts symbolic ('> 18', '< 65') and natural-language forms
+        ('greater than 18', 'above 18', 'over 65', 'below 18',
+        'less than 65', 'under 18'). Returns (op, int_age) or (None, None).
+        """
+        import re
+
+        if not details:
+            return None, None
+        text = details.lower().strip()
+        gt_words = ("greater than", "more than", "older than", "above", "over")
+        lt_words = ("less than", "fewer than", "younger than", "below", "under")
+        op = None
+        if ">" in text or any(w in text for w in gt_words):
+            op = ">"
+        elif "<" in text or any(w in text for w in lt_words):
+            op = "<"
+        if op is None:
+            return None, None
+        m = re.search(r"(\d+)", text)
+        if not m:
+            return None, None
+        return op, int(m.group(1))
+
     def _build_demographic_clause(self, term: str, details: str) -> Tuple[str, Dict[str, Any]]:
         """
         Build SQL for demographic criterion
@@ -402,30 +431,19 @@ class SQLGenerator:
             f"_build_demographic_clause: term='{term}' (normalized: '{term_lower}'), details='{details}'"
         )
 
-        # Parse age criteria
+        # Parse age criteria. The LLM extractor emits details in mixed
+        # forms — symbolic ("> 18") or natural-language ("greater than 18
+        # years", "above 18", "over 65"). Normalize all to a comparison op
+        # plus an integer age.
         if "age" in term_lower:
-            if ">" in details:
-                age = details.split(">")[1].strip()
-                param_name = self._get_param_name("age")
-                try:
-                    age_value = int(age)
-                    params = {param_name: age_value}
-                    sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthdate)) > :{param_name}"
-                    return sql, params
-                except ValueError:
-                    logger.warning(f"Invalid age value: {age}")
-                    return "", {}
-            elif "<" in details:
-                age = details.split("<")[1].strip()
-                param_name = self._get_param_name("age")
-                try:
-                    age_value = int(age)
-                    params = {param_name: age_value}
-                    sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthdate)) < :{param_name}"
-                    return sql, params
-                except ValueError:
-                    logger.warning(f"Invalid age value: {age}")
-                    return "", {}
+            op, age_value = self._parse_age_details(details)
+            if op is None:
+                logger.warning(f"Could not parse age details: {details!r}")
+                return "", {}
+            param_name = self._get_param_name("age")
+            params = {param_name: age_value}
+            sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.dob)) {op} :{param_name}"
+            return sql, params
 
         # Parse gender - MORE ROBUST MATCHING
         gender_value = None
