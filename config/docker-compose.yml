@@ -79,12 +79,17 @@ services:
       # Enable SQL-on-FHIR support
       hapi.fhir.bulk_export_enabled: "true"
     depends_on:
-      - hapi-db
+      hapi-db:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/fhir/metadata || exit 1"]
-      interval: 30s
+      interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 10
+      # On a cold CI runner, HAPI's Flyway migrations against an empty hapi-db
+      # plus Spring boot can take 90-120s before /fhir/metadata responds.
+      # start_period gives that grace before failed checks count toward retries.
+      start_period: 120s
 
   # PostgreSQL database for HAPI FHIR
   hapi-db:
