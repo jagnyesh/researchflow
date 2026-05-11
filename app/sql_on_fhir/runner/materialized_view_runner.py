@@ -59,11 +59,12 @@ class MaterializedViewRunner:
     # - Use patient_id for JOINs (faster, simpler)
     # - Use patient_ref when FHIR format is needed
     SEARCH_PARAM_MAPPINGS = {
-        # Patient-related params
+        # Patient-related params (column names match the patient_demographics
+        # ViewDefinition: see app/sql_on_fhir/view_definitions/patient_demographics.json)
         "gender": "gender",
-        "birthdate": "dob",
-        "family": "name_family",
-        "given": "name_given",
+        "birthdate": "birth_date",
+        "family": "family_name",
+        "given": "given_name",
         # Common params across resources
         # Note: patient_id is the extracted ID from patient_ref
         "patient": "patient_id",

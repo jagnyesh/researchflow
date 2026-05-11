@@ -101,10 +101,11 @@ class TestCaseSensitiveMatching:
             requirements, count_only=False
         )
 
-        # Verify SELECT fields include demographics
-        assert "p.name_family" in extraction_sql
-        assert "p.name_given" in extraction_sql
-        assert "p.dob" in extraction_sql
+        # Verify SELECT fields include demographics (column names match the
+        # patient_demographics ViewDefinition: family_name/given_name/birth_date)
+        assert "p.family_name" in extraction_sql
+        assert "p.given_name" in extraction_sql
+        assert "p.birth_date" in extraction_sql
         assert "p.patient_id" in extraction_sql
 
         # Verify LOWER() is still used in extraction query

@@ -5,8 +5,9 @@ predicates from structured criteria.
 Pins three behaviors:
 1. Dispatcher accepts both "demographic" (singular, what the LLM extractor
    and RequirementsBuilder produce) and "demographics" (plural).
-2. Age comparison uses p.dob (the column the materialized view exposes),
-   not p.birthdate.
+2. Age comparison uses p.birth_date::date (the column the patient_demographics
+   ViewDefinition exposes; cast because the FHIR transpiler materializes it
+   as text). Old code referenced p.birthdate / p.dob which never existed.
 3. Combined demographic + diagnosis criteria produce a WHERE clause with
    ALL predicates, not just the diagnosis one.
 """
@@ -39,17 +40,16 @@ class TestDemographicPredicatesEmitted:
         assert "p.gender" in sql, f"missing gender predicate; sql=\n{sql}"
         assert "female" in params.values(), f"gender param not bound; params={params}"
 
-    def test_age_greater_than_emits_age_predicate_against_dob(self, gen):
+    def test_age_greater_than_emits_age_predicate_against_birth_date(self, gen):
         reqs = RB.build_requirements(
             inclusion=[RB.build_demographic("Age > 18", term="age", details="> 18")]
         )
         sql, params = gen.generate_phenotype_sql(reqs, count_only=True)
         assert (
-            "p.dob" in sql
-        ), f"age clause must reference p.dob (the MV column), not p.birthdate; sql=\n{sql}"
-        assert (
-            "p.birthdate" not in sql
-        ), f"p.birthdate doesn't exist in patient_demographics MV; sql=\n{sql}"
+            "p.birth_date::date" in sql
+        ), f"age clause must reference p.birth_date::date (the MV column, cast from text); sql=\n{sql}"
+        assert "p.birthdate" not in sql, f"p.birthdate never existed; sql=\n{sql}"
+        assert "p.dob" not in sql, f"p.dob doesn't exist in patient_demographics MV; sql=\n{sql}"
         assert 18 in params.values(), f"age param not bound; params={params}"
 
     def test_combined_gender_age_diagnosis_emits_all_three_predicates(self, gen):
@@ -63,7 +63,7 @@ class TestDemographicPredicatesEmitted:
         )
         sql, params = gen.generate_phenotype_sql(reqs, count_only=True)
         assert "p.gender" in sql, f"gender predicate missing; sql=\n{sql}"
-        assert "p.dob" in sql, f"age predicate missing; sql=\n{sql}"
+        assert "p.birth_date" in sql, f"age predicate missing; sql=\n{sql}"
         assert "condition_simple" in sql, f"diagnosis predicate missing; sql=\n{sql}"
         assert (
             sql.count("AND") >= 2
@@ -104,7 +104,7 @@ class TestDemographicTypeStringTolerance:
             "time_period": {},
         }
         sql, params = gen.generate_phenotype_sql(reqs, count_only=True)
-        assert "p.dob" in sql, f"age clause missing for details='{details}'; sql=\n{sql}"
+        assert "p.birth_date" in sql, f"age clause missing for details='{details}'; sql=\n{sql}"
         assert (
             expected_op in sql
         ), f"expected operator '{expected_op}' missing for details='{details}'; sql=\n{sql}"

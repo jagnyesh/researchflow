@@ -320,19 +320,19 @@ class DataExtractionAgent(BaseAgent):
             # nosec B608 - SQL structure is safe, all values parameterized
 
             # Field mapping for available columns
-            # NOTE: patient_demographics has: patient_id, gender, dob, name_given, name_family
+            # NOTE: patient_demographics has: patient_id, gender, birth_date, given_name, family_name
             # It does NOT have: race, address (not in FHIR synthetic data)
             field_mapping = {
-                "family name": "name_family",
-                "given name": "name_given",
-                "date of birth": "dob",
+                "family name": "family_name",
+                "given name": "given_name",
+                "date of birth": "birth_date",
                 "address": None,  # Not available in patient_demographics
             }
 
             # Build SELECT clause based on requested demographic field
             if data_element_lower == "demographics (age, gender, race)":
                 # Select all available demographic fields (race not available)
-                select_fields = "patient_id, name_family, name_given, gender, dob"
+                select_fields = "patient_id, family_name, given_name, gender, birth_date"
             elif data_element_lower == "address":
                 # Address not available in patient_demographics - return empty
                 logger.warning(
@@ -514,21 +514,21 @@ class DataExtractionAgent(BaseAgent):
             # Extract demographics from patient_demographics materialized view
             # nosec B608 - SQL structure is safe, all values parameterized
 
-            # NOTE: patient_demographics table has: patient_id, gender, dob, name_given, name_family
+            # NOTE: patient_demographics MV has: patient_id, gender, birth_date, given_name, family_name
             # It does NOT have: race, address (not in FHIR synthetic data)
 
             # Field mapping for available columns only
             field_mapping = {
-                "family name": "name_family",
-                "given name": "name_given",
-                "date of birth": "dob",
+                "family name": "family_name",
+                "given name": "given_name",
+                "date of birth": "birth_date",
                 "address": None,  # Not available in patient_demographics
             }
 
             # Build SELECT clause based on requested demographic fields
             if data_element_lower == "demographics (age, gender, race)":
                 # Select all available demographic fields (race not available)
-                select_fields = "patient_id, name_family, name_given, gender, dob"
+                select_fields = "patient_id, family_name, given_name, gender, birth_date"
             elif data_element_lower == "address":
                 # Address not available in patient_demographics - return empty
                 logger.warning(
@@ -636,9 +636,9 @@ class DataExtractionAgent(BaseAgent):
                 # Define demographic data elements that should be consolidated
                 # Bug fix: Use lowercase keys for case-insensitive matching
                 demographic_elements = {
-                    "family name": "name_family",
-                    "given name": "name_given",
-                    "date of birth": "dob",
+                    "family name": "family_name",
+                    "given name": "given_name",
+                    "date of birth": "birth_date",
                     "demographics (age, gender, race)": "demographics_full",
                 }
 
@@ -687,12 +687,12 @@ class DataExtractionAgent(BaseAgent):
                                             elif element_name_lower == "given name":
                                                 patient_record["given_name"] = value
                                             elif element_name_lower == "date of birth":
-                                                patient_record["dob"] = value
+                                                patient_record["birth_date"] = value
                                             elif key in [
                                                 "gender",
-                                                "dob",
-                                                "name_family",
-                                                "name_given",
+                                                "birth_date",
+                                                "family_name",
+                                                "given_name",
                                             ]:
                                                 # For Demographics (age, gender, race) element
                                                 patient_record[key] = value
@@ -710,7 +710,7 @@ class DataExtractionAgent(BaseAgent):
                             "family_name",
                             "given_name",
                             "gender",
-                            "dob",
+                            "birth_date",
                         ]
                         actual_columns = [
                             col for col in desired_columns if col in demographics_df.columns

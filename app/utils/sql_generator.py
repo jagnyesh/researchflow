@@ -92,21 +92,22 @@ class SQLGenerator:
             List of column names to include in SELECT clause
         """
         # Hardcoded mapping of data elements to actual database columns
-        # Based on sqlonfhir.patient_demographics schema:
-        # Columns: id, patient_id, gender, dob, name_given, name_family
+        # Based on sqlonfhir.patient_demographics ViewDefinition columns:
+        # id, patient_id, active, birth_date, gender, deceased, deceased_date,
+        # family_name, given_name, full_name, phone, email, address_line, city,
+        # state, postal_code, country
         field_mapping = {
-            "demographics": ["name_family", "name_given", "dob", "gender"],
-            "family name": ["name_family"],
-            "given name": ["name_given"],
-            "date of birth": ["dob"],
-            "birth_date": ["dob"],
-            "birthdate": ["dob"],
-            "dob": ["dob"],
+            "demographics": ["family_name", "given_name", "birth_date", "gender"],
+            "family name": ["family_name"],
+            "given name": ["given_name"],
+            "date of birth": ["birth_date"],
+            "birth_date": ["birth_date"],
+            "birthdate": ["birth_date"],
+            "dob": ["birth_date"],
             "gender": ["gender"],
-            # Address fields don't exist in materialized views yet
-            "address": [],
-            "phone": [],
-            "email": [],
+            "address": ["address_line", "city", "state", "postal_code", "country"],
+            "phone": ["phone"],
+            "email": ["email"],
         }
 
         # Always include patient_id
@@ -116,7 +117,7 @@ class SQLGenerator:
         if not data_elements:
             # Default to basic demographics if no elements specified
             logger.info("No data_elements specified, defaulting to basic demographics")
-            fields.extend(["p.name_family", "p.name_given", "p.dob", "p.gender"])
+            fields.extend(["p.family_name", "p.given_name", "p.birth_date", "p.gender"])
             return fields
 
         # Track which elements we successfully map
@@ -442,7 +443,9 @@ class SQLGenerator:
                 return "", {}
             param_name = self._get_param_name("age")
             params = {param_name: age_value}
-            sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.dob)) {op} :{param_name}"
+            # birth_date is materialized as text (FHIR transpiler default);
+            # cast to date so AGE() accepts it.
+            sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) {op} :{param_name}"
             return sql, params
 
         # Parse gender - MORE ROBUST MATCHING
