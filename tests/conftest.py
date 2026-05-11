@@ -15,6 +15,13 @@ sys.path.insert(0, project_root)
 # Set test database before importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 
+# Force-pin LangSmith project to "researchflow-test" so pytest runs do not
+# pollute the "researchflow-production" project that the streamlit portal
+# writes to (.env defaults LANGCHAIN_PROJECT=researchflow-production for the
+# UI). Direct assignment, NOT setdefault — must override whatever .env or
+# the shell exports. Lazily creates "researchflow-test" on first write.
+os.environ["LANGCHAIN_PROJECT"] = "researchflow-test"
+
 # Phase 3b: deterministic Fernet key for the test session — DO NOT USE IN PRODUCTION.
 # Set before model import so EncryptedText/EncryptedJSON columns can resolve their
 # key callable on first ORM operation. Generated once with `Fernet.generate_key()`
