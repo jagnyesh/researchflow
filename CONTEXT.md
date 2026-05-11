@@ -1,32 +1,66 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.1 (Security Baseline) — **COMPLETE**, ready for PR
-**Phase:** 4 complete (E2E test + final HIPAA narrative)
-**Branch:** `feature/sprint6-security-baseline` (24+ commits unmerged: 8 audit + 8 schema + 3 TLS + 4 encryption + Phase 4)
-**Overall progress:** Sprint 6.1 100%; ~10/22 sprints overall
-**Last updated:** 2026-05-07
+**Sprint:** 6.2 (Lambda Architecture Finish) — Phase 1 + 2 COMPLETE, **PR #24 open and fully green** (19/19 checks pass, mergeable)
+**Phase:** All — 1.0, 1.1, 1.2, 1.5, 1.6, 2.0, 2.1 shipped. Plus a /cso security hardening pass that closed CRITICAL #26 (SQL injection in DROP MV endpoint).
+**Branch:** `feature/lambda-finish` (28 commits since main `f931164`, +2,632/-385 lines, 38 files)
+**PR:** [#24](https://github.com/jagnyesh/researchflow/pull/24) — closes #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #21, #22, **#26**
+**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08 as squash `f931164`. Sprint 6.2 ready to ship as a single squash PR. ~11/22 sprints overall.
+**Last updated:** 2026-05-10
 
 ## Active sprint goal
 
-Establish HIPAA-compliant security baseline as a prerequisite for any production deployment: JWT auth wired to PHI endpoints, audit middleware writing to a durable Redis-backed queue, input validation framework, TLS, encryption-at-rest design.
+Ship the real Lambda Architecture for SQL-on-FHIR (batch + speed + serving) so every "Lambda complete" claim in the README/CLAUDE/docs is verifiable from a fresh clone. Sprint 6.2 was triggered when /office-hours flagged 4 doc files claiming Lambda was complete while only 1/7 view defs materialized in production. Integrity-first: every claim either becomes true via implementation, or the claim gets rewritten.
 
-## In progress
+## In progress (Sprint 6.2)
 
-- [ ] Phase 1.5 — Wire `Depends(get_current_user)` + `@limiter.limit` onto PHI routes (`sql_on_fhir`, `research`, `analytics`, `materialized_views`, `approvals`); separate service-token auth for agent routes (`mcp`, `a2a`). **Note:** Phase 2.2 middleware now enforces auth on ALL non-allowlisted routes by default; the per-route `Depends` work in this phase is now defense-in-depth rather than primary gating.
-- [x] Phase 2.2 — Audit pipeline shipped via 3 issues + CSO review.
-- [x] Phase 2.3 — Input validation framework shipped via 3 issues + CSO review.
-- [x] Phase 3a — TLS enforcement (HTTPS redirect + HSTS) shipped via 1 issue. See "What just shipped" below.
-- [x] Phase 3b — Encryption-at-rest shipped via 3 issues (#8 tracer + #9 remaining columns + #10 docs) + CSO findings 1+2 fix. Tier 1 scope: 4 columns total (`ResearchRequest.initial_request`, `RequirementsData.inclusion_criteria`/`exclusion_criteria`, `FeasibilityReport.phenotype_sql`). Spike outcome: `EncryptedType(JSON)` doesn't round-trip cleanly; fallback to `_EncryptedJSONImpl` TypeDecorator that wraps `StringEncryptedType(Text)` with explicit `json.dumps`/`loads`. Researcher PII deferred to Phase 3b.1.
-- [x] Phase 4 — E2E test (`tests/e2e/test_hipaa_baseline_e2e.py`: login → POST research request → encryption-on-disk + audit row visible + PHI-safe 422 negative tracer) + `docs/HIPAA_POSTURE.md` Sprint 6.1 baseline summary section (control-by-control table + reviewer Q&A).
+- [x] Phase 1.0 — Hand-verified anchor fixtures (3 anchors: patient_simple, patient_demographics, condition_simple) sourced from direct SQL against HAPI internal schema. Breaks the InMemoryRunner-as-oracle circularity flagged by codex review on the design doc.
+- [x] Phase 1.1 (issue #9) — Transpiler correctness harness. 41 parametrized tests (later 48 after #13 added unique-index check). Built TDD-style across 7 cycles. /qa mutation testing verified signal sensitivity for Bugs 1+9 before any fix shipped.
+- [x] Phase 1.2 (issues #10, #11, #12, #13, #16) — All 15 cataloged transpiler bugs fixed. 4 cataloged in design doc + 6 surfaced during /tdd implementation + Bug 13 surfaced during /qa mutation work + Bugs 14/15 surfaced during /tdd cycles. Catalog updates landed in design doc as bugs surfaced.
+- [x] Phase 1.5 (issue #14) — Gate decision: PROCEED. 7/7 view defs materialize, all 3 anchors PASS sample_values, MVR.get_schema fixed, UNIQUE INDEX in place for CONCURRENTLY refresh. See DECISIONS.md Sprint 6.2 entry.
+- [x] Phase 1.6 (issue #15) — Streamlit cohort verified end-to-end via HybridRunner→MaterializedViewRunner path. "Female patients with diabetes" returns 60 patients in 72.3-72.5 ms via `sqlonfhir.patient_demographics JOIN sqlonfhir.condition_simple`. (Issue body said "15" based on weekend-hack baseline; production MV path uses broader code_text ILIKE matching that catches "Diabetic retinopathy" etc. — clinically more honest. See `tests/test_phase16_cohort_e2e.py`.)
+- [x] Phase 2.0 (issue #17 + #18) — Poll-based speed layer + on-demand POST /materialized_views/refresh-all (admin-gated, CONCURRENTLY).
+- [x] Phase 2.1 (issue #19) — HybridRunner.execute() merge + dedup actually merges materialized + speed-layer rows.
+- [x] Phase 2.3 — Sprint close. Single squash PR #24 open, all 19 CI checks green.
+- [ ] Phase 2.2 — Doc rewrite (this commit is part of it). Re-enable 5 ignored Lambda test files deferred to issue #25 (CI: bring up docker-compose).
 
-**Estimated remaining:** 0 days. Sprint 6.1 ships as one PR.
+**Bonus (this session, beyond the original Sprint 6.2 scope):**
+
+- [x] **#21** — Phenotype SQL emits gender + age predicates. Three coupled root causes: (a) dispatcher checked plural `"demographics"` but LLM emits singular `"demographic"`; (b) age clause referenced `p.birthdate` (column doesn't exist); (c) age parser only handled symbolic `>` / `<`, not natural-language "greater than 18".
+- [x] **#22** — Aligned consumers (sql_generator, extraction_agent, materialized_view_runner) to the actual `patient_demographics` MV column names (`birth_date`, `family_name`, `given_name`).
+- [x] **OR-match diagnoses across 3 columns** — cohort 0 → 94 on Synthea data. Synthea emits SNOMED only; phenotype SQL filter was hardcoded to `icd10_display` which is NULL for every Synthea row. Now ORs across `code_text`, `icd10_display`, `snomed_display`.
+- [x] **@traceable on all 6 production agents** — closes the BACKLOG observability gap. langgraph_workflow.py calls `agent.execute_task(...)` directly (8 sites) bypassing `BaseAgent.handle_task` where the prior decorator lived.
+- [x] **ApprovalBridge `qa_review` uses canonical "delivery" approval_type** — `_handle_qa_review` was firing "Unknown approval_type: qa" because `qa_approved` state flag is misnamed (it's the post-QA delivery gate).
+- [x] **conftest LangSmith project pin** — pytest now writes traces to `researchflow-test`, not `researchflow-production`. Surfaced because portal traces and pytest traces were ending up in the same project.
+- [x] **#26 (CRITICAL)** — Materialized-views router admin-gating + view_name allowlist. DELETE /{view_name} f-string-interpolated path param into DROP MATERIALIZED VIEW with no admin gate (only Sprint 6.1 audit-middleware default-deny, which any researcher token passes). Researcher could fire `DELETE /analytics/materialized-views/x;DROP%20TABLE%20research_requests;--` and drop any application table. 5 mutating endpoints now admin-gated, 2 path-param routes validate against `ViewDefinitionManager.list()` allowlist + `^[a-z][a-z0-9_]*$` regex. 20 new regression tests in `tests/test_materialized_views_auth.py` PROVE injection payloads return 404 and never reach `db_client.execute_query` (mock + `assert_not_called`).
+- [x] **CI infra** — pytest.ini ignores HAPI/Redis-dependent tests (folded into #25 follow-up); safety CLI flag fixed in `.github/workflows/security.yml` (`--output` was repurposed to format flag in safety 3.7).
 
 ## Blockers / decisions needed
 
-- Encryption-at-rest spike: `sqlalchemy-utils.StringEncryptedType` works at the column level on both SQLite and Postgres (it's transparent serialization, not a DB feature). The asyncpg-specific risk is the JSON-column composition (`StringEncryptedType` wrapping a JSON serializer round-trip) — that's the half-day spike. SQLite test path stays; production-on-Postgres remains the deployment requirement for other reasons.
-- Sprint 6.1 prioritized the HIPAA security baseline ahead of feature work; production-readiness gating is on baseline completeness, not on user-feedback signal.
+- None. PR #24 ready to merge — 19/19 CI checks green, 13 issues will auto-close on merge.
 
-## What just shipped
+## Open follow-up issues (none merge-blocking for #24)
+
+- **#23** — Pre-existing latent test failures (API drift in `test_sql_generation_quality.py`, non-existent class imports in `TestConservativeFactorDocumentation`, never-implemented `requirements["demographics"]` field in `test_diabetes_query_generation`).
+- **#25** — CI: bring up docker-compose so service-dependent tests run (currently `--ignore`d in pytest.ini for transpiler harness, Phase 1.6, Phase 2.0a, speed-layer-runner).
+- One observation_labs follow-on: WHERE clause uses `category.coding.where(system='X' and code='Y').exists()` pattern that `transpile_where_predicate` doesn't support. View materializes but returns 0 rows. Future-issue when observation analytics matter.
+
+## What just shipped (Sprint 6.2)
+
+Phase 1 (15 transpiler bugs, 7/7 view defs materialize, harness 48/48 PASS):
+
+- `df2fc49` (2026-05-09) — Issue #16: Bugs 14+15 close transpiler scope, 7/7 materialize
+- `d294d6f` (2026-05-09) — Issue #13: UNIQUE INDEX + Bug 9 MVR.get_schema
+- `aff19c1` (2026-05-09) — Issue #12: condition_simple anchor PASS — function-call parser (Bugs 4/5/6/13)
+- `2fd9e71` (2026-05-09) — Issue #11: patient_demographics anchor PASS — 7 fixes (Bugs 2/3/7/8/10/11/12)
+- `57f3cd4` (2026-05-09) — Issue #10: Bug 1 — resolve id from r.fhir_id
+- `749471c` (2026-05-09) — /cso fix — Bug 9 regression test added to harness
+- `f5e2b0f` (2026-05-09) — Issue #9: Phase 1.1 transpiler correctness harness (TDD-built across 7 cycles)
+- `c9d0a4e` (2026-05-09) — fixture: deceased_date for patient 144735 (Bug 2 half-coverage close)
+- `b4d723a` (2026-05-09) — TODOS update from /plan-eng-review (decision 9A: speed-layer Redis pattern deferred)
+- `27a8e19` (2026-05-09) — fixture: remove unverified country values (5A from /plan-eng-review)
+- `d1fe384` (2026-05-09) — Phase 1.0: hand-verified anchor fixtures
+
+## What just shipped (Sprint 6.1, for context — squash-merged 2026-05-08 as f931164)
 
 Sprint 6.1 Phase 3b — encryption-at-rest (3 commits, 12 encryption tests, ready for merge):
 

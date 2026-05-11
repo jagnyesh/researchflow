@@ -222,18 +222,32 @@ class FullWorkflow:
             self.delivery_agent = None
 
         self.graph = self._build_graph()
-        # Compile with checkpointer if provided (enables persistence)
-        # IMPORTANT: interrupt_after pauses workflow AFTER approval nodes execute
-        # This allows nodes to create approval requests BEFORE pausing
-        # Using interrupt_before would prevent nodes from executing and creating approvals
+
+        auto_approve = os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true"
+        is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
+        if auto_approve and is_production:
+            raise RuntimeError(
+                "AUTO_APPROVE_FOR_DEV cannot be enabled when ENVIRONMENT=production. "
+                "Human-in-loop approval gates are HIPAA-required in production."
+            )
+        if auto_approve:
+            logger.warning(
+                "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: skipping human-in-loop "
+                "interrupts. Workflow runs end-to-end without approval gates. "
+                "Dev/test only — never enable in production."
+            )
+            interrupt_after_list = []
+        else:
+            interrupt_after_list = [
+                "requirements_review",
+                "phenotype_review",
+                "preview_qa_review",
+                "qa_review",
+            ]
+
         self.compiled_graph = self.graph.compile(
             checkpointer=self.checkpointer,
-            interrupt_after=[
-                "requirements_review",  # Pause after requirements approval node (approval created)
-                "phenotype_review",  # Pause after phenotype SQL approval node (approval created)
-                "preview_qa_review",  # Pause after preview QA approval node (approval created) - NEW
-                "qa_review",  # Pause after full extraction QA approval node (approval created)
-            ],
+            interrupt_after=interrupt_after_list,
         )
 
         persistence_mode = "WITH PERSISTENCE" if self.checkpointer else "WITHOUT PERSISTENCE"
@@ -1174,17 +1188,20 @@ class FullWorkflow:
         state["current_state"] = "qa_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists
+        # Create approval request if not exists.
+        # The qa_approved state flag is the post-QA delivery gate; bridge
+        # canonicalizes it as "delivery" approval (see approval_bridge.py
+        # APPROVAL_TYPE_TO_STATE).
         if state.get("qa_approved") is None:
-            logger.info(f"[FullWorkflow] Creating QA approval request in database...")
+            logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
             await create_approval_from_state(
-                state["request_id"], "qa", state, database_url=DATABASE_URL
+                state["request_id"], "delivery", state, database_url=DATABASE_URL
             )
 
         # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for QA approval decision...")
+        logger.info(f"[FullWorkflow] Checking for delivery approval decision...")
         state = await check_approval_status(
-            state["request_id"], "qa", state, database_url=DATABASE_URL
+            state["request_id"], "delivery", state, database_url=DATABASE_URL
         )
 
         logger.info(f"[FullWorkflow] QA approved: {state.get('qa_approved', 'pending')}")
@@ -1363,6 +1380,11 @@ class FullWorkflow:
               The interrupt_after mechanism will pause before executing feasibility_validation.
               When workflow resumes, this node re-executes and routes based on actual approval decision.
         """
+        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+            logger.info(
+                "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: requirements auto-approved → feasibility_validation"
+            )
+            return "feasibility_validation"
         if state.get("requirements_approved") is True:
             logger.info(f"[FullWorkflow] Requirements approved → feasibility_validation")
             return "feasibility_validation"
@@ -1431,6 +1453,11 @@ class FullWorkflow:
               The interrupt_after mechanism will pause before executing preview_extraction.
               When workflow resumes, this node re-executes and routes based on actual approval decision.
         """
+        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+            logger.info(
+                "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: phenotype SQL auto-approved → preview_extraction"
+            )
+            return "preview_extraction"
         phenotype_approved = state.get("phenotype_approved")
 
         if phenotype_approved is True:
@@ -1494,6 +1521,11 @@ class FullWorkflow:
               The interrupt_after mechanism will pause before executing data_delivery.
               When workflow resumes, this node re-executes and routes based on actual approval decision.
         """
+        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+            logger.info(
+                "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: QA auto-approved → data_delivery"
+            )
+            return "data_delivery"
         if state.get("qa_approved") is True:
             logger.info(f"[FullWorkflow] QA approved → data_delivery")
             return "data_delivery"
@@ -1539,6 +1571,11 @@ class FullWorkflow:
             "data_extraction" if approved (proceed despite failure)
             "feasibility_validation" if rejected (revise SQL)
         """
+        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+            logger.info(
+                "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: preview QA failure auto-approved → data_extraction"
+            )
+            return "data_extraction"
         if state.get("preview_qa_review_approved") is True:
             logger.info(f"[FullWorkflow] Preview QA failure approved → data_extraction")
             return "data_extraction"

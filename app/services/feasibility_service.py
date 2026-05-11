@@ -15,6 +15,7 @@ from typing import Dict, Any, List, Optional
 import logging
 import httpx
 from datetime import datetime
+from langsmith import traceable
 
 from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
@@ -34,6 +35,7 @@ class FeasibilityService:
         hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
         self.db_client = HAPIDBClient(hapi_db_url)
 
+    @traceable(tags=["feasibility-service", "cohort-estimation"])
     async def execute_feasibility_check(self, query_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute feasibility check for research query

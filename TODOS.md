@@ -77,6 +77,23 @@ These are scaffolding for the Sprint 8 prompt-optimization work (BACKLOG.md: 73%
 
 ---
 
+## Sprint 6.2 (lambda-finish) — Phase 2.1 design decision RESOLVED
+
+**Priority:** Done as of issue #19 (commit pending)
+
+**Decision 9A: HSET keyed by `fhir:<type>:<id>`** (option a from the original deferral). RedisClient already implements this; FHIRSubscriptionService writes via `set_fhir_resource(type, id, data)` which stores as `fhir:<type>:<id>` keys. SpeedLayerRunner.scan_recent_resources reads them. HybridRunner._merge_batch_and_speed_results dedups by `id` field of the extracted rows.
+
+**Why HSET wins for this architecture:**
+- The dedup logic is by FHIR id, which the cache key already is. No need for time-range scans.
+- Sorted-set-with-versionId-score (option b) would be useful if we needed "give me all resources updated since timestamp T" range queries. We don't — the polling service already filters by `res_updated > since` at the SQL level.
+- Cache eviction by 24hr TTL is per-key with HSET; sorted-set TTL is all-or-nothing. HSET fits our per-resource freshness semantics.
+
+**Refactor candidate flagged in #19:** HybridRunner._extract_rows_from_resources reaches into InMemoryRunner's private `_transform_resource` method. Long-term, that transformation logic should be a module-level function shared by both runners. Not blocking; cosmetic.
+
+**Surfaced by:** /plan-eng-review on feature/lambda-finish, 2026-05-09 (Q9). Resolved in issue #19.
+
+---
+
 ## CI infrastructure debt resolved in PR #8
 
 **Priority:** Done as of PR #8 (`feature/sprint6-security-baseline` → `main`)

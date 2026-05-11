@@ -119,8 +119,28 @@ class ViewMaterializer:
             await conn.execute(create_sql)
             logger.info(f"  ✅ Materialized view created: {SCHEMA_NAME}.{view_name}")
 
-            # Add indexes for common query patterns (skip for now - column info not available)
-            # await self._create_indexes(conn, view_name, [])
+            # Decision 8A (issue #13): UNIQUE INDEX on id is required for
+            # REFRESH MATERIALIZED VIEW CONCURRENTLY (Phase 2.0). Without it,
+            # refresh takes an exclusive lock that blocks every reader for the
+            # full refresh duration (30+ seconds for the observation_labs view).
+            # Depends on Bug 1 fix (#10) — id must not be NULL.
+            try:
+                index_sql = (
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {view_name}_id_idx "
+                    f"ON {SCHEMA_NAME}.{view_name} (id)"
+                )
+                await conn.execute(index_sql)
+                logger.info(f"  ✅ Created UNIQUE INDEX on id")
+            except Exception as idx_err:
+                # If id has duplicates (e.g., view def emits one row per forEach
+                # iteration without id being a natural key), the unique index
+                # fails. Log and continue — view still materialized, but
+                # CONCURRENTLY refresh won't work for this view.
+                logger.warning(
+                    f"  ⚠ UNIQUE INDEX on id failed: {idx_err}. "
+                    f"REFRESH MATERIALIZED VIEW CONCURRENTLY will not work for "
+                    f"{SCHEMA_NAME}.{view_name}."
+                )
 
             # Get row count
             count_result = await conn.fetchrow(

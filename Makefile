@@ -4,7 +4,7 @@ run:
 	uvicorn app.main:app --reload --port 8000
 
 docker-up:
-	docker-compose up --build
+	docker-compose -f config/docker-compose.yml up --build
 
 test:
 	pytest -q

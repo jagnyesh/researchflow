@@ -30,6 +30,7 @@ Performance:
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Optional
+from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
 
@@ -58,11 +59,12 @@ class MaterializedViewRunner:
     # - Use patient_id for JOINs (faster, simpler)
     # - Use patient_ref when FHIR format is needed
     SEARCH_PARAM_MAPPINGS = {
-        # Patient-related params
+        # Patient-related params (column names match the patient_demographics
+        # ViewDefinition: see app/sql_on_fhir/view_definitions/patient_demographics.json)
         "gender": "gender",
-        "birthdate": "dob",
-        "family": "name_family",
-        "given": "name_given",
+        "birthdate": "birth_date",
+        "family": "family_name",
+        "given": "given_name",
         # Common params across resources
         # Note: patient_id is the extracted ID from patient_ref
         "patient": "patient_id",
@@ -162,6 +164,7 @@ class MaterializedViewRunner:
             logger.debug(f"Failed SQL:\n{sql}")
             raise RuntimeError(f"Materialized view query failed: {e}")
 
+    @traceable(tags=["materialized-view-runner", "count"])
     async def execute_count(
         self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
     ) -> int:
@@ -214,26 +217,31 @@ class MaterializedViewRunner:
         """
         schema = {}
 
-        # Extract select columns from ViewDefinition
+        # Bug 9 fix (issue #13): SQL-on-FHIR v2 spec defines `column` as an ARRAY
+        # of {name, path, ...} objects, not a string. The previous code's
+        # `isinstance(column_name, str)` check was always False, so this method
+        # returned {} for every view def. Production callsites at
+        # app/api/analytics.py:294 + :511 silently consumed the empty schema.
+        # Iterate the column array correctly and walk every select block
+        # (top-level + forEach), mirroring how column_extractor.py parses view defs.
         for select_item in view_definition.get("select", []):
-            column_name = select_item.get("column")
+            for col_def in select_item.get("column", []):
+                column_name = col_def.get("name")
+                if not column_name:
+                    continue
 
-            # Skip if column_name is None or not a string
-            if not column_name or not isinstance(column_name, str):
-                continue
+                # Best-effort type inference from the column name. Unchanged from
+                # the prior implementation — the only observable bug was the
+                # always-empty result.
+                column_type = "string"
+                if any(kw in column_name.lower() for kw in ["date", "time"]):
+                    column_type = "datetime"
+                elif any(kw in column_name.lower() for kw in ["count", "age"]):
+                    column_type = "integer"
+                elif any(kw in column_name.lower() for kw in ["value", "score"]):
+                    column_type = "float"
 
-            # Infer type from FHIRPath or use string as default
-            column_type = "string"
-
-            # Common type mappings
-            if any(keyword in column_name.lower() for keyword in ["date", "time"]):
-                column_type = "datetime"
-            elif any(keyword in column_name.lower() for keyword in ["count", "age"]):
-                column_type = "integer"
-            elif any(keyword in column_name.lower() for keyword in ["value", "score"]):
-                column_type = "float"
-
-            schema[column_name] = column_type
+                schema[column_name] = column_type
 
         return schema
 

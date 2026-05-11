@@ -263,6 +263,12 @@ docs/misc_enhancements/
 test_agent_comparison_results.json
 .gstack/
 .claude/hooks/posttooluse.log
+# Per-session Claude Code state — large JSONL conversation history, agent caches.
+# Hooks/settings/skills under .claude/ stay tracked; only volatile state is ignored.
+.claude/projects/
+.claude/sessions/
+.claude/agents/runs/
+.claude/agents/sessions/
 
 # SQLite WAL/SHM runtime artifacts — checkpointer files mutate on every test run
 data/test_checkpoints.db-shm

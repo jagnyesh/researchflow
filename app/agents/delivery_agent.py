@@ -9,6 +9,7 @@ from typing import Dict, Any
 import logging
 import json
 from datetime import datetime
+from langsmith import traceable
 from .base_agent import BaseAgent
 from ..utils.multi_llm_client import MultiLLMClient
 from ..services.file_storage import FileStorageService
@@ -35,6 +36,7 @@ class DeliveryAgent(BaseAgent):
         self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
         self.file_storage = FileStorageService()
 
+    @traceable(tags=["delivery-agent", "agent-execution"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute delivery task"""
         if task == "deliver_data":

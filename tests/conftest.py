@@ -15,6 +15,13 @@ sys.path.insert(0, project_root)
 # Set test database before importing app modules
 os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
 
+# Force-pin LangSmith project to "researchflow-test" so pytest runs do not
+# pollute the "researchflow-production" project that the streamlit portal
+# writes to (.env defaults LANGCHAIN_PROJECT=researchflow-production for the
+# UI). Direct assignment, NOT setdefault — must override whatever .env or
+# the shell exports. Lazily creates "researchflow-test" on first write.
+os.environ["LANGCHAIN_PROJECT"] = "researchflow-test"
+
 # Phase 3b: deterministic Fernet key for the test session — DO NOT USE IN PRODUCTION.
 # Set before model import so EncryptedText/EncryptedJSON columns can resolve their
 # key callable on first ORM operation. Generated once with `Fernet.generate_key()`
@@ -34,6 +41,30 @@ def event_loop():
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
+
+
+@pytest.fixture(scope="session")
+def materialized_views():
+    """Run scripts/materialize_views.py --create once per test session.
+
+    Used by tests/test_transpiler_correctness.py to materialize the 7
+    SQL-on-FHIR view defs against hapi-postgres before the harness
+    queries them. Autouse=False — only fires when a test requests it,
+    so other test files don't pay the cost.
+    """
+    import subprocess
+
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    result = subprocess.run(
+        [sys.executable, "scripts/materialize_views.py", "--create"],
+        cwd=project_root,
+        capture_output=True,
+        text=True,
+    )
+    # Don't fail on script errors — the harness DESIGN is that broken view
+    # defs FAIL their checks (not crash the suite). The script returns
+    # non-zero when N/7 fail; that's expected baseline state.
+    yield result
 
 
 @pytest.fixture(scope="function", autouse=False)

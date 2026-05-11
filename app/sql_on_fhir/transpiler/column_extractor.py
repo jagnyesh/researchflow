@@ -120,10 +120,14 @@ class ColumnExtractor:
             path = col_def.get("path", "")
             description = col_def.get("description")
 
-            # Handle special functions
-            if path == "getResourceKey()":
-                # Resource key is the FHIR ID
-                sql_expr = f"v.res_text_vc::jsonb->>'id'"
+            # Handle resource id (Bug 1 fix, issue #10)
+            # HAPI stores the FHIR logical id in hfj_resource.fhir_id, NOT in the JSON body.
+            # Both `path: "id"` and `path: "getResourceKey()"` resolve to the same value at
+            # the top-level resource. Nested ids (inside forEach contexts, e.g. `coding[].id`)
+            # bypass this branch and go through the transpiler, where they correctly resolve
+            # to `context->>'id'` against the iteration element.
+            if path == "getResourceKey()" or path == "id":
+                sql_expr = "r.fhir_id"
             else:
                 # Transpile FHIRPath to SQL
                 expr = self.transpiler.transpile(path, as_text=True)
@@ -167,23 +171,27 @@ class ColumnExtractor:
         else:
             join_type = "CROSS JOIN LATERAL"
 
+        # Bug 12 fix (issue #11): LEFT JOIN LATERAL requires `ON true` in PostgreSQL.
+        # Only CROSS JOIN LATERAL omits ON. The previous comment ("LATERAL joins don't
+        # use ON clause") was wrong for the nullable case — it produced syntax errors
+        # whenever a forEachOrNull was followed by another join or WHERE.
+        on_clause = " ON true" if nullable else ""
+
         # Check if forEach path returns array or single element
         if ".first()" in for_each_path or base_expr.requires_subquery:
             # Single element - use it directly as context
-            # Note: LATERAL joins in PostgreSQL don't use ON clause
             lateral_join = f"""
 {join_type} (
     SELECT {base_expr.sql} AS {foreach_alias}
-) AS {foreach_alias}_row
+) AS {foreach_alias}_row{on_clause}
             """.strip()
             context_path = f"{foreach_alias}_row.{foreach_alias}"
         else:
             # Array - use jsonb_array_elements
-            # Note: LATERAL joins in PostgreSQL don't use ON clause
             lateral_join = f"""
 {join_type} jsonb_array_elements(
     COALESCE({base_expr.sql}, '[]'::jsonb)
-) AS {foreach_alias}
+) AS {foreach_alias}{on_clause}
             """.strip()
             context_path = foreach_alias
 
@@ -250,14 +258,16 @@ class ColumnExtractor:
             path = where_elem.get("path", "")
             description = where_elem.get("description")
 
-            # Transpile FHIRPath to SQL
-            expr = self.transpiler.transpile(path, as_text=False)
+            # Bug 11 fix (issue #11): WHERE-clause expressions are predicates, not paths.
+            # Use the boolean-aware transpiler instead of routing through transpile()
+            # which treats them as JSONB field navigation.
+            sql = self.transpiler.transpile_where_predicate(path)
 
             # Add comment if description exists
             if description:
-                conditions.append(f"({expr.sql})  -- {description}")
+                conditions.append(f"({sql})  -- {description}")
             else:
-                conditions.append(f"({expr.sql})")
+                conditions.append(f"({sql})")
 
         where_sql = "WHERE\n    " + "\n    AND ".join(conditions)
 

@@ -226,8 +226,14 @@ class MaterializedViewService:
             # Update status to 'refreshing'
             await self._update_metadata(view_name, {"status": "refreshing"})
 
-            # Execute REFRESH MATERIALIZED VIEW
-            refresh_sql = f"REFRESH MATERIALIZED VIEW {self.SCHEMA_NAME}.{view_name}"
+            # Execute REFRESH MATERIALIZED VIEW CONCURRENTLY (issue #18 + decision 8A).
+            # CONCURRENTLY requires a UNIQUE INDEX on the view (added in #13's
+            # _create_indexes call). Without CONCURRENTLY, refresh takes an
+            # exclusive lock that blocks every reader for the full refresh
+            # duration — for the 229k-row observation_labs view that's 30+ seconds
+            # of cohort-query downtime. With CONCURRENTLY, readers see the old
+            # view until the new one swaps in atomically.
+            refresh_sql = f"REFRESH MATERIALIZED VIEW CONCURRENTLY {self.SCHEMA_NAME}.{view_name}"
             await self.db_client.execute_query(refresh_sql)
 
             # Calculate refresh duration
@@ -284,26 +290,52 @@ class MaterializedViewService:
 
     async def refresh_all_views(self) -> Dict[str, Any]:
         """
-        Refresh all materialized views
+        Refresh all materialized views in parallel via asyncio.gather.
+
+        Issue #18: previously looped sequentially, so 7 views took 7x as long
+        as the slowest one. Now runs concurrently — total time ~max(per-view)
+        instead of sum(per-view). Combined with Postgres CONCURRENTLY semantics
+        (added in refresh_view), readers see the old views during refresh.
+
+        Per-view error isolation: `return_exceptions=True` ensures one failed
+        view (e.g., a lock timeout, schema drift) doesn't abort the others.
+        Failures are converted into the same {success: False, error: ...}
+        shape that refresh_view's try/except produces, so the response shape
+        is uniform across both paths.
 
         Returns:
-            Summary of refresh operations
+            Summary with totals + per-view results
         """
+        import asyncio
+
         views_list = await self.list_views()
+        view_names = [v["view_name"] for v in views_list]
+
+        raw_results = await asyncio.gather(
+            *(self.refresh_view(name) for name in view_names),
+            return_exceptions=True,
+        )
 
         results = []
         success_count = 0
         fail_count = 0
 
-        for view in views_list:
-            view_name = view["view_name"]
-            result = await self.refresh_view(view_name)
-
-            if result["success"]:
-                success_count += 1
-            else:
+        for view_name, raw in zip(view_names, raw_results):
+            if isinstance(raw, Exception):
+                # An exception escaped refresh_view's own try/except — treat as
+                # per-view failure rather than aborting the whole batch.
+                result = {
+                    "view_name": view_name,
+                    "success": False,
+                    "error": str(raw),
+                }
                 fail_count += 1
-
+            else:
+                result = raw
+                if result.get("success"):
+                    success_count += 1
+                else:
+                    fail_count += 1
             results.append(result)
 
         summary = {

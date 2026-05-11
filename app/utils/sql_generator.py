@@ -40,9 +40,14 @@ class SQLGenerator:
             self.observation_table = "observation_labs"
             # Column mappings for materialized views
             self.patient_id_column = "patient_id"  # Not "id"
-            # Use icd10_display for semantic clarity (ICD-10 specific field)
-            # Note: code_text contains identical data but is less specific
-            self.condition_code_column = "icd10_display"  # Was: "code_text"
+            # condition_simple stores the same diagnosis under three columns
+            # depending on the source coding system. Match against all three:
+            # ICD-10-coded data populates icd10_display, SNOMED-coded data
+            # (Synthea) populates snomed_display, code_text is the canonical
+            # free-text from FHIR code.text and is populated regardless. A
+            # prior change to a single column (icd10_display) silently zeroed
+            # the cohort on SNOMED-source datasets.
+            self.condition_code_columns = ("code_text", "icd10_display", "snomed_display")
             self.observation_code_column = "code"
         else:
             # Legacy HAPI FHIR schema (deprecated)
@@ -52,8 +57,13 @@ class SQLGenerator:
             self.observation_table = "observation"
             # Column mappings for legacy schema
             self.patient_id_column = "id"
-            self.condition_code_column = "code_display"
+            self.condition_code_columns = ("code_display",)
             self.observation_code_column = "code_display"
+
+        # Back-compat alias for callers that still read condition_code_column.
+        # Keep the most semantically informative single column for any code
+        # path that still expects a single string.
+        self.condition_code_column = self.condition_code_columns[0]
 
     def _get_param_name(self, prefix: str = "p") -> str:
         """Generate unique parameter name"""
@@ -92,21 +102,22 @@ class SQLGenerator:
             List of column names to include in SELECT clause
         """
         # Hardcoded mapping of data elements to actual database columns
-        # Based on sqlonfhir.patient_demographics schema:
-        # Columns: id, patient_id, gender, dob, name_given, name_family
+        # Based on sqlonfhir.patient_demographics ViewDefinition columns:
+        # id, patient_id, active, birth_date, gender, deceased, deceased_date,
+        # family_name, given_name, full_name, phone, email, address_line, city,
+        # state, postal_code, country
         field_mapping = {
-            "demographics": ["name_family", "name_given", "dob", "gender"],
-            "family name": ["name_family"],
-            "given name": ["name_given"],
-            "date of birth": ["dob"],
-            "birth_date": ["dob"],
-            "birthdate": ["dob"],
-            "dob": ["dob"],
+            "demographics": ["family_name", "given_name", "birth_date", "gender"],
+            "family name": ["family_name"],
+            "given name": ["given_name"],
+            "date of birth": ["birth_date"],
+            "birth_date": ["birth_date"],
+            "birthdate": ["birth_date"],
+            "dob": ["birth_date"],
             "gender": ["gender"],
-            # Address fields don't exist in materialized views yet
-            "address": [],
-            "phone": [],
-            "email": [],
+            "address": ["address_line", "city", "state", "postal_code", "country"],
+            "phone": ["phone"],
+            "email": ["email"],
         }
 
         # Always include patient_id
@@ -116,7 +127,7 @@ class SQLGenerator:
         if not data_elements:
             # Default to basic demographics if no elements specified
             logger.info("No data_elements specified, defaulting to basic demographics")
-            fields.extend(["p.name_family", "p.name_given", "p.dob", "p.gender"])
+            fields.extend(["p.family_name", "p.given_name", "p.birth_date", "p.gender"])
             return fields
 
         # Track which elements we successfully map
@@ -314,8 +325,9 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(condition_params)
 
-                elif concept_type == "demographics":
-                    # Build demographic query
+                elif concept_type in ("demographic", "demographics"):
+                    # Accept both singular ("demographic" — what the LLM
+                    # extractor and RequirementsBuilder produce) and plural.
                     condition, demo_params = self._build_demographic_clause(
                         term, concept.get("details", "")
                     )
@@ -368,24 +380,57 @@ class SQLGenerator:
         Returns:
             Tuple of (SQL condition string, parameters dict)
         """
-        # Simplified: In production, would use ICD-10/SNOMED codes
         operator = "EXISTS" if include else "NOT EXISTS"
         param_name = self._get_param_name("condition")
         params = {param_name: f"%{condition_term}%"}
 
         condition_table = self._build_table_name(self.condition_table)
-        condition_col = self.condition_code_column
         patient_id_col = self.patient_id_column
+
+        # OR across every diagnosis-text column the MV exposes so SNOMED-
+        # only, ICD-10-only, and mixed deployments all match. Mirrors the
+        # text-matching pattern in app/agents/phenotype_agent.py.
+        col_match = " OR ".join(
+            f"LOWER(c.{col}) LIKE LOWER(:{param_name})" for col in self.condition_code_columns
+        )
 
         # nosec B608 - Table/column names from validated configuration, parameters are bound
         # CRITICAL: LOWER() is required for case-insensitive matching (see docstring)
         sql = f"""{operator} (
         SELECT 1 FROM {condition_table} c
         WHERE c.patient_id = p.{patient_id_col}
-        AND LOWER(c.{condition_col}) LIKE LOWER(:{param_name})
+        AND ({col_match})
     )"""
 
         return sql, params
+
+    @staticmethod
+    def _parse_age_details(details: str) -> Tuple[Any, Any]:
+        """
+        Parse an age comparison from free-form details.
+
+        Accepts symbolic ('> 18', '< 65') and natural-language forms
+        ('greater than 18', 'above 18', 'over 65', 'below 18',
+        'less than 65', 'under 18'). Returns (op, int_age) or (None, None).
+        """
+        import re
+
+        if not details:
+            return None, None
+        text = details.lower().strip()
+        gt_words = ("greater than", "more than", "older than", "above", "over")
+        lt_words = ("less than", "fewer than", "younger than", "below", "under")
+        op = None
+        if ">" in text or any(w in text for w in gt_words):
+            op = ">"
+        elif "<" in text or any(w in text for w in lt_words):
+            op = "<"
+        if op is None:
+            return None, None
+        m = re.search(r"(\d+)", text)
+        if not m:
+            return None, None
+        return op, int(m.group(1))
 
     def _build_demographic_clause(self, term: str, details: str) -> Tuple[str, Dict[str, Any]]:
         """
@@ -402,30 +447,21 @@ class SQLGenerator:
             f"_build_demographic_clause: term='{term}' (normalized: '{term_lower}'), details='{details}'"
         )
 
-        # Parse age criteria
+        # Parse age criteria. The LLM extractor emits details in mixed
+        # forms — symbolic ("> 18") or natural-language ("greater than 18
+        # years", "above 18", "over 65"). Normalize all to a comparison op
+        # plus an integer age.
         if "age" in term_lower:
-            if ">" in details:
-                age = details.split(">")[1].strip()
-                param_name = self._get_param_name("age")
-                try:
-                    age_value = int(age)
-                    params = {param_name: age_value}
-                    sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthdate)) > :{param_name}"
-                    return sql, params
-                except ValueError:
-                    logger.warning(f"Invalid age value: {age}")
-                    return "", {}
-            elif "<" in details:
-                age = details.split("<")[1].strip()
-                param_name = self._get_param_name("age")
-                try:
-                    age_value = int(age)
-                    params = {param_name: age_value}
-                    sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birthdate)) < :{param_name}"
-                    return sql, params
-                except ValueError:
-                    logger.warning(f"Invalid age value: {age}")
-                    return "", {}
+            op, age_value = self._parse_age_details(details)
+            if op is None:
+                logger.warning(f"Could not parse age details: {details!r}")
+                return "", {}
+            param_name = self._get_param_name("age")
+            params = {param_name: age_value}
+            # birth_date is materialized as text (FHIR transpiler default);
+            # cast to date so AGE() accepts it.
+            sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) {op} :{param_name}"
+            return sql, params
 
         # Parse gender - MORE ROBUST MATCHING
         gender_value = None
