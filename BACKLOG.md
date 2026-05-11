@@ -4,7 +4,8 @@ Forward plan only. Active work lives in `CONTEXT.md`. History lives in `DECISION
 
 ## Phase 2 — Clinical Intelligence & Optimization (in progress)
 
-- [x] Sprint 6.1 — Security Baseline (COMPLETE 2026-05-07, ready for PR)
+- [x] Sprint 6.1 — Security Baseline (SHIPPED 2026-05-08 as `f931164`)
+- [x] Sprint 6.2 — Lambda Architecture Finish (PR #24 open + green; merges 13 issues including CRITICAL #26)
 - [ ] Sprint 8 — Prompt Optimization (analysis done; 73% projected cost reduction)
   - Implement prompt cache for stable agent system prompts
   - Token-budget tracking per agent
