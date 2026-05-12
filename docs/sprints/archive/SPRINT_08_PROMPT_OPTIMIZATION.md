@@ -1,8 +1,10 @@
 # Sprint 8: Prompt Engineering & Cost Optimization
 
 **Duration:** 1 week (Nov 11-18, 2025)
-**Status:** ✅ Analysis Complete / ✅ Implementation Complete
+**Status:** ✅ Analysis Complete / ✅ Implementation Complete / 🔴 Operational Verification: Sprint 8.1 FALSIFIED the 73% projection on 2026-05-12
 **Branch:** `feature/langchain-agents-migration`
+
+> **Sprint 8.1 verification verdict (2026-05-12):** Implementation shipped but the projected 73% cost reduction did not materialize in production. Median cost-per-request landed at $0.009026 formal (3.01× the $0.0039 band ceiling) and $0.003413 exploratory (4.88× the $0.00091 band ceiling), with `cache_hit_rate = 0.0%` on every observed run across n=30/30 on each portal. The 73% projection was built primarily on prompt caching (Optimizations 1-3); zero cache hits is the smoking gun. Two hypotheses (cache_control not wired in outbound payload, vs cache_read_input_tokens not aggregated by our cost calc) are 10× different in scope and are disambiguated by Sprint 8.2 ([#37](https://github.com/jagnyesh/researchflow/issues/37))'s Task 1 diagnostic. The numbers below describe what was *implemented*; Sprint 8.2 will resolve why the *measured* impact diverged.
 
 ---
 
