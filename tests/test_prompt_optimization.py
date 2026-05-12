@@ -8,6 +8,8 @@ Validates that prompt caching is enabled and working correctly for:
 Expected savings: $21,000/year (26% cost reduction)
 """
 
+import os
+
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
@@ -21,8 +23,14 @@ class TestPromptCachingEnabled:
     """Unit tests: Verify cache_control parameter is present"""
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-for-mock"})
     async def test_llm_client_complete_with_custom_system_prompt_has_cache_control(self):
-        """Verify custom system prompts have cache_control enabled"""
+        """Verify custom system prompts have cache_control enabled.
+
+        ``ANTHROPIC_API_KEY`` is patched so ``LLMClient.__init__`` constructs
+        a non-None ``self.client`` (falsy-key guard at ``llm_client.py:38-40``
+        otherwise routes to the dummy-response path and skips ``ainvoke``).
+        """
         from langchain_anthropic import ChatAnthropic
 
         llm_client = LLMClient()
@@ -54,8 +62,14 @@ class TestPromptCachingEnabled:
             assert system_msg.additional_kwargs["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-for-mock"})
     async def test_llm_client_complete_with_default_system_prompt_has_cache_control(self):
-        """Verify default system prompts have cache_control enabled"""
+        """Verify default system prompts have cache_control enabled.
+
+        Same ``ANTHROPIC_API_KEY`` patch as the sibling test — needed so
+        ``LLMClient.__init__`` constructs ``self.client`` instead of routing
+        to the dummy-response path.
+        """
         from langchain_anthropic import ChatAnthropic
 
         llm_client = LLMClient()
