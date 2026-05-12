@@ -43,21 +43,83 @@ These are scaffolding for the Sprint 8 prompt-optimization work (BACKLOG.md: 73%
 
 ## Tests requiring external services in CI
 
-**Priority:** P2 (need a CI service container or test-doubles plan)
+**Status:** Plan landed via `/plan-eng-review` on 2026-05-11. Tracked as issue #25 (PR-A + PR-B). See `~/.gstack/projects/jagnyesh-researchflow/jagnyesh-main-eng-review-test-plan-*.md` for the full review.
+
+**Priority:** P2 (in-progress)
 **Affected tests:**
 
-- `tests/test_materialized_views_integration.py` — needs Postgres
-- `tests/test_referential_integrity.py` — needs Postgres
-- `tests/test_full_workflow_e2e.py` — needs `psycopg2` (also missing from `requirements-dev.txt`)
-- `tests/test_sql_adapter.py` — DB-dependent
-- `tests/test_redis_client.py` — needs Redis on localhost:6379
-- `tests/test_speed_layer_runner.py` — needs Redis (Lambda speed layer)
-- `tests/test_hybrid_runner_speed_integration.py` — needs Redis + Postgres (Lambda hybrid runner)
-- `tests/sql_on_fhir/test_sql_on_fhir_integration.py` — needs HAPI FHIR + Postgres
-- `tests/e2e/` (entire directory)
-- `tests/integration/` (entire directory)
+- `tests/test_materialized_views_integration.py` — needs Postgres (PR-B)
+- `tests/test_referential_integrity.py` — needs Postgres (PR-B)
+- `tests/test_full_workflow_e2e.py` — needs `psycopg2` (also missing from `requirements-dev.txt`) (PR-B)
+- `tests/test_sql_adapter.py` — DB-dependent (PR-B)
+- `tests/test_redis_client.py` — needs Redis on localhost:6379 (PR-B)
+- `tests/test_speed_layer_runner.py` — needs Redis (Lambda speed layer) (PR-A)
+- `tests/test_hybrid_runner_speed_integration.py` — needs Redis + Postgres (PR-B)
+- `tests/sql_on_fhir/test_sql_on_fhir_integration.py` — needs HAPI FHIR + Postgres (PR-B)
+- `tests/test_transpiler_correctness.py` — Sprint 6.2 harness (PR-A)
+- `tests/test_phase16_cohort_e2e.py` — Sprint 6.2 cohort e2e (PR-A)
+- `tests/test_phase20a_speed_layer.py` — Sprint 6.2 speed-layer (PR-A)
+- `tests/integration/` (entire directory) (PR-A — CQ1 fold-in, existing integration-test job is silently a no-op)
+- `tests/e2e/` (entire directory) — out of scope (separate workflow)
 
-**Fix sketch:** Add `services:` block in `tests.yml` (Postgres + mock HAPI containers), pin `psycopg2-binary` in `requirements-dev.txt`, and gate the integration job behind `if: github.event_name == 'pull_request'` to avoid running on every push. Or split into a separate workflow (`integration.yml`) that's optional/scheduled.
+**Resolution plan (decided in /plan-eng-review 2026-05-11):**
+1. **PR-A**: docker compose up -d --wait + pg_dump fixture + 4 PR-A test files + fold in dead integration-test job (CQ1).
+2. **PR-B**: re-enable older 7 service-dependent ignores, debug any drift surfaced.
+3. **TODO follow-on**: nightly Synthea-regen workflow (deferred — see entry below).
+
+---
+
+## Nightly Synthea regen workflow (post-#25)
+
+**Priority:** P3 (deferred — file once PR-A lands)
+
+**What:** Scheduled GH Actions workflow runs Synthea, loads a fresh HAPI, pg_dumps, and opens a PR with updated fixture (`tests/fixtures/hapi_seed.sql.gz` + `hapi_seed.meta.json`) and any necessary updates to `tests/fixtures/transpiler_expected_outputs.py`.
+
+**Why:** Catches Synthea CLI drift and module/version changes before they surface in a developer PR. Keeps the dump-regeneration muscle alive — if rotation never runs, the first manual attempt rediscovers the procedure from scratch.
+
+**Pros:**
+- Future-proofs dump rotation.
+- Surfaces upstream Synthea changes as PRs (visible review, not silent drift).
+- May find transpiler regressions earlier (new data shapes = new edge cases).
+
+**Cons:**
+- Real eng effort (~4–6h to write + test the workflow).
+- Adds a recurring CI cost (one workflow run/day).
+- Could produce noisy PRs if Synthea is non-deterministic at the patient level.
+
+**Context:** Surfaced in `/plan-eng-review` D1 as option D's nightly half. User picked option B (plain git + manual rotation), so the LFS half doesn't apply; the nightly half stands alone. Worth capturing because dump rotation will eventually need a procedure and the rebuilt artifact + the changelog of expected-counts deltas is the right shape.
+
+**Depends on:** PR-A landing (this provides the rotation target).
+
+**Fix sketch:**
+1. Add `.github/workflows/synthea-regen.yml` with `schedule: cron: '0 4 * * *'`.
+2. Steps: run Synthea container (existing profile in compose.yml), wait for HAPI healthy, run `scripts/load_synthea_to_hapi.py`, `pg_dump -Fc -Z 9 hapi_db > hapi_seed.sql.gz`, write meta.json with hapi_tag + counts + generated_at, open PR via `gh pr create`.
+3. PR description includes diff in patient_count / condition_count / observation_count from the previous fixture.
+
+---
+
+## Quarterly pytest.ini ignore-list audit
+
+**Priority:** P3 (deferred — first audit due Sprint 9 timeframe)
+
+**What:** A quarterly cleanup pass that re-verifies each remaining `--ignore` line in `pytest.ini`: is the test still relevant? Still ignored for the original reason? Or can it be deleted / fixed / re-enabled?
+
+**Why:** The ignore-list is the exact debt-accrual pattern #25 was filed to attack. Even after PR-A + PR-B remove ~11 entries, ~16 will remain across Sprint 7 / Sprint 8 / LLM-quality buckets. Without a recurring forcing function, the chain grows monotonically (its prior trajectory: 0 → 27 over ~12 months).
+
+**Pros:**
+- Caps growth with a cheap forcing function.
+- Surfaces stale entries that don't fit any of the existing per-bucket TODOs.
+- Each audit takes ~30 min; high value per hour.
+
+**Cons:**
+- One more recurring task.
+- Easy to skip; needs calendar discipline.
+
+**Context:** Surfaced in `/plan-eng-review` on 2026-05-11. The per-bucket TODOs (Sprint 7, Sprint 8 prep, LLM-quality) already exist but didn't keep the list under control — they tracked entries but didn't drive removals. This meta-task is the missing forcing function.
+
+**Depends on:** PR-A + PR-B landing.
+
+**Fix sketch:** Per quarter: open the file, walk each `--ignore` entry, decide remove-now / keep-tracking-with-this-issue / delete-test-file. Update the per-bucket TODO entries. Log the audit date in this section.
 
 ---
 

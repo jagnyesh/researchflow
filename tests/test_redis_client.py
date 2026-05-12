@@ -14,6 +14,9 @@ Test Coverage:
 """
 
 import pytest
+
+pytestmark = pytest.mark.requires_services
+
 import asyncio
 import os
 import time

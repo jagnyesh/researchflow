@@ -1,0 +1,425 @@
+{
+  "resourceType": "Bundle",
+  "id": "researchflow-test-fixture",
+  "type": "transaction",
+  "entry": [
+    {
+      "fullUrl": "Patient/fixture-patient-a",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fixture-patient-a",
+        "name": [
+          {
+            "use": "official",
+            "family": "Smith",
+            "given": ["Alice"]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1925-04-16",
+        "deceasedDateTime": "2001-02-03T01:13:45-06:00",
+        "telecom": [
+          {"system": "phone", "value": "555-1234"}
+        ],
+        "address": [
+          {
+            "line": ["123 Main St"],
+            "city": "Boston",
+            "state": "MA",
+            "postalCode": "02101",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {"method": "PUT", "url": "Patient/fixture-patient-a"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-a1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-a1",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "I10", "display": "Essential (primary) hypertension"},
+            {"system": "http://snomed.info/sct", "code": "59621000", "display": "Essential hypertension (disorder)"}
+          ],
+          "text": "Essential hypertension"
+        },
+        "subject": {"reference": "Patient/fixture-patient-a"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-a1"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-a2",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-a2",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://snomed.info/sct", "code": "82423001", "display": "Chronic pain (finding)"}
+          ],
+          "text": "Chronic pain (finding)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-a"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-a2"}
+    },
+    {
+      "fullUrl": "Patient/fixture-patient-b",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fixture-patient-b",
+        "name": [
+          {
+            "use": "official",
+            "family": "Doe",
+            "given": ["Jane", "Marie"]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1995-12-31",
+        "telecom": [
+          {"system": "phone", "value": "555-5678"},
+          {"system": "email", "value": "jane@example.com"}
+        ],
+        "address": [
+          {
+            "line": ["456 Oak Ave"],
+            "city": "Cambridge",
+            "state": "MA",
+            "postalCode": "02139",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {"method": "PUT", "url": "Patient/fixture-patient-b"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-b1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-b1",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://snomed.info/sct", "code": "59621000", "display": "Essential hypertension (disorder)"}
+          ],
+          "text": "Essential hypertension (disorder)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-b"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-b1"}
+    },
+    {
+      "fullUrl": "Patient/fixture-patient-c",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fixture-patient-c",
+        "name": [
+          {
+            "use": "official",
+            "family": "Roe",
+            "given": ["John"]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1980-01-01",
+        "telecom": [
+          {"system": "phone", "value": "555-2345"}
+        ],
+        "address": [
+          {
+            "line": ["789 Elm St"],
+            "city": "Somerville",
+            "state": "MA",
+            "postalCode": "02143",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {"method": "PUT", "url": "Patient/fixture-patient-c"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-c1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-c1",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "E11.9", "display": "Type 2 diabetes mellitus without complications"},
+            {"system": "http://snomed.info/sct", "code": "44054006", "display": "Diabetes mellitus type 2 (disorder)"}
+          ],
+          "text": "Diabetes mellitus type 2 (disorder)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-c"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-c1"}
+    },
+    {
+      "fullUrl": "Observation/fixture-obs-c1",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "fixture-obs-c1",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {"system": "http://loinc.org", "code": "4548-4", "display": "Hemoglobin A1c/Hemoglobin.total in Blood"}
+          ],
+          "text": "Hemoglobin A1c"
+        },
+        "subject": {"reference": "Patient/fixture-patient-c"},
+        "effectiveDateTime": "2025-01-15T10:00:00-05:00",
+        "valueQuantity": {"value": 8.2, "unit": "%", "system": "http://unitsofmeasure.org", "code": "%"}
+      },
+      "request": {"method": "PUT", "url": "Observation/fixture-obs-c1"}
+    },
+    {
+      "fullUrl": "MedicationRequest/fixture-med-c1",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "fixture-med-c1",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "860975", "display": "Metformin Hydrochloride 500 MG Oral Tablet"}
+          ],
+          "text": "Metformin 500mg"
+        },
+        "subject": {"reference": "Patient/fixture-patient-c"},
+        "authoredOn": "2025-01-15"
+      },
+      "request": {"method": "PUT", "url": "MedicationRequest/fixture-med-c1"}
+    },
+    {
+      "fullUrl": "Procedure/fixture-proc-c1",
+      "resource": {
+        "resourceType": "Procedure",
+        "id": "fixture-proc-c1",
+        "status": "completed",
+        "code": {
+          "coding": [
+            {"system": "http://snomed.info/sct", "code": "104177005", "display": "Blood glucose level test"}
+          ],
+          "text": "Blood glucose level test"
+        },
+        "subject": {"reference": "Patient/fixture-patient-c"},
+        "performedDateTime": "2025-01-15T09:30:00-05:00"
+      },
+      "request": {"method": "PUT", "url": "Procedure/fixture-proc-c1"}
+    },
+    {
+      "fullUrl": "Patient/fixture-patient-d",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fixture-patient-d",
+        "name": [
+          {
+            "use": "official",
+            "family": "Adams",
+            "given": ["Mary"]
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1970-06-15",
+        "telecom": [
+          {"system": "phone", "value": "555-3456"}
+        ],
+        "address": [
+          {
+            "line": ["321 Pine Rd"],
+            "city": "Newton",
+            "state": "MA",
+            "postalCode": "02458",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {"method": "PUT", "url": "Patient/fixture-patient-d"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-d1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-d1",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://hl7.org/fhir/sid/icd-10-cm", "code": "E11.9", "display": "Type 2 diabetes mellitus without complications"},
+            {"system": "http://snomed.info/sct", "code": "44054006", "display": "Diabetes mellitus type 2 (disorder)"}
+          ],
+          "text": "Diabetes mellitus type 2 (disorder)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-d"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-d1"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-d2",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-d2",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://snomed.info/sct", "code": "59621000", "display": "Essential hypertension (disorder)"}
+          ],
+          "text": "Essential hypertension (disorder)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-d"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-d2"}
+    },
+    {
+      "fullUrl": "Observation/fixture-obs-d1",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "fixture-obs-d1",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "laboratory"}
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {"system": "http://loinc.org", "code": "4548-4", "display": "Hemoglobin A1c/Hemoglobin.total in Blood"}
+          ],
+          "text": "Hemoglobin A1c"
+        },
+        "subject": {"reference": "Patient/fixture-patient-d"},
+        "effectiveDateTime": "2025-02-10T11:00:00-05:00",
+        "valueQuantity": {"value": 7.1, "unit": "%", "system": "http://unitsofmeasure.org", "code": "%"}
+      },
+      "request": {"method": "PUT", "url": "Observation/fixture-obs-d1"}
+    },
+    {
+      "fullUrl": "MedicationRequest/fixture-med-d1",
+      "resource": {
+        "resourceType": "MedicationRequest",
+        "id": "fixture-med-d1",
+        "status": "active",
+        "intent": "order",
+        "medicationCodeableConcept": {
+          "coding": [
+            {"system": "http://www.nlm.nih.gov/research/umls/rxnorm", "code": "860975", "display": "Metformin Hydrochloride 500 MG Oral Tablet"}
+          ],
+          "text": "Metformin 500mg"
+        },
+        "subject": {"reference": "Patient/fixture-patient-d"},
+        "authoredOn": "2025-02-10"
+      },
+      "request": {"method": "PUT", "url": "MedicationRequest/fixture-med-d1"}
+    },
+    {
+      "fullUrl": "Patient/fixture-patient-e",
+      "resource": {
+        "resourceType": "Patient",
+        "id": "fixture-patient-e",
+        "name": [
+          {
+            "use": "official",
+            "family": "Brown",
+            "given": ["Bob"]
+          }
+        ],
+        "gender": "male",
+        "birthDate": "1955-03-22",
+        "telecom": [
+          {"system": "phone", "value": "555-4567"}
+        ],
+        "address": [
+          {
+            "line": ["654 Cedar Ln"],
+            "city": "Brookline",
+            "state": "MA",
+            "postalCode": "02445",
+            "country": "US"
+          }
+        ]
+      },
+      "request": {"method": "PUT", "url": "Patient/fixture-patient-e"}
+    },
+    {
+      "fullUrl": "Condition/fixture-cond-e1",
+      "resource": {
+        "resourceType": "Condition",
+        "id": "fixture-cond-e1",
+        "clinicalStatus": {
+          "coding": [
+            {"system": "http://terminology.hl7.org/CodeSystem/condition-clinical", "code": "active"}
+          ]
+        },
+        "code": {
+          "coding": [
+            {"system": "http://snomed.info/sct", "code": "59621000", "display": "Essential hypertension (disorder)"}
+          ],
+          "text": "Essential hypertension (disorder)"
+        },
+        "subject": {"reference": "Patient/fixture-patient-e"}
+      },
+      "request": {"method": "PUT", "url": "Condition/fixture-cond-e1"}
+    },
+    {
+      "fullUrl": "Observation/fixture-obs-e1",
+      "resource": {
+        "resourceType": "Observation",
+        "id": "fixture-obs-e1",
+        "status": "final",
+        "category": [
+          {
+            "coding": [
+              {"system": "http://terminology.hl7.org/CodeSystem/observation-category", "code": "vital-signs"}
+            ]
+          }
+        ],
+        "code": {
+          "coding": [
+            {"system": "http://loinc.org", "code": "8480-6", "display": "Systolic blood pressure"}
+          ],
+          "text": "Systolic blood pressure"
+        },
+        "subject": {"reference": "Patient/fixture-patient-e"},
+        "effectiveDateTime": "2025-03-05T14:00:00-05:00",
+        "valueQuantity": {"value": 145, "unit": "mm[Hg]", "system": "http://unitsofmeasure.org", "code": "mm[Hg]"}
+      },
+      "request": {"method": "PUT", "url": "Observation/fixture-obs-e1"}
+    }
+  ]
+}
