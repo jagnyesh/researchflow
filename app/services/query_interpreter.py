@@ -470,13 +470,17 @@ Focus on:
                             # Keep original if not in mapping
                             group_by.append(dim)
 
-                    logger.info(f"Regex fallback detected breakdown query: group_by={group_by}")
+                    logger.info(
+                        "Regex fallback detected breakdown query (%d dimension(s))", len(group_by)
+                    )
                     break
 
         # Log breakdown detection
         if group_by:
             logger.info(
-                f"Detected breakdown query: group_by={group_by}, aggregation_type={aggregation_type}"
+                "Detected breakdown query (%d dimension(s), aggregation=%s)",
+                len(group_by),
+                aggregation_type,
             )
 
         return QueryIntent(
@@ -579,7 +583,9 @@ Focus on:
                         # Keep original if not in mapping
                         group_by.append(dim)
 
-                logger.info(f"Fallback regex detected breakdown query: group_by={group_by}")
+                logger.info(
+                    "Fallback regex detected breakdown query (%d dimension(s))", len(group_by)
+                )
                 break
 
         return QueryIntent(

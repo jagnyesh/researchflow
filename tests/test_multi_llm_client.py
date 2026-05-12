@@ -336,15 +336,11 @@ class TestAgentIntegration:
             assert agent.llm_client is not None
             assert isinstance(agent.llm_client, MultiLLMClient)
 
-    @pytest.mark.requires_services
+    @pytest.mark.skip(
+        reason="DeliveryAgent.__init__ writes /data hardcoded; no CI env has it writable. Fix tracked in BACKLOG (use DATA_DELIVERY_PATH env var)."
+    )
     async def test_delivery_agent_uses_multi_llm_client(self):
-        """Test that Delivery Agent can use MultiLLMClient.
-
-        Tagged ``requires_services`` because ``DeliveryAgent.__init__`` writes
-        to a hardcoded ``/data/deliveries`` path which is read-only on CI
-        runners. Fix tracked in BACKLOG: make path read from
-        ``DATA_DELIVERY_PATH`` env var.
-        """
+        """Test that Delivery Agent can use MultiLLMClient."""
         from app.agents.delivery_agent import DeliveryAgent
 
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}):

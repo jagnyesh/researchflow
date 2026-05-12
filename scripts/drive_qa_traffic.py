@@ -164,8 +164,10 @@ async def drive_exploratory(start: int, n: int) -> list[dict]:
             fs = FeasibilityService()
             elapsed = time.monotonic() - t0
             est = data.get("estimated_cohort", "?")
+            (dx_short, _), (gender, age_label, _, _) = CASES[i % len(CASES)]
             print(
-                f"  [E {i + 1:02d}/{start + n}] cohort~{est:>4}  ({elapsed:.1f}s)  q='{query[:70]}'"
+                f"  [E {i + 1:02d}/{start + n}] {dx_short:12s} {gender:6s} {age_label:5s} "
+                f"cohort~{est:>4}  ({elapsed:.1f}s)"
             )
             out.append({"idx": i, "cohort": est, "elapsed": elapsed})
         except Exception as e:
