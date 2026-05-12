@@ -73,7 +73,7 @@ class BaseAgent(ABC):
         """
         pass
 
-    @traceable(tags=["base-agent", "production", "agent-execution"])
+    @traceable(tags=["base-agent", "production", "agent-execution", "portal:formal"])
     async def handle_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """
         Wrapper for task execution with logging, error handling, and state management

@@ -63,7 +63,7 @@ class PhenotypeValidationAgent(BaseAgent):
             self.hapi_db_client = None
             self.postgres_runner = None
 
-    @traceable(tags=["phenotype-agent", "agent-execution"])
+    @traceable(tags=["phenotype-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute phenotype validation task"""
         # Ensure database connection is established if using ViewDefinitions

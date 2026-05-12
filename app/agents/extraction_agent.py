@@ -33,7 +33,7 @@ class DataExtractionAgent(BaseAgent):
         self.sql_adapter = SQLonFHIRAdapter(database_url)
         self.file_storage = FileStorageService()
 
-    @traceable(tags=["extraction-agent", "agent-execution"])
+    @traceable(tags=["extraction-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute data extraction task"""
         if task == "extract_data":

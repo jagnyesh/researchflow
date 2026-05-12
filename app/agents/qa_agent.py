@@ -28,7 +28,7 @@ class QualityAssuranceAgent(BaseAgent):
     def __init__(self, orchestrator=None):
         super().__init__(agent_id="qa_agent", orchestrator=orchestrator)
 
-    @traceable(tags=["qa-agent", "agent-execution"])
+    @traceable(tags=["qa-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute QA validation task"""
         if task == "validate_extracted_data":

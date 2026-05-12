@@ -11,6 +11,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 
+from langsmith import traceable
+
 from ..utils.llm_client import LLMClient
 
 logger = logging.getLogger(__name__)
@@ -166,6 +168,7 @@ class QueryInterpreter:
     def __init__(self):
         self.llm_client = LLMClient()
 
+    @traceable(tags=["query-interpreter", "portal:exploratory"])
     async def interpret_query(self, natural_language_query: str) -> QueryIntent:
         """
         Interpret natural language query and return structured intent

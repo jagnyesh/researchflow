@@ -32,7 +32,7 @@ class RequirementsAgent(BaseAgent):
         self.llm_client = LLMClient()
         self.conversation_state = {}  # Store conversation state per request
 
-    @traceable(tags=["requirements-agent", "agent-execution"])
+    @traceable(tags=["requirements-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute requirements gathering task"""
         if task == "gather_requirements":
