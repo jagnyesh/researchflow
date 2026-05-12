@@ -1,13 +1,48 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.2 (Lambda Architecture Finish) — Phase 1 + 2 COMPLETE, **PR #24 open and fully green** (19/19 checks pass, mergeable)
-**Phase:** All — 1.0, 1.1, 1.2, 1.5, 1.6, 2.0, 2.1 shipped. Plus a /cso security hardening pass that closed CRITICAL #26 (SQL injection in DROP MV endpoint).
-**Branch:** `feature/lambda-finish` (28 commits since main `f931164`, +2,632/-385 lines, 38 files)
-**PR:** [#24](https://github.com/jagnyesh/researchflow/pull/24) — closes #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #21, #22, **#26**
-**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08 as squash `f931164`. Sprint 6.2 ready to ship as a single squash PR. ~11/22 sprints overall.
-**Last updated:** 2026-05-10
+**Sprint:** 8.1 (Prompt Optimization Verification) — design grilled via /grill-with-docs on 2026-05-11; 7 design decisions locked; implementation pending.
+**Branch:** TBD (next: create `feature/sprint-8-1-prompt-cost-telemetry`)
+**Recently shipped:** Sprint 6.2 (Lambda Architecture Finish) squash-merged 2026-05-08 as `4950e14`. CI follow-on (#25) squash-merged 2026-05-11 as `8339a12` — docker-compose stack + hand-curated 5-patient FHIR fixture, 11 service-dependent ignores re-enabled.
+**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08, Sprint 6.2 SHIPPED 2026-05-08, CI hardening #25 SHIPPED 2026-05-11. ~12/22 sprints overall.
+**Last updated:** 2026-05-11
 
-## Active sprint goal
+## Active sprint goal (Sprint 8.1)
+
+Verify the 73% prompt-optimization claim from the Sprint 8 archive doc (`docs/sprints/archive/SPRINT_08_PROMPT_OPTIMIZATION.md`) against real production traffic. Sprint 8 itself shipped earlier this year on `feature/langchain-agents-migration` (prompt caching, Haiku fallback, hybrid model strategy — see `app/utils/llm_client.py` + `app/services/query_interpreter.py` for the `# Sprint 8 Optimization N` markers). What was deferred: Optimization 10 (usage telemetry), tests un-ignored, dashboard, doc reconciliation. Sprint 8.1 closes that operational tail.
+
+**Sprint gate (pre-committed):** median cost-per-request ≤ 1.3× projected over rolling 30 requests per portal, both portals must clear independently.
+- Formal Portal band: ≤ $0.0039 per request (projected $0.003 × 1.3)
+- Exploratory Portal band: ≤ $0.00091 per query (projected $0.0007 × 1.3)
+- Failure mode: sprint closes either way with whichever finding (D8). If red, BACKLOG gets a Sprint 8.2 entry to close the cost gap.
+
+## Domain terms (resolved 2026-05-11)
+
+- **Formal Portal** — the 6-agent workflow served by `app/web_ui/researcher_portal.py`. One user submission → multiple LLM runs across Requirements → Phenotype → Calendar → Extraction → QA → Delivery agents, tied together by a LangGraph `thread_id`. Cost metric: cost-per-request (sum across all runs in one thread).
+- **Exploratory Portal** — the Text2SQL natural-language query path served by `app/web_ui/research_notebook.py`. One query → typically one root LLM trace (QueryInterpreter), with Haiku/Sonnet fallback. Cost metric: cost-per-query (per root trace).
+- **Cost Telemetry** — read-side service that aggregates LangSmith run data into per-portal cost-per-request medians. Implemented in `app/services/cost_telemetry_service.py` (new this sprint). See DECISIONS.md Sprint 8.1 ADR for the "LangSmith as source of truth, no parallel Postgres table" decision.
+- **Sprint gate** — pre-committed numeric criterion that fires sprint completion. Established by the PR cadence rule (DECISIONS.md). For Sprint 8.1, gate = rolling-30 cost-band on both portals.
+
+## In progress (Sprint 8.1)
+
+- [ ] Phase 1 — Add explicit `portal:formal` / `portal:exploratory` tags to the 8 `@traceable` decorators (6 formal agents + `query_interpreter` + `feasibility_service`). Promotes documented domain language into trace data.
+- [ ] Phase 2 — Build `app/services/cost_telemetry_service.py` reading from LangSmith via `langsmith` SDK. Interface: `get_formal_portal_cost_p50(n=30)`, `get_exploratory_portal_cost_p50(n=30)`, `get_cache_hit_rate(portal, n=30)`.
+- [ ] Phase 3 — Add cost-telemetry tile to `app/web_ui/admin_dashboard.py` — two panels (formal + exploratory), each showing median + gate-status badge (green if ≤ 1.3× projected, red otherwise).
+- [ ] Phase 4 — Re-enable `tests/test_multi_llm_client.py` + `tests/test_prompt_optimization.py` from `pytest.ini` ignore list. Fix bitrot per the D7 policy from #25.
+- [ ] Phase 5 — Doc reconciliation: BACKLOG.md Sprint 8 entry → mark shipped, add Sprint 8.1 entry. Archive doc status block → "Implementation Complete; Operational Verification: Sprint 8.1." CLAUDE.md if needed.
+- [ ] Phase 6 — Manual /qa pass to seed 30 requests on each portal so the rolling-30 gate can fire. Optional if organic traffic accumulates fast enough.
+
+## Reference artifacts
+
+- Sprint 6.2 narrative: this section was previously here, see `8339a12` and earlier `4950e14` for the merged content. CONTEXT.md re-anchored on Sprint 8.1.
+- Sprint 8 archive: `docs/sprints/archive/SPRINT_08_PROMPT_OPTIMIZATION.md` — historical "Implementation Complete" status, source of the 73% projection.
+- Sprint 8.1 design grill (this session): 7 decisions D1-D8 covered in conversation, ADR in DECISIONS.md.
+- Cadence rule: DECISIONS.md "Workflow — PR cadence: one cohesive squash PR per sprint."
+
+---
+
+# Below: legacy Sprint 6.2 narrative (kept for context until Sprint 8.1 ships)
+
+## Active sprint goal (Sprint 6.2, SHIPPED 2026-05-08 as 4950e14)
 
 Ship the real Lambda Architecture for SQL-on-FHIR (batch + speed + serving) so every "Lambda complete" claim in the README/CLAUDE/docs is verifiable from a fresh clone. Sprint 6.2 was triggered when /office-hours flagged 4 doc files claiming Lambda was complete while only 1/7 view defs materialized in production. Integrity-first: every claim either becomes true via implementation, or the claim gets rewritten.
 
