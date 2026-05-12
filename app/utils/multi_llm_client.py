@@ -15,6 +15,15 @@ from typing import Dict, Any, Optional, Literal
 from langsmith import traceable
 from .llm_client import LLMClient
 
+# Optional aisuite import — present in dev/prod, absent in slim deployments.
+# Hoisted to module level (was lazy-imported inside _init_aisuite) so tests
+# can patch `app.utils.multi_llm_client.aisuite` directly. When None, the
+# secondary-provider path falls back to Anthropic.
+try:
+    import aisuite
+except ImportError:  # pragma: no cover — deployment-dependent path
+    aisuite = None  # type: ignore[assignment]
+
 logger = logging.getLogger(__name__)
 
 # Task types that are considered critical and must use Claude
@@ -83,9 +92,12 @@ class MultiLLMClient:
             logger.info("Secondary provider is Anthropic - using Claude client directly")
             return
 
-        try:
-            import aisuite
+        if aisuite is None:
+            logger.warning("aisuite not installed - falling back to Claude for all tasks")
+            self.secondary_provider = "anthropic"
+            return
 
+        try:
             # Validate provider configuration
             if self.secondary_provider == "openai":
                 if not os.getenv("OPENAI_API_KEY"):
@@ -99,9 +111,6 @@ class MultiLLMClient:
             self.aisuite_client = aisuite.Client()
             logger.info(f"AI Suite initialized for provider: {self.secondary_provider}")
 
-        except ImportError:
-            logger.warning("aisuite not installed - falling back to Claude for all tasks")
-            self.secondary_provider = "anthropic"
         except Exception as e:
             logger.error(f"Failed to initialize AI Suite: {str(e)} - falling back to Claude")
             self.secondary_provider = "anthropic"

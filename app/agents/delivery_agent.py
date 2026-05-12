@@ -36,7 +36,7 @@ class DeliveryAgent(BaseAgent):
         self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
         self.file_storage = FileStorageService()
 
-    @traceable(tags=["delivery-agent", "agent-execution"])
+    @traceable(tags=["delivery-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute delivery task"""
         if task == "deliver_data":

@@ -35,7 +35,7 @@ class FeasibilityService:
         hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
         self.db_client = HAPIDBClient(hapi_db_url)
 
-    @traceable(tags=["feasibility-service", "cohort-estimation"])
+    @traceable(tags=["feasibility-service", "cohort-estimation", "portal:exploratory"])
     async def execute_feasibility_check(self, query_intent: Dict[str, Any]) -> Dict[str, Any]:
         """
         Execute feasibility check for research query

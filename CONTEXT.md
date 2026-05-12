@@ -1,13 +1,57 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.2 (Lambda Architecture Finish) — Phase 1 + 2 COMPLETE, **PR #24 open and fully green** (19/19 checks pass, mergeable)
-**Phase:** All — 1.0, 1.1, 1.2, 1.5, 1.6, 2.0, 2.1 shipped. Plus a /cso security hardening pass that closed CRITICAL #26 (SQL injection in DROP MV endpoint).
-**Branch:** `feature/lambda-finish` (28 commits since main `f931164`, +2,632/-385 lines, 38 files)
-**PR:** [#24](https://github.com/jagnyesh/researchflow/pull/24) — closes #10, #11, #12, #13, #14, #15, #16, #17, #18, #19, #21, #22, **#26**
-**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08 as squash `f931164`. Sprint 6.2 ready to ship as a single squash PR. ~11/22 sprints overall.
-**Last updated:** 2026-05-10
+**Sprint:** 8.1 (Prompt Optimization Verification) — **CLOSED 2026-05-12 with RED verdict per pre-committed D8 failure-mode rule.** Verification was the deliverable; the verdict is the artifact.
+**Branch:** `feature/sprint-8-1-prompt-cost-telemetry` (6 commits ahead of main; squash PR opening now).
+**Recently shipped:** Sprint 6.2 squash-merged 2026-05-08 as `4950e14`. CI follow-on #27 squash-merged 2026-05-11 as `8339a12`.
+**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08, Sprint 6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED). ~13/22 sprints overall.
+**Last updated:** 2026-05-12
 
-## Active sprint goal
+## Sprint 8.1 verdict (closed 2026-05-12)
+
+Sprint 8 was the optimization sprint (shipped 2025 on `feature/langchain-agents-migration`). Sprint 8.1 was the verification sprint. **The verification ran exactly as designed and produced its verdict; the verdict happened to be RED.** That is the point of the pre-committed D8 rule — the sprint succeeded in measuring, not in achieving.
+
+### Measured (n=30/30 on each portal, zero errors, 6.4 min wall-clock)
+
+| Portal | Median | Band ceiling | Ratio | Cache hit | Gate |
+|---|---:|---:|---:|---:|:---:|
+| Formal | **$0.009026** | $0.0039 | **3.01× projected** | **0.0%** | 🔴 |
+| Exploratory | **$0.003413** | $0.00091 | **4.88× projected** | **0.0%** | 🔴 |
+
+### What the verdict says
+
+The 73% cost-reduction projection from Sprint 8 was built primarily on prompt caching (Optimizations 1-3). Observed `cache_hit_rate = 0.0%` on every run is the smoking gun: either the `cache_control` blocks aren't being sent on outbound Anthropic API requests, or they're being sent but the `cache_read_input_tokens` aren't being captured by the cost-telemetry aggregator. **These two hypotheses have ~10× different implementation scope.** Sprint 8.2 disambiguates them in Task 1 before scoping any fix.
+
+### What shipped this sprint (verification artifacts, not optimizations)
+
+- `app/services/cost_telemetry_service.py` — LangSmith-as-source-of-truth aggregator (formal: per-thread; exploratory: per-root-trace). See DECISIONS.md Sprint 8.1 ADR.
+- `app/web_ui/admin_dashboard.py` — new "💰 Cost Telemetry" tab with two portal panels + gate-status badges.
+- `scripts/drive_qa_traffic.py` — synthetic-traffic harness for filling the rolling-30 window (re-runnable for Sprint 8.2 verification).
+- `portal:formal` / `portal:exploratory` tags on 8 `@traceable` sites (6 agents + `query_interpreter` + `feasibility_service`).
+- `tests/test_cost_telemetry_service.py` (14 tests) + `tests/test_portal_tags.py` (10 tests) + 3 bitrot fixes in previously-ignored test files. Tests partition extended with `requires_api_key` marker.
+
+### Next step
+
+**Sprint 8.2** ([#37](https://github.com/jagnyesh/researchflow/issues/37)) — diagnostic-first investigation of the zero-cache-hit root cause. Filed before this PR opens so the next-step trail is durable. Task 1 (~30 min) pulls one LangSmith trace and inspects the outbound payload; the YES/NO answer gates Task 2 scope.
+
+## Domain terms (resolved 2026-05-11, unchanged)
+
+- **Formal Portal** — 6-agent LangGraph workflow at `app/web_ui/researcher_portal.py`. Cost metric: cost-per-request (sum across all runs in one `thread_id`).
+- **Exploratory Portal** — Text2SQL NL path at `app/web_ui/research_notebook.py`. Cost metric: cost-per-query (per root trace).
+- **Cost Telemetry** — read-side service aggregating LangSmith runs into per-portal medians (`app/services/cost_telemetry_service.py`).
+- **Sprint gate** — pre-committed numeric criterion that fires sprint completion. For Sprint 8.1: rolling-30 cost-band on both portals.
+
+## Reference artifacts
+
+- Sprint 8 archive: `docs/sprints/archive/SPRINT_08_PROMPT_OPTIMIZATION.md` — implementation history + the verification verdict header added 2026-05-12.
+- Sprint 8.1 ADR: DECISIONS.md "Sprint 8.1 — LangSmith is source-of-truth for LLM cost; explicit portal tags promote domain language into trace data."
+- Sprint 8.2: [#37](https://github.com/jagnyesh/researchflow/issues/37) (diagnostic-first cache-hit investigation).
+- Cadence rule: DECISIONS.md "Workflow — PR cadence: one cohesive squash PR per sprint, opened only when the sprint's gate has fired."
+
+---
+
+# Below: legacy Sprint 6.2 narrative (kept for context until Sprint 8.1 ships)
+
+## Active sprint goal (Sprint 6.2, SHIPPED 2026-05-08 as 4950e14)
 
 Ship the real Lambda Architecture for SQL-on-FHIR (batch + speed + serving) so every "Lambda complete" claim in the README/CLAUDE/docs is verifiable from a fresh clone. Sprint 6.2 was triggered when /office-hours flagged 4 doc files claiming Lambda was complete while only 1/7 view defs materialized in production. Integrity-first: every claim either becomes true via implementation, or the claim gets rewritten.
 

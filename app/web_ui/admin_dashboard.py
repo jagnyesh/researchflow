@@ -991,7 +991,7 @@ def main():
     # Main area with tabs
     with col_main:
         # Tabs
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
+        tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
             [
                 "📊 Overview",
                 "🤖 Agent Metrics",
@@ -999,6 +999,7 @@ def main():
                 "🚨 Escalations",
                 "📈 Analytics",
                 "🗄️ Materialized Views",
+                "💰 Cost Telemetry",
             ]
         )
 
@@ -1019,6 +1020,9 @@ def main():
 
         with tab6:
             show_materialized_views()
+
+        with tab7:
+            show_cost_telemetry()
 
     # Auto-refresh logic
     if auto_refresh:
@@ -1857,6 +1861,114 @@ def show_escalations():
                         st.error("Rejected")
     else:
         st.success("No pending escalations - all systems nominal!")
+
+
+def show_cost_telemetry():
+    """Sprint 8.1 #31 — admin tab for prompt-optimization cost verification.
+
+    Renders a panel per portal showing median cost-per-request over the last
+    30 requests vs the 1.3× projected band ceiling. Gate badge fires green
+    when the sprint's pre-committed verification criterion is met.
+
+    Data source: LangSmith API (see ADR in DECISIONS.md "Sprint 8.1 —
+    LangSmith is source-of-truth for LLM cost"). The service queries runs
+    tagged `portal:formal` / `portal:exploratory` (added in #29), groups
+    formal-portal runs by `thread_id` metadata for cost-per-request
+    aggregation, and computes USD cost from token counts via the local
+    pricing table.
+
+    #31 implements the formal portal panel; #32 adds the exploratory portal
+    panel + real aggregation method. Until #32 lands, the exploratory
+    section is intentionally not rendered.
+    """
+    from app.services.cost_telemetry_service import (
+        CostTelemetryService,
+        FORMAL_BAND_CEILING_USD,
+    )
+
+    st.header("💰 Cost Telemetry — Sprint 8.1 Verification")
+    st.caption(
+        "Sprint 8.1 gate: median cost-per-request ≤ 1.3× projected, rolling 30 requests per portal. "
+        "See DECISIONS.md Sprint 8.1 ADR for the source-of-truth design."
+    )
+
+    service = CostTelemetryService()
+
+    col_formal, col_exp = st.columns(2)
+
+    with col_formal:
+        st.subheader("Formal Portal")
+        st.caption("6-agent workflow · cost-per-request grouped by `thread_id`")
+
+        try:
+            summary = run_async(service.get_formal_portal_cost_p50(n=30))
+        except Exception as exc:
+            st.error(f"Failed to fetch LangSmith data: {exc}")
+            st.info(
+                "If this is offline-dev, the dashboard depends on LangSmith API; "
+                "ensure `LANGSMITH_API_KEY` is set and reachable."
+            )
+            return
+
+        badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[summary.gate_status]
+        st.metric(
+            label=f"{badge} Median cost / request",
+            value=f"${summary.median_usd:.4f}",
+            delta=f"band ≤ ${summary.band_ceiling_usd:.4f}",
+            delta_color=("normal" if summary.gate_status == "green" else "inverse"),
+        )
+        st.caption(
+            f"Sample: {summary.n_observed} of 30 · "
+            f"Cache hit rate: {summary.cache_hit_rate * 100:.1f}%"
+        )
+        if summary.gate_status == "gray":
+            st.info(
+                f"Insufficient sample ({summary.n_observed} threads observed, need 30). "
+                "Gate fires once the rolling-30 window is full. "
+                "See sprint issue #34 for the /qa pass that seeds the window."
+            )
+        elif summary.gate_status == "green":
+            st.success("Gate PASS — 73% claim verified for the formal portal.")
+        elif summary.gate_status == "red":
+            st.error(
+                f"Gate FAIL — actual median (\\${summary.median_usd:.4f}) exceeds the "
+                f"1.3× band (\\${summary.band_ceiling_usd:.4f}). File Sprint 8.2 with the cost-gap finding."
+            )
+
+    with col_exp:
+        st.subheader("Exploratory Portal")
+        st.caption("Text2SQL · cost-per-query · aggregated per root trace")
+
+        try:
+            exp_summary = run_async(service.get_exploratory_portal_cost_p50(n=30))
+        except Exception as exc:
+            st.error(f"Failed to fetch LangSmith data: {exc}")
+            return
+
+        exp_badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[exp_summary.gate_status]
+        st.metric(
+            label=f"{exp_badge} Median cost / query",
+            value=f"${exp_summary.median_usd:.5f}",
+            delta=f"band ≤ ${exp_summary.band_ceiling_usd:.5f}",
+            delta_color=("normal" if exp_summary.gate_status == "green" else "inverse"),
+        )
+        st.caption(
+            f"Sample: {exp_summary.n_observed} of 30 · "
+            f"Cache hit rate: {exp_summary.cache_hit_rate * 100:.1f}%"
+        )
+        if exp_summary.gate_status == "gray":
+            st.info(
+                f"Insufficient sample ({exp_summary.n_observed} queries observed, need 30). "
+                "Run #34 seeds the rolling-30 window with ~30 NL queries via "
+                "research_notebook."
+            )
+        elif exp_summary.gate_status == "green":
+            st.success("Gate PASS — 90% claim verified for the exploratory portal.")
+        elif exp_summary.gate_status == "red":
+            st.error(
+                f"Gate FAIL — actual median (\\${exp_summary.median_usd:.5f}) exceeds the "
+                f"1.3× band (\\${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
+            )
 
 
 def show_materialized_views():

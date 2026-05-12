@@ -31,7 +31,7 @@ class CalendarAgent(BaseAgent):
         super().__init__(agent_id="calendar_agent", orchestrator=orchestrator)
         self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
 
-    @traceable(tags=["calendar-agent", "agent-execution"])
+    @traceable(tags=["calendar-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute calendar scheduling task"""
         if task == "schedule_kickoff_meeting":
