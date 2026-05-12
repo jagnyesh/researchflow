@@ -136,8 +136,12 @@ class TestPromptCachingEnabled:
             assert "system" in call_kwargs
             system_prompt = call_kwargs["system"]
 
-            # Verify system prompt contains ViewDefinitions and condition mappings
-            assert "Available ViewDefinitions" in system_prompt
+            # Verify system prompt carries the core schema content.
+            # Sprint 8 Optimization 7 condensed the prompt 1200→700 tokens
+            # (per archive doc), dropping the "Available " prefix. The
+            # assertion now checks the structural anchors that survived the
+            # rewrite.
+            assert "ViewDefinitions:" in system_prompt
             assert "Common Conditions" in system_prompt
             assert "patient_demographics" in system_prompt
 
@@ -147,12 +151,13 @@ class TestPromptCachingIntegration:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    @pytest.mark.requires_api_key
     async def test_repeated_calls_use_cache(self):
         """
         Verify that repeated LLM calls with same system prompt use cache
 
         This test requires:
-        - ANTHROPIC_API_KEY set
+        - ANTHROPIC_API_KEY set (with available credits)
         - LANGCHAIN_TRACING_V2=true
         - LANGCHAIN_API_KEY set
 
@@ -376,6 +381,7 @@ class TestBackwardCompatibility:
 
 
 @pytest.mark.asyncio
+@pytest.mark.requires_api_key
 async def test_end_to_end_formal_portal_workflow():
     """
     End-to-end test: Formal portal request with caching

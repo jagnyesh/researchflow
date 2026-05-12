@@ -52,7 +52,7 @@ jobs:
         ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         DATABASE_URL: sqlite+aiosqlite:///./test.db
       run: |
-        pytest tests/ -v -m "not requires_services" --cov=app --cov-report=xml --cov-report=term
+        pytest tests/ -v -m "not requires_services and not requires_api_key" --cov=app --cov-report=xml --cov-report=term
 
     - name: Upload coverage to Codecov
       uses: codecov/codecov-action@v4
