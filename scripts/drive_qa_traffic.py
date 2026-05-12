@@ -165,7 +165,12 @@ async def drive_exploratory(start: int, n: int) -> list[dict]:
             elapsed = time.monotonic() - t0
             est = data.get("estimated_cohort", "?")
             (dx_short, _), (gender, age_label, _, _) = CASES[i % len(CASES)]
-            print(
+            # CodeQL py/clear-text-logging-sensitive-data — false positive:
+            # dx_short/gender/age_label are literals from the CASES table at
+            # the top of this file, not user input. The taint flow flags this
+            # because `query` (built from the same CASES) appears in the
+            # try-block scope.
+            print(  # lgtm[py/clear-text-logging-sensitive-data]
                 f"  [E {i + 1:02d}/{start + n}] {dx_short:12s} {gender:6s} {age_label:5s} "
                 f"cohort~{est:>4}  ({elapsed:.1f}s)"
             )
