@@ -1931,8 +1931,8 @@ def show_cost_telemetry():
             st.success("Gate PASS — 73% claim verified for the formal portal.")
         elif summary.gate_status == "red":
             st.error(
-                f"Gate FAIL — actual median (${summary.median_usd:.4f}) exceeds the "
-                f"1.3× band (${summary.band_ceiling_usd:.4f}). File Sprint 8.2 with the cost-gap finding."
+                f"Gate FAIL — actual median (\\${summary.median_usd:.4f}) exceeds the "
+                f"1.3× band (\\${summary.band_ceiling_usd:.4f}). File Sprint 8.2 with the cost-gap finding."
             )
 
     with col_exp:
@@ -1966,8 +1966,8 @@ def show_cost_telemetry():
             st.success("Gate PASS — 90% claim verified for the exploratory portal.")
         elif exp_summary.gate_status == "red":
             st.error(
-                f"Gate FAIL — actual median (${exp_summary.median_usd:.5f}) exceeds the "
-                f"1.3× band (${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
+                f"Gate FAIL — actual median (\\${exp_summary.median_usd:.5f}) exceeds the "
+                f"1.3× band (\\${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
             )
 
 
