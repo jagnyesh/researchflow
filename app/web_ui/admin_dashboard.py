@@ -1937,8 +1937,38 @@ def show_cost_telemetry():
 
     with col_exp:
         st.subheader("Exploratory Portal")
-        st.caption("Text2SQL · cost-per-query · _pending #32_")
-        st.info("Exploratory portal panel lands in issue #32 (1c).")
+        st.caption("Text2SQL · cost-per-query · aggregated per root trace")
+
+        try:
+            exp_summary = run_async(service.get_exploratory_portal_cost_p50(n=30))
+        except Exception as exc:
+            st.error(f"Failed to fetch LangSmith data: {exc}")
+            return
+
+        exp_badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[exp_summary.gate_status]
+        st.metric(
+            label=f"{exp_badge} Median cost / query",
+            value=f"${exp_summary.median_usd:.5f}",
+            delta=f"band ≤ ${exp_summary.band_ceiling_usd:.5f}",
+            delta_color=("normal" if exp_summary.gate_status == "green" else "inverse"),
+        )
+        st.caption(
+            f"Sample: {exp_summary.n_observed} of 30 · "
+            f"Cache hit rate: {exp_summary.cache_hit_rate * 100:.1f}%"
+        )
+        if exp_summary.gate_status == "gray":
+            st.info(
+                f"Insufficient sample ({exp_summary.n_observed} queries observed, need 30). "
+                "Run #34 seeds the rolling-30 window with ~30 NL queries via "
+                "research_notebook."
+            )
+        elif exp_summary.gate_status == "green":
+            st.success("Gate PASS — 90% claim verified for the exploratory portal.")
+        elif exp_summary.gate_status == "red":
+            st.error(
+                f"Gate FAIL — actual median (${exp_summary.median_usd:.5f}) exceeds the "
+                f"1.3× band (${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
+            )
 
 
 def show_materialized_views():

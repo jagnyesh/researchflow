@@ -153,17 +153,20 @@ class CostTelemetryService:
     async def get_exploratory_portal_cost_p50(self, n: int = 30) -> CostSummary:
         """Median cost-per-query across the last n root-traces tagged portal:exploratory.
 
-        Issue #32 (1c) implements this method's actual aggregation. Stub now
-        returns a gray summary so #31's dashboard can render both panels with
-        the exploratory panel showing "n_observed=0, gray" until #32 lands.
+        Aggregation is per ROOT TRACE (not per thread like formal). LangSmith
+        propagates child-run usage_metadata up to the root, so each root's
+        input_tokens/output_tokens already represents the whole trace tree's
+        cost — no descendant walking needed. The QueryInterpreter's Sonnet
+        fallback path (Optimization 8 hybrid strategy) shows up as a child run
+        whose tokens roll up into the root's aggregated counts.
         """
-        # TODO(#32): root-trace aggregation: walk root + descendants per query.
-        return CostSummary(
-            median_usd=0.0,
-            n_observed=0,
-            cache_hit_rate=0.0,
-            band_ceiling_usd=EXPLORATORY_BAND_CEILING_USD,
-            gate_status="gray",
+        roots = await asyncio.to_thread(
+            self._fetch_root_runs_by_tag,
+            "portal:exploratory",
+            n * 2,  # exploratory queries are typically one root each, less over-fetch needed
+        )
+        return self._summarize_per_root(
+            roots, target_n=n, band_ceiling=EXPLORATORY_BAND_CEILING_USD
         )
 
     # -------------------------------------------------------------------
@@ -171,7 +174,12 @@ class CostTelemetryService:
     # -------------------------------------------------------------------
 
     def _fetch_runs_by_tag(self, tag: str, limit: int) -> List[Any]:
-        """Sync fetch from LangSmith. Wrapped in asyncio.to_thread by callers."""
+        """Sync fetch from LangSmith — all runs (root + descendants) matching tag.
+
+        Used by formal-portal aggregation, where each thread has 5-15 runs and
+        we need every one to roll up per-thread cost. Wrapped in
+        asyncio.to_thread by callers.
+        """
         client = self._ensure_client()
         try:
             runs_iter = client.list_runs(
@@ -184,62 +192,141 @@ class CostTelemetryService:
             logger.warning("LangSmith fetch failed for tag %r: %s", tag, exc)
             return []
 
+    def _fetch_root_runs_by_tag(self, tag: str, limit: int) -> List[Any]:
+        """Sync fetch for ROOT runs only — used by exploratory aggregation.
+
+        LangSmith auto-aggregates child usage_metadata into the parent, so
+        each root run's token counts already cover the whole query. One API
+        call gets N data points (vs N+1 for trace-tree walking).
+        """
+        client = self._ensure_client()
+        try:
+            runs_iter = client.list_runs(
+                project_name=self._project,
+                filter=f'has(tags, "{tag}")',
+                is_root=True,
+                limit=limit,
+            )
+            return list(runs_iter)
+        except Exception as exc:
+            logger.warning("LangSmith root-run fetch failed for tag %r: %s", tag, exc)
+            return []
+
     def _summarize_threaded(
         self,
         runs: List[Any],
         target_n: int,
         band_ceiling: float,
     ) -> CostSummary:
-        """Group runs by thread_id, compute per-thread cost, return summary."""
+        """Group runs by thread_id (one thread = one request) and summarize.
+
+        Used by formal-portal aggregation. Each thread becomes one data point
+        whose cost is the sum across its constituent runs.
+        """
         threads: Dict[str, List[Any]] = defaultdict(list)
         for run in runs:
             thread_id = _extract_thread_id(run)
             if thread_id is not None:
                 threads[thread_id].append(run)
 
-        # Sort threads by most-recent run, take the last target_n
-        def _thread_recency(item):
-            _, runs_in_thread = item
-            return max(_run_start_time(r) for r in runs_in_thread)
-
-        sorted_threads = sorted(threads.items(), key=_thread_recency, reverse=True)
-        recent = sorted_threads[:target_n]
-
-        n_observed = len(recent)
-        if n_observed == 0:
-            return CostSummary(
-                median_usd=0.0,
-                n_observed=0,
-                cache_hit_rate=0.0,
-                band_ceiling_usd=band_ceiling,
-                gate_status="gray",
+        # Convert each thread to a (cost, cache_read, input, recency) data point
+        points = [
+            _RequestPoint(
+                cost_usd=_sum_thread_cost_usd(thread_runs),
+                cache_read_tokens=sum(_get_cache_read_tokens(r) for r in thread_runs),
+                non_cached_input_tokens=sum(_get_input_tokens(r) for r in thread_runs),
+                start_time=max(_run_start_time(r) for r in thread_runs),
             )
+            for _, thread_runs in threads.items()
+        ]
+        return _summarize_points(points, target_n=target_n, band_ceiling=band_ceiling)
 
-        thread_costs = [_sum_thread_cost_usd(thread_runs) for _, thread_runs in recent]
-        median = statistics.median(thread_costs)
+    def _summarize_per_root(
+        self,
+        roots: List[Any],
+        target_n: int,
+        band_ceiling: float,
+    ) -> CostSummary:
+        """Each root run = one query = one data point. No grouping.
 
-        # Cache hit rate: cache_read / (cache_read + non_cached_input) across all recent runs
-        total_cache_read = 0
-        total_input_excl_cache = 0
-        for _, thread_runs in recent:
-            for r in thread_runs:
-                total_cache_read += _get_cache_read_tokens(r)
-                total_input_excl_cache += _get_input_tokens(r)
-        denom = total_cache_read + total_input_excl_cache
-        cache_hit_rate = (total_cache_read / denom) if denom > 0 else 0.0
+        Used by exploratory-portal aggregation. LangSmith's usage_metadata
+        propagation means root.input_tokens already includes descendants'
+        usage, so we just compute one cost per root.
+        """
+        points = [
+            _RequestPoint(
+                cost_usd=_run_cost_usd(root),
+                cache_read_tokens=_get_cache_read_tokens(root),
+                non_cached_input_tokens=_get_input_tokens(root),
+                start_time=_run_start_time(root),
+            )
+            for root in roots
+        ]
+        return _summarize_points(points, target_n=target_n, band_ceiling=band_ceiling)
 
-        if n_observed < target_n:
-            status: GateStatus = "gray"
-        else:
-            status = "green" if median <= band_ceiling else "red"
 
+# ---------------------------------------------------------------------------
+# Aggregation primitives — both formal and exploratory portals reduce to a
+# list of "request points" and the same summarization logic.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _RequestPoint:
+    """One data point in a cost-per-request distribution.
+
+    Formal portal: one per thread (sum of runs).
+    Exploratory portal: one per root trace.
+    """
+
+    cost_usd: float
+    cache_read_tokens: int
+    non_cached_input_tokens: int
+    start_time: datetime
+
+
+def _summarize_points(
+    points: List[_RequestPoint],
+    target_n: int,
+    band_ceiling: float,
+) -> CostSummary:
+    """Sort points by recency, take last target_n, return CostSummary.
+
+    Gate logic: gray when sample is insufficient (n < target_n); otherwise
+    green when median ≤ band, red when median > band.
+    """
+    sorted_points = sorted(points, key=lambda p: p.start_time, reverse=True)
+    recent = sorted_points[:target_n]
+
+    n_observed = len(recent)
+    if n_observed == 0:
         return CostSummary(
-            median_usd=median,
-            n_observed=n_observed,
-            cache_hit_rate=cache_hit_rate,
+            median_usd=0.0,
+            n_observed=0,
+            cache_hit_rate=0.0,
             band_ceiling_usd=band_ceiling,
-            gate_status=status,
+            gate_status="gray",
         )
+
+    median = statistics.median(p.cost_usd for p in recent)
+
+    total_cache_read = sum(p.cache_read_tokens for p in recent)
+    total_input_excl_cache = sum(p.non_cached_input_tokens for p in recent)
+    denom = total_cache_read + total_input_excl_cache
+    cache_hit_rate = (total_cache_read / denom) if denom > 0 else 0.0
+
+    if n_observed < target_n:
+        status: GateStatus = "gray"
+    else:
+        status = "green" if median <= band_ceiling else "red"
+
+    return CostSummary(
+        median_usd=median,
+        n_observed=n_observed,
+        cache_hit_rate=cache_hit_rate,
+        band_ceiling_usd=band_ceiling,
+        gate_status=status,
+    )
 
 
 # ---------------------------------------------------------------------------
