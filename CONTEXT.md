@@ -1,37 +1,71 @@
 # ResearchFlow — Current State
 
-**Sprint:** 8.1 (Prompt Optimization Verification) — **CLOSED 2026-05-12 with RED verdict per pre-committed D8 failure-mode rule.** Verification was the deliverable; the verdict is the artifact.
-**Branch:** `feature/sprint-8-1-prompt-cost-telemetry` (6 commits ahead of main; squash PR opening now).
-**Recently shipped:** Sprint 6.2 squash-merged 2026-05-08 as `4950e14`. CI follow-on #27 squash-merged 2026-05-11 as `8339a12`.
-**Overall progress:** Sprint 6.1 SHIPPED 2026-05-08, Sprint 6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED). ~13/22 sprints overall.
-**Last updated:** 2026-05-12
+**Sprint:** 8.2 (Cache-hit root-cause investigation) — **CLOSED 2026-05-14 with diagnostic chain resolved; corrected baseline established.** Sprint succeeded by producing a corrected understanding of the cost system, not a target-hit verdict.
+**Branch:** `feature/sprint-8-2-task-3-remeasurement` (2 files modified vs main; squash PR opening now).
+**Recently shipped:** Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. Sprint 8.2 PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`.
+**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2 CLOSED 2026-05-14. ~14/22 sprints overall.
+**Last updated:** 2026-05-14
 
-## Sprint 8.1 verdict (closed 2026-05-12)
+## Sprint 8.2 close (2026-05-14)
 
-Sprint 8 was the optimization sprint (shipped 2025 on `feature/langchain-agents-migration`). Sprint 8.1 was the verification sprint. **The verification ran exactly as designed and produced its verdict; the verdict happened to be RED.** That is the point of the pre-committed D8 rule — the sprint succeeded in measuring, not in achieving.
+The diagnostic chain Sprint 8.1's RED verdict opened resolved into **three concurrent failure modes plus one CRITICAL surfaced bug**. Sprint 8.2 closes with corrected understanding, not a target-hit verdict — the projected 73% reduction was structurally unreachable per Task 3's projection-error diagnosis.
 
-### Measured (n=30/30 on each portal, zero errors, 6.4 min wall-clock)
+### Three failure modes (all diagnosed, two fixed, one structural)
 
-| Portal | Median | Band ceiling | Ratio | Cache hit | Gate |
-|---|---:|---:|---:|---:|:---:|
-| Formal | **$0.009026** | $0.0039 | **3.01× projected** | **0.0%** | 🔴 |
-| Exploratory | **$0.003413** | $0.00091 | **4.88× projected** | **0.0%** | 🔴 |
+| # | Failure mode | State |
+|---|---|---|
+| 1 | System prompt was 12 tokens, ≪ Anthropic Sonnet 1024-token / Haiku 4096-token cache threshold | Fixed (PR #45 + Task 2.1) |
+| 2 | `langchain-anthropic 1.0.1`'s `_format_messages` silently drops `additional_kwargs.cache_control` when SystemMessage content is a plain string; only the content-block-array form transmits to Anthropic (6-month silent bug) | Fixed (PR #45 with wire-level test that catches the buggy shape) |
+| 3 | Sprint 8 baseline projected 6 LLM calls × $0.0005/call; empirical is 2 LLM calls × $0.0045/call (3× call-count + 9× per-call cost projection error; only `requirements_agent` makes LLM calls) | Structural — projection unrecoverable at current pricing |
 
-### What the verdict says
+### Task 2.1 measured outcome (n=30/30 formal-portal threads, 2026-05-14)
 
-The 73% cost-reduction projection from Sprint 8 was built primarily on prompt caching (Optimizations 1-3). Observed `cache_hit_rate = 0.0%` on every run is the smoking gun: either the `cache_control` blocks aren't being sent on outbound Anthropic API requests, or they're being sent but the `cache_read_input_tokens` aren't being captured by the cost-telemetry aggregator. **These two hypotheses have ~10× different implementation scope.** Sprint 8.2 disambiguates them in Task 1 before scoping any fix.
+Bulked `_MEDICAL_CONCEPTS_SYSTEM_PROMPT` to 5185 tiktoken / 5850 Anthropic tokens to clear Haiku 4.5's 4096-token threshold.
 
-### What shipped this sprint (verification artifacts, not optimizations)
+| Metric | Value |
+|---|---:|
+| Sonnet cache state across 30 threads | 1 create / 29 read / 0 miss (100% hit after warmup) |
+| Haiku cache state across 30 threads | 0 create / 30 read / 0 miss (warm from Gate 0.5 calibration call) |
+| **Per-thread cost — median (manual)** | **$0.007754** |
+| Mean / min / max | $0.007985 / $0.006829 / $0.018356 |
+| **Δ vs Sprint 8.1 $0.009026 baseline** | **−14.1%** |
 
-- `app/services/cost_telemetry_service.py` — LangSmith-as-source-of-truth aggregator (formal: per-thread; exploratory: per-root-trace). See DECISIONS.md Sprint 8.1 ADR.
-- `app/web_ui/admin_dashboard.py` — new "💰 Cost Telemetry" tab with two portal panels + gate-status badges.
-- `scripts/drive_qa_traffic.py` — synthetic-traffic harness for filling the rolling-30 window (re-runnable for Sprint 8.2 verification).
-- `portal:formal` / `portal:exploratory` tags on 8 `@traceable` sites (6 agents + `query_interpreter` + `feasibility_service`).
-- `tests/test_cost_telemetry_service.py` (14 tests) + `tests/test_portal_tags.py` (10 tests) + 3 bitrot fixes in previously-ignored test files. Tests partition extended with `requires_api_key` marker.
+The 14.1% reduction is concrete engineering value against the corrected baseline. NOT the projected 73% reduction — that target was structurally unreachable per Task 3.
+
+### CRITICAL surfaced finding — aggregator over-counts by 2.95×
+
+Manual per-thread cost (walking trace tree, summing `usage_metadata` from LLM child runs only): **$0.007754**.
+`CostTelemetryService.get_formal_portal_cost_p50(n=30)` reports: **$0.022865**.
+**Ratio: 2.95× inflation.**
+
+This is not a Sprint 8.2 deviation; it is evidence that the aggregator in `app/services/cost_telemetry_service.py` produces incorrect numbers — likely by summing parent-trace `usage_metadata` (which LangSmith aggregates UP from LLM children) alongside the individual LLM-child counts, effectively double-counting. **Sprint 8.1's $0.009026 baseline came from the same aggregator and is therefore likely inflated too.** Filed as BLOCKING Sprint 8.4 (#46) for any future ceiling-re-derivation work.
+
+### What shipped this sprint
+
+PR #45 (merged 2026-05-14 as `6bf1e86`):
+- `app/utils/llm_client.py` — content-block-array form for SystemMessage + module-level `_REQUIREMENTS_SYSTEM_PROMPT` (~3000 tokens, Sonnet) + initial `_MEDICAL_CONCEPTS_SYSTEM_PROMPT` (~2500 tokens, Haiku-target).
+- `tests/test_prompt_optimization.py` — `TestPromptCachingWireLevel` integration test that mocks `anthropic.AsyncMessages.create` and asserts cache_control arrives in the outbound `system` kwarg.
+- Archive doc `docs/sprints/archive/SPRINT_08_PROMPT_OPTIMIZATION.md` — verdict revision section naming all three failure modes.
+- DECISIONS.md — "Sprint 8.2 — The 6-month silent prompt-caching bug" ADR.
+
+This PR (`feature/sprint-8-2-task-3-remeasurement`):
+- `app/utils/llm_client.py` — Haiku bulk-up to 5185 tiktoken tokens (drug classes, abbreviations, compound terms, examples 9-13).
+- `DECISIONS.md` — "Sprint 8.2 CLOSE — diagnostic chain completed; corrected baseline established" ADR with discipline notes (diagnostic-first scoping, wire-level test rationale, manual verification as authoritative measure, Q1-refinement on band-violation).
+
+### Discipline notes (what made this sprint work)
+
+- **Diagnostic-first scoping.** Task 1 was a ~30 min binary YES/NO before any code changes. The actual diagnosis required a third branch ("prompt below threshold AND wrapper drops cache_control AND tests asserted wrong API surface"). Diagnostic-first scope prevented committing to a Task 2 fix before understanding what needed fixing.
+- **Wire-level test as the structural lesson.** For fixes whose correctness depends on third-party library behavior, the test must assert the third-party API contract, not the wrapper API contract. The wrapper is the system under test for unit tests; the wire is the system under test for integration tests.
+- **Manual verification supplanted aggregator at close.** Sprint 8.2 closes with manual per-thread cost ($0.007754) as authoritative, NOT aggregator output ($0.022865). For sprint-gating cost measurements, manual computation is authoritative; aggregator output is convenience reporting that must be independently verified.
+- **Q1-refinement on band-violation.** Gate 0 said target 4200-4500 tokens for Haiku prompt; actual landed at 5185 (15% over). Pre-committed discipline said "halt and surface." User-pre-committed override fired ("band was cost-efficiency guideline, not load-bearing constraint; 5185 cleared cache and content was substantive not filler"). Same Q1-refinement pattern as Sprint 6.3 spike: pre-commits defend against bias, not against information.
 
 ### Next step
 
-**Sprint 8.2** ([#37](https://github.com/jagnyesh/researchflow/issues/37)) — diagnostic-first investigation of the zero-cache-hit root cause. Filed before this PR opens so the next-step trail is durable. Task 1 (~30 min) pulls one LangSmith trace and inspects the outbound payload; the YES/NO answer gates Task 2 scope.
+**Sprint 8.4** ([#46](https://github.com/jagnyesh/researchflow/issues/46), BLOCKING) — cost telemetry aggregator audit. Until the 2.95× inflation is diagnosed and corrected, every Sprint 8 series cost number is suspect.
+
+**Sprint 8.3** ([#47](https://github.com/jagnyesh/researchflow/issues/47), depends on 8.4) — ceiling re-derivation against corrected aggregator + structural redesign question.
+
+**Sprint 6.4** ([#40](https://github.com/jagnyesh/researchflow/issues/40)) — sqlonfhir integration; 3-5 days; runs after Sprint 8.2 close (this PR). The engine swap happens at the batch-refresh path; agents and FeasibilityService are unaffected (see "Architectural reality vs documentation" below).
 
 ## Domain terms (resolved 2026-05-11, unchanged)
 

@@ -296,6 +296,133 @@ For graded/staged conditions, include the stage in details:
 - 'NYHA class III heart failure' → details='NYHA class III'
 - 'severe asthma' → details='severe'
 
+DRUG CLASSES AND HIERARCHIES:
+
+When a criterion mentions a drug class rather than a specific medication, mark the concept with class-level details so downstream code can expand to specific RxNorm members. Common classes researchers use:
+
+- ACE inhibitors (RxNorm class N0000175561) — generic members include lisinopril, enalapril, ramipril, benazepril, captopril, fosinopril, quinapril, perindopril. Brand examples: Zestril, Prinivil, Vasotec, Altace.
+- ARBs / angiotensin receptor blockers — losartan, valsartan, irbesartan, candesartan, telmisartan, olmesartan. Brands: Cozaar, Diovan, Avapro, Atacand.
+- Statins / HMG-CoA reductase inhibitors — atorvastatin, simvastatin, rosuvastatin, pravastatin, lovastatin, pitavastatin. Brands: Lipitor, Zocor, Crestor.
+- Beta blockers — metoprolol, atenolol, propranolol, carvedilol, bisoprolol. Brands: Lopressor, Toprol, Tenormin, Coreg.
+- Calcium channel blockers — amlodipine, diltiazem, verapamil, nifedipine. Brands: Norvasc, Cardizem.
+- SGLT2 inhibitors — empagliflozin, dapagliflozin, canagliflozin, ertugliflozin. Brands: Jardiance, Farxiga, Invokana.
+- GLP-1 receptor agonists — semaglutide, liraglutide, dulaglutide, exenatide, tirzepatide. Brands: Ozempic, Wegovy, Victoza, Trulicity, Mounjaro.
+- DOACs / direct oral anticoagulants — apixaban, rivaroxaban, dabigatran, edoxaban. Brands: Eliquis, Xarelto, Pradaxa, Savaysa.
+- SSRIs — sertraline, fluoxetine, escitalopram, paroxetine, citalopram. Brands: Zoloft, Prozac, Lexapro, Paxil.
+- PPIs / proton pump inhibitors — omeprazole, esomeprazole, pantoprazole, lansoprazole. Brands: Prilosec, Nexium, Protonix.
+- NSAIDs — ibuprofen, naproxen, diclofenac, meloxicam, celecoxib. Brands: Advil, Motrin, Aleve.
+
+Pattern: when the term IS a class name ('SGLT2 inhibitors'), set term=class name, type=medication, details='drug class — RxNorm members include [list 3-5 representative drugs]'. When the term IS a specific drug ('atorvastatin'), set term=drug name, type=medication, details=class if obvious ('statin').
+
+Brand vs generic: ALWAYS preserve the form the researcher used (don't auto-translate Lipitor → atorvastatin unless researcher used both). Add details='[generic equivalent]' so downstream code can expand if needed.
+
+CLINICAL ABBREVIATION HANDLING:
+
+Researchers heavily use abbreviations. Recognize and expand the most common ones:
+
+- HTN → hypertension (condition)
+- T2DM / DM2 → type 2 diabetes mellitus (condition)
+- T1DM / DM1 → type 1 diabetes mellitus (condition)
+- DM → diabetes mellitus (condition, unspecified type)
+- CHF → congestive heart failure (condition)
+- CAD → coronary artery disease (condition)
+- CKD → chronic kidney disease (condition) — often followed by stage
+- COPD → chronic obstructive pulmonary disease (condition)
+- AF / AFib → atrial fibrillation (condition)
+- MI → myocardial infarction (condition) — distinguish acute MI from history of MI
+- PE → pulmonary embolism (condition)
+- DVT → deep vein thrombosis (condition)
+- TIA → transient ischemic attack (condition)
+- CVA → cerebrovascular accident / stroke (condition)
+- BMI → body mass index (lab, demographic-adjacent)
+- HbA1c / A1C → hemoglobin A1c (lab)
+- LDL / HDL → cholesterol fractions (lab)
+- eGFR → estimated glomerular filtration rate (lab)
+- CABG → coronary artery bypass graft (procedure)
+- PCI → percutaneous coronary intervention (procedure)
+- ICU → intensive care unit (encounter context, not standalone concept)
+- ED / ER → emergency department (encounter context)
+- OR → operating room (encounter context)
+- pt / pts → patient/patients (filler, skip)
+- s/p → status post / history of (modifier, apply to following concept)
+- h/o → history of (modifier, apply to following concept)
+- r/o → rule out (uncertain diagnosis — extract as condition with details='rule-out')
+- w/ → with (filler, skip)
+- w/o → without (negation, apply to following concept)
+- yo / y/o → years old (modifier, age criterion)
+
+Use the expanded form as the canonical term; record the abbreviation in details if helpful.
+
+COMPOUND AND EPONYMOUS TERMS:
+
+Some clinical terms are compound modifiers (one symptom describing one condition) or eponymous (named after a person/place). Handle carefully:
+
+- 'ACE-I-induced cough' → condition='cough', details='ACE inhibitor side effect / iatrogenic'
+- 'Cushing's syndrome' → condition='Cushing syndrome' (use the eponym, no apostrophe complications)
+- 'post-MI cardiomyopathy' → condition='cardiomyopathy', details='post-myocardial-infarction etiology'
+- 'TYPE 2 diabetes with diabetic retinopathy' → 2 concepts: condition='type 2 diabetes mellitus' + condition='diabetic retinopathy', details='diabetes-related complication'
+- 'osteoarthritis of the left knee, severe' → condition='osteoarthritis', details='left knee, severe'
+- 'paroxysmal atrial fibrillation' → condition='atrial fibrillation', details='paroxysmal pattern'
+- 'NSTEMI vs STEMI' → 2 conditions: 'non-ST elevation MI' AND 'ST elevation MI', or pick the one the researcher seems to want
+- 'COVID-19 long haulers / post-COVID syndrome' → condition='post-COVID-19 condition', details='also called PASC or long COVID'
+
+When a modifier doesn't have a clear FHIR concept (e.g., 'mild-moderate', 'refractory', 'newly diagnosed'), preserve it in details rather than create a separate concept.
+
+ADDITIONAL WORKED EXAMPLES:
+
+Example 9 (drug class, pediatric, age threshold): 'pediatric patients (age < 18) on SSRIs with first-time depression diagnosis in the past 6 months'
+Output:
+{"concepts": [
+  {"term": "age", "type": "demographic", "details": "< 18 (pediatric)"},
+  {"term": "SSRIs", "type": "medication", "details": "drug class — RxNorm members include sertraline, fluoxetine, escitalopram, paroxetine"},
+  {"term": "depression", "type": "condition", "details": "first-time diagnosis within last 6 months (incident, not prevalent)"}
+]}
+
+Example 10 (heavy abbreviation use, real researcher style): 'pts w/ T2DM and CKD stage 3-4, on metformin, A1C > 8, no h/o CABG'
+Output:
+{"concepts": [
+  {"term": "type 2 diabetes mellitus", "type": "condition", "details": "T2DM, primary indication"},
+  {"term": "chronic kidney disease", "type": "condition", "details": "stage 3 or 4 (CKD G3 or G4)"},
+  {"term": "metformin", "type": "medication", "details": "any dose, active prescription"},
+  {"term": "hemoglobin A1c", "type": "lab", "details": "A1C > 8% (poor glycemic control)"},
+  {"term": "coronary artery bypass graft", "type": "procedure", "details": "excluded — no history of CABG"}
+]}
+
+Example 11 (encounter context modifier, multi-domain): 'ICU admissions for sepsis in patients age 65+ with prior history of CHF, on norepinephrine drip, lactate > 4 at admission'
+Output:
+{"concepts": [
+  {"term": "ICU admission", "type": "procedure", "details": "encounter type=inpatient, location=ICU"},
+  {"term": "sepsis", "type": "condition", "details": "primary or admitting diagnosis"},
+  {"term": "age", "type": "demographic", "details": ">= 65"},
+  {"term": "congestive heart failure", "type": "condition", "details": "history of (h/o CHF — any prior occurrence)"},
+  {"term": "norepinephrine", "type": "medication", "details": "active administration during encounter"},
+  {"term": "lactate", "type": "lab", "details": "> 4 mmol/L at admission (sepsis severity marker)"}
+]}
+
+Example 12 (compound condition + medication class + lab + temporal): 'female patients newly diagnosed with HER2-positive breast cancer in the past 12 months, on trastuzumab, with ejection fraction < 50%'
+Output:
+{"concepts": [
+  {"term": "gender", "type": "demographic", "details": "female"},
+  {"term": "HER2-positive breast cancer", "type": "condition", "details": "newly diagnosed (incident, not prevalent) within last 12 months; HER2 receptor status positive"},
+  {"term": "trastuzumab", "type": "medication", "details": "Herceptin, anti-HER2 monoclonal antibody"},
+  {"term": "ejection fraction", "type": "lab", "details": "< 50% (reduced LVEF, possible cardiotoxicity from trastuzumab)"}
+]}
+
+Example 13 (eponymous condition, lab thresholds, demographic): 'White male patients age 40-65 with Cushing syndrome, morning cortisol > 25, on chronic glucocorticoid therapy'
+Output:
+{"concepts": [
+  {"term": "race", "type": "demographic", "details": "white"},
+  {"term": "gender", "type": "demographic", "details": "male"},
+  {"term": "age", "type": "demographic", "details": "between 40 and 65"},
+  {"term": "Cushing syndrome", "type": "condition", "details": "endogenous or exogenous hypercortisolism"},
+  {"term": "morning cortisol", "type": "lab", "details": "> 25 mcg/dL (elevated, morning draw)"},
+  {"term": "glucocorticoids", "type": "medication", "details": "drug class — RxNorm members include prednisone, dexamethasone, hydrocortisone; chronic use (>30 days)"}
+]}
+
+CODE-SYSTEM COMPLETENESS GUIDANCE:
+
+Real clinical data sources vary in code-system completeness. When emitting concepts, preserve ALL extracted information so downstream code (which knows the specific data source) can OR across available code systems. Do not pre-filter to a single code system. The downstream Phenotype Agent handles ICD-10/SNOMED/RxNorm/LOINC/CPT mapping with code-system fallbacks.
+
 OUTPUT FORMAT:
 
 For a single criterion, return:
