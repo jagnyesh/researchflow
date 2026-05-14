@@ -1,10 +1,42 @@
 # ResearchFlow — Current State
 
-**Sprint:** 8.2 (Cache-hit root-cause investigation) — **CLOSED 2026-05-14 with diagnostic chain resolved; corrected baseline established.** Sprint succeeded by producing a corrected understanding of the cost system, not a target-hit verdict.
-**Branch:** `feature/sprint-8-2-task-3-remeasurement` (2 files modified vs main; squash PR opening now).
-**Recently shipped:** Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. Sprint 8.2 PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`.
-**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2 CLOSED 2026-05-14. ~14/22 sprints overall.
+**Sprint:** 8.4 (Cost telemetry aggregator audit) — **READY TO SHIP. PR opening now.** Aggregator over-count root cause: `_run_cost_usd` double-charged `cache_read` tokens because LangSmith's `Run.input_tokens` already includes `cache_read`. One-line fix + wire-level fixture test + schema contract test + dashboard banner. Both empirical gates passed within ±1% (Sprint 8.2 re-aggregate $0.007754; Sprint 8.1 re-aggregate $0.008997).
+**Branch:** `feature/sprint-8-4-aggregator-fix` (4 files modified; squash PR opening now).
+**Recently shipped:** Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
+**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct by Sprint 8.4 cross-check), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2 CLOSED 2026-05-14, Sprint 8.4 ready to ship 2026-05-14. ~15/22 sprints overall.
 **Last updated:** 2026-05-14
+
+## Sprint 8.4 ready to ship (2026-05-14)
+
+Aggregator audit complete. The 2.95× inflation Sprint 8.2 surfaced had a different root cause than Sprint 8.2 hypothesized — wire-level pull from LangSmith on 2026-05-14 revealed it.
+
+### What Sprint 8.4 found (corrects Sprint 8.2's hypothesis)
+
+Static-analysis hypothesis (Sprint 8.2): aggregator over-counts via parent+child summation through tag inheritance.
+
+Wire-level reality: only LLM leaves carry both `portal:formal` AND a `thread_id` — the 6 `execute_task` chain spans have `thread_id == None` and get filtered out by `_summarize_threaded`. **Parent+child double-counting was never happening.**
+
+The real bug: LangSmith's `Run.input_tokens` already INCLUDES `cache_read_input_tokens` (empirically verified: `total_tokens == input_tokens + output_tokens` on every observed LLM leaf). But `_run_cost_usd` charged `input_tokens * input_rate + cache_read * cache_rate`, double-billing the cache portion.
+
+### What the fix changes
+
+| Surface | Before | After |
+|---|---|---|
+| `_run_cost_usd` | `input_tok * prices["input"] + cache_read * prices["cache_read"]` | `(input_tok - cache_read) * prices["input"] + cache_read * prices["cache_read"]` |
+| Sprint 8.2 30-thread median | $0.022865 (inflated) | $0.007754 (matches manual baseline within 0.01%) |
+| Sprint 8.1 2026-05-12 median | $0.009026 (correct — cache_hit=0%) | $0.008997 (unchanged within 0.32% — confirms bug only fires with caching) |
+| Reported `cache_hit_rate` on Sprint 8.2 traffic | 0.4869 (under-reporting ~2×) | 0.9488 (corrected via same helper) |
+| Tests | 14/14 pass | 16/16 pass (2 new: wire-level fixture + schema contract) |
+
+### Critical correction to Sprint 8.2 CLOSE ADR
+
+The Sprint 8.2 CLOSE ADR claimed "Sprint 8.1's $0.009026 baseline came from the same aggregator and is therefore likely also inflated." **Wrong.** Sprint 8.1's traffic had `cache_hit_rate = 0.0%` everywhere; with `cache_read = 0`, the buggy formula reduces to the correct formula. Sprint 8.1's RED verdict and $0.009026 baseline are CORRECT as originally measured. DECISIONS.md Sprint 8.4 ADR documents the correction (append-only — preserves the journey).
+
+### Next step
+
+**Sprint 8.3** ([#47](https://github.com/jagnyesh/researchflow/issues/47)) — ceiling re-derivation + structural redesign question — is now UNBLOCKED. With trustworthy aggregator output, Sprint 8.3 can evaluate "does ResearchFlow's current model strategy clear a defensible ceiling?" against measured Sprint 8.2 baseline of $0.007754 vs the (still-valid) Sprint 8.1 baseline of $0.009026 — a real 14.1% reduction.
+
+---
 
 ## Sprint 8.2 close (2026-05-14)
 

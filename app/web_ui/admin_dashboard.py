@@ -1891,6 +1891,13 @@ def show_cost_telemetry():
         "Sprint 8.1 gate: median cost-per-request ≤ 1.3× projected, rolling 30 requests per portal. "
         "See DECISIONS.md Sprint 8.1 ADR for the source-of-truth design."
     )
+    st.info(
+        "📐 **Numbers corrected 2026-05-14 (Sprint 8.4)** — pre-fix display inflated by "
+        "~3× when caching was active due to `cache_read` tokens being double-charged inside "
+        "`_run_cost_usd`. Sprint 8.1's $0.009026 baseline was unaffected (cache_hit=0% at the "
+        "time). See DECISIONS.md Sprint 8.4 ADR.",
+        icon="ℹ️",
+    )
 
     service = CostTelemetryService()
 
