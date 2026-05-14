@@ -40,6 +40,28 @@ The 73% cost-reduction projection from Sprint 8 was built primarily on prompt ca
 - **Cost Telemetry** — read-side service aggregating LangSmith runs into per-portal medians (`app/services/cost_telemetry_service.py`).
 - **Sprint gate** — pre-committed numeric criterion that fires sprint completion. For Sprint 8.1: rolling-30 cost-band on both portals.
 
+## Architectural reality vs documentation (surfaced by Sprint 6.3 /zoom-out)
+
+**HybridRunner is the documented read path. Production agents bypass it today.** Sprint 6.2 shipped the Lambda Architecture runner stack (`HybridRunner` → `MaterializedViewRunner` / `SpeedLayerRunner` / `PostgresRunner`) per the design. But production agents read FHIR data through different paths:
+
+- **`phenotype_agent`** generates SQL via `SQLGenerator` → executes via `SQLonFHIRAdapter` (bypasses Runner)
+- **`extraction_agent`** executes the same SQL via `SQLonFHIRAdapter` (bypasses Runner)
+- **`feasibility_service`** builds SQL via `JoinQueryBuilder` → executes via `db_client.execute_query` (bypasses Runner)
+- **`HybridRunner`** is exercised by tests and the materialize_views.py batch path; not on any production read hot-path
+
+**Implication for Sprint 6.4 (sqlonfhir integration):** the engine swap happens at the batch-refresh path (`scripts/materialize_views.py` + `postgres_runner.py` write mode). Agents and FeasibilityService are unaffected — they read MVs as Postgres tables once written, regardless of which engine wrote them.
+
+**Implication for the future:** wiring agents through `HybridRunner` for online reads would unlock the speed-layer merge that Sprint 6.2 built. Currently it's documented architecture without a production caller. Filed as a Sprint 6.5+ candidate.
+
+## Database topology (two Postgres instances, two roles)
+
+| Port | Host/Docker | Role | Schema highlights |
+|---|---|---|---|
+| `:5432` | Host (Homebrew Postgres) | `healthcare_practice` — Synthea CSV load | `synthea.patients/conditions/...` (user-loaded, NOT used by ResearchFlow runtime today) |
+| `:5433` | Docker `hapi-postgres` | HAPI FHIR's internal database | `hfj_resource`, `hfj_spidx_token` (HAPI FHIR storage) + `sqlonfhir.<view>` (the materialized views the agents read) |
+
+`SQLonFHIRAdapter` and `MaterializedViewRunner` connect to `:5433` (`HAPI_DB_URL` env). `:5432` is dev/exploration only; no runtime code references it.
+
 ## Reference artifacts
 
 - Sprint 8 archive: `docs/sprints/archive/SPRINT_08_PROMPT_OPTIMIZATION.md` — implementation history + the verification verdict header added 2026-05-12.

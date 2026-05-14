@@ -101,7 +101,7 @@
       ]
     },
     {
-      "forEach": "performer",
+      "forEachOrNull": "performer",
       "column": [
         {
           "name": "performer_id",
@@ -116,7 +116,7 @@
       ]
     },
     {
-      "forEach": "reasonCode",
+      "forEachOrNull": "reasonCode",
       "column": [
         {
           "name": "reason_code",
@@ -131,7 +131,7 @@
       ]
     },
     {
-      "forEach": "bodySite",
+      "forEachOrNull": "bodySite",
       "column": [
         {
           "name": "body_site_code",
