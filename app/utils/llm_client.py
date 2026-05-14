@@ -23,16 +23,32 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Anthropic prompt-caching minimum-token thresholds, by model family.
+#
+# Below these counts, the `cache_control: {"type": "ephemeral"}` block on the
+# system message is silently ignored by Anthropic's API. Verified empirically
+# during Sprint 8.2 Gate 0.5 on 2026-05-14: Sonnet 4.6 caches at ~1024 tokens;
+# Haiku 4.5 requires ~4096 tokens before cache_create > 0. Sonnet's number is
+# also Anthropic's documented minimum; Haiku's is documented as 2048 but
+# empirically appears to be 4096 (per the Sprint 8.2 close ADR).
+#
+# Single source of truth: when Anthropic publishes new thresholds, update here
+# and rerun `scripts/drive_qa_traffic.py` against `TestPromptCachingWireLevel`.
+# ---------------------------------------------------------------------------
+
+_ANTHROPIC_CACHE_THRESHOLDS = {
+    "sonnet": 1024,
+    "haiku": 4096,
+}
+
+
+# ---------------------------------------------------------------------------
 # Module-level system prompts (Sprint 8.2 Task 2)
 #
-# These are intentionally substantial so they cross Anthropic's prompt-caching
-# minimum token threshold (Sonnet: ~1024 tokens; Haiku: ~2048 tokens). Below
-# the threshold, the `cache_control: {"type": "ephemeral"}` block on the
-# system message is silently ignored — verified empirically during Sprint 8.2
-# Task 1 (LangSmith trace inspection on 2026-05-12 traffic).
-#
-# The system prompts MUST stay byte-stable across calls (no f-string
-# interpolation of dynamic content). Only the user message varies per call.
+# These are intentionally substantial so they cross the per-model thresholds
+# in `_ANTHROPIC_CACHE_THRESHOLDS` above. The system prompts MUST stay
+# byte-stable across calls (no f-string interpolation of dynamic content);
+# only the user message varies per call.
 # ---------------------------------------------------------------------------
 
 _REQUIREMENTS_SYSTEM_PROMPT = """You are a clinical research data request specialist working inside a multi-agent system that helps clinical researchers obtain de-identified or limited-dataset clinical data extracts from a hospital's FHIR data warehouse. You are the Requirements Agent — the first agent the researcher interacts with. Your job is to help the researcher define their data needs precisely enough that downstream agents (Phenotype, Calendar, Extraction, QA, Delivery) can fulfill the request without further clarification.
@@ -609,8 +625,9 @@ Return ONLY valid JSON, no other text."""
             - ready_for_submission: bool
         """
         # Sprint 8.2 Task 2: bulky role+schema+examples moved to module-level
-        # _REQUIREMENTS_SYSTEM_PROMPT (≥1024 tokens for Sonnet caching). Only
-        # dynamic per-call content stays in the user message.
+        # _REQUIREMENTS_SYSTEM_PROMPT (must clear
+        # _ANTHROPIC_CACHE_THRESHOLDS["sonnet"] tokens for Sonnet caching).
+        # Only dynamic per-call content stays in the user message.
         prompt = f"""Conversation history:
 {json.dumps(conversation_history, indent=2)}
 
@@ -639,7 +656,9 @@ Apply the extraction workflow described in your system instructions and return t
             - types: condition, medication, lab, procedure, demographic
         """
         # Sprint 8.2 Task 2: bulky taxonomy + examples moved to module-level
-        # _MEDICAL_CONCEPTS_SYSTEM_PROMPT (≥2048 tokens for Haiku caching).
+        # _MEDICAL_CONCEPTS_SYSTEM_PROMPT (must clear
+        # _ANTHROPIC_CACHE_THRESHOLDS["haiku"] tokens for Haiku caching;
+        # Anthropic documents 2048 but Gate 0.5 confirmed 4096 empirically).
         prompt = f"""Extract concepts from this clinical criterion:
 "{criterion}"
 
