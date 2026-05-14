@@ -1,8 +1,8 @@
 # Sprint 8: Prompt Engineering & Cost Optimization
 
 **Duration:** 1 week (Nov 11-18, 2025)
-**Status:** ✅ Analysis Complete / ✅ Implementation Complete / 🔴 Operational Verification: Sprint 8.1 FALSIFIED the 73% projection on 2026-05-12 / 🔧 Root cause identified + partially fixed by Sprint 8.2 on 2026-05-14
-**Branch:** `feature/langchain-agents-migration`
+**Status:** ✅ Analysis Complete / ✅ Implementation Complete / 🔴 Operational Verification: Sprint 8.1 FALSIFIED the 73% projection on 2026-05-12 / ✅ Sprint 8.2 CLOSED 2026-05-14: three concurrent failure modes diagnosed; PR #45 fix verified; corrected baseline ($0.007754 manual median, −14.1% vs Sprint 8.1) established. CRITICAL aggregator over-count surfaced (2.95× inflation), filed as BLOCKING Sprint 8.4 (#46).
+**Branch:** `feature/langchain-agents-migration` (Sprint 8 original); `feature/sprint-8-2-cache-investigation` (PR #45); `feature/sprint-8-2-task-3-remeasurement` (Sprint 8.2 close + Task 2.1)
 
 > **Sprint 8.1 verification verdict (2026-05-12):** Implementation shipped but the projected 73% cost reduction did not materialize in production. Median cost-per-request landed at $0.009026 formal (3.01× the $0.0039 band ceiling) and $0.003413 exploratory (4.88× the $0.00091 band ceiling), with `cache_hit_rate = 0.0%` on every observed run across n=30/30 on each portal. The 73% projection was built primarily on prompt caching (Optimizations 1-3); zero cache hits is the smoking gun. Two hypotheses (cache_control not wired in outbound payload, vs cache_read_input_tokens not aggregated by our cost calc) are 10× different in scope and are disambiguated by Sprint 8.2 ([#37](https://github.com/jagnyesh/researchflow/issues/37))'s Task 1 diagnostic. The numbers below describe what was *implemented*; Sprint 8.2 will resolve why the *measured* impact diverged.
 
@@ -15,6 +15,12 @@
 > **Honest reading of the 73% projection:** with all three failure modes accounted for, the realistic achievable cost reduction is **30-50% per request, not 73%**. Sonnet now caches (verified empirically); Haiku threshold tuning is filed as a Sprint 8.2 follow-up (Task 2.1). A fresh 30-request gate run is required to measure the actual post-fix median — filed as Sprint 8.2 Task 3 (re-measurement). The original 73% number was a projection against a model that didn't account for third-party transmission bugs or undocumented threshold variations across Claude models.
 >
 > See DECISIONS.md "Sprint 8.2 — The 6-month silent prompt-caching bug" for the full ADR with discipline notes on why this class of bug is structurally hard to catch without wire-level tests.
+
+> **Sprint 8.2 CLOSE (2026-05-14):** Task 2.1 (Haiku bulk-up to 5185 tiktoken / 5850 Anthropic tokens to clear the 4096-token threshold) shipped on `feature/sprint-8-2-task-3-remeasurement`. Empirical n=30/30 formal-portal verification: both Sonnet and Haiku now cache at 100% hit rate after warmup. Manual per-thread cost median: **$0.007754** (mean $0.007985, min $0.006829, max $0.018356) — **14.1% reduction vs Sprint 8.1's $0.009026 baseline**. NOT the projected 73% — that target was structurally unreachable per Task 3's projection-error diagnosis (3× call-count overestimate × 9× per-call cost underestimate).
+>
+> **CRITICAL surfaced finding:** `CostTelemetryService.get_formal_portal_cost_p50` reports **$0.022865** for the same 30 threads — **2.95× inflation** vs the manual sum. Likely root cause: parent-trace `usage_metadata` is double-counted alongside LLM-child counts (LangSmith aggregates costs UP the trace tree). The aggregator's correctness is a prerequisite for any cost-baseline measurement to be trusted. Filed as BLOCKING Sprint 8.4 ([#46](https://github.com/jagnyesh/researchflow/issues/46)). Sprint 8.1's $0.009026 baseline came from the same aggregator and is therefore likely also inflated.
+>
+> See DECISIONS.md "Sprint 8.2 CLOSE — diagnostic chain completed; corrected baseline established" for the full close ADR with discipline notes on diagnostic-first scoping, wire-level testing, manual verification as authoritative measure, and Q1-refinement on band-violation.
 
 ---
 
