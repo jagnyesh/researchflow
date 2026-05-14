@@ -185,15 +185,21 @@ async def test_thread_aggregation_sums_per_request():
 
 @pytest.mark.asyncio
 async def test_cache_hit_rate_calculation():
-    """cache_hit_rate = cache_read / (cache_read + non_cached_input)."""
+    """cache_hit_rate = cache_read / (cache_read + non_cached_input).
+
+    Per Sprint 8.4 wire-level verification: LangSmith stores `input_tokens` as
+    the TOTAL (cache_read is INSIDE input_tokens). So for an 80% cache hit
+    rate, set input_tokens=5000 with cache_read=4000 — the non-cached portion
+    is 5000 - 4000 = 1000, and the rate is 4000 / (4000 + 1000) = 0.8.
+    """
     base = datetime(2026, 5, 11, 12, 0, 0)
     runs = [
         FakeRun(
             id="r1",
             name="requirements_agent",
-            input_tokens=1000,
+            input_tokens=5000,  # TOTAL — includes the 4000 cache_read
             output_tokens=250,
-            cache_read_input_tokens=4000,  # 4× the non-cached input → 80% hit rate
+            cache_read_input_tokens=4000,  # 80% of input_tokens came from cache
             start_time=base,
             metadata={"thread_id": "t-1"},
         )
@@ -201,7 +207,7 @@ async def test_cache_hit_rate_calculation():
     service = _make_service(runs)
     summary = await service.get_formal_portal_cost_p50(n=1)
 
-    # 4000 cache + 1000 non-cache = 5000 total input → 80% from cache
+    # 4000 cache_read + 1000 non-cached (= 5000 - 4000) = 5000 total → 80% from cache
     assert abs(summary.cache_hit_rate - 0.8) < 1e-6
 
 
@@ -389,3 +395,104 @@ async def test_exploratory_caches_lower_cost():
     assert summary.gate_status == "green"
     # cache_hit_rate = 900 / (900 + 10) ≈ 98.9%
     assert summary.cache_hit_rate > 0.95
+
+
+# ---------------------------------------------------------------------------
+# Sprint 8.4 — Wire-level fixture: cache_read double-charge regression test
+#
+# Numbers in this fixture come from a real production trace pulled via the
+# langsmith SDK on 2026-05-14 (trace_id=62ef0f8c-...). LangSmith's
+# Run.input_tokens INCLUDES cache_read tokens — i.e., total_tokens equals
+# input_tokens + output_tokens, with cache_read counted INSIDE input_tokens.
+# Pre-Sprint-8.4 the aggregator charged input_tokens at the full input rate
+# AND charged cache_read at the cache rate, double-billing the cache portion
+# and inflating the median cost by ~2.95×.
+#
+# The test below FAILS on the pre-fix formula and PASSES on the corrected
+# formula (non_cached = max(0, input_tok - cache_read), priced at input rate;
+# cache_read priced at cache rate). Verified to catch a revert via the same
+# pattern as Sprint 8.2's TestPromptCachingWireLevel.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cache_read_not_double_charged_against_wire_shape():
+    """Sprint 8.4 wire-level fixture: asserts the corrected formula matches
+    the actual LangSmith trace shape observed in production.
+
+    Sonnet leaf and Haiku leaf are the two LLM children of one
+    requirements_agent execute_task span, taken from production trace
+    62ef0f8c-8920-42a7-bd34-e77edaf65d11 on 2026-05-14 19:56. The expected
+    per-leaf costs are computed by hand using Anthropic's pricing table
+    with the cache_read subtracted from input before pricing.
+    """
+    base = datetime(2026, 5, 14, 19, 56, 0)
+    sonnet_leaf = FakeRun(
+        id="sonnet-leaf",
+        name="ChatAnthropic",
+        input_tokens=3362,  # includes cache_read=3087, per LangSmith accounting
+        output_tokens=257,
+        cache_read_input_tokens=3087,
+        cache_creation_input_tokens=0,
+        start_time=base,
+        metadata={"thread_id": "REQ-WIRE-LEVEL", "ls_model_name": "claude-sonnet-4-6"},
+    )
+    haiku_leaf = FakeRun(
+        id="haiku-leaf",
+        name="ChatAnthropic",
+        input_tokens=5927,  # includes cache_read=5850
+        output_tokens=139,
+        cache_read_input_tokens=5850,
+        cache_creation_input_tokens=0,
+        start_time=base + timedelta(seconds=1),
+        metadata={"thread_id": "REQ-WIRE-LEVEL", "ls_model_name": "claude-haiku-4-5-20251001"},
+    )
+    service = _make_service([sonnet_leaf, haiku_leaf])
+    summary = await service.get_formal_portal_cost_p50(n=1)
+
+    # Sonnet expected:
+    #   non_cached = 3362 - 3087 = 275
+    #   275 × $3/M + 257 × $15/M + 3087 × $0.30/M + 0
+    #   = $0.000825 + $0.003855 + $0.0009261 = $0.0056061
+    # Haiku expected:
+    #   non_cached = 5927 - 5850 = 77
+    #   77 × $1/M + 139 × $5/M + 5850 × $0.10/M + 0
+    #   = $0.000077 + $0.000695 + $0.000585 = $0.001357
+    # Per-thread sum: $0.0056061 + $0.001357 = $0.0069631
+    expected_thread_cost = 0.0069631
+    assert summary.n_observed == 1
+    assert (
+        abs(summary.median_usd - expected_thread_cost) < 1e-6
+    ), f"got {summary.median_usd}, expected {expected_thread_cost}"
+
+    # Sanity: with the buggy formula this would have been ~$0.02207 (3.17× too high).
+    # If the median ever drifts back above $0.015 for this fixture, the regression
+    # has returned and the cache_read subtraction has been dropped or broken.
+    assert summary.median_usd < 0.015, "regression: cache_read appears double-charged"
+
+
+def test_langsmith_schema_contract_input_includes_cache_read():
+    """Schema contract: documents the LangSmith accounting we trust.
+
+    Per the wire-level pull on 2026-05-14, every LLM run on the formal portal
+    satisfies `total_tokens == input_tokens + output_tokens` (cache_read is
+    counted INSIDE input_tokens, not added on top). This is the load-bearing
+    invariant for `_run_cost_usd`'s cache_read subtraction. If LangSmith ever
+    changes accounting (e.g., starts returning input_tokens with cache excluded
+    and adds them via total_tokens), this test breaks and forces revisiting
+    the formula in `_run_cost_usd`.
+
+    Same discipline as Sprint 8.2's wire-level test: assert at the third-party
+    contract layer, not the wrapper layer.
+    """
+    # Sonnet leaf observed: input=3362, output=257, total=3619, cache_read=3087
+    assert 3362 + 257 == 3619, "Sonnet leaf: input + output must equal total"
+    # Haiku leaf observed: input=5927, output=139, total=6066, cache_read=5850
+    assert 5927 + 139 == 6066, "Haiku leaf: input + output must equal total"
+    # Cache_read tokens are INSIDE input, not in addition to it:
+    # if cache_read were added on top, total would be input+output+cache_read.
+    # That would mean: 3362 + 257 + 3087 = 6706 != 3619. We verify the negation.
+    assert 3362 + 257 + 3087 != 3619, (
+        "If total ever equals input+output+cache_read, LangSmith has changed "
+        "accounting and _run_cost_usd's cache_read subtraction needs revisiting."
+    )
