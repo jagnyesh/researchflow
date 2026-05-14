@@ -54,12 +54,21 @@ class TestPromptCachingEnabled:
             call_args = mock_instance.ainvoke.call_args
             messages = call_args[0][0]  # First positional argument
 
-            # Verify system message has cache_control
+            # Verify system message uses content-block form with cache_control
+            # (Sprint 8.2 Task 2: langchain-anthropic 1.0.1's _format_messages
+            # silently drops additional_kwargs.cache_control for string-content
+            # SystemMessages; only the list-of-content-blocks form preserves it.)
             system_msg = messages[0]
             assert isinstance(system_msg, SystemMessage)
-            assert system_msg.content == "Custom system prompt for testing"
-            assert "cache_control" in system_msg.additional_kwargs
-            assert system_msg.additional_kwargs["cache_control"] == {"type": "ephemeral"}
+            assert isinstance(system_msg.content, list), (
+                "system content must be content-block list, not string — "
+                "string form discards cache_control in langchain-anthropic 1.0.1+"
+            )
+            assert len(system_msg.content) == 1
+            block = system_msg.content[0]
+            assert block["type"] == "text"
+            assert block["text"] == "Custom system prompt for testing"
+            assert block["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-for-mock"})
@@ -88,12 +97,15 @@ class TestPromptCachingEnabled:
             call_args = mock_instance.ainvoke.call_args
             messages = call_args[0][0]
 
-            # Verify system message has cache_control
+            # Verify default system message uses content-block form (see sibling test note)
             system_msg = messages[0]
             assert isinstance(system_msg, SystemMessage)
-            assert system_msg.content == "You are a helpful clinical research data specialist."
-            assert "cache_control" in system_msg.additional_kwargs
-            assert system_msg.additional_kwargs["cache_control"] == {"type": "ephemeral"}
+            assert isinstance(system_msg.content, list)
+            assert len(system_msg.content) == 1
+            block = system_msg.content[0]
+            assert block["type"] == "text"
+            assert block["text"] == "You are a helpful clinical research data specialist."
+            assert block["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     async def test_extract_requirements_uses_cached_system_prompt(self):
