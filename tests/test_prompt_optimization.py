@@ -54,12 +54,21 @@ class TestPromptCachingEnabled:
             call_args = mock_instance.ainvoke.call_args
             messages = call_args[0][0]  # First positional argument
 
-            # Verify system message has cache_control
+            # Verify system message uses content-block form with cache_control
+            # (Sprint 8.2 Task 2: langchain-anthropic 1.0.1's _format_messages
+            # silently drops additional_kwargs.cache_control for string-content
+            # SystemMessages; only the list-of-content-blocks form preserves it.)
             system_msg = messages[0]
             assert isinstance(system_msg, SystemMessage)
-            assert system_msg.content == "Custom system prompt for testing"
-            assert "cache_control" in system_msg.additional_kwargs
-            assert system_msg.additional_kwargs["cache_control"] == {"type": "ephemeral"}
+            assert isinstance(system_msg.content, list), (
+                "system content must be content-block list, not string — "
+                "string form discards cache_control in langchain-anthropic 1.0.1+"
+            )
+            assert len(system_msg.content) == 1
+            block = system_msg.content[0]
+            assert block["type"] == "text"
+            assert block["text"] == "Custom system prompt for testing"
+            assert block["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-for-mock"})
@@ -88,12 +97,15 @@ class TestPromptCachingEnabled:
             call_args = mock_instance.ainvoke.call_args
             messages = call_args[0][0]
 
-            # Verify system message has cache_control
+            # Verify default system message uses content-block form (see sibling test note)
             system_msg = messages[0]
             assert isinstance(system_msg, SystemMessage)
-            assert system_msg.content == "You are a helpful clinical research data specialist."
-            assert "cache_control" in system_msg.additional_kwargs
-            assert system_msg.additional_kwargs["cache_control"] == {"type": "ephemeral"}
+            assert isinstance(system_msg.content, list)
+            assert len(system_msg.content) == 1
+            block = system_msg.content[0]
+            assert block["type"] == "text"
+            assert block["text"] == "You are a helpful clinical research data specialist."
+            assert block["cache_control"] == {"type": "ephemeral"}
 
     @pytest.mark.asyncio
     async def test_extract_requirements_uses_cached_system_prompt(self):
@@ -158,6 +170,89 @@ class TestPromptCachingEnabled:
             assert "ViewDefinitions:" in system_prompt
             assert "Common Conditions" in system_prompt
             assert "patient_demographics" in system_prompt
+
+
+class TestPromptCachingWireLevel:
+    """Wire-level tests: assert cache_control arrives in the outbound Anthropic API payload.
+
+    These tests would have caught the Sprint 8 silent transmission bug (langchain-anthropic
+    1.0.1 silently dropped ``SystemMessage.additional_kwargs.cache_control`` when content was
+    a plain string). The bug ran for ~6 months because the existing unit tests asserted
+    against the input shape (what LangChain receives), not the output shape (what Anthropic
+    actually receives).
+
+    The wire-level assertion mocks ``anthropic.AsyncAnthropic.messages.create`` and inspects
+    the kwargs passed to it — that is the exact data sent to Anthropic's API.
+    """
+
+    @pytest.mark.asyncio
+    @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key-for-mock"})
+    async def test_cache_control_reaches_anthropic_wire_for_custom_system_prompt(self):
+        """Assert cache_control is in the outbound `system` parameter sent to Anthropic.
+
+        Regression guard for the Sprint 8.2 finding: langchain-anthropic transforms
+        the SystemMessage into Anthropic's API kwargs differently depending on whether
+        content is a string vs list. Only the list (content-block array) form preserves
+        cache_control on the wire. This test asserts the wire shape, not the LangChain
+        message shape.
+        """
+        from anthropic.resources.messages.messages import AsyncMessages
+
+        captured_kwargs = {}
+
+        async def capture_create(self, *args, **kwargs):
+            captured_kwargs.update(kwargs)
+            # Return a minimal valid Anthropic response shape
+            response = MagicMock()
+            response.content = [MagicMock(type="text", text="Test response")]
+            response.stop_reason = "end_turn"
+            response.usage = MagicMock(
+                input_tokens=10,
+                output_tokens=5,
+                cache_creation_input_tokens=0,
+                cache_read_input_tokens=0,
+            )
+            response.id = "msg_test"
+            response.model = "claude-sonnet-4-6"
+            response.role = "assistant"
+            response.type = "message"
+            return response
+
+        # Patch AsyncMessages.create — the actual SDK entrypoint langchain-anthropic calls.
+        # If cache_control survives langchain's translation into here, it survives to the wire.
+        with patch.object(AsyncMessages, "create", new=capture_create):
+            client = LLMClient()
+            try:
+                await client.complete(prompt="Test prompt", system="A" * 5000)
+            except Exception:
+                # Response parser may complain about the mock shape; we only care about
+                # the kwargs captured BEFORE the response was processed.
+                pass
+
+        # Assert the system parameter sent to Anthropic carries cache_control
+        system_param = captured_kwargs.get("system")
+        assert system_param is not None, (
+            f"No `system` kwarg captured in outbound Anthropic call. "
+            f"Captured keys: {list(captured_kwargs.keys())}. This likely means the test mock "
+            f"wasn't hit by the production code path — fix the mock target before fixing this assertion."
+        )
+
+        # Anthropic accepts `system` as either a string or a list of content blocks.
+        # cache_control is ONLY honored on the list form. Assert the list form is what we send.
+        assert isinstance(system_param, list), (
+            f"system param is {type(system_param).__name__}, expected list. "
+            f"String-form system params silently drop cache_control. "
+            f"This is the exact failure mode the Sprint 8 silent bug caused for 6 months."
+        )
+        assert len(system_param) >= 1
+        first_block = system_param[0]
+        assert first_block.get("type") == "text"
+        assert "cache_control" in first_block, (
+            f"cache_control missing from system content block. Block keys: {list(first_block.keys())}. "
+            f"Without cache_control on the wire, Anthropic will not cache the prompt, "
+            f"and the Sprint 8 optimization has no effect."
+        )
+        assert first_block["cache_control"] == {"type": "ephemeral"}
 
 
 class TestPromptCachingIntegration:

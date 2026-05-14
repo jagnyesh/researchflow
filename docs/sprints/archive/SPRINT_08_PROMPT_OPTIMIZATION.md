@@ -1,10 +1,20 @@
 # Sprint 8: Prompt Engineering & Cost Optimization
 
 **Duration:** 1 week (Nov 11-18, 2025)
-**Status:** ✅ Analysis Complete / ✅ Implementation Complete / 🔴 Operational Verification: Sprint 8.1 FALSIFIED the 73% projection on 2026-05-12
+**Status:** ✅ Analysis Complete / ✅ Implementation Complete / 🔴 Operational Verification: Sprint 8.1 FALSIFIED the 73% projection on 2026-05-12 / 🔧 Root cause identified + partially fixed by Sprint 8.2 on 2026-05-14
 **Branch:** `feature/langchain-agents-migration`
 
 > **Sprint 8.1 verification verdict (2026-05-12):** Implementation shipped but the projected 73% cost reduction did not materialize in production. Median cost-per-request landed at $0.009026 formal (3.01× the $0.0039 band ceiling) and $0.003413 exploratory (4.88× the $0.00091 band ceiling), with `cache_hit_rate = 0.0%` on every observed run across n=30/30 on each portal. The 73% projection was built primarily on prompt caching (Optimizations 1-3); zero cache hits is the smoking gun. Two hypotheses (cache_control not wired in outbound payload, vs cache_read_input_tokens not aggregated by our cost calc) are 10× different in scope and are disambiguated by Sprint 8.2 ([#37](https://github.com/jagnyesh/researchflow/issues/37))'s Task 1 diagnostic. The numbers below describe what was *implemented*; Sprint 8.2 will resolve why the *measured* impact diverged.
+
+> **Verdict revision 2026-05-14 (Sprint 8.2 root-cause analysis):** The optimization shipped; the dependency stack silently disabled it. Three concurrent failure modes, all now fixed (PR #43) or scoped for follow-up:
+>
+> 1. **`langchain-anthropic 1.0.1` discarded `cache_control` for 6 months.** Sprint 8 wired `cache_control` on `SystemMessage.additional_kwargs`. The wrapper's `_format_messages` only preserves cache_control when content is a content-block ARRAY; when content is a plain string (our case), it silently drops `additional_kwargs.cache_control` and sends `system="..."` to Anthropic. cache_control never reached the wire. Sprint 8's optimization was technically correct in our code but blocked by a third-party translation gap.
+> 2. **System prompts were 12 tokens, well below Anthropic's caching threshold.** Even if cache_control had reached the wire, the default `"You are a helpful clinical research data specialist."` (~12 tokens) is below Sonnet 4's ~1024-token minimum and Haiku 4.5's ~2048+ minimum. Anthropic silently ignores cache_control on prompts that small. Compound silent failure: the implementation set the flag, the wrapper dropped it, the threshold would have rejected it.
+> 3. **The existing tests asserted at the wrong layer.** `TestPromptCachingEnabled` checked `assert "cache_control" in system_msg.additional_kwargs` — which langchain *receives* but then *discards*. Tests passed for 6 months while the wire-level behavior was broken. Sprint 8.2 added `TestPromptCachingWireLevel` that mocks `anthropic.AsyncMessages.create` and asserts `cache_control` arrives in the outbound `system` kwarg — verified to catch the buggy shape and pass with the fix.
+>
+> **Honest reading of the 73% projection:** with all three failure modes accounted for, the realistic achievable cost reduction is **30-50% per request, not 73%**. Sonnet now caches (verified empirically); Haiku threshold tuning is filed as a Sprint 8.2 follow-up (Task 2.1). A fresh 30-request gate run is required to measure the actual post-fix median — filed as Sprint 8.2 Task 3 (re-measurement). The original 73% number was a projection against a model that didn't account for third-party transmission bugs or undocumented threshold variations across Claude models.
+>
+> See DECISIONS.md "Sprint 8.2 — The 6-month silent prompt-caching bug" for the full ADR with discipline notes on why this class of bug is structurally hard to catch without wire-level tests.
 
 ---
 
