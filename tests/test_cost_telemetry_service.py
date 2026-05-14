@@ -496,3 +496,52 @@ def test_langsmith_schema_contract_input_includes_cache_read():
         "If total ever equals input+output+cache_read, LangSmith has changed "
         "accounting and _run_cost_usd's cache_read subtraction needs revisiting."
     )
+
+
+# ---------------------------------------------------------------------------
+# Sprint 8.3 — Ceiling values pinned to measured-median × 1.3 derivation
+#
+# The two BAND_CEILING constants in cost_telemetry_service.py are NOT arbitrary
+# tolerances — they're calibrated against empirical baselines. Without a
+# numeric pin, a future maintainer could silently revert them to the
+# projection-based Sprint 8.1 values ($0.0039 / $0.00091), and the dashboard
+# would start firing red against the current operating point.
+#
+# This test forces any change to be intentional: change the constants, change
+# the test, and the test's docstring + commit message document why.
+# ---------------------------------------------------------------------------
+
+
+def test_band_ceilings_pinned_to_sprint_8_3_derivation():
+    """Ceiling values pinned to measured-median × 1.3 (Sprint 8.3 derivation).
+
+    Source measurements (2026-05-14, post-Sprint-8.4 corrected aggregator,
+    manual walks verified to ±0.01%):
+
+        Formal:      median $0.007754 across 30 threads × 1.3 = $0.010080
+        Exploratory: median $0.003540 across 30 root traces × 1.3 = $0.004602
+
+    If you change either constant, follow this protocol:
+
+        1. Re-measure: `python scripts/drive_qa_traffic.py --portal both --n 30`
+        2. Manually verify aggregator output via trace-tree walk (Sprint 8.4 pattern)
+        3. Update the constants as `new_median × 1.3`
+        4. Update the expected values in this test to match
+        5. Append a new ADR to DECISIONS.md explaining the re-derivation
+           (what shifted, why, sample size, traffic pattern)
+        6. Commit message must reference the new measurement
+
+    Silent regression to the projection-based Sprint 8.1 ceilings (0.0039 /
+    0.00091) means the gate fires red on traffic that's actually at the
+    current operating point — a false alarm cascading into "lower the
+    ceiling" pressure with no measurement to back it up. See DECISIONS.md
+    Sprint 8.3 ADR for the full derivation rationale.
+    """
+    assert FORMAL_BAND_CEILING_USD == pytest.approx(0.010080, abs=1e-6), (
+        f"FORMAL_BAND_CEILING_USD changed from 0.010080 to {FORMAL_BAND_CEILING_USD}. "
+        f"See test docstring for the re-derivation protocol."
+    )
+    assert EXPLORATORY_BAND_CEILING_USD == pytest.approx(0.004602, abs=1e-6), (
+        f"EXPLORATORY_BAND_CEILING_USD changed from 0.004602 to {EXPLORATORY_BAND_CEILING_USD}. "
+        f"See test docstring for the re-derivation protocol."
+    )
