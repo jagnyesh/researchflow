@@ -703,7 +703,7 @@ D3 grilling locked the per-file test verdict: 5 PORT + 2 SPLIT + 3 DELETE.
 | `tests/test_workflow_incomplete_requirements.py` | 173 | DELETE | All 6 tests exercise A2A-only API surface (`WorkflowEngine.determine_next_step`, `workflow_rules`, `is_terminal_state`, `is_approval_state`). Behaviors covered by Phase 1 parity verification. |
 | `tests/test_database_persistence.py` | 519 | PORT | DB-layer tests are framework-not-engine |
 | `tests/test_dashboard_tabs.py` | 432 | PORT | Same as dashboard_updates |
-| `tests/test_preview_extraction_workflow.py` | 566 | SPLIT | DELETE `TestWorkflowEnginePreviewTransitions` class (A2A FSM-internal); PORT other 3 classes |
+| `tests/test_preview_extraction_workflow.py` | 566 | SPLIT (revised — see Phase 6b execution note below) | DELETE `TestWorkflowEnginePreviewTransitions` class; DELETE `TestEndToEndPreviewWorkflow` class (flipped from PORT during Phase 6b execution); PORT-not-needed for `TestExtractionAgentPreview` + `TestQAAgentPreview` (no A2A coupling) |
 | `tests/e2e/test_ui_with_langgraph.py` | 391 | SPLIT | DELETE 2 migration-moot tests (`test_feature_flag_toggle_*`, `test_facade_has_same_interface_*`); KEEP other 5 |
 | `scripts/test_approval_workflow.py` | 432 | DELETE | Stale dev script, superseded by pytest suite |
 | `scripts/migrate_to_langgraph.py` | 492 | DELETE | One-shot migration helper, job complete |
@@ -717,6 +717,37 @@ D3 grilling locked the per-file test verdict: 5 PORT + 2 SPLIT + 3 DELETE.
 **D3b decision:** In-place port (NOT rewrite-from-scratch). Preserves `git log --follow` per file. Costs larger diffs in Phase 6 commits; the per-file commit cadence (D3c) keeps each diff scoped.
 
 **D3c decision:** 5 per-file commits during Phase 6 (one per ported file) + 1 cleanup commit for splits + deletes. Phase 6 ends with 6 commits. Each PORT commit is a meaningful unit-of-change a future reader can bisect against.
+
+### Phase 6b execution note (2026-05-15) — TestEndToEndPreviewWorkflow flipped PORT → DELETE
+
+During Phase 6b execution, empirical inspection of `test_preview_extraction_workflow.py` revealed `TestEndToEndPreviewWorkflow` (lines 450-566 pre-deletion) is **A2A-FSM-internal in disguise**, not an actual e2e LangGraph test. Both its methods (`test_complete_preview_workflow_happy_path`, `test_preview_workflow_failure_path`) call `workflow_engine.determine_next_step()` 5+ times each to "simulate" workflow transitions — exact same pattern as `TestWorkflowEnginePreviewTransitions` which was already classified DELETE.
+
+Same shape as the D3-time flip on `test_workflow_incomplete_requirements.py` (PORT → DELETE after class-body inspection showed every test exercised A2A-only API surface).
+
+Coverage verification before deletion (classified each assertion into 4 buckets — (a) A2A-internal, (b) covered by Phase 1 parity harness, (c) covered by other tests in the suite, (d) coverage gap):
+
+| Test method | Assertion sample | Bucket |
+|---|---|---|
+| happy path × 7 transitions | `transition["next_state"] == STATE` | (a) + (b — parity dim 1) |
+| happy path × 2 agent results | `preview_result["preview_extracted"] == True` | (c — `TestExtractionAgentPreview` / `TestQAAgentPreview` cover the same contracts) |
+| failure path × 3 transitions | same as above | (a) + (b) |
+| failure path × 1 agent result | `preview_qa_result["preview_qa_passed"] == False` | (c — `TestQAAgentPreview::test_validate_preview_fails_with_empty_data` covers) |
+
+**No bucket (d) gaps.** Delete is safe. Revised Phase 6b scope:
+
+| Action | Class/method |
+|---|---|
+| DELETE | `TestWorkflowEnginePreviewTransitions` (was DELETE per original D3) |
+| DELETE | `TestEndToEndPreviewWorkflow` (flipped from PORT to DELETE) |
+| DELETE | `workflow_engine` fixture + `from app.orchestrator.workflow_engine import WorkflowEngine` import |
+| KEEP | `TestExtractionAgentPreview` (5 tests; no A2A coupling) |
+| KEEP | `TestQAAgentPreview` (5 tests; no A2A coupling — 3 pre-existing failures here are agent-level bugs unrelated to A2A retirement) |
+
+`tests/e2e/test_ui_with_langgraph.py` proceeded with original D3 scope: 2 method deletes + import removal; 6 KEEP tests intact.
+
+### Recurring pattern (this session) — execution-time inspection surfaces classification-time misses
+
+This is the 13th-14th instance of "what would have to be true for this verdict to be wrong?" firing within Sprint 7.2 alone. The novel observation: **the pattern shows up not just in initial decisions but in executing previously-made decisions. Empirical inspection at execution time consistently surfaces details that classification time missed.** Worth folding into the meta-pattern note at the top of DECISIONS.md when this sprint closes. The defense is the same as before: 5-minute verification pass before committing to a decision's downstream consequences.
 
 ### D2 decision — Phase 0 commit shape + name collision
 

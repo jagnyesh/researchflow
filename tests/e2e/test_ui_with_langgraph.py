@@ -8,7 +8,7 @@ the same facade methods that the UIs would use.
 Test Scenarios:
 1. Researcher submits request via portal → tracks status → views results
 2. Admin reviews request in dashboard → approves → workflow continues
-3. Feature flag toggle between old and new orchestrator
+3. Complete user journey from researcher submission to data delivery
 """
 
 import pytest
@@ -17,7 +17,6 @@ import os
 from typing import Dict, Any
 
 from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
-from app.orchestrator import ResearchRequestOrchestrator
 from app.database import get_db_session, ResearchRequest, Approval
 from sqlalchemy import select
 
@@ -152,110 +151,6 @@ async def test_admin_dashboard_review_and_approve_with_langgraph(sample_research
 
             # Workflow should have progressed
             assert updated_status["current_state"] != "requirements_approval" or approval is None
-
-    await facade.close()
-
-
-# ============================================================================
-# Test: Feature Flag Toggle
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_feature_flag_toggle_between_orchestrators(sample_researcher_info):
-    """
-    Test that feature flag correctly switches between orchestrators:
-    1. USE_LANGGRAPH_WORKFLOW=false → old orchestrator
-    2. USE_LANGGRAPH_WORKFLOW=true → new facade
-    """
-    # Save original env var
-    original_value = os.getenv("USE_LANGGRAPH_WORKFLOW")
-
-    try:
-        # Test 1: Legacy orchestrator (flag off)
-        os.environ["USE_LANGGRAPH_WORKFLOW"] = "false"
-
-        use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
-        assert use_langgraph is False
-
-        # Would create ResearchRequestOrchestrator in UI
-        if not use_langgraph:
-            orchestrator_type = "legacy"
-        else:
-            orchestrator_type = "langgraph"
-
-        assert orchestrator_type == "legacy"
-
-        # Test 2: LangGraph facade (flag on)
-        os.environ["USE_LANGGRAPH_WORKFLOW"] = "true"
-
-        use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
-        assert use_langgraph is True
-
-        # Would create LangGraphRequestFacade in UI
-        if use_langgraph:
-            facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=True)
-            orchestrator_type = "langgraph"
-        else:
-            orchestrator_type = "legacy"
-
-        assert orchestrator_type == "langgraph"
-
-        # Verify facade works
-        request_id = await facade.process_new_request(
-            researcher_request="Test request", researcher_info=sample_researcher_info
-        )
-
-        assert request_id is not None
-
-        await facade.close()
-
-    finally:
-        # Restore original env var
-        if original_value:
-            os.environ["USE_LANGGRAPH_WORKFLOW"] = original_value
-        else:
-            os.environ.pop("USE_LANGGRAPH_WORKFLOW", None)
-
-
-# ============================================================================
-# Test: API Compatibility
-# ============================================================================
-
-
-@pytest.mark.asyncio
-async def test_facade_has_same_interface_as_orchestrator(sample_researcher_info):
-    """
-    Verify that LangGraphRequestFacade implements same interface as
-    ResearchRequestOrchestrator for drop-in replacement.
-    """
-    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=True)
-
-    # Verify all key methods exist
-    assert hasattr(facade, "process_new_request")
-    assert hasattr(facade, "get_request_status")
-    assert hasattr(facade, "get_all_active_requests")
-    assert hasattr(facade, "process_approval_response")
-    assert hasattr(facade, "register_agent")
-    assert hasattr(facade, "route_task")
-    assert hasattr(facade, "get_agent_metrics")
-
-    # Verify methods are callable
-    assert callable(facade.process_new_request)
-    assert callable(facade.get_request_status)
-    assert callable(facade.get_all_active_requests)
-
-    # Test that process_new_request works
-    request_id = await facade.process_new_request(
-        researcher_request="Test", researcher_info=sample_researcher_info
-    )
-
-    assert request_id is not None
-
-    # Test that get_request_status works
-    status = await facade.get_request_status(request_id)
-    assert status is not None
-    assert status["request_id"] == request_id
 
     await facade.close()
 
