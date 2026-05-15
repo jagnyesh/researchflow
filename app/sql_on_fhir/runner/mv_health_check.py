@@ -209,6 +209,33 @@ async def post_write_health_check(
     return record
 
 
+def read_recent_health_records(
+    n: int = 20,
+    log_path: Path = DEFAULT_LOG_PATH,
+) -> List[Dict[str, Any]]:
+    """Return the last n health-check records across all views, in file
+    order (newest LAST). Cold-start (no file) returns []. Corrupt JSON
+    lines are skipped — the dashboard must never crash from a partial-write.
+
+    Cycle 6: admin dashboard "💰 Cost Telemetry" tab calls this to render
+    the recent-history table. The reader is a pure helper; the UI layer
+    formats and displays only.
+    """
+    if not log_path.exists():
+        return []
+    records: List[Dict[str, Any]] = []
+    with open(log_path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+    return records[-n:] if n > 0 else records
+
+
 # ---------------------------------------------------------------------------
 # Internals
 # ---------------------------------------------------------------------------

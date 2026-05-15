@@ -1977,6 +1977,68 @@ def show_cost_telemetry():
                 f"1.3× band (\\${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
             )
 
+    # Sprint 6.4 cycle 6 — Materialized View health surface.
+    # Reads logs/mv_health.jsonl (written by post_write_health_check after
+    # every batch materialize). Shows the last 20 health records + per-view
+    # current-alarm state. The reader returns [] cold-start.
+    st.divider()
+    st.subheader("🩺 Materialized View health — Sprint 6.4")
+    st.caption(
+        "After each batch materialize, the actual MV row count is compared "
+        "against a HAPI oracle (same run, data-drift-immune). |delta|/oracle > 5% "
+        "flips status to `warn`. Alarm fires only after 3 consecutive warns "
+        "for the same view — filters single-run noise. Source: "
+        "`logs/mv_health.jsonl` (gitignored runtime log)."
+    )
+
+    from app.sql_on_fhir.runner.mv_health_check import (
+        DEFAULT_ALARM_CONSECUTIVE_RUNS,
+        DEFAULT_LOG_PATH,
+        check_alarm,
+        read_recent_health_records,
+    )
+
+    recent = read_recent_health_records(n=20)
+    if not recent:
+        st.info(
+            f"No health-check records yet. Run `python scripts/materialize_views.py` "
+            f"to materialize the 3 sqlonfhir MVs; records land at `{DEFAULT_LOG_PATH}`."
+        )
+    else:
+        views_in_log = sorted({r["view_name"] for r in recent})
+        alarm_views = [
+            v for v in views_in_log if check_alarm(v, n_runs=DEFAULT_ALARM_CONSECUTIVE_RUNS)
+        ]
+        if alarm_views:
+            st.error(
+                f"🚨 ALARM: {len(alarm_views)} view(s) at {DEFAULT_ALARM_CONSECUTIVE_RUNS} "
+                f"consecutive warns — {', '.join(alarm_views)}. Investigate "
+                f"before next batch materialize."
+            )
+        else:
+            st.success(
+                f"No active alarms. {len(views_in_log)} view(s) reporting; "
+                f"last {len(recent)} records all within threshold."
+            )
+
+        # Render last 20 records as a dataframe. Newest LAST per file order
+        # so the table reads chronologically; status emoji aids scanning.
+        rows = []
+        for r in recent:
+            status_emoji = "✅" if r.get("status") == "ok" else "⚠️"
+            rows.append(
+                {
+                    "ts": r.get("ts", ""),
+                    "view": r.get("view_name", ""),
+                    "actual": f"{r.get('actual_count', 0):,}",
+                    "oracle": f"{r.get('oracle_count', 0):,}",
+                    "delta_pct": f"{r.get('delta_pct', 0.0):.4f}",
+                    "status": f"{status_emoji} {r.get('status', '')}",
+                    "git_commit": r.get("git_commit", ""),
+                }
+            )
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
 
 def show_materialized_views():
     """Issue #18: admin tab for managing the Lambda Architecture's batch layer.

@@ -31,6 +31,7 @@ from app.sql_on_fhir.runner.mv_health_check import (
     check_alarm,
     load_oracle_query,
     make_health_record,
+    read_recent_health_records,
 )
 
 
@@ -204,3 +205,96 @@ def test_check_alarm_returns_false_when_log_file_missing(tmp_path):
     """No log file → no alarm (cold-start case)."""
     log_path = tmp_path / "does_not_exist.jsonl"
     assert check_alarm("any_view", n_runs=3, log_path=log_path) is False
+
+
+# ---------------------------------------------------------------------------
+# read_recent_health_records — dashboard reader (cycle 6)
+# ---------------------------------------------------------------------------
+
+
+def test_read_recent_health_records_returns_last_n_in_file_order(tmp_path):
+    """Returns the last N records across all views, newest-LAST (file order
+    preserved so the dashboard can render chronologically).
+
+    Cycle 6 surfaces these in the admin Cost Telemetry tab. The reader is a
+    pure helper — Streamlit reads it, formats as a dataframe, no business
+    logic in the UI layer.
+    """
+    log_path = tmp_path / "mv_health.jsonl"
+    # 5 records, mixed views, sequential timestamps
+    fixtures = [
+        ("2026-05-15T10:00:00+00:00", "condition_diagnoses", "ok"),
+        ("2026-05-15T10:01:00+00:00", "observation_labs", "ok"),
+        ("2026-05-15T10:02:00+00:00", "procedure_history", "warn"),
+        ("2026-05-15T10:03:00+00:00", "condition_diagnoses", "ok"),
+        ("2026-05-15T10:04:00+00:00", "observation_labs", "warn"),
+    ]
+    for ts, view_name, status in fixtures:
+        record = {
+            "ts": ts,
+            "view_name": view_name,
+            "actual_count": 100,
+            "oracle_count": 100,
+            "delta_pct": 0.0,
+            "status": status,
+            "git_commit": "abc1234",
+        }
+        with open(log_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    # n=3 → return the last 3 records in file order
+    records = read_recent_health_records(n=3, log_path=log_path)
+    assert len(records) == 3
+    assert records[0]["ts"] == "2026-05-15T10:02:00+00:00"
+    assert records[1]["ts"] == "2026-05-15T10:03:00+00:00"
+    assert records[2]["ts"] == "2026-05-15T10:04:00+00:00"
+    assert records[2]["view_name"] == "observation_labs"
+    assert records[2]["status"] == "warn"
+
+
+def test_read_recent_health_records_returns_empty_when_log_missing(tmp_path):
+    """Cold-start: no file → empty list (dashboard renders 'no data' message)."""
+    log_path = tmp_path / "does_not_exist.jsonl"
+    assert read_recent_health_records(n=10, log_path=log_path) == []
+
+
+def test_read_recent_health_records_returns_all_when_n_exceeds_count(tmp_path):
+    """n larger than total → return everything in file order. Streamlit
+    requests n=20; cold-warm dashboards have <20 records and should still render.
+    """
+    log_path = tmp_path / "mv_health.jsonl"
+    # Only 2 records exist
+    for i in range(2):
+        record = {
+            "ts": f"2026-05-15T10:0{i}:00+00:00",
+            "view_name": "x",
+            "actual_count": 1,
+            "oracle_count": 1,
+            "delta_pct": 0.0,
+            "status": "ok",
+            "git_commit": "abc1234",
+        }
+        with open(log_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    records = read_recent_health_records(n=20, log_path=log_path)
+    assert len(records) == 2
+    assert records[0]["ts"] == "2026-05-15T10:00:00+00:00"
+    assert records[1]["ts"] == "2026-05-15T10:01:00+00:00"
+
+
+def test_read_recent_health_records_tolerates_corrupt_lines(tmp_path):
+    """Defense in depth: a malformed JSONL line is skipped, not raised.
+    The dashboard should never crash because one line got corrupted by
+    a partial-write or external editor.
+    """
+    log_path = tmp_path / "mv_health.jsonl"
+    with open(log_path, "w") as f:
+        f.write(json.dumps({"ts": "t1", "view_name": "x", "status": "ok"}) + "\n")
+        f.write("not valid json at all\n")
+        f.write(json.dumps({"ts": "t2", "view_name": "y", "status": "warn"}) + "\n")
+
+    records = read_recent_health_records(n=10, log_path=log_path)
+    assert len(records) == 2
+    assert records[0]["ts"] == "t1"
+    assert records[1]["ts"] == "t2"
