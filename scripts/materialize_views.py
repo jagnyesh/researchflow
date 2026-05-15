@@ -202,17 +202,13 @@ class ViewMaterializer:
             logger.info(f"Materializing view: {view_name} (sqlonfhir)")
             logger.info(f"{'='*60}")
 
-            # Fetch FHIR resources from HAPI's internal Postgres
-            logger.info(f"  Reading {resource_type} resources from HAPI :5433...")
-            resources = await fetch_fhir_resources_for_view(conn, view_def)
-            logger.info(f"  ✅ Loaded {len(resources):,} {resource_type} resource(s)")
-
-            # In-memory FHIRPath evaluation via sqlonfhir
-            logger.info(f"  Evaluating view-def via sqlonfhir.evaluate()...")
-            rows = sqlonfhir.evaluate(resources, view_def)
-            logger.info(f"  ✅ Produced {len(rows):,} row(s)")
-
-            # Build explicit column schema from view-def declarations
+            # Build explicit column schema from view-def declarations BEFORE
+            # evaluation. sqlonfhir 0.0.2 mutates view_def in place during
+            # evaluate(): nested forEach/forEachOrNull blocks have their
+            # `column` key renamed to `select`. Reading columns after
+            # evaluate() silently misses every nested-block column (caught
+            # by Sprint 6.2 transpiler harness on procedure_history's 6
+            # forEachOrNull columns; CI surfaced it 2026-05-15).
             columns: List[str] = []
             for select_block in view_def.get("select", []):
                 for col in select_block.get("column", []):
@@ -223,6 +219,16 @@ class ViewMaterializer:
                         columns.append(name)
             if not columns:
                 raise ValueError(f"view-def {view_name} declared no columns; cannot create table")
+
+            # Fetch FHIR resources from HAPI's internal Postgres
+            logger.info(f"  Reading {resource_type} resources from HAPI :5433...")
+            resources = await fetch_fhir_resources_for_view(conn, view_def)
+            logger.info(f"  ✅ Loaded {len(resources):,} {resource_type} resource(s)")
+
+            # In-memory FHIRPath evaluation via sqlonfhir
+            logger.info(f"  Evaluating view-def via sqlonfhir.evaluate()...")
+            rows = sqlonfhir.evaluate(resources, view_def)
+            logger.info(f"  ✅ Produced {len(rows):,} row(s)")
 
             # Drop any prior object at this name. Sprint 6.4 converts
             # previously-materialized-view objects (Sprint 6.2 era) to plain

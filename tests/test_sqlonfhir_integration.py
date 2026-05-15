@@ -232,6 +232,35 @@ async def test_mv_materialized_via_sqlonfhir_end_to_end(view_name):
             f"clause and data observations."
         )
 
+        # Column-shape regression check (Sprint 6.4 cycle 4 follow-up).
+        # The procedure_history view-def has 3 nested forEachOrNull blocks
+        # (performer/reasonCode/bodySite). sqlonfhir 0.0.2 mutates view_def
+        # in-place during evaluate(): nested `column` keys get renamed to
+        # `select`. If column collection happens AFTER evaluate(), the 6
+        # nested-block columns silently get dropped from CREATE TABLE.
+        # This check fails loudly when the bug regresses.
+        expected_cols = set()
+        with open(view_def_path) as f:
+            fresh_vd = json.load(f)
+        for sb in fresh_vd.get("select", []):
+            for col in sb.get("column", []):
+                expected_cols.add(col["name"])
+        actual_cols = {
+            r["column_name"]
+            for r in await conn.fetch(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'sqlonfhir' AND table_name = $1",
+                view_name,
+            )
+        }
+        missing = expected_cols - actual_cols
+        assert not missing, (
+            f"{view_name}: materialized table is missing declared columns "
+            f"{sorted(missing)}. sqlonfhir.evaluate() likely mutated the view-def "
+            f"before the materializer's column-collection loop ran. Collect "
+            f"columns BEFORE calling sqlonfhir.evaluate()."
+        )
+
         # Sanity: every row has non-NULL id (fhir_id merge verification)
         null_id_count = await conn.fetchval(
             f"SELECT count(*) FROM sqlonfhir.{view_name} WHERE id IS NULL"

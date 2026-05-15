@@ -26,11 +26,25 @@ SCHEMA = "sqlonfhir"
 
 
 async def view_exists(view_name: str) -> bool:
-    """True iff sqlonfhir.<view_name> is present in pg_matviews."""
+    """True iff sqlonfhir.<view_name> is materialized.
+
+    Sprint 6.4 storage asymmetry: custom-path MVs land as materialized views
+    (pg_class.relkind='m'); sqlonfhir-path MVs land as plain tables
+    (relkind='r') because sqlonfhir.evaluate() returns rows in memory, not
+    SQL. Both populate sqlonfhir.<view_name>. Match either via pg_class so
+    the harness stays dispatch-agnostic.
+    """
     conn = await asyncpg.connect(HAPI_DB_URL)
     try:
         row = await conn.fetchrow(
-            "SELECT 1 FROM pg_matviews WHERE schemaname = $1 AND matviewname = $2",
+            """
+            SELECT 1
+            FROM pg_class c
+            JOIN pg_namespace n ON c.relnamespace = n.oid
+            WHERE n.nspname = $1
+              AND c.relname = $2
+              AND c.relkind IN ('m', 'r')
+            """,
             SCHEMA,
             view_name,
         )
