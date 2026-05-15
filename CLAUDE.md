@@ -76,3 +76,17 @@ Key routing rules:
 - Resume context → invoke /context-restore
 - Token-tight responses → invoke /caveman
 - Validate plan/doc against reality → invoke /grill-with-docs
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in this repo's GitHub Issues (`jagnyesh/researchflow`). Skills use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). All five labels exist in the repo. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout. `CONTEXT.md` at the root for domain vocabulary; `DECISIONS.md` at the root for the append-only ADR log (one entry per sprint). See `docs/agents/domain.md`.
