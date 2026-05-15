@@ -27,6 +27,7 @@ from typing import List, Dict, Any
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from app.sql_on_fhir.runner.backend_dispatcher import select_backend
 from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from app.sql_on_fhir.runner.postgres_runner import PostgresRunner
 
@@ -83,6 +84,37 @@ class ViewMaterializer:
 
         return view_defs
 
+    def _build_view_sql(self, view_def: Dict[str, Any]) -> str:
+        """Build SQL for a view-def using the dispatched FHIRPath backend.
+
+        Sprint 6.4 cycle 2 — wires the backend_dispatcher.select_backend()
+        dispatch primitive (cycle 1) into the materializer's write path.
+        View-defs with `runner_hint: "sqlonfhir"` take the sqlonfhir branch
+        (stubbed below; cycle 3 lifts the real sqlonfhir.evaluate() call).
+        View-defs without the field (or with `"custom"`) route to the
+        existing custom transpiler — backward compat for the 4 working MVs.
+
+        Returns the SQL string that gets wrapped in
+        `CREATE MATERIALIZED VIEW ... AS <sql>` by the caller.
+        """
+        backend = select_backend(view_def)
+        if backend == "sqlonfhir":
+            return self._build_sqlonfhir_sql(view_def)
+        # custom backend (default — backward compatibility path)
+        query = self.runner.builder.build_query(view_definition=view_def)
+        return query.sql
+
+    def _build_sqlonfhir_sql(self, view_def: Dict[str, Any]) -> str:
+        """Sprint 6.4 cycle 3 will implement this.
+
+        Cycle 2 leaves the stub so dispatch routing is testable end-to-end
+        before the sqlonfhir backend is wired. The raise signals
+        "dispatch routing reached this branch" in cycle 2 tests.
+        """
+        raise NotImplementedError(
+            "sqlonfhir backend wiring is cycle 3 of Sprint 6.4 — see issue #40"
+        )
+
     async def materialize_view(
         self, conn: asyncpg.Connection, view_name: str, view_def: Dict[str, Any], resource_type: str
     ):
@@ -92,11 +124,11 @@ class ViewMaterializer:
             logger.info(f"Materializing view: {view_name}")
             logger.info(f"{'='*60}")
 
-            # Generate SQL using the runner's query builder
+            # Generate SQL via the dispatched FHIRPath backend (Sprint 6.4 cycle 2).
+            # _build_view_sql() consults select_backend() to choose between the
+            # custom transpiler (default) and sqlonfhir (cycle 3).
             logger.info(f"  Generating SQL for {resource_type}...")
-            query = self.runner.builder.build_query(view_definition=view_def)
-
-            generated_sql = query.sql
+            generated_sql = self._build_view_sql(view_def)
 
             if not generated_sql:
                 logger.error(f"  ❌ No SQL generated for {view_name}")
