@@ -437,6 +437,93 @@ With the aggregator corrected, Sprint 8.3 (#47) can now re-derive the cost-per-r
 
 ---
 
+## Sprint 7.2 — A2A FSM to LangGraph migration close-out
+
+Captures the intent + schedules the execution to deprecate the custom A2A FSM (`app/orchestrator/`) in favor of the LangGraph FSM (`app/langchain_orchestrator/`). This ADR converts the dual-orchestration state from "silent drift accumulation" into "documented transitional state with explicit close-out trigger." No code shipped by this ADR — it's the capture step. Real execution happens in Sprint 7.2 (a future sprint, sequenced after Sprint 6.4 closes, before Sprint 6.5 starts).
+
+### Empirical state at capture (2026-05-15)
+
+Verified via Explore agent + direct `.env` read:
+
+| Surface | Value |
+|---|---|
+| User's local `.env:87` | `USE_LANGGRAPH_WORKFLOW=true` |
+| Template `config/.env.example:125` | `USE_LANGGRAPH_WORKFLOW=false` |
+| Sprint 8.4 trace `62ef0f8c-...` root node | `name=LangGraph` (empirical proof Sprint 8 ran through LangGraph) |
+| `app/orchestrator/` (custom A2A FSM) | 1,324 LOC across 3 files |
+| `app/langchain_orchestrator/` (LangGraph FSM) | 6,490 LOC across 9 files |
+| Production scripts still importing A2A | 7 (`scripts/recover_stuck_request.py`, `process_stuck_requests.py`, `fix_stuck_*.py`, `trigger_delivery.py`, `advance_workflow.py`) |
+| Tests still exercising A2A path | 7 files (`test_agent_handoffs.py`, `test_admin_dashboard_updates.py`, `test_nlp_to_sql_workflow.py`, `test_preview_extraction_workflow.py`, `test_workflow_incomplete_requirements.py`, `test_database_persistence.py`, `test_dashboard_tabs.py`) |
+| UI dispatcher | `researcher_portal.py:430-480` + `admin_dashboard.py:160-210` (identical conditional dispatch) |
+
+### Why this ADR now
+
+The dual state is **deliberate transitional**, not accidental architecture. Sprint 4 ADR ("Keep custom FSM in production; LangGraph as parallel migration target") committed to running both. Sprint 7 ADR ("LangGraph migration finalized via singleton checkpointer + LangSmith tracing") completed the technical migration — the orchestration works async-safely, all 6 agents are `@traceable`-instrumented, gradual rollout via `LANGGRAPH_ROLLOUT_PCT` works.
+
+What was never written: a close-out ADR. The migration is **locally validated but template-still-A2A** — user's `.env` flipped (Sprint 8 series ran on LangGraph), but the template default, the 7 production scripts, and 7 test files still wire to the legacy orchestrator. Without an explicit close-out plan, this state accumulates ~5-10% maintenance tax on every agent-layer change (modify in both, debug across both, two-mode test coverage).
+
+The 2026-05-15 architecture review (`docs/architecture/05-15architecturereview.md`, orchestration layer box) snapshotted this gap. This ADR converts the gap into a scheduled decision.
+
+### The close-out: Sprint 7.2 (3-5 days, sequenced)
+
+**Why "Sprint 7.2"** — preserves migration lineage. Sprint 4 (decision to migrate) → Sprint 7 (technical finalization: singleton + tracing) → Sprint 7.2 (deprecation + cleanup). A new top-level "Sprint 12" or similar would obscure the relationship.
+
+**Why between Sprint 6.4 and Sprint 6.5** — load-bearing sequencing:
+- Sprint 6.4 (sqlonfhir batch-refresh swap) doesn't touch the orchestration layer; safe with dual state.
+- Sprint 6.5 (wire agents through HybridRunner for online reads) CHANGES the orchestration→agent invocation surface. **If Sprint 6.5 runs while dual orchestration exists, the wiring change has to be done in BOTH orchestrations.** Closing the migration first means Sprint 6.5 only changes LangGraph.
+
+**Trigger:** Sprint 6.4 closes (a concrete, dated event).
+
+### Close-out criteria (Sprint 7.2 pre-committed gates)
+
+**1. Parity verification — structural, not content-equality.** Drive 30 formal-portal requests with `USE_LANGGRAPH_WORKFLOW=false` (legacy A2A) and 30 with `=true` (LangGraph), same inputs. Compare:
+
+- **Workflow state sequence identical** — same states traversed in same order (e.g., `new_request → requirements_gathering → feasibility_validation → ...`)
+- **Agent execution order identical** — same 6 agents fire in same sequence
+- **Approval gate triggers identical** — same HITL pause points hit (requirements, phenotype, extraction, delivery)
+- **Final state classification equivalent** — SUCCESS / NEEDS_HUMAN_REVIEW / FAILED bucket matches per request
+- **Audit trail same shape** — `audit_logs` event count and event-type sequence match per `thread_id`
+
+**NOT compared:** LLM-generated content. Sonnet/Haiku output is non-deterministic (different word choices, different field ordering, different prose); content-equality would fail parity verification on irrelevant differences. The five structural checks above test the orchestration's correctness, not the LLM's output stability.
+
+This methodology is load-bearing for keeping Sprint 7.2 at 3-5 days. "Diff outputs" would balloon into a multi-week LLM-determinism investigation; structural parity is testable in hours.
+
+**2. Template flip:** `config/.env.example` switches `USE_LANGGRAPH_WORKFLOW=true`. Fresh clones default to LangGraph.
+
+**3. Production scripts migrated:** All 7 scripts under `scripts/` that import `ResearchRequestOrchestrator` or `WorkflowEngine` are ported to `LangGraphRequestFacade` (which already implements API-compatible methods — `request_facade.py:35-100`). Each migrated script is run against a real stuck-state row to verify recovery outcome preserved.
+
+**4. A2A FSM deleted, not archived.** `app/orchestrator/` is removed via `git rm -r`. **Rationale: git history is the rollback mechanism.** An `app/_archive_a2a_fsm/` directory would create appearance-of-dual-state in the repo (search results, imports, AI agent discoverability) without functional benefit. If the deletion needs reversal, `git revert` recovers the directory. Future readers see a clean main-line history with the deletion's commit message documenting the rationale.
+
+**5. Dispatcher simplified.** `researcher_portal.py:430-480` and `admin_dashboard.py:160-210` collapse to unconditional `LangGraphRequestFacade` instantiation. `USE_LANGGRAPH_WORKFLOW` and `LANGGRAPH_ROLLOUT_PCT` env vars + their handling logic removed.
+
+**6. Test files: port-vs-delete decision per file.** For each of the 7 A2A-exercising test files, decide:
+- **PORT** if the test exercises a behavior LangGraph must also exhibit (e.g., agent handoffs, persistence after restart, dashboard state-update semantics). Rewrite the test against `LangGraphRequestFacade` + `FullWorkflow`.
+- **DELETE** if the test is A2A-internal (e.g., `WorkflowState` schema assertions, `WorkflowEngine` state-transition tests). LangGraph's `AgentState` is a different schema; A2A-internal tests have no LangGraph equivalent.
+
+This decision per file is made during Sprint 7.2 execution, with the rationale recorded in the Sprint 7.2 close ADR.
+
+**7. CONTEXT.md updated:** "Workflow nodes" line no longer mentions "two parallel implementations." Replace with "17 nodes in LangGraph FSM (`app/langchain_orchestrator/langgraph_workflow.py`)."
+
+**8. Sprint 7.2 close ADR appended to DECISIONS.md** documenting which tests were ported vs deleted, the parity verification result (clean / bounded-diffs / large-diffs), and the date the migration formally closed.
+
+### What this ADR is NOT
+
+- NOT execution. Two doc-only commits land tonight (this ADR + the BACKLOG entry). The real engineering work is Sprint 7.2.
+- NOT a content-equality parity claim. The five structural checks define parity for this migration; content equality is out of scope (LLM non-determinism).
+- NOT a commitment to archive. Sprint 7.2 will `git rm` the legacy directory. Git history is the rollback path.
+- NOT a permanent dual-state acceptance. The dual state ends in Sprint 7.2.
+
+### Risk + mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Sprint 7.2 keeps getting pushed past Sprint 6.5 | Sprint 6.5's prerequisite ("close the migration first") makes deferral expensive — every sprint touching the orchestration layer pays the dual-mode tax until Sprint 7.2 runs |
+| Parity verification produces bounded structural diffs (e.g., LangGraph hits an extra audit event) | Document the diff in Sprint 7.2 close ADR. Decide accept (LangGraph more correct) or fix (LangGraph wrong) per diff. Bounded diffs don't block close-out; they get tracked |
+| Parity verification produces large diffs | Migration isn't actually done. Sprint 7.2 splits into 7.2a (close existing diffs) + 7.2b (deprecation). The 3-5 day estimate becomes longer; BACKLOG entry updated honestly |
+| `git rm` of `app/orchestrator/` breaks something not in the 7 known scripts | Pre-Sprint-7.2 `grep -rn "from app.orchestrator" .` runs as the first task; any new caller surfaces and gets migrated before deletion |
+
+---
+
 ## Sprint 8.3 — Cost-per-request ceilings re-derived against measured baselines; Sprint 8 series closes
 
 Sprint 8.3 closes 2026-05-14 with corrected ceilings shipped. Scope-split per pre-committed grilling (D1=A): Sprint 8.3 is ceiling re-derivation only; the broader "structural redesign question" is decoupled into a separate sprint if and when the corrected ceilings show a genuine gap.
