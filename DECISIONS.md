@@ -718,6 +718,98 @@ D3 grilling locked the per-file test verdict: 5 PORT + 2 SPLIT + 3 DELETE.
 
 **D3c decision:** 5 per-file commits during Phase 6 (one per ported file) + 1 cleanup commit for splits + deletes. Phase 6 ends with 6 commits. Each PORT commit is a meaningful unit-of-change a future reader can bisect against.
 
+### D2 decision — Phase 0 commit shape + name collision
+
+**D2a (commit shape):** Phase 0 lands as ONE atomic commit on the Sprint 7.2 feature branch. Scope:
+1. Create `app/database/workflow_states.py` (new module with the D1 docstring).
+2. Update 8 importers (2 production: `app/api/research.py`, `app/web_ui/dashboard_helpers.py`; 1 script: `scripts/test_approval_workflow.py`; 5 tests: `test_dashboard_tabs.py`, `test_database_persistence.py`, `test_admin_dashboard_updates.py`, `test_preview_extraction_workflow.py`, `test_workflow_incomplete_requirements.py`).
+3. Add `tests/test_workflow_states_promotion.py` guard test (verifies enum-still-resolves contract).
+4. Run full test suite + boot app to confirm no breakage.
+
+Rationale: 8 files is small enough that bisect-granularity from splitting isn't worth losing the atomic guarantee. Either the import-path change holds across the codebase or none of it does. Per the cadence rule, Sprint 7.2's PR squashes everything at end — in-branch commits ARE the bisect granularity.
+
+NOT direct-to-main. This is sprint code work, not a doc snapshot. Feature branch `feature/sprint-7-2-langgraph-closeout` (or similar).
+
+**D2b (name collision):** `app/langchain_orchestrator/simple_workflow.py:27` defines a LOCAL `WorkflowState` TypedDict (LangGraph's 3-state demo type). After Phase 0, the A2A enum becomes `app.database.workflow_states.WorkflowState` and the LangGraph TypedDict stays at `app.langchain_orchestrator.simple_workflow.WorkflowState` — same name, different modules.
+
+**Decision A2 (resolved):**
+1. **Rename `simple_workflow.WorkflowState` → `SimpleWorkflowState`** in the SAME Phase 0 commit. Two files touched: the definition + its test import. Mechanical disambiguation.
+2. **Add module-level deprecation docstring** to `simple_workflow.py`:
+   ```
+   """Deprecated demo scaffolding from Sprint 4→7 LangGraph migration tracer
+   bullet. Retained for historical reference. Slated for deletion in Sprint 7.3
+   candidate (see BACKLOG.md). Zero production callers — only its own test
+   file imports SimpleWorkflow."""
+   ```
+3. **File Sprint 7.3 candidate** in BACKLOG.md (done: commit `8e9b744`) for the full file deletion (~30 min, single commit, post-Sprint-7.2).
+
+Logic: rename + deprecation docstring belong in the same commit as the D1 enum promotion. Both are about resolving `WorkflowState` ambiguity in the codebase. Full file deletion is out of Sprint 7.2's named scope (LangGraph cleanup, not A2A retirement) — deferred to Sprint 7.3 to avoid mid-sprint scope expansion.
+
+### D4 decision — parity verification methodology (Phase 1)
+
+**D4a (methodology): hybrid (option C).** Each of the 5 structural-parity dimensions queries its highest-fidelity signal source:
+
+| Dimension | Source | Why |
+|---|---|---|
+| 1. Workflow state sequence | `research_requests.state_history` JSON column | Full sequence persisted per row; SQL queryable |
+| 2. Agent execution order | LangSmith trace tree (root span's children, sorted by start_time) | `@traceable` decorators make agent boundaries first-class; pre-flight check required (see below) |
+| 3. Approval gate triggers | `approvals` table join on request_id | Authoritative HITL pause record |
+| 4. Final state classification | `research_requests.current_state` + `final_state` | DB final state is the canonical bucket |
+| 5. Audit trail shape | `audit_logs` table grouped by `thread_id` | The HIPAA-grade evidence channel |
+
+Rejected alternatives:
+- **Option A (audit_logs only):** Gap on dimension 2 (agent execution order — audit_logs records route invocations, not agent boundaries underneath).
+- **Option B (LangSmith trace tree only):** Gap on dimension 5 (LangSmith doesn't see `audit_logs`).
+
+C splits each dimension to its strongest signal; harness coordinates 3 data sources but each query is scoped.
+
+**D4b (harness location):** `scripts/parity_verify_a2a_vs_langgraph.py` — descriptive filename, sprint-number-agnostic. Same precedent as `scripts/migrate_to_langgraph.py` (which Sprint 7.2 deletes per Phase 6). Deleted at sprint close per the one-shot-tool pattern. ~250 LOC: drive 30 requests through each `USE_LANGGRAPH_WORKFLOW` value, for each thread_id pair query 3 sources, output JSONL.
+
+**D4c (output schema):** JSONL with self-describing rows + bounded/blocking severity:
+
+```jsonl
+{"thread_id": "REQ-...", "dimension": "state_sequence",
+ "langgraph": ["new_request", "requirements_gathering", "..."],
+ "a2a":       ["new_request", "requirements_gathering", "..."],
+ "match": true, "severity": null, "diff": null}
+
+{"thread_id": "REQ-...", "dimension": "audit_trail_shape",
+ "langgraph": ["PHI_ACCESS", "APPROVAL_REQUESTED", "..."],
+ "a2a":       ["PHI_ACCESS", "APPROVAL_REQUESTED", "AUDIT_BREAKER_FIRED", "..."],
+ "match": false, "severity": "bounded",
+ "diff": "LangGraph emits 1 fewer AUDIT_BREAKER_FIRED event per thread; structurally equivalent"}
+
+{"thread_id": "REQ-...", "dimension": "final_state",
+ "langgraph": "complete", "a2a": "delivered",
+ "match": false, "severity": "blocking",
+ "diff": "Terminal state divergence — A2A two-step (delivered→complete) vs LangGraph one-step (complete only)"}
+```
+
+Each row is self-describing: a reader can verify match assessments without re-running the harness. Severity encoding makes the original ADR's "bounded diffs don't block close-out" rule concrete and harness-enforced:
+- `"match": true` — equal, no diff
+- `"match": false, "severity": "bounded"` — acceptable diff, documented in close ADR
+- `"match": false, "severity": "blocking"` — sprint cannot close, requires fix or scope split
+
+**Bounded-vs-blocking classification rules** (encoded in the harness):
+- Per-dimension list of permitted diffs (e.g., `audit_trail_shape` permits ±1 event count for known no-ops; `state_sequence` permits LangGraph emitting `preview_qa_review` where A2A emits `preview_qa` then `qa_review` — same semantic gate, different state names).
+- Anything not in the permitted-diff list defaults to `blocking`. Harness fails the sprint gate if any row is `blocking`.
+
+Pass criterion at sprint close: 0 blocking rows. Bounded rows enumerated in Sprint 7.2 close ADR with rationale.
+
+**Pre-flight check (required BEFORE Phase 1 begins):**
+
+D4's option C depends on LangSmith capturing agent boundaries equivalently for both orchestrators. Per the user-imposed pre-flight gate (2026-05-15 grilling), Phase 1 cannot start until this is verified:
+
+1. Pull one Sprint 8 trace (LangGraph era — confirmed available via Sprint 8.4 trace `62ef0f8c-8920-42a7-bd34-e77edaf65d11` from DECISIONS.md).
+2. Drive one request through `USE_LANGGRAPH_WORKFLOW=false` locally, capture the resulting trace (or check LangSmith for pre-Sprint-7 traces still retained).
+3. Compare trace structure at the agent-boundary level.
+
+**Pass:** both orchestrators emit similar trace span structure (agent boundaries visible, state transitions traced). Dimension 2 works as planned.
+
+**Fail:** A2A significantly under-instrumented. Either define "equivalent under coverage asymmetry" (relax dimension 2 to "agent NAMES match" rather than "trace span sequence matches") or find a fallback signal (`agent_executions` table has per-agent rows with timestamps — usable as dimension 2 source if LangSmith traces aren't reliable for both).
+
+Result of pre-flight + any methodology adjustment landed in this ADR before Phase 1 commits begin.
+
 ---
 
 ## Sprint 8.3 — Cost-per-request ceilings re-derived against measured baselines; Sprint 8 series closes
