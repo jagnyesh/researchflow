@@ -667,8 +667,8 @@ values — any query depending on them only matches pre-LangGraph rows.
 
 Known related issue: app/api/research.py queries
 WHERE current_state IN ('delivered', 'complete'). LangGraph never writes
-'delivered'. Pre-existing latent bug, filed separately — not in
-Sprint 7.2 scope.
+'delivered'. Pre-existing latent bug, filed as #53 — not in
+Sprint 7.2 scope (Sprint 7.2 preserves existing query behavior).
 """
 ```
 
