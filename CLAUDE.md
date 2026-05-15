@@ -11,6 +11,28 @@ AI-powered multi-agent system that automates clinical research data requests fro
 
 Historical sprint reports live in `docs/sprints/archive/`. Don't load them unless explicitly asked.
 
+## Operating discipline: re-examine recommendations when premise may have shifted
+
+Before accepting an agent recommendation as final, ask: "what would have to be
+true for this verdict to be wrong?" Read the cons/concerns section of any
+recommendation twice as carefully as the pros section — the load-bearing
+hand-waved assumption usually lives in the cons.
+
+For diagnostic work: default to empirical confirmation (read the wire, dump
+runtime state, inspect actual values) before scoping fixes. Static analysis
+is insufficient for bugs at interface boundaries (wrappers, third-party APIs,
+async layers, caching). The Sprint 8.2 langchain-anthropic silent transmission
+bug and the Sprint 8.4 aggregator double-charge bug both ran for months
+specifically because tests asserted at the wrapper layer, not the wire layer.
+
+For verdict decisions: pre-commitments defend against bias, not against
+information. When new information reveals a pre-commit's premise was broken,
+deliberate override is appropriate when documented. Precedent: Sprint 6.2
+Phase 1.5 Q1 refinement; Sprint 6.3 verdict revision GO sqlonfhir.
+
+Full context with 10 documented cases: see DECISIONS.md "Recurring workflow
+pattern" section.
+
 ## Quick start
 
 ```bash
