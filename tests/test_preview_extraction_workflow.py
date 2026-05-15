@@ -17,7 +17,8 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 from app.agents.extraction_agent import DataExtractionAgent
 from app.agents.qa_agent import QualityAssuranceAgent
-from app.orchestrator.workflow_engine import WorkflowEngine, WorkflowState
+from app.database.workflow_states import WorkflowState
+from app.orchestrator.workflow_engine import WorkflowEngine
 
 
 @pytest.fixture

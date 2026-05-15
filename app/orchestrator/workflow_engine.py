@@ -4,49 +4,19 @@ Workflow Engine for ResearchFlow
 Manages workflow state transitions and routing logic between agents.
 """
 
-from enum import Enum
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime
 import logging
 
+# Sprint 7.2 Phase 0: WorkflowState was promoted to app/database/workflow_states.py
+# (it's effectively the DB schema enum for research_requests.current_state, used
+# by 5 production callers). The re-export below keeps A2A's internal
+# self-references working until Sprint 7.2 Phase 4 deletes app/orchestrator/
+# entirely. Both import paths resolve to the SAME enum object; there is no
+# parallel definition and no value drift risk.
+from app.database.workflow_states import WorkflowState  # noqa: F401
+
 logger = logging.getLogger(__name__)
-
-
-class WorkflowState(Enum):
-    """Workflow states for research data requests"""
-
-    NEW_REQUEST = "new_request"
-    REQUIREMENTS_GATHERING = "requirements_gathering"
-    REQUIREMENTS_COMPLETE = "requirements_complete"
-
-    # NEW APPROVAL STATES - Human-in-Loop Enhancement
-    REQUIREMENTS_REVIEW = "requirements_review"
-    PHENOTYPE_REVIEW = "phenotype_review"
-    EXTRACTION_APPROVAL = "extraction_approval"
-    QA_REVIEW = "qa_review"
-    SCOPE_CHANGE = "scope_change"
-
-    # PREVIEW EXTRACTION WORKFLOW - Sprint X
-    PREVIEW_EXTRACTION = "preview_extraction"  # Extract 10 rows per data element
-    PREVIEW_QA = "preview_qa"  # Auto QA validation on preview
-    PREVIEW_COMPLETE = "preview_complete"  # Preview validated and approved
-
-    FEASIBILITY_VALIDATION = "feasibility_validation"
-    FEASIBLE = "feasible"
-    NOT_FEASIBLE = "not_feasible"
-    SCHEDULE_KICKOFF = "schedule_kickoff"  # Optional post-delivery
-    KICKOFF_COMPLETE = "kickoff_complete"
-    DATA_EXTRACTION = "data_extraction"  # Full extraction
-    EXTRACTION_COMPLETE = "extraction_complete"
-    QA_VALIDATION = "qa_validation"  # Auto QA validation on full data
-    QA_PASSED = "qa_passed"
-    QA_FAILED = "qa_failed"
-    DELIVERY_REVIEW = "delivery_review"  # Informatician reviews full dataset before delivery
-    DATA_DELIVERY = "data_delivery"
-    DELIVERED = "delivered"
-    COMPLETE = "complete"
-    FAILED = "failed"
-    HUMAN_REVIEW = "human_review"
 
 
 class WorkflowEngine:

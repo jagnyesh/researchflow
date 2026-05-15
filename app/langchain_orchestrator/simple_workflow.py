@@ -1,16 +1,23 @@
 """
-Simple 3-State Workflow using LangGraph (Sprint 2)
+Simple 3-State Workflow using LangGraph (Sprint 2 demo scaffolding — DEPRECATED).
 
-This is a proof-of-concept to evaluate LangGraph's StateGraph
-as an alternative to the custom workflow FSM.
+This is a proof-of-concept built during the Sprint 4→7 LangGraph migration
+tracer bullet. Sprint 7 finalized the migration on `FullWorkflow` (17 nodes)
+in langgraph_workflow.py; this module's only purpose was to validate the
+LangGraph StateGraph pattern against a minimal 3-state example.
 
-States:
+**Deprecated since Sprint 7.** Retained for historical reference. Zero
+production callers — only its own test file (`tests/workflows/test_simple_workflow.py`)
+imports `SimpleWorkflow`. Slated for deletion in Sprint 7.3 candidate (see
+BACKLOG.md). Sprint 7.2 Phase 0 D2b decision renamed the local `SimpleWorkflowState`
+TypedDict to `SimpleSimpleWorkflowState` as a bridge measure — resolves the name
+collision with the promoted A2A `SimpleWorkflowState` enum at
+`app/database/workflow_states.py`.
+
+States exercised by the original demo:
 1. new_request - Initial state when request is created
 2. requirements_gathering - Requirements Agent is gathering requirements
 3. complete - Requirements gathered and approved
-
-Purpose: Evaluate if LangGraph provides advantages over custom FSM
-Status: Experimental - Sprint 2
 """
 
 import logging
@@ -24,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 
 # Define the state schema
-class WorkflowState(TypedDict):
+class SimpleWorkflowState(TypedDict):
     """
     State schema for the simple workflow
 
@@ -75,8 +82,8 @@ class SimpleWorkflow:
         This is much more declarative than the custom FSM's
         transition table in workflow_engine.py
         """
-        # Create graph with WorkflowState schema
-        graph = StateGraph(WorkflowState)
+        # Create graph with SimpleWorkflowState schema
+        graph = StateGraph(SimpleWorkflowState)
 
         # Add nodes (states)
         graph.add_node("new_request", self._handle_new_request)
@@ -105,7 +112,7 @@ class SimpleWorkflow:
 
         return graph
 
-    def _handle_new_request(self, state: WorkflowState) -> WorkflowState:
+    def _handle_new_request(self, state: SimpleWorkflowState) -> SimpleWorkflowState:
         """
         Handle new request state
 
@@ -132,7 +139,7 @@ class SimpleWorkflow:
 
         return state
 
-    def _handle_requirements_gathering(self, state: WorkflowState) -> WorkflowState:
+    def _handle_requirements_gathering(self, state: SimpleWorkflowState) -> SimpleWorkflowState:
         """
         Handle requirements gathering state
 
@@ -169,7 +176,7 @@ class SimpleWorkflow:
         return state
 
     def _route_after_requirements(
-        self, state: WorkflowState
+        self, state: SimpleWorkflowState
     ) -> Literal["complete", "wait_for_input"]:
         """
         Conditional routing after requirements gathering
@@ -188,7 +195,7 @@ class SimpleWorkflow:
             logger.info(f"[SimpleWorkflow] Routing to END - waiting for more user input")
             return "wait_for_input"
 
-    def _handle_complete(self, state: WorkflowState) -> WorkflowState:
+    def _handle_complete(self, state: SimpleWorkflowState) -> SimpleWorkflowState:
         """
         Handle complete state
 
@@ -203,7 +210,7 @@ class SimpleWorkflow:
 
         return state
 
-    async def run(self, initial_state: WorkflowState) -> WorkflowState:
+    async def run(self, initial_state: SimpleWorkflowState) -> SimpleWorkflowState:
         """
         Run the workflow from initial state to completion
 

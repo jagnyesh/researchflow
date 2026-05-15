@@ -8,7 +8,8 @@ Verifies that when requirements_complete is False, the workflow:
 """
 
 import pytest
-from app.orchestrator.workflow_engine import WorkflowEngine, WorkflowState
+from app.database.workflow_states import WorkflowState
+from app.orchestrator.workflow_engine import WorkflowEngine
 
 
 class TestIncompleteRequirementsWorkflow:

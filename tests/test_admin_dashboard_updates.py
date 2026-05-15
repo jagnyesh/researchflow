@@ -40,7 +40,7 @@ async def create_test_request(query: str, researcher_info: dict) -> str:
     Helper to create a test request in database without starting workflow.
     Simulates what Researcher Portal does but avoids premature workflow completion.
     """
-    from app.orchestrator.workflow_engine import WorkflowState
+    from app.database.workflow_states import WorkflowState
     from datetime import datetime
     import uuid
 

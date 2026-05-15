@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.database import get_db_session, ResearchRequest, Approval
 from app.services.approval_service import ApprovalService
-from app.orchestrator.workflow_engine import WorkflowState
+from app.database.workflow_states import WorkflowState
 import requests
 
 

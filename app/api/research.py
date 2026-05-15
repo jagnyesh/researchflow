@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 from ..database import get_db_session, ResearchRequest, DataDelivery
-from ..orchestrator.workflow_engine import WorkflowState
+from ..database.workflow_states import WorkflowState
 from ..services.file_storage import FileStorageService
 from ..schemas.research import ResearchRequestSubmission, RequestProcessingTrigger
 from sqlalchemy import select
