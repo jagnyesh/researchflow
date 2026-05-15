@@ -104,20 +104,42 @@ async def test_materialize_view_routes_unmarked_to_custom_branch():
 
 
 # ---------------------------------------------------------------------------
-# Test 2 (cycle 3 tracer bullet) — end-to-end condition_diagnoses via sqlonfhir
+# Tests 2-4 (cycle 3 + cycle 4) — end-to-end MV materialization via sqlonfhir
 # ---------------------------------------------------------------------------
 
-# Expected oracle count from tests/fixtures/mv_row_count_oracles.sql at sprint
-# start (2026-05-15). The 1% gate measures actual count against this anchor.
-# See the oracle SQL file's comment block for the WHERE-clause replication
-# and the data observation explaining the status distribution.
-#
-# Distribution: 'active' = 3,582 + 'resolved' = 11,250 = 14,832. The other
-# three OR-set statuses ('recurrence', 'relapse', 'remission') don't appear
-# in current Synthea data. All 14,832 stored Conditions pass the view-def
-# WHERE clause for today's corpus.
-CONDITION_DIAGNOSES_ORACLE_AT_SPRINT_START = 14832
+# Expected oracle counts from tests/fixtures/mv_row_count_oracles.sql,
+# anchored at sprint start (2026-05-15). The 1% gate measures actual count
+# against these anchors. See the oracle SQL file's comment blocks for each
+# view-def's WHERE-clause replication and data observations.
+MV_ORACLES = {
+    # condition_diagnoses (cycle 3): WHERE clause matches both 'active' and
+    # 'resolved' in current Synthea data; all 14,832 stored Conditions pass.
+    "condition_diagnoses": {
+        "oracle_count": 14832,
+        "resource_type": "Condition",
+    },
+    # observation_labs (cycle 4): laboratory category AND finalized status;
+    # ~68.6% of 229,870 Observations qualify.
+    "observation_labs": {
+        "oracle_count": 157689,
+        "resource_type": "Observation",
+    },
+    # procedure_history (cycle 4): Synthea only emits 'completed' status, so
+    # the WHERE clause filter is effectively a no-op against current data.
+    # The 3 forEachOrNull blocks preserve a row per Procedure when arrays
+    # are empty (verified by Sprint 6.3 spike: 30/30 Procedures → 30 rows).
+    "procedure_history": {
+        "oracle_count": 66448,
+        "resource_type": "Procedure",
+    },
+}
+
 ORACLE_TOLERANCE_PCT = 1.0
+
+# Per Sprint 6.4 #40 gate #3: observation_labs materialization ≤ 60s.
+# Inherited from Sprint 6.3 spike C4 threshold. observation_labs is the
+# load test because it has the largest input set (229k Observations).
+OBSERVATION_LABS_MATERIALIZATION_BUDGET_S = 60.0
 
 
 async def _hapi_reachable() -> bool:
@@ -138,26 +160,26 @@ async def _hapi_reachable() -> bool:
 
 @pytest.mark.asyncio
 @pytest.mark.requires_hapi
-async def test_condition_diagnoses_materialized_via_sqlonfhir_end_to_end():
-    """Sprint 6.4 cycle 3 tracer bullet — end-to-end condition_diagnoses.
+@pytest.mark.parametrize("view_name", list(MV_ORACLES.keys()))
+async def test_mv_materialized_via_sqlonfhir_end_to_end(view_name):
+    """Sprint 6.4 cycle 3 (condition_diagnoses) + cycle 4 (observation_labs,
+    procedure_history) — end-to-end materialization via sqlonfhir.
 
-    Full path:
-      1. Load condition_diagnoses.json view-def (must declare
-         runner_hint: "sqlonfhir" — set in cycle 3)
+    Full path per MV:
+      1. Load <mv>.json view-def (must declare `runner_hint: "sqlonfhir"`)
       2. ViewMaterializer.materialize_view() dispatches to
          _materialize_via_sqlonfhir()
-      3. fetch_fhir_resources_for_view() reads Conditions from HAPI :5433
-         (hfj_resource + hfj_res_ver JOIN; fhir_id merged into JSON)
-      4. sqlonfhir.evaluate() produces rows
-      5. CREATE TABLE sqlonfhir.condition_diagnoses + TRUNCATE + INSERT
-      6. Row count matches the oracle SQL in
-         tests/fixtures/mv_row_count_oracles.sql within 1%
+      3. fetch_fhir_resources_for_view() reads <resource> resources from
+         HAPI :5433 (hfj_resource + hfj_res_ver JOIN; fhir_id merged into
+         each parsed JSON dict)
+      4. sqlonfhir.evaluate() produces rows in-memory
+      5. CREATE TABLE sqlonfhir.<mv> + TRUNCATE + INSERT via executemany
+      6. Row count matches oracle within 1% (gate #1)
+      7. Every row has non-NULL id (fhir_id merge verification)
 
-    Sanity assertion (covers the fhir_id merge requirement surfaced during
-    exploration): every materialized row must have non-NULL id. Without
-    the merge in fetch_fhir_resources_for_view(), the JSON stored by HAPI
-    lacks `id` and the view-def's `id` path resolves to NULL, breaking
-    the UNIQUE INDEX assertion.
+    For observation_labs additionally: gate #3 perf budget — total
+    materialization wall-clock ≤ 60s. observation_labs has the largest
+    input set (229k Observations) so it's the load test for the budget.
     """
     if not await _hapi_reachable():
         pytest.skip("requires_hapi: HAPI Postgres :5433 not reachable")
@@ -167,51 +189,56 @@ async def test_condition_diagnoses_materialized_via_sqlonfhir_end_to_end():
     )
     materializer = ViewMaterializer(db_url)
 
-    # Load condition_diagnoses view-def — must declare runner_hint
     view_def_path = (
-        Path(__file__).resolve().parents[1]
-        / "app/sql_on_fhir/view_definitions/condition_diagnoses.json"
+        Path(__file__).resolve().parents[1] / f"app/sql_on_fhir/view_definitions/{view_name}.json"
     )
     with open(view_def_path) as f:
         view_def = json.load(f)
     assert view_def.get("runner_hint") == "sqlonfhir", (
-        'condition_diagnoses.json must declare `runner_hint: "sqlonfhir"` for '
-        "cycle 3. If this assertion fails, the view-def hasn't been migrated yet."
+        f'{view_name}.json must declare `runner_hint: "sqlonfhir"` for the '
+        "sqlonfhir backend path to be exercised. If this assertion fails, "
+        "the view-def hasn't been migrated yet."
     )
+
+    spec = MV_ORACLES[view_name]
+    oracle_count = spec["oracle_count"]
+    resource_type = spec["resource_type"]
 
     conn = await asyncpg.connect(db_url)
     try:
         await materializer.create_schema(conn)
-        result = await materializer.materialize_view(
-            conn, "condition_diagnoses", view_def, "Condition"
-        )
-        assert result, "materialize_view should return truthy on success"
+        import time
 
-        # Row count vs oracle anchored at sprint start (gate #1, 1% tolerance)
-        actual = await conn.fetchval("SELECT count(*) FROM sqlonfhir.condition_diagnoses")
-        delta_pct = (
-            abs(actual - CONDITION_DIAGNOSES_ORACLE_AT_SPRINT_START)
-            / CONDITION_DIAGNOSES_ORACLE_AT_SPRINT_START
-            * 100
-        )
+        t0 = time.monotonic()
+        result = await materializer.materialize_view(conn, view_name, view_def, resource_type)
+        elapsed_s = time.monotonic() - t0
+        assert result, f"materialize_view({view_name}) should return truthy on success"
+
+        # Gate #3 — perf budget for observation_labs only (the load test)
+        if view_name == "observation_labs":
+            assert elapsed_s <= OBSERVATION_LABS_MATERIALIZATION_BUDGET_S, (
+                f"observation_labs materialization took {elapsed_s:.1f}s, "
+                f"exceeds gate #3 budget of {OBSERVATION_LABS_MATERIALIZATION_BUDGET_S:.0f}s. "
+                f"Per Sprint 6.3 spike C4 threshold."
+            )
+
+        # Gate #1 — row count vs oracle anchored at sprint start (1% tolerance)
+        actual = await conn.fetchval(f"SELECT count(*) FROM sqlonfhir.{view_name}")
+        delta_pct = abs(actual - oracle_count) / oracle_count * 100
         assert delta_pct < ORACLE_TOLERANCE_PCT, (
-            f"condition_diagnoses row count {actual} differs from oracle "
-            f"{CONDITION_DIAGNOSES_ORACLE_AT_SPRINT_START} by {delta_pct:.2f}% "
-            f"(> {ORACLE_TOLERANCE_PCT}% tolerance). See "
+            f"{view_name} row count {actual} differs from oracle {oracle_count} "
+            f"by {delta_pct:.2f}% (> {ORACLE_TOLERANCE_PCT}% tolerance). See "
             f"tests/fixtures/mv_row_count_oracles.sql for the oracle's WHERE "
             f"clause and data observations."
         )
 
-        # Sanity: every row has non-NULL id (verifies fhir_id merge worked).
-        # Without the merge, view-def's id path resolves to NULL and UNIQUE
-        # INDEX creation fails earlier — but check explicitly so the test
-        # surfaces the exact failure mode.
+        # Sanity: every row has non-NULL id (fhir_id merge verification)
         null_id_count = await conn.fetchval(
-            "SELECT count(*) FROM sqlonfhir.condition_diagnoses WHERE id IS NULL"
+            f"SELECT count(*) FROM sqlonfhir.{view_name} WHERE id IS NULL"
         )
         assert null_id_count == 0, (
-            f"{null_id_count} rows have NULL id. The fhir_id merge in "
-            f"fetch_fhir_resources_for_view() may not have applied."
+            f"{view_name}: {null_id_count} rows have NULL id. The fhir_id "
+            f"merge in fetch_fhir_resources_for_view() may not have applied."
         )
     finally:
         await conn.close()

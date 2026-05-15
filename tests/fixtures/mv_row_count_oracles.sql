@@ -51,10 +51,53 @@ WHERE r.res_type = 'Condition'
   );
 
 -- ============================================================================
--- observation_labs + procedure_history oracles to be added in cycle 4.
+-- observation_labs
 -- ============================================================================
--- Cycle 4 implementer: the WHERE clauses for those view-defs are different
--- shapes (`category.coding.where(system=X and code=Y).exists()` for
--- observation_labs; `status in ('completed' | 'in-progress')` for
--- procedure_history). Replicate each WHERE in the same JSONB-containment
--- pattern; capture sprint-start counts in comments.
+-- View-def WHERE clauses (AND'd together):
+--   1. category.coding.where(
+--        system = 'http://terminology.hl7.org/CodeSystem/observation-category'
+--        and code = 'laboratory'
+--      ).exists()
+--   2. status in ('final' | 'amended' | 'corrected')
+--
+-- Data observation (2026-05-15, Sprint 6.4 cycle 4 measurement against HAPI
+-- :5433 Synthea load): Synthea produces multiple Observation categories
+-- (vital-signs, laboratory, survey) and the lab-category filter is the
+-- dominant reducer. ~68.6% of all Observations are laboratory + finalized.
+--
+-- Expected at sprint start 2026-05-15: 157,689 rows (of 229,870 total
+-- Observations).
+SELECT count(*) AS observation_labs_oracle
+FROM hfj_resource r
+JOIN hfj_res_ver v ON v.res_id = r.res_id AND v.res_ver = r.res_ver
+WHERE r.res_type = 'Observation'
+  AND r.res_deleted_at IS NULL
+  AND v.res_text_vc::jsonb #> '{category}' @>
+        '[{"coding":[{"system":"http://terminology.hl7.org/CodeSystem/observation-category","code":"laboratory"}]}]'::jsonb
+  AND v.res_text_vc::jsonb ->> 'status' IN ('final', 'amended', 'corrected');
+
+-- ============================================================================
+-- procedure_history
+-- ============================================================================
+-- View-def WHERE clause:
+--   status in ('completed' | 'in-progress')
+--
+-- View-def shape note: procedure_history has 3 forEachOrNull blocks
+-- (performer, reasonCode, bodySite). forEachOrNull preserves a row when
+-- the array is empty (yielding NULLs in the nested columns). Sprint 6.3
+-- spike empirically verified 30/30 Synthea Procedures (all 0×0×0 for
+-- nested arrays) → 30 rows. Extrapolating to full corpus: ~1 row per
+-- Procedure.
+--
+-- Data observation (2026-05-15): Synthea only emits 'completed' status
+-- (66,448 rows of 66,448 total Procedures). The WHERE clause is
+-- effectively a no-op for current data but documents intent for future
+-- ingestion that includes 'in-progress' statuses.
+--
+-- Expected at sprint start 2026-05-15: 66,448 rows.
+SELECT count(*) AS procedure_history_oracle
+FROM hfj_resource r
+JOIN hfj_res_ver v ON v.res_id = r.res_id AND v.res_ver = r.res_ver
+WHERE r.res_type = 'Procedure'
+  AND r.res_deleted_at IS NULL
+  AND v.res_text_vc::jsonb ->> 'status' IN ('completed', 'in-progress');
