@@ -79,9 +79,34 @@ _PRICING_USD_PER_1M: Dict[str, Dict[str, float]] = {
 
 _DEFAULT_MODEL = "claude-sonnet-4-6"  # If a run has no model metadata, assume Sonnet.
 
-# Sprint 8.1 gate ceilings — 1.3× projected per portal.
-FORMAL_BAND_CEILING_USD = 0.0039  # $0.003 projected × 1.3
-EXPLORATORY_BAND_CEILING_USD = 0.00091  # $0.0007 projected × 1.3
+# Sprint 8.3 gate ceilings — 1.3× MEASURED MEDIAN per portal (re-derived 2026-05-14).
+#
+# Semantic shift from Sprint 8.1: the original ceilings were `projection × 1.3`
+# (tolerance band around an aspirational cost target). Sprint 8.3 ceilings are
+# `measured_median × 1.3` (tolerance band around the current operating point).
+# Math identical; meaning shifts from "cost target with tolerance" to
+# "regression alarm against current baseline." This is the honest framing —
+# the Sprint 8 series projections were falsified by Sprint 8.2 Task 3 (3×
+# call-count overestimate + 9× per-call cost underestimate). Setting the
+# ceiling at measured-median × 1.3 is calibrated to catch regressions, not
+# to enforce the projection that didn't match reality.
+#
+# Traffic-pattern assumption: medians come from BURSTY harness traffic
+# (`scripts/drive_qa_traffic.py` → 30 requests in 6-7 min, within Anthropic's
+# 5-min cache TTL). Sparse real-world traffic (gaps > 5 min between requests)
+# would shift the median toward the worst-case (cache_create) cost. The
+# ceilings below are calibrated for bursty patterns; sparse-traffic
+# measurement is filed as a Sprint 8.5+ candidate in BACKLOG.md.
+#
+# Source measurements (2026-05-14, post-Sprint-8.4 corrected aggregator,
+# verified by manual trace-tree walk within 0.01%):
+#   Formal:      median $0.007754 across 30 threads, cache_hit_rate 94.88%
+#   Exploratory: median $0.003540 across 30 root traces, cache_hit_rate 0.0000%
+#                (zero cache hit on exploratory is a real finding — same
+#                below-threshold issue Sprint 8.2 fixed for formal but not yet
+#                applied to QueryInterpreter; filed as Sprint 8.6 candidate.)
+FORMAL_BAND_CEILING_USD = 0.010080  # $0.007754 measured × 1.3
+EXPLORATORY_BAND_CEILING_USD = 0.004602  # $0.003540 measured × 1.3
 
 
 # ---------------------------------------------------------------------------

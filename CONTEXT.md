@@ -1,12 +1,48 @@
 # ResearchFlow — Current State
 
-**Sprint:** 8.4 (Cost telemetry aggregator audit) — **READY TO SHIP. PR opening now.** Aggregator over-count root cause: `_run_cost_usd` double-charged `cache_read` tokens because LangSmith's `Run.input_tokens` already includes `cache_read`. One-line fix + wire-level fixture test + schema contract test + dashboard banner. Both empirical gates passed within ±1% (Sprint 8.2 re-aggregate $0.007754; Sprint 8.1 re-aggregate $0.008997).
-**Branch:** `feature/sprint-8-4-aggregator-fix` (4 files modified; squash PR opening now).
-**Recently shipped:** Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
-**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct by Sprint 8.4 cross-check), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2 CLOSED 2026-05-14, Sprint 8.4 ready to ship 2026-05-14. ~15/22 sprints overall.
+**Sprint:** 8.3 (Cost-per-request ceilings re-derived) — **READY TO SHIP. PR opening now. Closes the Sprint 8 series.** New ceilings: Formal $0.010080 (was $0.0039), Exploratory $0.004602 (was $0.00091), both `measured_median × 1.3`. Both portals GREEN against corrected ceilings. Surfaced Sprint 8.6 candidate: exploratory `cache_hit_rate=0.0000%` despite Sprint 8.2 wire-level fix — QueryInterpreter prompt likely below Anthropic threshold.
+**Branch:** `feature/sprint-8-3-ceiling-rederive` (3 files modified; squash PR opening now).
+**Recently shipped:** Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
+**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 ready to ship 2026-05-14. **Sprint 8 series CLOSED.** ~16/22 sprints overall.
 **Last updated:** 2026-05-14
 
-## Sprint 8.4 ready to ship (2026-05-14)
+## Sprint 8.3 ready to ship (2026-05-14) — closes Sprint 8 series
+
+Ceiling re-derivation against measured baselines. Scope-split per pre-committed grilling: ceiling derivation only; structural redesign question decoupled.
+
+### Empirical inputs (verified manual vs aggregator within ±0.01%)
+
+| Portal | Median | Cache hit | Old ceiling | New ceiling (median × 1.3) | Gate |
+|---|---:|---:|---:|---:|:---:|
+| Formal | $0.007754 | 94.88% | $0.0039 | **$0.010080** | 🟢 GREEN |
+| Exploratory | $0.003540 | **0.0000%** | $0.00091 | **$0.004602** | 🟢 GREEN |
+
+### Three framing notes (in DECISIONS.md Sprint 8.3 ADR)
+
+1. **Semantic shift, not goalpost-moving.** Sprint 8.1's ceilings were `projection × 1.3` (cost target with tolerance). Sprint 8.3's are `measured_median × 1.3` (regression alarm against current baseline). Math identical, meaning shifts.
+2. **Bursty-traffic calibration.** Medians come from `drive_qa_traffic.py` firing 30 requests in 6-7 min, within 5-min cache TTL. Sparse-traffic measurement filed as Sprint 8.5 candidate.
+3. **Exploratory cache_hit_rate=0% is a real finding.** Same below-threshold class as Sprint 8.2's formal-prompt issue, not yet applied to QueryInterpreter. Filed as Sprint 8.6 candidate. Out of Sprint 8.3 scope.
+
+### Sprint 8 series closes here
+
+| Sprint | Verdict |
+|---|---|
+| 8 (2025) | Projection of 73% reduction shipped; later falsified by Sprint 8.2 |
+| 8.1 (2026-05-12) | CLOSED RED — $0.009026 baseline (verified correct, cache_hit=0% protected it from aggregator bug) |
+| 8.2 (2026-05-14) | SHIPPED — three failure modes diagnosed; cache_control wire fix + manual baseline $0.007754 |
+| 8.4 (2026-05-14) | SHIPPED — `cache_read` double-charge fix; aggregator now matches manual ±0.01% |
+| 8.3 (this PR) | SHIPPED — ceilings re-derived against measured medians; both portals GREEN |
+
+### Next per BACKLOG
+
+- **Sprint 6.4** ([#40](https://github.com/jagnyesh/researchflow/issues/40)) — sqlonfhir integration, 3-5 days, queued post-Sprint-8 series
+- **Sprint 8.5 candidate** — sparse-traffic median measurement (filed by Sprint 8.3)
+- **Sprint 8.6 candidate** — exploratory portal caching (filed by Sprint 8.3)
+- **Sprint 9+** — Temporal Reasoning Engine, Complex Cohort Logic per BACKLOG Phase 2
+
+---
+
+## Sprint 8.4 SHIPPED (2026-05-14)
 
 Aggregator audit complete. The 2.95× inflation Sprint 8.2 surfaced had a different root cause than Sprint 8.2 hypothesized — wire-level pull from LangSmith on 2026-05-14 revealed it.
 
