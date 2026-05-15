@@ -5,6 +5,7 @@
   "title": "Patient Conditions and Diagnoses",
   "description": "Patient conditions, diagnoses, and problems with clinical status and coding",
   "status": "active",
+  "runner_hint": "sqlonfhir",
   "select": [
     {
       "column": [

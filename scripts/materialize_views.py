@@ -27,7 +27,10 @@ from typing import List, Dict, Any
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import sqlonfhir
+
 from app.sql_on_fhir.runner.backend_dispatcher import select_backend
+from app.sql_on_fhir.runner.hapi_db_resource_reader import fetch_fhir_resources_for_view
 from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from app.sql_on_fhir.runner.postgres_runner import PostgresRunner
 
@@ -84,51 +87,39 @@ class ViewMaterializer:
 
         return view_defs
 
-    def _build_view_sql(self, view_def: Dict[str, Any]) -> str:
-        """Build SQL for a view-def using the dispatched FHIRPath backend.
-
-        Sprint 6.4 cycle 2 — wires the backend_dispatcher.select_backend()
-        dispatch primitive (cycle 1) into the materializer's write path.
-        View-defs with `runner_hint: "sqlonfhir"` take the sqlonfhir branch
-        (stubbed below; cycle 3 lifts the real sqlonfhir.evaluate() call).
-        View-defs without the field (or with `"custom"`) route to the
-        existing custom transpiler — backward compat for the 4 working MVs.
-
-        Returns the SQL string that gets wrapped in
-        `CREATE MATERIALIZED VIEW ... AS <sql>` by the caller.
-        """
-        backend = select_backend(view_def)
-        if backend == "sqlonfhir":
-            return self._build_sqlonfhir_sql(view_def)
-        # custom backend (default — backward compatibility path)
-        query = self.runner.builder.build_query(view_definition=view_def)
-        return query.sql
-
-    def _build_sqlonfhir_sql(self, view_def: Dict[str, Any]) -> str:
-        """Sprint 6.4 cycle 3 will implement this.
-
-        Cycle 2 leaves the stub so dispatch routing is testable end-to-end
-        before the sqlonfhir backend is wired. The raise signals
-        "dispatch routing reached this branch" in cycle 2 tests.
-        """
-        raise NotImplementedError(
-            "sqlonfhir backend wiring is cycle 3 of Sprint 6.4 — see issue #40"
-        )
-
     async def materialize_view(
         self, conn: asyncpg.Connection, view_name: str, view_def: Dict[str, Any], resource_type: str
     ):
-        """Create a materialized view for a ViewDefinition."""
+        """Dispatch to the right backend and materialize the view.
+
+        Sprint 6.4 cycle 3 — refactored from cycle 2's _build_view_sql() seam.
+        sqlonfhir doesn't produce SQL (returns rows from in-memory FHIRPath
+        evaluation), so the two backends produce different artifacts and
+        need different storage paths. Embracing the asymmetry:
+
+          - custom backend: CREATE MATERIALIZED VIEW ... AS <sql> (existing)
+          - sqlonfhir backend: CREATE TABLE + TRUNCATE + INSERT (cycle 3)
+
+        See Sprint 6.4 ADR for the operational impact of the storage
+        asymmetry on refresh mechanics.
+        """
+        backend = select_backend(view_def)
+        if backend == "sqlonfhir":
+            return await self._materialize_via_sqlonfhir(conn, view_name, view_def, resource_type)
+        return await self._materialize_via_custom(conn, view_name, view_def, resource_type)
+
+    async def _materialize_via_custom(
+        self, conn: asyncpg.Connection, view_name: str, view_def: Dict[str, Any], resource_type: str
+    ):
+        """Custom transpiler path: build SQL and CREATE MATERIALIZED VIEW."""
         try:
             logger.info(f"\n{'='*60}")
-            logger.info(f"Materializing view: {view_name}")
+            logger.info(f"Materializing view: {view_name} (custom transpiler)")
             logger.info(f"{'='*60}")
 
-            # Generate SQL via the dispatched FHIRPath backend (Sprint 6.4 cycle 2).
-            # _build_view_sql() consults select_backend() to choose between the
-            # custom transpiler (default) and sqlonfhir (cycle 3).
             logger.info(f"  Generating SQL for {resource_type}...")
-            generated_sql = self._build_view_sql(view_def)
+            query = self.runner.builder.build_query(view_definition=view_def)
+            generated_sql = query.sql
 
             if not generated_sql:
                 logger.error(f"  ❌ No SQL generated for {view_name}")
@@ -152,10 +143,7 @@ class ViewMaterializer:
             logger.info(f"  ✅ Materialized view created: {SCHEMA_NAME}.{view_name}")
 
             # Decision 8A (issue #13): UNIQUE INDEX on id is required for
-            # REFRESH MATERIALIZED VIEW CONCURRENTLY (Phase 2.0). Without it,
-            # refresh takes an exclusive lock that blocks every reader for the
-            # full refresh duration (30+ seconds for the observation_labs view).
-            # Depends on Bug 1 fix (#10) — id must not be NULL.
+            # REFRESH MATERIALIZED VIEW CONCURRENTLY (Phase 2.0).
             try:
                 index_sql = (
                     f"CREATE UNIQUE INDEX IF NOT EXISTS {view_name}_id_idx "
@@ -164,10 +152,6 @@ class ViewMaterializer:
                 await conn.execute(index_sql)
                 logger.info(f"  ✅ Created UNIQUE INDEX on id")
             except Exception as idx_err:
-                # If id has duplicates (e.g., view def emits one row per forEach
-                # iteration without id being a natural key), the unique index
-                # fails. Log and continue — view still materialized, but
-                # CONCURRENTLY refresh won't work for this view.
                 logger.warning(
                     f"  ⚠ UNIQUE INDEX on id failed: {idx_err}. "
                     f"REFRESH MATERIALIZED VIEW CONCURRENTLY will not work for "
@@ -185,6 +169,127 @@ class ViewMaterializer:
 
         except Exception as e:
             logger.error(f"  ❌ Failed to materialize {view_name}: {e}")
+            logger.exception(e)
+            return False
+
+    async def _materialize_via_sqlonfhir(
+        self, conn: asyncpg.Connection, view_name: str, view_def: Dict[str, Any], resource_type: str
+    ):
+        """sqlonfhir backend path (Sprint 6.4 cycle 3).
+
+        Fetch FHIR resources from HAPI :5433 Postgres directly, evaluate
+        the view-def via sqlonfhir.evaluate() in-memory, and write rows
+        to a regular Postgres TABLE (not a materialized view — sqlonfhir
+        produces rows, not SQL).
+
+        Refresh mechanics differ from the custom path:
+          - custom: REFRESH MATERIALIZED VIEW CONCURRENTLY
+          - sqlonfhir (here): TRUNCATE + INSERT (idempotent re-run)
+
+        Schema for the destination table is declared explicitly from the
+        view-def's column declarations — fail-fast on malformed view-defs
+        rather than inferring schema from the first row.
+        """
+        try:
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Materializing view: {view_name} (sqlonfhir)")
+            logger.info(f"{'='*60}")
+
+            # Fetch FHIR resources from HAPI's internal Postgres
+            logger.info(f"  Reading {resource_type} resources from HAPI :5433...")
+            resources = await fetch_fhir_resources_for_view(conn, view_def)
+            logger.info(f"  ✅ Loaded {len(resources):,} {resource_type} resource(s)")
+
+            # In-memory FHIRPath evaluation via sqlonfhir
+            logger.info(f"  Evaluating view-def via sqlonfhir.evaluate()...")
+            rows = sqlonfhir.evaluate(resources, view_def)
+            logger.info(f"  ✅ Produced {len(rows):,} row(s)")
+
+            # Build explicit column schema from view-def declarations
+            columns: List[str] = []
+            for select_block in view_def.get("select", []):
+                for col in select_block.get("column", []):
+                    name = col.get("name")
+                    if not name:
+                        raise ValueError(f"view-def {view_name} has a column without a name field")
+                    if name not in columns:
+                        columns.append(name)
+            if not columns:
+                raise ValueError(f"view-def {view_name} declared no columns; cannot create table")
+
+            # Drop any prior object at this name. Sprint 6.4 converts
+            # previously-materialized-view objects (Sprint 6.2 era) to plain
+            # tables for sqlonfhir-backed paths. Postgres's DROP ... IF EXISTS
+            # only suppresses "not found"; it raises "wrong object type" if
+            # something exists but of the other kind. So we check pg_class
+            # first and dispatch to the matching DROP statement.
+            existing_kind = await conn.fetchval(
+                """
+                SELECT c.relkind
+                FROM pg_class c
+                JOIN pg_namespace n ON c.relnamespace = n.oid
+                WHERE n.nspname = $1 AND c.relname = $2
+                """,
+                SCHEMA_NAME,
+                view_name,
+            )
+            # asyncpg returns pg_class.relkind as a single-byte `bytes` object
+            # (Postgres `char` type), so compare against b"m" / b"r" not "m" / "r".
+            if existing_kind == b"m":  # materialized view
+                logger.info(f"  Dropping prior materialized view {SCHEMA_NAME}.{view_name}...")
+                await conn.execute(f"DROP MATERIALIZED VIEW {SCHEMA_NAME}.{view_name} CASCADE")
+            elif existing_kind == b"r":  # ordinary table
+                logger.info(f"  Dropping prior table {SCHEMA_NAME}.{view_name}...")
+                await conn.execute(f"DROP TABLE {SCHEMA_NAME}.{view_name} CASCADE")
+            # existing_kind is None when no object exists; nothing to drop
+
+            # CREATE TABLE — schema declared explicitly from view-def columns.
+            # Typed as TEXT for now (sqlonfhir output is JSON-typed); future
+            # cycle may infer typed columns from view-def path expressions.
+            col_defs = ", ".join(f'"{c}" TEXT' for c in columns)
+            create_sql = f"CREATE TABLE {SCHEMA_NAME}.{view_name} ({col_defs})"
+            logger.info(f"  Creating table...")
+            await conn.execute(create_sql)
+
+            if rows:
+                placeholders = ", ".join(f"${i + 1}" for i in range(len(columns)))
+                col_list = ", ".join(f'"{c}"' for c in columns)
+                insert_sql = (
+                    f"INSERT INTO {SCHEMA_NAME}.{view_name} ({col_list}) "
+                    f"VALUES ({placeholders})"
+                )
+                logger.info(f"  Inserting {len(rows):,} rows...")
+                records = [
+                    tuple(None if row.get(c) is None else str(row.get(c)) for c in columns)
+                    for row in rows
+                ]
+                await conn.executemany(insert_sql, records)
+                logger.info(f"  ✅ Inserted {len(records):,} rows")
+
+            # UNIQUE INDEX on id — matches the custom path's invariant.
+            # If sqlonfhir produced rows with NULL id (e.g., fhir_id merge
+            # failed in fetch_fhir_resources_for_view), this fails loudly.
+            try:
+                index_sql = (
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {view_name}_id_idx "
+                    f"ON {SCHEMA_NAME}.{view_name} (id)"
+                )
+                await conn.execute(index_sql)
+                logger.info(f"  ✅ Created UNIQUE INDEX on id")
+            except Exception as idx_err:
+                logger.warning(
+                    f"  ⚠ UNIQUE INDEX on id failed: {idx_err}. "
+                    f"Check that fhir_id merge in fetch_fhir_resources_for_view "
+                    f"applied correctly (NULL ids in sqlonfhir output are the "
+                    f"usual cause)."
+                )
+
+            row_count = await conn.fetchval(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{view_name}")
+            logger.info(f"  📊 Row count: {row_count:,}")
+            return True
+
+        except Exception as e:
+            logger.error(f"  ❌ Failed to materialize {view_name} via sqlonfhir: {e}")
             logger.exception(e)
             return False
 
