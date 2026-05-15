@@ -691,6 +691,33 @@ The original ADR's 8 phases assumed `app/orchestrator/` deletion was the lift. T
 
 **Sprint 7.2 still preserves existing behavior, not improves it.** The `delivered`/`complete` latent bug stays bug-for-bug because Sprint 7.2's pre-committed gate is structural parity, not correctness fixes. The bug is filed separately, fixed in a future sprint.
 
+### Phase 6 risk + realistic estimate
+
+D3 grilling locked the per-file test verdict: 5 PORT + 2 SPLIT + 3 DELETE.
+
+| File | LOC | Verdict | Rationale |
+|---|---:|---|---|
+| `tests/test_agent_handoffs.py` | 431 | PORT | Behavioral test of agent routing + approval pause/resume; in-place port to `LangGraphRequestFacade` |
+| `tests/test_admin_dashboard_updates.py` | 477 | PORT | Dashboard behavior must still work post Sprint 7.2 |
+| `tests/test_nlp_to_sql_workflow.py` | 316 | PORT | Canonical formal-portal e2e flow LangGraph runs today |
+| `tests/test_workflow_incomplete_requirements.py` | 173 | DELETE | All 6 tests exercise A2A-only API surface (`WorkflowEngine.determine_next_step`, `workflow_rules`, `is_terminal_state`, `is_approval_state`). Behaviors covered by Phase 1 parity verification. |
+| `tests/test_database_persistence.py` | 519 | PORT | DB-layer tests are framework-not-engine |
+| `tests/test_dashboard_tabs.py` | 432 | PORT | Same as dashboard_updates |
+| `tests/test_preview_extraction_workflow.py` | 566 | SPLIT | DELETE `TestWorkflowEnginePreviewTransitions` class (A2A FSM-internal); PORT other 3 classes |
+| `tests/e2e/test_ui_with_langgraph.py` | 391 | SPLIT | DELETE 2 migration-moot tests (`test_feature_flag_toggle_*`, `test_facade_has_same_interface_*`); KEEP other 5 |
+| `scripts/test_approval_workflow.py` | 432 | DELETE | Stale dev script, superseded by pytest suite |
+| `scripts/migrate_to_langgraph.py` | 492 | DELETE | One-shot migration helper, job complete |
+
+**Naive Phase 6 estimate:** 5 ports × ~3hrs + 2 splits × ~2hrs + 3 deletes × ~5min = **~19-22 hrs, ~2.5 days.**
+
+**Realistic Phase 6 estimate (per user calibration note):** **25-32 hours, 3-4 days.** File ports are NOT uniform — `test_database_persistence.py` (519 LOC) and `test_preview_extraction_workflow.py` (566 LOC) are 2-3× larger than smaller ports. Wire-level surprises are likely at port time (precedent: Sprint 6.4 cycle 4 surfaced the sqlonfhir mutation bug at port time; similar surprises probable here when LangGraph's API behaves differently than A2A's for specific edge cases the tests exercise).
+
+**Phase 6 budget within sprint envelope:** Phase 6 alone consumes roughly 50% of the 6-8 day revised Sprint 7.2 budget. Other phases (0 enum promotion, 1 parity, 2-5 mechanical changes, 7 ADR close) consume the rest. If Phase 6 surprises blow past 4 days, the sprint splits per the existing risk register's "Parity verification produces large diffs" mitigation: Sprint 7.2a (Phases 0-5 + per-file ports as they complete) and Sprint 7.2b (any remaining ports + close ADR).
+
+**D3b decision:** In-place port (NOT rewrite-from-scratch). Preserves `git log --follow` per file. Costs larger diffs in Phase 6 commits; the per-file commit cadence (D3c) keeps each diff scoped.
+
+**D3c decision:** 5 per-file commits during Phase 6 (one per ported file) + 1 cleanup commit for splits + deletes. Phase 6 ends with 6 commits. Each PORT commit is a meaningful unit-of-change a future reader can bisect against.
+
 ---
 
 ## Sprint 8.3 — Cost-per-request ceilings re-derived against measured baselines; Sprint 8 series closes
