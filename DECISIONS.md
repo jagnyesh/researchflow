@@ -611,6 +611,86 @@ This decision per file is made during Sprint 7.2 execution, with the rationale r
 | Parity verification produces large diffs | Migration isn't actually done. Sprint 7.2 splits into 7.2a (close existing diffs) + 7.2b (deprecation). The 3-5 day estimate becomes longer; BACKLOG entry updated honestly |
 | `git rm` of `app/orchestrator/` breaks something not in the 7 known scripts | Pre-Sprint-7.2 `grep -rn "from app.orchestrator" .` runs as the first task; any new caller surfaces and gets migrated before deletion |
 
+### Empirical correction surfaced at execution start (2026-05-15)
+
+Post Sprint 6.4 merge, the `/grill-with-docs Sprint 7.2` re-scan ran the ADR's own mitigation step (`grep -rn "from app.orchestrator"`) and surfaced **5 production-code couplings the original ADR scan missed.** Per the append-only DECISIONS.md discipline (precedent: Sprint 8.4 correcting Sprint 8.2's framing), this section appends the corrections rather than rewriting the body above.
+
+**What the original ADR scoped:**
+- 2 dispatchers (`researcher_portal.py:430-480`, `admin_dashboard.py:160-210`)
+- 7 production scripts
+- 7 A2A test files
+- Delete `app/orchestrator/` (1,324 LOC)
+
+**What the re-scan additionally surfaced:**
+
+| File | Coupling | Severity if deleted naively |
+|---|---|---|
+| `app/main.py:21-23,113` | Owns the `ResearchRequestOrchestrator` singleton; calls `set_orchestrator` on both routers at startup | App fails to start |
+| `app/api/approvals.py:15,27,30` | Receives orchestrator; FastAPI routes call methods on it | 500 on every approval route |
+| `app/api/research.py:16` + 8 sites | Imports `WorkflowState` enum, uses `.value` strings as canonical state values for the `research_requests.current_state` DB column | 500 on every research route |
+| `app/services/approval_service.py:14,32` | Instantiates `WorkflowEngine()` directly | 500 in approval service |
+| `app/web_ui/dashboard_helpers.py:19,154,162-165` | Filters DB queries by `WorkflowState.COMPLETE/REQUIREMENTS_GATHERING/...` | Dashboard crash |
+
+**WorkflowState is effectively the DB schema enum, not just an orchestrator internal.** `research_requests.current_state` is `Column(String)` (free-form; no DB constraint), but five production callers write/query its `.value` strings.
+
+**A2A and LangGraph state strings diverge:** A2A's `WorkflowState` has 25 enum values; LangGraph's `langgraph_workflow.py` uses 17 distinct strings. ~15 names overlap. A2A-only that production code still references: `DELIVERED`, `REQUIREMENTS_COMPLETE`, `EXTRACTION_APPROVAL`, `SCOPE_CHANGE`, `PREVIEW_COMPLETE`, `FEASIBLE`, `KICKOFF_COMPLETE`, `EXTRACTION_COMPLETE`, `QA_PASSED`, `DELIVERY_REVIEW`. LangGraph-only: `human_review`, `preview_qa_review`. Current dev.db distribution: 113 `complete`, 3 `phenotype_review`, 2 `error`, 1 `preview_qa_review`, 1 `human_review`. No `delivered` rows.
+
+**Latent bug surfaced (out of Sprint 7.2 scope):** `app/api/research.py:270-271,343-344,403-404` queries `WHERE current_state IN ('delivered', 'complete')`. LangGraph never writes `'delivered'` (terminal is `'complete'` only). LangGraph-completed rows are silently missing from those result sets today. Filed as [#53](https://github.com/jagnyesh/researchflow/issues/53). Sprint 7.2 preserves existing behavior and documents the bug as known-issue; the fix is a separate sprint.
+
+### D1 decision (2026-05-15) — promote `WorkflowState` to schema module
+
+Three options grilled:
+- **A. Promote `WorkflowState` to `app/database/workflow_states.py`** (filename signals what it represents, not just that it's an enum). All 5 production callers + LangGraph + scripts import from the new home. A2A-only states stay in the enum as historical values that LangGraph doesn't emit but production code can still reference. DB rows keep their existing strings.
+- **B. Adopt LangGraph state strings as source of truth.** Extract LangGraph's 17 states into a typed enum; force-port production code. Audits every reference. A2A-only states explicitly retired.
+- **C. Decouple — production code uses bare strings, no Python enum.** Cheapest delete; loses type safety.
+
+**Chose A.** Cleanest deletion path that preserves the schema; surfaces A2A/LangGraph state divergence as documented historical values rather than hidden behavior; doesn't require a DB migration (column stays `String`). The new module carries a docstring naming the historical-vs-current state values explicitly:
+
+```python
+"""Canonical workflow state strings for research_requests.current_state.
+
+This enum was historically internal to the A2A orchestrator
+(app/orchestrator/workflow_engine.py). Sprint 7.2 promoted it to a schema
+module because production code (5 callers) depends on the .value strings
+as the canonical DB state values.
+
+The enum contains 25 states. The current LangGraph orchestrator emits
+only 17 of them. The remaining 8 are historical values that may exist
+in production DB rows from the A2A era:
+    DELIVERED, REQUIREMENTS_COMPLETE, EXTRACTION_APPROVAL, SCOPE_CHANGE,
+    PREVIEW_COMPLETE, FEASIBLE, KICKOFF_COMPLETE, EXTRACTION_COMPLETE,
+    QA_PASSED, DELIVERY_REVIEW
+
+These are retained for backward-compat queries. Production code that
+filters by state should be aware that LangGraph never emits these
+values — any query depending on them only matches pre-LangGraph rows.
+
+Known related issue: app/api/research.py queries
+WHERE current_state IN ('delivered', 'complete'). LangGraph never writes
+'delivered'. Pre-existing latent bug, filed separately — not in
+Sprint 7.2 scope.
+"""
+```
+
+### Revised phase sequence (D1 forces a Phase 0 insert)
+
+The original ADR's 8 phases assumed `app/orchestrator/` deletion was the lift. The empirical correction shows production callers must be migrated FIRST or the deletion breaks app startup. New sequence:
+
+| Phase | Step | Why this order |
+|---:|---|---|
+| **0 (new)** | Promote `WorkflowState` to `app/database/workflow_states.py`; update 5 production callers' imports (`main.py`, `approvals.py`, `research.py`, `approval_service.py`, `dashboard_helpers.py`); update LangGraph + 7 scripts to import from new home. Run full test suite + boot app to confirm. | Decouple production code from `app/orchestrator/` BEFORE the deletion makes it impossible. After Phase 0, `app/orchestrator/` is import-clean. |
+| 1 | Parity verification (30 requests through each flag value) | Need to verify equivalence before any user-visible default flip |
+| 2 | Flip `config/.env.example` default to `true` | Template + CI now match user's local |
+| 3 | Migrate 7 production scripts to `LangGraphRequestFacade` | Last remaining A2A callers gone |
+| 4 | `git rm -r app/orchestrator/` (now safe — no production callers remain) | Phases 0+3 eliminated all callers; deletion is mechanical |
+| 5 | Simplify dispatchers in `researcher_portal.py` + `admin_dashboard.py` | Conditional dispatch becomes unconditional `LangGraphRequestFacade` |
+| 6 | Port-vs-delete the 7 A2A test files | Test surface follows production surface |
+| 7 | Sprint 7.2 close ADR + CONTEXT.md update | Document outcomes |
+
+**Realistic scope estimate after empirical correction:** 6-8 days (was 3-5). Phase 0 adds ~1-2 days of work. The deletion phase itself becomes cheaper (no surprise breakage during `git rm`).
+
+**Sprint 7.2 still preserves existing behavior, not improves it.** The `delivered`/`complete` latent bug stays bug-for-bug because Sprint 7.2's pre-committed gate is structural parity, not correctness fixes. The bug is filed separately, fixed in a future sprint.
+
 ---
 
 ## Sprint 8.3 — Cost-per-request ceilings re-derived against measured baselines; Sprint 8 series closes

@@ -1,12 +1,59 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.4 (sqlonfhir integration) — **READY TO SHIP. Squash PR opening shortly. Sprint 7.2 unblocks next.** All 6 pre-committed gates GREEN: 3 sqlonfhir MVs (condition_diagnoses 14,832, observation_labs 157,689, procedure_history 66,448) match HAPI oracle exactly; 4 custom-path MVs (patient_simple/demographics, condition_simple, medication_requests) unchanged; observation_labs at 53.7s under 60s budget. Health check surfaced in admin dashboard. Sprint 6.6 candidate filed (custom-path MV oracles).
-**Branch:** `feature/sprint-6-4-sqlonfhir-integration` (8 cycle commits; 35/35 test suite GREEN).
-**Recently shipped:** Sprint 8.3 squash-merged 2026-05-14 (closed Sprint 8 series). Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
-**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 SHIPPED 2026-05-14 (closed Sprint 8 series), Sprint 6.4 ready to ship 2026-05-15. **Sprint 8 series CLOSED.** ~17/22 sprints overall.
+**Sprint:** 7.2 (A2A FSM → LangGraph migration close-out) — **ACTIVE. Grilling now; implementation pending.** Sequenced AFTER Sprint 6.4 closes, BEFORE Sprint 6.5 (agents through HybridRunner). Scope: delete `app/orchestrator/` (1,324 LOC), flip `config/.env.example` default, migrate 7 production scripts, port-vs-delete 7 A2A test files, simplify dispatchers in `researcher_portal.py` + `admin_dashboard.py`. Pre-committed gate is **structural** parity (state sequence + agent execution order + approval gate triggers + final-state classification + audit-trail shape), NOT LLM content equality.
+**Branch:** main is fresh; feature branch TBD post-grilling.
+**Recently shipped:** Sprint 6.4 squash-merged 2026-05-15 as `b64d0d8` (sqlonfhir integration, all 6 gates GREEN; PR #52). Sprint 8.3 squash-merged 2026-05-14 (closed Sprint 8 series). Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
+**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 SHIPPED 2026-05-14 (closed Sprint 8 series), Sprint 6.4 SHIPPED 2026-05-15 (sqlonfhir). **Sprint 8 series CLOSED.** ~18/22 sprints shipped.
 **Last updated:** 2026-05-15
 
-## Sprint 6.4 ready to ship (2026-05-15) — sqlonfhir integration
+## Sprint 7.2 active (2026-05-15) — A2A FSM to LangGraph close-out
+
+Promote locally-validated LangGraph default to template + remove the deprecated A2A FSM. Sprint 4 started the migration (parallel implementations behind `USE_LANGGRAPH_WORKFLOW`); Sprint 7 completed the technical migration (singleton checkpointer + LangSmith tracing); Sprint 7.2 closes the loop with deprecation + cleanup. Empirically validated state at sprint start:
+
+| Surface | Value |
+|---|---|
+| User's local `.env:87` | `USE_LANGGRAPH_WORKFLOW=true` (Sprint 8 traffic ran through LangGraph) |
+| Template `config/.env.example:125` | `USE_LANGGRAPH_WORKFLOW=false` (fresh clones default to A2A) |
+| Sprint 8.4 trace root | `name=LangGraph` (empirical proof) |
+| `app/orchestrator/` LOC | 1,324 across 3 files (to be deleted) |
+| `app/langchain_orchestrator/` LOC | 6,490 across 9 files (canonical) |
+| Production scripts coupled to A2A | 7 (verified at Sprint 7.2 ADR time) |
+| Tests exercising A2A path | 7 files (port-or-delete TBD per file) |
+
+### Pre-committed gates (per Sprint 7.2 ADR in DECISIONS.md)
+
+1. **Parity verification (structural):** 30 formal-portal requests through each flag value. Five checks:
+   - Workflow state sequence identical
+   - Agent execution order identical
+   - Approval gate triggers identical
+   - Final state classification equivalent (SUCCESS / NEEDS_HUMAN_REVIEW / FAILED bucket)
+   - Audit trail same shape (event count + event-type sequence per `thread_id`)
+   - **NOT compared:** LLM-generated content (non-deterministic; would fail on irrelevant differences)
+2. Template flip: `config/.env.example` → `USE_LANGGRAPH_WORKFLOW=true`
+3. 7 production scripts migrated to `LangGraphRequestFacade` + run against real stuck-state row
+4. `app/orchestrator/` deleted via `git rm -r` (NOT archived; git history is rollback)
+5. Dispatchers in `researcher_portal.py:430-480` + `admin_dashboard.py:160-210` collapse to unconditional LangGraph instantiation
+6. Test files: port-vs-delete decision per file (PORT if behavior LangGraph must exhibit; DELETE if A2A-internal)
+7. CONTEXT.md updated to remove "two parallel implementations" framing
+8. Sprint 7.2 close ADR appended documenting port/delete decisions + parity verification result
+
+### Currently grilling
+
+- D1 — **Parity verification methodology**: how to capture the 5 structural-parity checks in practice (audit_logs DB dump? LangSmith trace tree? hybrid?).
+- D2 — **Migration execution order**: 8 phases. Verify before delete? Two-phase flag removal?
+- D3 — **Per-file test port-vs-delete decisions**: which 7 A2A test files become LangGraph regression tests vs which get deleted?
+
+### Next per BACKLOG
+
+- **Sprint 6.5** — wire agents through HybridRunner for online reads (Sprint 6.2's documented-but-uncalled architecture). Sequenced AFTER Sprint 7.2 closes (so the wiring change only touches LangGraph).
+- **Sprint 6.6 candidate** — custom-path MV health-check oracles.
+- **Sprint 8.5/8.6 candidates** — sparse-traffic median measurement + exploratory portal caching.
+
+---
+
+# Below: Sprint 6.4 narrative (SHIPPED 2026-05-15 as b64d0d8; kept for context)
+
+## Sprint 6.4 SHIPPED (2026-05-15 as b64d0d8) — sqlonfhir integration
 
 Engine swap for 3 zero-row MVs the custom transpiler couldn't deliver (Sprint 6.3 verdict). Per-view-def opt-in via `runner_hint: "sqlonfhir"` — minimal blast radius, 4 custom-path MVs unchanged. Eight TDD cycles, each one RED→GREEN with its own commit.
 
@@ -24,29 +71,29 @@ Engine swap for 3 zero-row MVs the custom transpiler couldn't deliver (Sprint 6.
 
 All 6 pre-committed gates fired GREEN. Full HAPI-gated test suite: **35/35 PASS in ~88s**.
 
-### What shipped this sprint
+### What shipped
 
 - `app/sql_on_fhir/runner/backend_dispatcher.py` (NEW) — `select_backend(view_def)` primitive that reads `runner_hint`
-- `scripts/materialize_views.py` — refactored to `_materialize_via_custom()` + `_materialize_via_sqlonfhir()` per backend; type-aware DROP via `pg_class.relkind` lookup
+- `scripts/materialize_views.py` — refactored to `_materialize_via_custom()` + `_materialize_via_sqlonfhir()` per backend; type-aware DROP via `pg_class.relkind` lookup; **fix landed mid-PR**: column-collection BEFORE `sqlonfhir.evaluate()` (the library mutates view_def in-place, renaming nested `column` → `select` on forEach blocks; cycle 4 silently dropped procedure_history's 6 forEachOrNull cols; CI surfaced + fixed before merge)
 - `app/sql_on_fhir/runner/hapi_db_resource_reader.py` (NEW) — reads HAPI :5433 internal schema (`hfj_resource` JOIN `hfj_res_ver`), merges `fhir_id` from `hfj_resource` into parsed JSON
 - 3 view-def JSON files gained `"runner_hint": "sqlonfhir"` (condition_diagnoses, observation_labs, procedure_history)
 - `app/sql_on_fhir/runner/mv_health_check.py` (NEW, ~250 lines) — same-run oracle, 5% threshold, N=3 consecutive-warn alarm filter, JSONL log to `logs/mv_health.jsonl` (gitignored)
 - `app/web_ui/admin_dashboard.py` — 🩺 Materialized View health section in the Cost Telemetry tab
-- 4 test files added/grown: `test_backend_dispatcher.py` (4 unit), `test_mv_health_check.py` (22 unit), `test_sqlonfhir_integration.py` (5 e2e), `test_custom_path_regression.py` (4 e2e)
+- 4 test files added/grown: `test_backend_dispatcher.py` (4 unit), `test_mv_health_check.py` (22 unit), `test_sqlonfhir_integration.py` (5 e2e + nested-column regression assertion), `test_custom_path_regression.py` (4 e2e)
 - `tests/fixtures/mv_row_count_oracles.sql` (NEW) — single source of truth for the 3 sqlonfhir MV oracle queries with documented WHERE-clause replication + data observations
+- `tests/transpiler_harness.py` — `view_exists()` rewritten to query `pg_class` with `relkind IN ('m', 'r')` so the Sprint 6.2 harness stays dispatch-agnostic across the storage-shape asymmetry
+- `config/requirements.txt` + `config/requirements.lock` — `sqlonfhir==0.0.2` declared (transitive `fhirpathpy~=2.1.0` already pinned)
 
 ### Three framing notes (per Sprint 6.4 ADR)
 
 1. **Storage shape asymmetry accepted.** Custom path writes `CREATE MATERIALIZED VIEW`, sqlonfhir path writes `CREATE TABLE + TRUNCATE + INSERT`. Trade: type-aware DROP via pg_class lookup; CONCURRENTLY refresh not available for sqlonfhir-path MVs (acceptable since batch refresh doesn't run concurrently with reads).
-2. **Health-check scope is sqlonfhir-only this sprint.** The 4 custom-path MVs are covered by the Sprint 6.2 transpiler harness (48/48 tests) and cycle 7's regression test against raw resource-count anchors. Sprint 6.6 candidate filed to unify the oracle surface if a future custom view-def gains a non-trivial WHERE clause.
+2. **Health-check scope is sqlonfhir-only this sprint.** The 4 custom-path MVs are covered by the Sprint 6.2 transpiler harness (48/48 tests) and cycle 7's regression test against raw resource-count anchors. Sprint 6.6 candidate filed.
 3. **`runner_hint: "sqlonfhir"` is the opt-in switch.** No env var, no per-resource-type rule. The 4 working custom-path MVs declare nothing and stay on custom. If a future view-def needs the engine swap, it adds one field to its JSON and that's the entire migration.
 
-### Next per BACKLOG
+### Surfaced + fixed mid-PR (CI catch)
 
-- **Sprint 7.2** — A2A FSM to LangGraph migration close-out (3-5 days). Now UNBLOCKED. Must precede Sprint 6.5 per the Sprint 7.2 ADR's sequencing rationale.
-- **Sprint 6.5 candidate** — wire agents through HybridRunner for online reads. Sequenced AFTER Sprint 7.2 closes.
-- **Sprint 6.6 candidate** — custom-path MV health-check oracles (this sprint surfaced it).
-- **Sprint 8.5/8.6 candidates** — sparse-traffic median measurement + exploratory portal caching (surfaced by Sprint 8.3).
+- **`sqlonfhir.evaluate()` mutates view_def in-place**. Cycle 4 collected columns AFTER calling evaluate, silently dropping 6 forEachOrNull cols from procedure_history's CREATE TABLE. CI's transpiler-correctness harness (`test_schema_shape`) caught it; fixed by reordering column-collection BEFORE evaluate + added a regression assertion in the integration test.
+- **`tests/transpiler_harness.py` `view_exists()` queried `pg_matviews` only**. Sprint 6.4's storage asymmetry put 3 MVs in `pg_tables` instead. Rewrote to `pg_class` with `relkind IN ('m', 'r')`.
 
 ---
 
