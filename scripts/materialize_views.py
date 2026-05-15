@@ -31,6 +31,7 @@ import sqlonfhir
 
 from app.sql_on_fhir.runner.backend_dispatcher import select_backend
 from app.sql_on_fhir.runner.hapi_db_resource_reader import fetch_fhir_resources_for_view
+from app.sql_on_fhir.runner.mv_health_check import post_write_health_check
 from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from app.sql_on_fhir.runner.postgres_runner import PostgresRunner
 
@@ -165,6 +166,12 @@ class ViewMaterializer:
             row_count = count_result["count"]
             logger.info(f"  📊 Row count: {row_count:,}")
 
+            # Sprint 6.4 cycle 5 — post-write health check vs HAPI oracle.
+            # No-op for MVs without an oracle in mv_row_count_oracles.sql
+            # (the 4 custom-path MVs today). Logs WARN if delta > threshold
+            # or alarm fires (N=3 consecutive warn records).
+            await post_write_health_check(conn, view_name, row_count)
+
             return True
 
         except Exception as e:
@@ -286,6 +293,12 @@ class ViewMaterializer:
 
             row_count = await conn.fetchval(f"SELECT COUNT(*) FROM {SCHEMA_NAME}.{view_name}")
             logger.info(f"  📊 Row count: {row_count:,}")
+
+            # Sprint 6.4 cycle 5 — post-write health check vs HAPI oracle.
+            # The sqlonfhir-backed MVs all have oracles defined; this fires
+            # the same-run delta check + JSONL log + N=3 alarm filter.
+            await post_write_health_check(conn, view_name, row_count)
+
             return True
 
         except Exception as e:

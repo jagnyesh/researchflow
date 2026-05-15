@@ -273,3 +273,4 @@ test_agent_comparison_results.json
 # SQLite WAL/SHM runtime artifacts — checkpointer files mutate on every test run
 data/test_checkpoints.db-shm
 data/test_checkpoints.db-wal
+logs/

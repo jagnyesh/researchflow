@@ -240,5 +240,37 @@ async def test_mv_materialized_via_sqlonfhir_end_to_end(view_name):
             f"{view_name}: {null_id_count} rows have NULL id. The fhir_id "
             f"merge in fetch_fhir_resources_for_view() may not have applied."
         )
+
+        # Sprint 6.4 cycle 5 — verify post-write health check fired and
+        # wrote a JSONL record. The check is wired into both
+        # _materialize_via_custom() and _materialize_via_sqlonfhir(); for
+        # the 3 sqlonfhir MVs that have oracles defined in
+        # mv_row_count_oracles.sql, every successful materialize_view call
+        # should append one record.
+        from app.sql_on_fhir.runner.mv_health_check import DEFAULT_LOG_PATH
+
+        assert (
+            DEFAULT_LOG_PATH.exists()
+        ), "mv_health.jsonl should be created after a successful materialize"
+        # Read the last record for this view and assert it's well-formed
+        last_record_for_view = None
+        with open(DEFAULT_LOG_PATH) as f:
+            for line in f:
+                rec = json.loads(line.strip())
+                if rec.get("view_name") == view_name:
+                    last_record_for_view = rec
+        assert (
+            last_record_for_view is not None
+        ), f"no health-check record for {view_name} in {DEFAULT_LOG_PATH}"
+        # Status should be "ok" since the row count matches the oracle
+        # (gate #1 already passed above; this verifies the health check
+        # agrees and produced a structured record).
+        assert last_record_for_view["status"] == "ok", (
+            f"health-check status for {view_name} should be 'ok' "
+            f"(actual matches oracle); got {last_record_for_view}"
+        )
+        assert last_record_for_view["delta_pct"] <= 5.0
+        assert "ts" in last_record_for_view
+        assert "git_commit" in last_record_for_view
     finally:
         await conn.close()
