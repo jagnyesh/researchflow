@@ -27,6 +27,7 @@ openai>=1.0.0  # Optional: For OpenAI provider
 
 # SQL-on-FHIR v2 dependencies
 fhirpathpy==2.1.0
+sqlonfhir==0.0.2  # Sprint 6.4: per-view-def dispatch backend for 3 zero-row MVs (#40); SAS Healthcare, Apache 2.0
 tenacity==8.2.3
 
 # Research Notebook dependencies

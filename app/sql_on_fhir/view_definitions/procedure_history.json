@@ -5,6 +5,7 @@
   "title": "Procedure History",
   "description": "Patient procedures including surgeries, therapeutic procedures, and diagnostic procedures",
   "status": "active",
+  "runner_hint": "sqlonfhir",
   "select": [
     {
       "column": [

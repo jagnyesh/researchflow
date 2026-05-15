@@ -5,6 +5,7 @@
   "title": "Laboratory Observations",
   "description": "Laboratory test results with values, units, and reference ranges",
   "status": "active",
+  "runner_hint": "sqlonfhir",
   "select": [
     {
       "column": [

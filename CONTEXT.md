@@ -1,10 +1,56 @@
 # ResearchFlow — Current State
 
-**Sprint:** 8.3 (Cost-per-request ceilings re-derived) — **READY TO SHIP. PR opening now. Closes the Sprint 8 series.** New ceilings: Formal $0.010080 (was $0.0039), Exploratory $0.004602 (was $0.00091), both `measured_median × 1.3`. Both portals GREEN against corrected ceilings. Surfaced Sprint 8.6 candidate: exploratory `cache_hit_rate=0.0000%` despite Sprint 8.2 wire-level fix — QueryInterpreter prompt likely below Anthropic threshold.
-**Branch:** `feature/sprint-8-3-ceiling-rederive` (3 files modified; squash PR opening now).
-**Recently shipped:** Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
-**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 ready to ship 2026-05-14. **Sprint 8 series CLOSED.** ~16/22 sprints overall.
-**Last updated:** 2026-05-14
+**Sprint:** 6.4 (sqlonfhir integration) — **READY TO SHIP. Squash PR opening shortly. Sprint 7.2 unblocks next.** All 6 pre-committed gates GREEN: 3 sqlonfhir MVs (condition_diagnoses 14,832, observation_labs 157,689, procedure_history 66,448) match HAPI oracle exactly; 4 custom-path MVs (patient_simple/demographics, condition_simple, medication_requests) unchanged; observation_labs at 53.7s under 60s budget. Health check surfaced in admin dashboard. Sprint 6.6 candidate filed (custom-path MV oracles).
+**Branch:** `feature/sprint-6-4-sqlonfhir-integration` (8 cycle commits; 35/35 test suite GREEN).
+**Recently shipped:** Sprint 8.3 squash-merged 2026-05-14 (closed Sprint 8 series). Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
+**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 SHIPPED 2026-05-14 (closed Sprint 8 series), Sprint 6.4 ready to ship 2026-05-15. **Sprint 8 series CLOSED.** ~17/22 sprints overall.
+**Last updated:** 2026-05-15
+
+## Sprint 6.4 ready to ship (2026-05-15) — sqlonfhir integration
+
+Engine swap for 3 zero-row MVs the custom transpiler couldn't deliver (Sprint 6.3 verdict). Per-view-def opt-in via `runner_hint: "sqlonfhir"` — minimal blast radius, 4 custom-path MVs unchanged. Eight TDD cycles, each one RED→GREEN with its own commit.
+
+### Empirical inputs (verified end-to-end against HAPI :5433)
+
+| MV | Backend | Actual rows | Oracle | Delta | Materialize time |
+|---|---|---:|---:|---:|---:|
+| `condition_diagnoses` | sqlonfhir | 14,832 | 14,832 | 0.00% | — |
+| `observation_labs` | sqlonfhir | 157,689 | 157,689 | 0.00% | **53.7s** (gate ≤60s) |
+| `procedure_history` | sqlonfhir | 66,448 | 66,448 | 0.00% | — |
+| `patient_simple` | custom | 366 | 366 | 0.00% | — |
+| `patient_demographics` | custom | 366 | 366 | 0.00% | — |
+| `condition_simple` | custom | 14,832 | 14,832 | 0.00% | — |
+| `medication_requests` | custom | 20,116 | 20,116 | 0.00% | — |
+
+All 6 pre-committed gates fired GREEN. Full HAPI-gated test suite: **35/35 PASS in ~88s**.
+
+### What shipped this sprint
+
+- `app/sql_on_fhir/runner/backend_dispatcher.py` (NEW) — `select_backend(view_def)` primitive that reads `runner_hint`
+- `scripts/materialize_views.py` — refactored to `_materialize_via_custom()` + `_materialize_via_sqlonfhir()` per backend; type-aware DROP via `pg_class.relkind` lookup
+- `app/sql_on_fhir/runner/hapi_db_resource_reader.py` (NEW) — reads HAPI :5433 internal schema (`hfj_resource` JOIN `hfj_res_ver`), merges `fhir_id` from `hfj_resource` into parsed JSON
+- 3 view-def JSON files gained `"runner_hint": "sqlonfhir"` (condition_diagnoses, observation_labs, procedure_history)
+- `app/sql_on_fhir/runner/mv_health_check.py` (NEW, ~250 lines) — same-run oracle, 5% threshold, N=3 consecutive-warn alarm filter, JSONL log to `logs/mv_health.jsonl` (gitignored)
+- `app/web_ui/admin_dashboard.py` — 🩺 Materialized View health section in the Cost Telemetry tab
+- 4 test files added/grown: `test_backend_dispatcher.py` (4 unit), `test_mv_health_check.py` (22 unit), `test_sqlonfhir_integration.py` (5 e2e), `test_custom_path_regression.py` (4 e2e)
+- `tests/fixtures/mv_row_count_oracles.sql` (NEW) — single source of truth for the 3 sqlonfhir MV oracle queries with documented WHERE-clause replication + data observations
+
+### Three framing notes (per Sprint 6.4 ADR)
+
+1. **Storage shape asymmetry accepted.** Custom path writes `CREATE MATERIALIZED VIEW`, sqlonfhir path writes `CREATE TABLE + TRUNCATE + INSERT`. Trade: type-aware DROP via pg_class lookup; CONCURRENTLY refresh not available for sqlonfhir-path MVs (acceptable since batch refresh doesn't run concurrently with reads).
+2. **Health-check scope is sqlonfhir-only this sprint.** The 4 custom-path MVs are covered by the Sprint 6.2 transpiler harness (48/48 tests) and cycle 7's regression test against raw resource-count anchors. Sprint 6.6 candidate filed to unify the oracle surface if a future custom view-def gains a non-trivial WHERE clause.
+3. **`runner_hint: "sqlonfhir"` is the opt-in switch.** No env var, no per-resource-type rule. The 4 working custom-path MVs declare nothing and stay on custom. If a future view-def needs the engine swap, it adds one field to its JSON and that's the entire migration.
+
+### Next per BACKLOG
+
+- **Sprint 7.2** — A2A FSM to LangGraph migration close-out (3-5 days). Now UNBLOCKED. Must precede Sprint 6.5 per the Sprint 7.2 ADR's sequencing rationale.
+- **Sprint 6.5 candidate** — wire agents through HybridRunner for online reads. Sequenced AFTER Sprint 7.2 closes.
+- **Sprint 6.6 candidate** — custom-path MV health-check oracles (this sprint surfaced it).
+- **Sprint 8.5/8.6 candidates** — sparse-traffic median measurement + exploratory portal caching (surfaced by Sprint 8.3).
+
+---
+
+# Below: previous Sprint 8.3 narrative (kept for context until Sprint 6.4 ships)
 
 ## Sprint 8.3 ready to ship (2026-05-14) — closes Sprint 8 series
 
