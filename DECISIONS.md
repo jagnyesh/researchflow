@@ -810,6 +810,31 @@ D4's option C depends on LangSmith capturing agent boundaries equivalently for b
 
 Result of pre-flight + any methodology adjustment landed in this ADR before Phase 1 commits begin.
 
+### Pre-flight check result (2026-05-15) — D4a holds; harness needs per-orchestrator query branch
+
+Pre-flight executed on `researchflow-production` LangSmith project. Reference traces:
+- **LangGraph era:** Sprint 8.4 trace `62ef0f8c-8920-42a7-bd34-e77edaf65d11` (2026-05-14, formal portal request)
+- **A2A era:** earliest project traces from 2026-05-04 (pre-Sprint-7 LangGraph default flip)
+
+**LangGraph trace structure:** 28 spans, depth-3 tree. Root `LangGraph` → 11 state-node children at depth 1 (full state sequence: new_request → requirements_gathering → feasibility_validation → phenotype_review → preview_extraction → preview_qa → data_extraction → qa_validation → qa_review → data_delivery → complete) → `execute_task` agent boundaries at depth 2 (tagged `portal:formal` + `agent=*-agent`) → LLM calls (Sonnet/Haiku) at depth 3.
+
+**A2A trace structure:** disconnected root traces per workflow run — NO single workflow span. Each agent call (`RequirementsAgent`, `PhenotypeAgent`, `CalendarAgent`, `handle_task`) produces an independent root with `run_type=chain`. A2A's `WorkflowEngine.determine_next_step` is NOT `@traceable`; state transitions are not in LangSmith.
+
+**Coverage asymmetry assessment:** 4 of 5 dimensions are DB-sourced and identical for both orchestrators. Only dimension 2 (agent execution order) uses LangSmith. Dimension 2 IS recoverable from both, but with different query shapes:
+
+| Orchestrator | LangSmith query for dimension 2 |
+|---|---|
+| LangGraph | `is_root=True AND name='LangGraph' AND metadata.thread_id=X` → walk to depth-1 children → collect `execute_task` agent tag in order |
+| A2A | `is_root=True AND metadata.thread_id=X` → sort siblings by `start_time` → distinct root names (excluding leaf LLM calls) |
+
+Both return: ordered list of agent invocations per thread_id. Different query shape; equivalent answer.
+
+**Verdict: D4a hybrid methodology holds.** Harness `scripts/parity_verify_a2a_vs_langgraph.py` needs ~10 lines of per-orchestrator if-branch for dimension 2 — implementation refinement, not methodology change.
+
+**Phase 0 cleared to start.** Phase 1 cleared to start after Phase 0 commits land.
+
+**Stale MCP key observation (operational):** The pre-flight initially attempted via the LangSmith MCP server (registered in `.mcp.json`) and failed with 403 Forbidden on `/sessions`. The MCP server holds the API key from session-start time; the user rotated keys in Sprint 6.3 era. Pre-flight succeeded by calling `langsmith.Client()` directly via `.env` (which has the current PAT). Already documented in BACKLOG.md operational debt section.
+
 ---
 
 ## Sprint 8.3 — Cost-per-request ceilings re-derived against measured baselines; Sprint 8 series closes
