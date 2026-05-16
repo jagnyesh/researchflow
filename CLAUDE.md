@@ -5,7 +5,7 @@ AI-powered multi-agent system that automates clinical research data requests fro
 ## Living state — read these for current context
 
 - @CONTEXT.md — what is true *right now* (active sprint, in-progress work, blockers)
-- @DECISIONS.md — append-only architecture decision log (one entry per sprint)
+- @docs/decisions/INDEX.md — append-only architecture decision log; one file per ADR under `docs/decisions/`
 - @BACKLOG.md — forward plan (upcoming sprints, decision gates)
 - @.claude/architecture.rules — naming conventions, agent patterns, no-go zones
 
