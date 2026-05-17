@@ -23,17 +23,11 @@ import os
 from datetime import datetime
 from sqlalchemy import select
 
-sys.path.insert(0, "/Users/jagnyesh/Development/FHIR_PROJECT")
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.database import get_db_session
 from app.database.models import ResearchRequest, Approval
-from app.orchestrator.orchestrator import ResearchRequestOrchestrator
-from app.agents.requirements_agent import RequirementsAgent
-from app.agents.phenotype_agent import PhenotypeValidationAgent
-from app.agents.calendar_agent import CalendarAgent
-from app.agents.extraction_agent import DataExtractionAgent
-from app.agents.qa_agent import QualityAssuranceAgent
-from app.agents.delivery_agent import DeliveryAgent
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 
 
 async def find_stuck_requests():
@@ -84,16 +78,15 @@ async def fix_stuck_request(orchestrator, request_id, approval_id, approval_info
     print(f"   Approved by: {approval_info['approved_by']}")
 
     try:
-        # Since the approval is already "approved" but workflow never continued,
-        # we need to manually trigger the workflow continuation by calling
-        # _continue_workflow_after_approval() which is called after approval is updated
-
-        # Call the internal method that handles post-approval workflow continuation
-        # This is what process_approval_response() would have called if the
-        # approval had been pending. Note: This is a private method but safe to
-        # use in this backfill context.
-        await orchestrator._continue_workflow_after_approval(
-            approval_id=approval_id, decision="approve", modifications={}
+        # Sprint 7.2: A2A's private _continue_workflow_after_approval() was the
+        # original target; LangGraph's process_approval_response() is the
+        # production-supported API and persists + resumes from checkpoint.
+        # Idempotent on already-approved approvals (re-emits the resume signal).
+        await orchestrator.process_approval_response(
+            approval_id=approval_id,
+            reviewer="fix_stuck_delivery_approvals_script",
+            decision="approve",
+            notes="Backfill via scripts/fix_stuck_delivery_approvals.py",
         )
 
         print(f"   ✅ Successfully triggered workflow continuation")
@@ -153,31 +146,9 @@ async def main():
     print("🚀 Starting backfill process...")
     print("=" * 70)
 
-    # Initialize orchestrator with all agents
-    orchestrator = ResearchRequestOrchestrator()
-
-    # Get HAPI FHIR database URL from environment
-    hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-
-    # Convert to asyncpg format
-    if "postgresql://" in hapi_db_url and "+asyncpg" not in hapi_db_url:
-        hapi_db_url_async = hapi_db_url.replace("postgresql://", "postgresql+asyncpg://")
-    else:
-        hapi_db_url_async = hapi_db_url
-
-    # Register all agents
-    orchestrator.register_agent("requirements_agent", RequirementsAgent())
-    orchestrator.register_agent(
-        "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url_async)
-    )
-    orchestrator.register_agent("calendar_agent", CalendarAgent())
-    orchestrator.register_agent(
-        "extraction_agent", DataExtractionAgent(database_url=hapi_db_url_async)
-    )
-    orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
-    orchestrator.register_agent("delivery_agent", DeliveryAgent())
-
-    print("✅ Registered 6 agents")
+    # Initialize LangGraph facade (Sprint 7.2: A2A orchestrator deleted in Phase 4).
+    orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
+    print("✅ LangGraph facade initialized")
 
     # Fix each stuck request
     fixed_count = 0

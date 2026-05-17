@@ -21,15 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from sqlalchemy import select
 from app.database import get_db_session
 from app.database.models import Approval, ResearchRequest
-from app.orchestrator import ResearchRequestOrchestrator
-from app.agents import (
-    RequirementsAgent,
-    PhenotypeValidationAgent,
-    CalendarAgent,
-    DataExtractionAgent,
-    QualityAssuranceAgent,
-    DeliveryAgent,
-)
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 
 
 async def fix_stuck_approval(request_id: str):
@@ -43,20 +35,10 @@ async def fix_stuck_approval(request_id: str):
     print(f"Fixing Stuck Approval for Request: {request_id}")
     print(f"{'='*80}\n")
 
-    # Initialize orchestrator with all agents
+    # Initialize LangGraph facade (Sprint 7.2: A2A orchestrator deleted in Phase 4;
+    # both orchestrators expose process_approval_response with identical signature).
     print("🔧 Initializing orchestrator...")
-    orchestrator = ResearchRequestOrchestrator()
-    hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-
-    orchestrator.register_agent("requirements_agent", RequirementsAgent())
-    orchestrator.register_agent(
-        "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url)
-    )
-    orchestrator.register_agent("calendar_agent", CalendarAgent())
-    orchestrator.register_agent("extraction_agent", DataExtractionAgent())
-    orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
-    orchestrator.register_agent("delivery_agent", DeliveryAgent())
-
+    orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
     print("✓ Orchestrator initialized\n")
 
     # Find approved approval for this request
