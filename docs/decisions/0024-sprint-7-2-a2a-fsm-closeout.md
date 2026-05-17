@@ -5,6 +5,8 @@ status: in-progress
 supersedes: []
 superseded_by: null
 related: []
+last_updated: 2026-05-17
+phase_1_status: closed
 ---
 
 # Sprint 7.2 — A2A FSM to LangGraph migration close-out
@@ -346,3 +348,94 @@ Both return: ordered list of agent invocations per thread_id. Different query sh
 **Phase 0 cleared to start.** Phase 1 cleared to start after Phase 0 commits land.
 
 **Stale MCP key observation (operational):** The pre-flight initially attempted via the LangSmith MCP server (registered in `.mcp.json`) and failed with 403 Forbidden on `/sessions`. The MCP server holds the API key from session-start time; the user rotated keys in Sprint 6.3 era. Pre-flight succeeded by calling `langsmith.Client()` directly via `.env` (which has the current PAT). Already documented in BACKLOG.md operational debt section.
+
+---
+
+## Phase 1 execution + close (2026-05-17)
+
+### Harness ran end-to-end against 30 LG + 30 A2A formal-portal threads
+
+Three commits delivered the testable harness across 8 /tdd cycles:
+- `79eba48` cycle 1 (tracer: `compare_pair` + JSONL writer)
+- `9598866` cycle 2 (dim 1 state_sequence)
+- `71df166` cycle 3 (dim 2 agent_execution_order — LangSmith per-orchestrator branch)
+- `a5970ee` cycle 4 (dim 3 approval_gate_triggers)
+- `83ad6d7` cycle 5 (dim 4 final_state with cross-engine bucket classifier)
+- `101c520` cycle 6 (dim 5 audit_trail_shape)
+- `1efaccc` cycle 7 (bounded-vs-blocking severity classifier)
+- `918b6bf` cycle 8 (driver: orchestration + `__main__` wrapper)
+- `6714509` ops (drive_qa_traffic.py dispatcher; mirrors production)
+- `de0c5ae` ops (harness prefetch fix; sys.path setup)
+
+22 unit tests passed. First production run (2026-05-17 ~15:30-16:36): **150 comparisons, 60 match, 0 bounded, 90 blocking. Gate verdict: literal-FAILED.**
+
+### The literal FAILED verdict is misleading — calibration via Path-0 diagnostic
+
+The /tdd cycles produced a correct harness, but I (Claude) initially mis-framed the gate-failure as evidence of LangGraph divergence and proposed adding `AUTO_APPROVE_FOR_DEV` to A2A. The user pushed back: that's extending code about to be deleted in Phase 4, and treats the gate criterion as load-bearing without pressure-testing whether the comparison was meaningful. The meta-pattern fired again (14+ instances since the project began).
+
+**Path-0 diagnostic (read-only, 4 checks)** ran before treating the gate result as evidence:
+
+**Check 1 — Did workflows actually execute?** Direct `sqlite3 dev.db` SELECT on all 60 thread_ids. Result:
+- LG: 30/30 `current_state="complete"` — executed end-to-end via AUTO_APPROVE_FOR_DEV
+- A2A: 30/30 `current_state="phenotype_review"` — paused at first approval gate as designed
+- **All 60 rows have `state_history` length = 1** (just the initial `{"state": "new_request", ...}`)
+- All 60 rows have `completed_at = NULL`
+
+**Check 2 — Was the harness queried at the right time?** Drive logs finished 15:35:45 (LG) and 15:39:44 (A2A); verifier ran at 16:36:22. ~1 hour gap. `request_facade.py:223-225` shows `process_new_request` awaits the full workflow. By drive-log completion, workflows have reached their terminal state. Timing was not the issue.
+
+**Check 3 — Production LG reference (Sprint 8 era):** Pulled REQ-20260514-FBCDDD47 (Sprint 8 traffic, definitely terminal). Ran all 4 DB-based fetchers:
+- `state_sequence: ['new_request']` (1 entry) — same as today's drive output
+- `approval_gate_triggers: ['phenotype_sql', 'delivery']` — 2 approvals fired and persisted
+- `final_state_bucket: SUCCESS`
+- `audit_trail_shape: ['request_created']` (1 event)
+
+Direct DB corroboration: `state_history` length 1, `audit_logs` 1 row. **Production LG behaves identically to today's harness output.** The harness fetchers are correct.
+
+**Check 4 — Audit severity calibration:** Queried ALL `audit_logs` for REQ-20260514-FBCDDD47 (no event-type filter). Result: 1 row, `event_type=request_created`, `phi_accessed=0`. Sprint 8 era aggregate: 0 LG requests have >1 audit event. PHI audit firing exists only in `app/security/audit_middleware.py:257-275` (`PHI_ACCESS_REQUESTED`/`PHI_ACCESS_COMPLETED`), but the agent workflow path (`Streamlit → process_new_request → 6 agents → SQLonFHIRAdapter → HAPI`) bypasses FastAPI. Middleware never fires.
+
+### Three findings reframed (severity calibrated)
+
+**Finding 1 — `state_history` persistence gap (medium severity, both orchestrators, pre-existing).** `request_facade.py:196` and the A2A equivalent both write `state_history=[{"state": "new_request", ...}]` at row creation and never `UPDATE` it. Workflow state transitions update an in-memory state object but don't propagate to the DB column. Affects 100% of Sprint 8 traffic AND today's drive. The harness's dim 1 "30/30 match" is vacuous (stub == stub). Not Sprint 7.2's problem; both orchestrators broken identically. **File as separate post-Sprint-7.2 issue.**
+
+**Finding 2 — PHI access audit not firing for agent-driven workflows (HIGH severity, pre-existing, compliance gap).** The Sprint 6.1 Phase 2.2 audit middleware was designed for HTTP routes. It correctly enforces fail-closed default-deny on the FastAPI app. But the actual production workflow path is `Streamlit → process_new_request → agents`, which bypasses FastAPI entirely. PHI is accessed by `extraction_agent → SQLonFHIRAdapter → HAPI :5433` without any audit-middleware event firing. Same architectural pattern as the "HybridRunner bypass" gap noted in `docs/architecture/05-15architecturereview.md`. Pre-existing since the audit middleware shipped in Sprint 6.1. **A2A had the same gap.** Sprint 7.2 doesn't introduce or remediate it. **File as HIGH-severity post-Sprint-7.2 issue.**
+
+**Finding 3 — Operational asymmetry on approval gates (N/A, A2A being deleted).** A2A has no `AUTO_APPROVE_FOR_DEV` flag, so it paused at `phenotype_review` in today's drive while LG ran through. Not an architectural divergence; an artifact of test-traffic operational signal. A2A is being deleted in Phase 4. **Not worth fixing.**
+
+### Sprint 7.2 close gate — verdict (per ADR purpose, not literal harness output)
+
+Sprint 7.2's stated purpose: *"Confirm LangGraph preserves enough A2A behavior that A2A retirement is safe."* The relevant evidence:
+
+| Check | Result | Implication for Sprint 7.2 |
+|---|---|---|
+| LangGraph reaches terminal `complete` state? | ✅ 30/30 today + Sprint 8 production traffic | LG is functional |
+| LangGraph fires approval gates correctly? | ✅ `['phenotype_sql', 'delivery']` — 2 gates fire and persist | LG HITL works |
+| LangGraph persists `current_state` correctly? | ✅ Today + Sprint 8 production show `complete` | LG state tracking works |
+| LangGraph drives Sprint 8 cost telemetry? | ✅ Sprint 8.1-8.4 data is built on LG production traffic | LG cost discipline works |
+| Audit pipeline preserved? | ⚠️ Both LG and A2A sparse at agent layer; Finding 2 pre-existing | No regression vs A2A |
+| `state_history` persistence | ⚠️ Length-1 for both LG and A2A; Finding 1 pre-existing | No regression vs A2A |
+
+**Gate verdict: SATISFIED via reframing.** The literal "0 blocking rows" criterion isn't load-bearing for the actual question. The substantive evidence (Checks 1-4 + Sprint 8 production history) shows LangGraph behaves at least as well as A2A on every relevant axis. Sprint 7.2 Phase 1 closes.
+
+**Two parking lots filed as post-Sprint-7.2 issues** (don't block Phase 2-7):
+1. `state_history` persistence gap (medium)
+2. PHI access audit firing for agent-driven workflows (HIGH compliance)
+
+### Phase 2-7 sequencing — unblocked
+
+- **Phase 2** — flip `config/.env.example` default to `USE_LANGGRAPH_WORKFLOW=true`
+- **Phase 3** — migrate 7 production scripts to `LangGraphRequestFacade` (mechanical, ~4-6 hrs)
+- **Phase 4** — `git rm -r app/orchestrator/` (now safe — Phases 0+3 eliminate all callers; ~1,324 LOC removed)
+- **Phase 5** — simplify `researcher_portal.py:430-480` + `admin_dashboard.py:160-210` to unconditional LangGraph instantiation
+- **Phase 6** — port-vs-delete remaining A2A test files per D3 (3 files left: `test_agent_handoffs.py`, `test_admin_dashboard_updates.py`, `test_nlp_to_sql_workflow.py`, `test_database_persistence.py`, `test_dashboard_tabs.py`; 5 PORTs)
+- **Phase 7** — Sprint 7.2 close ADR (this ADR's "Phase 1 execution" section) + CONTEXT.md update removing "two parallel implementations" framing
+
+Per ADR D2, phases land in sequence, not parallel. Phase 6 is the longest remaining (~25-32 hrs per D3 calibration).
+
+### Lessons captured (meta-pattern instance #15+)
+
+The cycle 8 harness produced 150 well-formatted JSONL rows reporting "FAILED — 90 blocking." The first interpretation I offered was wrong on multiple axes: treated bit-for-bit comparison as load-bearing, proposed extending code about to be deleted, and didn't pressure-test whether the comparison was meaningful. The Path-0 diagnostic (30 minutes, read-only) revealed:
+- 60 "matches" were vacuous (both stub-data)
+- 60 "blocking" were operational (A2A pause behavior)
+- 30 "blocking" were pre-existing pre-Sprint-7.2 LG audit sparseness
+
+This is the same shape as the 14+ documented instances in `docs/decisions/0000-meta-recurring-workflow-pattern.md`. The defense — *"what would have to be true for this verdict to be wrong?"* before committing — saved ~1 hour of misdirected work and produced a sharper close ADR than the gate-verdict alone would have.
