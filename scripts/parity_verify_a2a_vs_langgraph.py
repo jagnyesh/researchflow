@@ -108,7 +108,45 @@ def write_jsonl_row(row: ParityRow, log_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Cycles 2-6 (TBD): one dimension query per cycle
+# Cycle 2 — dimension 1: state_sequence query
+# ---------------------------------------------------------------------------
+
+
+async def fetch_state_sequence(thread_id: str, db_session) -> List[str]:
+    """Return ordered state names from `research_requests.state_history` for the
+    row identified by `thread_id`.
+
+    LangGraph's checkpointer sets `thread_id == request_id` per workflow
+    invocation; `ResearchRequest.id` (String PK, `REQ-YYYYMMDD-XXXXXXXX`
+    format) is the lookup key for both orchestrators.
+
+    `state_history` is a JSON list of `{"state": <name>, "timestamp": <ISO>}`
+    entries persisted chronologically as the workflow progresses. This
+    fetcher sorts by `timestamp` ascending defensively (don't rely on file
+    order — clock skew, backfill scripts, or future code paths could append
+    out of order).
+
+    Returns `[]` if no row matches `thread_id`. The caller (compare_pair)
+    decides whether `[]` is a parity-row signal (orchestrator never
+    persisted) or a harness error.
+    """
+    from sqlalchemy import select
+
+    from app.database.models import ResearchRequest
+
+    result = await db_session.execute(
+        select(ResearchRequest.state_history).where(ResearchRequest.id == thread_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return []
+    entries = row if isinstance(row, list) else json.loads(row)
+    entries = sorted(entries, key=lambda e: e.get("timestamp", ""))
+    return [e["state"] for e in entries]
+
+
+# ---------------------------------------------------------------------------
+# Cycles 3-6 (TBD): one dimension query per cycle
 # Cycle 7 (TBD): bounded-vs-blocking severity classifier
 # Cycle 8 (driver): subprocess plumbing for 30-request drive per flag value
 # ---------------------------------------------------------------------------

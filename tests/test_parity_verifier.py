@@ -81,3 +81,142 @@ def test_compare_pair_emits_jsonl_row_for_matching_state_sequence(tmp_path):
     assert parsed["match"] is True
     assert parsed["langgraph"] == lg_value
     assert parsed["a2a"] == a2a_value
+
+
+# ---------------------------------------------------------------------------
+# Cycle 2 — dimension 1: state_sequence query against research_requests.state_history
+# ---------------------------------------------------------------------------
+
+
+async def test_dimension_1_state_sequence_returns_ordered_state_names(clean_database):
+    """fetch_state_sequence(thread_id, db_session) returns ordered state names
+    from research_requests.state_history for the given row.
+
+    The harness uses LangGraph thread_id as the lookup key. ResearchRequest.id
+    is the canonical thread_id surface (REQ-YYYYMMDD-XXXXXXXX); the LangGraph
+    checkpointer sets thread_id = request_id per workflow invocation.
+
+    state_history is a JSON list of {state, timestamp} entries persisted
+    chronologically as the workflow progresses. fetch_state_sequence sorts
+    by timestamp defensively (don't rely on file order) and returns the
+    `state` string from each entry.
+    """
+    import sys
+    from datetime import datetime, timedelta
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_state_sequence
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC2"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+    state_history = [
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {
+            "state": "requirements_gathering",
+            "timestamp": (base_ts + timedelta(seconds=5)).isoformat(),
+        },
+        {
+            "state": "feasibility_validation",
+            "timestamp": (base_ts + timedelta(seconds=10)).isoformat(),
+        },
+        {"state": "complete", "timestamp": (base_ts + timedelta(seconds=15)).isoformat()},
+    ]
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle2",
+                researcher_email="cycle2@parity.test",
+                initial_request="parity-harness synthetic row",
+                current_state="complete",
+                state_history=state_history,
+            )
+        )
+        await session.commit()
+
+        result = await fetch_state_sequence(thread_id=request_id, db_session=session)
+
+    assert result == [
+        "new_request",
+        "requirements_gathering",
+        "feasibility_validation",
+        "complete",
+    ], "ordered state names must be lifted directly from state_history"
+
+
+async def test_dimension_1_state_sequence_returns_empty_list_for_unknown_thread_id(clean_database):
+    """Unknown thread_id returns []. The harness uses [] as a signal that the
+    orchestrator never persisted a row for this thread_id — the caller
+    (compare_pair) then decides whether that's a parity-row signal or a
+    harness error.
+    """
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_state_sequence
+
+    from app.database import get_db_session
+
+    async with get_db_session() as session:
+        result = await fetch_state_sequence(thread_id="REQ-DOES-NOT-EXIST", db_session=session)
+
+    assert result == [], "unknown thread_id must return [] (not None, not raise)"
+
+
+async def test_dimension_1_state_sequence_sorts_out_of_order_timestamps(clean_database):
+    """state_history is sorted by timestamp ascending before extracting names.
+
+    Defensive sort: even if a future code path appends out-of-order (e.g., a
+    backfill script or a clock-skew event), the harness produces deterministic
+    output. Same shape across orchestrators is what dim 1 parity needs.
+    """
+    import sys
+    from datetime import datetime, timedelta
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_state_sequence
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC2X"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+    # Insertion order is intentionally NOT chronological
+    state_history = [
+        {"state": "complete", "timestamp": (base_ts + timedelta(seconds=15)).isoformat()},
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {
+            "state": "feasibility_validation",
+            "timestamp": (base_ts + timedelta(seconds=10)).isoformat(),
+        },
+        {
+            "state": "requirements_gathering",
+            "timestamp": (base_ts + timedelta(seconds=5)).isoformat(),
+        },
+    ]
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle2-sort",
+                researcher_email="cycle2sort@parity.test",
+                initial_request="parity-harness synthetic out-of-order row",
+                current_state="complete",
+                state_history=state_history,
+            )
+        )
+        await session.commit()
+
+        result = await fetch_state_sequence(thread_id=request_id, db_session=session)
+
+    assert result == [
+        "new_request",
+        "requirements_gathering",
+        "feasibility_validation",
+        "complete",
+    ], "fetcher must sort by timestamp ascending before extracting state names"
