@@ -25,7 +25,7 @@ from app.database import (
     RequirementsData,
     FeasibilityReport,
 )
-from app.orchestrator.workflow_engine import WorkflowState
+from app.database.workflow_states import WorkflowState
 
 
 def generate_request_id(prefix="TEST"):

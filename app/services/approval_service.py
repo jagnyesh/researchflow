@@ -11,9 +11,26 @@ from sqlalchemy import select, and_
 import logging
 
 from ..database.models import Approval, ResearchRequest, Escalation
-from ..orchestrator.workflow_engine import WorkflowEngine
 
 logger = logging.getLogger(__name__)
+
+
+# Approval timeout configuration (hours). Inlined from
+# WorkflowEngine.get_approval_timeout_hours() per Sprint 7.2 Phase 4 — A2A
+# orchestrator deleted; this dict was the only thing approval_service.py
+# needed from it.
+_APPROVAL_TIMEOUT_HOURS: Dict[str, int] = {
+    "requirements": 24,
+    "phenotype_sql": 24,  # Critical — SQL must be reviewed
+    "extraction": 12,
+    "delivery": 24,  # Critical — full dataset must be reviewed before delivery
+    "scope_change": 48,
+}
+
+
+def get_approval_timeout_hours(approval_type: str) -> int:
+    """Get timeout hours for each approval type. Default 24 hours."""
+    return _APPROVAL_TIMEOUT_HOURS.get(approval_type, 24)
 
 
 class ApprovalService:
@@ -29,7 +46,6 @@ class ApprovalService:
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
-        self.workflow_engine = WorkflowEngine()
 
     async def create_approval(
         self, request_id: str, approval_type: str, submitted_by: str, approval_data: Dict[str, Any]
@@ -47,7 +63,7 @@ class ApprovalService:
             Created Approval object
         """
         # Calculate timeout based on approval type
-        timeout_hours = self.workflow_engine.get_approval_timeout_hours(approval_type)
+        timeout_hours = get_approval_timeout_hours(approval_type)
         timeout_at = datetime.now() + timedelta(hours=timeout_hours)
 
         approval = Approval(

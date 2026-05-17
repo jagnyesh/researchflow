@@ -18,7 +18,7 @@ from app.database.models import (
     RequirementsData,
     Approval,
 )
-from app.orchestrator.workflow_engine import WorkflowState
+from app.database.workflow_states import WorkflowState
 
 
 # Import dashboard functions to test

@@ -111,9 +111,12 @@ def make_exploratory_query(idx: int) -> str:
 
 
 async def drive_formal(start: int, n: int) -> list[dict]:
+    # Sprint 7.2 Phase 4: A2A orchestrator deleted. The earlier env-var
+    # dispatcher in this function (Phase 1 parity verification) is gone;
+    # LangGraph is the only orchestrator.
     from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 
-    facade = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
+    orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
     out: list[dict] = []
     for i in range(start, start + n):
         case_idx = i % len(CASES)
@@ -121,7 +124,7 @@ async def drive_formal(start: int, n: int) -> list[dict]:
         request_text, researcher_info = make_formal_payload(case_idx)
         t0 = time.monotonic()
         try:
-            request_id = await facade.process_new_request(
+            request_id = await orchestrator.process_new_request(
                 researcher_request=request_text,
                 researcher_info=researcher_info,
                 from_formal_portal=True,

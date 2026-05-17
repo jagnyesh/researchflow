@@ -16,7 +16,7 @@ from ..database.models import (
     Escalation,
     Approval,
 )
-from ..orchestrator.workflow_engine import WorkflowState
+from ..database.workflow_states import WorkflowState
 
 # Agent IDs used across the system
 AGENT_IDS = [

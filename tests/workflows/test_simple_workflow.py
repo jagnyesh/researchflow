@@ -15,7 +15,7 @@ Test Goals:
 import pytest
 from datetime import datetime
 
-from app.langchain_orchestrator.simple_workflow import SimpleWorkflow, WorkflowState
+from app.langchain_orchestrator.simple_workflow import SimpleWorkflow, SimpleWorkflowState
 
 
 @pytest.fixture
@@ -25,7 +25,7 @@ def simple_workflow():
 
 
 @pytest.fixture
-def initial_state() -> WorkflowState:
+def initial_state() -> SimpleWorkflowState:
     """Create initial workflow state"""
     return {
         "request_id": "test-001",
@@ -83,7 +83,7 @@ class TestConditionalRouting:
     def test_route_after_requirements_complete(self, simple_workflow):
         """Test routing when requirements are complete"""
 
-        state: WorkflowState = {
+        state: SimpleWorkflowState = {
             "request_id": "test-002",
             "current_state": "requirements_gathering",
             "researcher_request": "Test",
@@ -103,7 +103,7 @@ class TestConditionalRouting:
     def test_route_after_requirements_incomplete(self, simple_workflow):
         """Test routing when requirements are incomplete"""
 
-        state: WorkflowState = {
+        state: SimpleWorkflowState = {
             "request_id": "test-003",
             "current_state": "requirements_gathering",
             "researcher_request": "Test",

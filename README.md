@@ -80,12 +80,14 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
          └─────────────────────────────────────┘
 ```
 
+> ⚠️ **Architecture-vs-actual gap:** Production agents currently call `SQLonFHIRAdapter` directly and bypass `HybridRunner`. The diagram above shows the *designed* read path; wiring agents through `HybridRunner.execute()` (which is what unlocks the speed-layer merge for online reads) is filed as the **Sprint 6.5** candidate. See [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md) for the documented-vs-actual breakdown.
+
 ### Multi-Agent System (6 Specialized Agents)
 
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│      (Workflow Engine | 20 States | A2A Protocol)     │
+│  (LangGraph FSM | 17 Nodes | Sprint 7.2 retiring A2A) │
 └────────────────────┬──────────────────────────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -128,26 +130,39 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 ### 🛡️ Human-in-Loop Safety Gates
 
-**5 Mandatory Approval Checkpoints:**
-- **SQL Review** (CRITICAL): Informatician must approve queries before execution
-- **Requirements Validation**: Verify medical accuracy
-- **Extraction Authorization**: Approve data access
-- **QA Review**: Validate quality results
-- **Scope Changes**: Evaluate mid-workflow modifications
+**4 routine gates + 1 escalation terminal** (source: `interrupt_after_list` at [`app/langchain_orchestrator/langgraph_workflow.py:241`](app/langchain_orchestrator/langgraph_workflow.py#L241)):
+
+- **G1 Requirements Review** (`requirements_review`): Informatician approves the cohort spec extracted from natural language
+- **G2 Phenotype SQL Review** (`phenotype_review`): Informatician approves the generated SQL-on-FHIR before any execution
+- **G3 Preview QA Review** (`preview_qa_review`, conditional): Fires only when preview QA fails — informatician reviews and decides whether to proceed
+- **G4 QA Sign-off** (`qa_review`): Approval after full QA passes
+- **★ Human Review** (`human_review`, escalation terminal): Reached on workflow error or scope-change rejection
 
 ### 📊 SQL-on-FHIR v2 Implementation
 
 - **ViewDefinitions**: Standards-compliant FHIR analytics
-- **Performance**: 1151x speedup (in-database vs REST API)
+- **Performance**: 10–100× speedup from materialized views; up to ~1100× on the repeated-query cache-hit path
 - **Dual Runners**: PostgreSQL (fast) + In-Memory (flexible)
 - **Query Optimization**: Automatic SNOMED/LOINC/ICD-10 code resolution
 
-### 💡 Multi-Provider LLM Architecture
+### 🔐 HIPAA Security Baseline (Sprint 6.1)
 
-- **Intelligent Routing**: Claude (critical medical tasks) + OpenAI/Ollama (non-critical)
-- **60% Cost Reduction**: Smart routing based on task criticality
-- **Auto-Fallback**: Secondary provider failures route to Claude
-- **LangSmith Observability**: Full workflow tracing proves AI vs human division of labor
+- **Encryption-at-rest**: Tier 1 ePHI columns (`initial_request`, inclusion/exclusion criteria, phenotype SQL) wrapped in `FernetEngine` — see [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md)
+- **Audit logging**: Default-deny Redis-queue audit pipeline; fail-closed on PHI routes
+- **TLS enforcement**: 308 redirects + HSTS (1-year, includeSubDomains) gated by `ENVIRONMENT=production`
+- **Input validation**: `PHIInputModel` base + typed primitives across 12 Tier 1 PHI/credential routers; PHI-safe 422 error responses
+- **JWT auth + RBAC**: Split human/agent auth (researcher vs service tokens); admin gates on mutating analytics routes
+
+### 💡 LLM Cost Discipline
+
+The dominant cost lever turned out to be **caching architecture + scope discipline**, not provider switching. The actual story (corrected post-Sprint-8 series):
+
+- **Scope:** 5 of 6 agents are procedural (no LLM). Only the **Requirements Agent** invokes LLMs — Sonnet for cohort-spec extraction (`extract_requirements`), Haiku for medical-concept extraction (`extract_medical_concepts`).
+- **Caching sized to threshold:** Sonnet system prompts ~3,000 tokens, Haiku ~5,185 tokens — deliberately above Anthropic's prompt-caching thresholds (1,024 / 4,096). System prompts are byte-stable across calls.
+- **Wire-level discipline:** the `cache_control` marker must reach Anthropic's API in the content-block-array form; the wrapper's string-content form silently drops it. Caught a 6-month silent bug ([ADR 0021](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md), [PR #45](https://github.com/jagnyesh/researchflow/pull/45)).
+- **Measured outcome:** 94.88% Sonnet hit rate / 100% Haiku hit rate after warmup. Median formal-portal cost: **$0.008 per request** ([ADR 0025](docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)).
+- **`MultiLLMClient` exists** as fallback infrastructure (Anthropic primary; OpenAI/Ollama for non-critical paths) but provider routing is **not** the primary cost driver. Multi-provider routing was the original Sprint 8 hypothesis; Sprint 8.1–8.3 measurement falsified that framing.
+- **LangSmith observability:** `@traceable` on all 6 agents + `MultiLLMClient.complete`; per-portal tagging (`portal:formal`, `portal:exploratory`) drives Cost Telemetry Service aggregation.
 
 ### 📱 Two Researcher Interfaces
 
@@ -169,9 +184,13 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 ### Prerequisites
 
-- Python 3.9+
-- Anthropic API key ([get key](https://console.anthropic.com/))
-- PostgreSQL (optional; SQLite works for dev)
+- **Python 3.9+**
+- **Docker** + **docker-compose** — required for HAPI FHIR server (port 8080) and HAPI's internal Postgres (port 5433); `make docker-up` brings up the stack
+- **Redis 6+** — speed layer + Sprint 6.1 audit pipeline queue; install via Homebrew (`brew install redis`) or run in Docker
+- **Anthropic API key** ([get key](https://console.anthropic.com/)) — required for the Requirements Agent's LLM calls
+- **LangSmith API key** (optional but recommended) — `LANGCHAIN_API_KEY` env var enables the Cost Telemetry dashboard and `@traceable` observability
+- **`ENCRYPTION_KEY_PRIMARY`** env var — required at startup when `ENVIRONMENT=production` (Sprint 6.1 Phase 3b fail-closed gate); see [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md) for the Fernet key generation procedure
+- **PostgreSQL** (optional for the application schema; SQLite works for dev. HAPI's Postgres at :5433 is separate and required.)
 
 ### Installation (3 Steps)
 
@@ -224,21 +243,35 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Repeated Query Execution | 116.2s | 0.101s | **1151x faster** |
-| Workflow Turnaround | 2-3 weeks | 4-8 hours | **95% faster** |
-| LLM Costs (multi-provider) | $750/month | $295/month | **60% reduction** |
-| Cache Hit Rate | 0% | 95% | N/A |
+| Repeated Query Execution | 116.2s | 0.101s | **~1100× faster** (cache-hit path) |
+| Workflow Turnaround | 2–3 weeks | 4–8 hours | **~95% faster** (proof-of-concept) |
+| Per-request LLM cost (formal portal) | — | **$0.008 measured** | Sprint 8.3 median, n=30 bursty traffic |
+| Anthropic prompt cache hit (Sonnet, after warmup) | 0% | **94.88%** | Sprint 8.2 wire-fix + Sprint 8.3 measurement |
+| Anthropic prompt cache hit (Haiku, after warmup) | 0% | **100%** | post Sprint 8.2 prompt bulk-up |
 
 ### Lambda Architecture Performance
 
 | Layer | Metric | Performance |
 |-------|--------|-------------|
-| **Batch** | Materialized view query | 5-15ms |
+| **Batch** | Materialized view query | 5–15 ms |
 | **Speed** | Real-time data latency | <1 minute |
-| **Cache** | Repeated query speedup | **1151x faster** |
-| **Overall** | Historical data speedup | **10-100x faster** |
+| **Serving** | Materialized views vs live FHIR REST | **10–100× faster** (typical) |
+| **Serving** | Repeated-query cache-hit path | **~1100× faster** (benchmark) |
 
-**Note:** These benchmarks are from experimental implementation. Performance will vary based on data volume and infrastructure.
+**Caveats** (be aware before citing):
+- The turnaround number is from proof-of-concept runs against Synthea-generated FHIR data, not from field measurement at scale with real research requests.
+- The `$0.008` per-request cost is measured under **bursty traffic** (30 requests within Anthropic's 5-minute cache TTL via [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py)). Sparse-traffic measurement (gaps > 5 min between requests) is filed as Sprint 8.5 candidate — sparse traffic would shift the median toward cache-create cost.
+- The `1100×` is specifically the cache-hit path on a repeated query; first-run cohort queries see the 10–100× materialized-view speedup.
+
+### Engineering discipline — what the Sprint 8 series taught
+
+The Sprint 8 series (8.1–8.4, 2026-05-12 through 2026-05-14) was the project's most productive sprint for engineering rigor, even though no new features shipped. Three lessons:
+
+1. **Wire-level tests, not wrapper tests.** A 6-month silent bug in `langchain-anthropic 1.0.1` was silently dropping `cache_control` markers for plain-string `SystemMessage` content. The existing tests asserted against the LangChain input shape and passed every CI run while the wrapper transmitted the wrong payload to Anthropic. Fix shipped in PR #45 with a `tests/test_prompt_optimization.py::TestPromptCachingWireLevel` integration test that mocks `anthropic.AsyncMessages.create` and asserts `cache_control` arrives in the outbound payload. ([ADR 0021](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md))
+
+2. **Manual math beats the aggregator.** The `CostTelemetryService` aggregator was over-counting per-request cost by 2.95× because LangSmith's `Run.input_tokens` already includes `cache_read_input_tokens`, but the formula was double-billing the cache-read portion. Caught by walking the LangSmith trace tree by hand and comparing against aggregator output (manual $0.007754 vs aggregator $0.022865). Sprint 8.4 shipped the one-line fix + a fixture test against real production trace data. ([ADR 0023](docs/decisions/0023-sprint-8-4-aggregator-cache-read-double-charge.md))
+
+3. **Pre-commits defend against bias, not against information.** Sprint 6.3's spike applied a 4-criterion strict-gate framework to engine candidates and reached "GO Pathling" by literal rule-application. User-directed re-examination revealed the gate's premise (3/3 row-count match against HAPI oracle) was broken by an engine-independent view-def bug. Patching the view-def re-ran the gate at 3/3, and the override fired — verdict revised to "GO sqlonfhir" same-day. The pattern: rules should be updated when new information reveals their premise was based on wrong assumptions, not blindly enforced. ([ADR 0020](docs/decisions/0020-sprint-6-3-verdict-revision-go-sqlonfhir.md))
 
 ---
 
@@ -355,7 +388,7 @@ Complete API documentation: **http://localhost:8000/docs** (Swagger UI)
 # Required
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
-# Optional: Multi-Provider LLM (60% cost reduction)
+# Optional: Multi-Provider LLM fallback (not the primary cost lever — see "LLM Cost Discipline" section above)
 SECONDARY_LLM_PROVIDER=openai  # or ollama
 OPENAI_API_KEY=sk-your-openai-key
 OLLAMA_BASE_URL=http://localhost:11434
@@ -428,9 +461,22 @@ pytest tests/e2e/
 
 ### Architecture Analysis
 
-- 🏛️ **[Lambda Architecture Comparison](docs/HealthLakeVsResearchFlowComparison.md)** - Complete implementation analysis
-- 📐 **[Gap Analysis & Roadmap](docs/GAP_ANALYSIS_AND_ROADMAP.md)** - Development status (44.44% complete)
-- 🧪 **[Testing Guide](docs/SQL_ON_FHIR_TESTING_GUIDE.md)** - Test data setup and execution
+- 🏛️ **[Lambda Architecture Comparison](docs/HealthLakeVsResearchFlowComparison.md)** — Complete implementation analysis
+- 🧪 **[Testing Guide](docs/SQL_ON_FHIR_TESTING_GUIDE.md)** — Test data setup and execution
+
+### Design Decisions (ADR log)
+
+- 📜 **[ADR index — `docs/decisions/INDEX.md`](docs/decisions/INDEX.md)** — 27 architectural decision records, append-only, chronological + topic-grouped
+- 🗺️ **[Architectural Map — `docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md)** — Empirically-derived 8-section map of the live system (the canonical reference for the carousel + this README)
+- 📌 **[`CONTEXT.md`](CONTEXT.md)** — what's true right now (active sprint, in-progress work, blockers)
+- 📋 **[`BACKLOG.md`](BACKLOG.md)** — forward plan with decision gates
+
+Notable ADRs:
+- [0024 — Sprint 7.2 A2A FSM closeout](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md) (in-progress)
+- [0026 — Sprint 6.4 sqlonfhir integration](docs/decisions/0026-sprint-6-4-sqlonfhir-integration.md)
+- [0023 — Sprint 8.4 aggregator double-charge fix](docs/decisions/0023-sprint-8-4-aggregator-cache-read-double-charge.md)
+- [0021 — Sprint 8.2 the 6-month silent prompt-caching bug](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md)
+- [0020 — Sprint 6.3 verdict revision: GO sqlonfhir](docs/decisions/0020-sprint-6-3-verdict-revision-go-sqlonfhir.md)
 
 ### All Documentation
 
@@ -448,47 +494,50 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 | Metric | Value |
 |--------|-------|
-| **Lines of Code** | 15,000+ (generated with agentic AI coding) |
-| **AI Agents** | 6 specialized agents |
-| **Database Tables** | 8 tables |
-| **Workflow States** | 20 states (LangGraph FSM) |
+| **Lines of Code** | ~36,000 (application code under `app/`) |
+| **AI Agents** | 6 specialized agents (1 LLM-using, 5 procedural) |
+| **Database Tables** | 10 tables |
+| **Workflow Nodes** | 17 nodes (LangGraph FSM) |
 | **API Endpoints** | 25+ REST endpoints |
-| **Test Coverage** | 85%+ across core modules |
-| **Test Files** | 42 comprehensive test files |
-| **Documentation** | 60+ markdown files |
+| **Test Files** | 88 test files |
+| **Documentation** | 150+ markdown files, including 27 ADRs in `docs/decisions/` |
 
 ### Experimental Achievements
 
-- ⚡ **1151x speedup** - Repeated query caching (proof-of-concept)
-- 🚀 **10-100x speedup** - Materialized views vs raw SQL
-- 💰 **60% cost reduction** - Multi-provider LLM routing
-- ⏱️ **95% time savings** - Weeks → hours turnaround (experimental)
-- 📊 **Lambda Architecture** - Complete 3-layer implementation
-- 🛡️ **Human-in-Loop** - 5 mandatory approval gates
+- ⚡ **10–100× speedup** from materialized views vs live FHIR REST; up to ~1100× on the repeated-query cache-hit path
+- ⏱️ **4–8 hour end-to-end turnaround** vs 2–3 weeks manual (proof-of-concept; not yet field-measured at scale)
+- 💰 **$0.008 measured LLM cost per formal-portal request** (Sprint 8.3 median, n=30 bursty traffic; measurement harness: [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py))
+- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` exercised by tests and batch refresh
+- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
+- 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
 
-### Roadmap
+### Roadmap (~18/22 sprints shipped)
 
-**Completed (Sprint 5.5 - Lambda Architecture)**
-- ✅ Complete Lambda Architecture (Batch + Speed + Serving)
-- ✅ Redis speed layer with <1 minute latency
-- ✅ HybridRunner serving layer with intelligent merging
-- ✅ 29 comprehensive tests (100% pass rate)
-- ✅ LangSmith observability integration
+**Recently shipped:**
+- ✅ Sprint 6.4 (2026-05-15) — sqlonfhir engine integration for 3 zero-row materialized views ([ADR 0026](docs/decisions/0026-sprint-6-4-sqlonfhir-integration.md))
+- ✅ Sprint 8 series (2026-05-12 through 2026-05-14) — cost telemetry verification, prompt-caching wire fix, aggregator double-charge fix, ceiling re-derivation ([ADRs 0018–0025](docs/decisions/INDEX.md))
+- ✅ Sprint 6.3 (2026-05-14) — DuckDB-FHIR / sqlonfhir engine spike + verdict revision ([ADRs 0019–0020](docs/decisions/INDEX.md))
+- ✅ Sprint 6.2 (2026-05-08) — Lambda Architecture transpiler harness + speed-layer wiring + materialized-views router hardening
+- ✅ Sprint 6.1 (2026-05-08) — HIPAA security baseline (audit pipeline, input validation, TLS, encryption-at-rest)
+- ✅ Sprint 7 — LangGraph migration finalized (singleton checkpointer + `@traceable` instrumentation on all 6 agents)
 
-**Current (Sprint 6 - Security Baseline)**
-- 🔄 JWT authentication & RBAC authorization
-- 🔄 SQL injection prevention & input validation
-- 🔄 PHI audit logging & encryption
-- 🔄 HIPAA compliance checklist
+**Active:**
+- 🔄 **Sprint 7.2** — A2A FSM → LangGraph close-out: delete `app/orchestrator/` (1,324 LOC); flip template default to LangGraph; structural parity verification ([ADR 0024](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md))
 
-**Planned (Sprint 7-18)**
-- 📅 MCP Tools Integration (terminology servers, calendar APIs)
-- 📅 Advanced analytics dashboard
-- 📅 Multi-tenant support
-- 🔮 Machine learning for cohort optimization
-- 🔮 Real-time collaboration features
+**Next (filed candidates):**
+- 📅 **Sprint 6.5** — wire production agents through `HybridRunner` for online reads (closes the documented-vs-actual Lambda read-path gap)
+- 📅 **Sprint 8.5** — sparse-traffic median cost measurement (current numbers are bursty-traffic only)
+- 📅 **Sprint 8.6** — exploratory portal prompt caching (currently 0% cache hit rate)
 
-See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for complete 8-month implementation plan.
+**Phase 2 (clinical intelligence):**
+- 📅 Sprint 9 — Temporal Reasoning Engine (clinical time windows: "HbA1c > 7 within 6mo before diabetes dx")
+- 📅 Sprint 10 — Complex Cohort Logic (nested AND/OR/NOT, exclusion subqueries, phenotype-as-code)
+
+**Phase 3 (production readiness):**
+- 📅 Sprint 11 — Multi-Tenant Architecture (institution-scoped data, per-tenant audit logs)
+- 📅 Sprint 12 — Performance Optimization
+
+See [`BACKLOG.md`](BACKLOG.md) for the forward plan and [`docs/decisions/INDEX.md`](docs/decisions/INDEX.md) for the architectural-decision log.
 
 ---
 
@@ -497,13 +546,32 @@ See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for
 **This is experimental software. Known limitations include:**
 
 - ✋ **Not production-ready**: Requires security hardening before clinical deployment
-- ✋ **Limited testing**: Tested with synthetic data only (Synthea FHIR generator)
+- ✋ **Limited testing**: Tested with synthetic data only (Synthea FHIR generator + HAPI FHIR)
 - ✋ **Single institution**: Not tested across multiple healthcare systems
 - ✋ **Manual refresh**: Materialized views require manual/cron refresh
-- ✋ **No encryption**: PHI encryption not yet implemented
+- ✋ **PII encryption deferred**: Tier 1 ePHI columns are encrypted at rest (Sprint 6.1 Phase 3b, FernetEngine — see [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md)); researcher-PII encryption (`User.email`, `*.researcher_email`) is deferred to Phase 3b.1
 - ✋ **Basic authentication**: JWT authentication not yet production-hardened
+- ✋ **Streamlit dashboards have no auth** (Phase 3c, [#39](https://github.com/jagnyesh/researchflow/issues/39)): the 3 Streamlit ports (8501, 8502, 8503) bypass FastAPI's audit middleware + RBAC. Localhost bind is the only mitigation today.
 
 **For demonstration and learning purposes only. Do not use with real patient data without proper security review.**
+
+---
+
+## What's Not Done Yet
+
+Most portfolio READMEs hide their gaps. This section enumerates the architecture-vs-documentation gaps surfaced by the 2026-05-15 zoom-out review ([`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md)) — what's known to be incomplete, and which sprint candidate closes it.
+
+| Gap | Detail | Closing sprint |
+|---|---|---|
+| **HybridRunner bypass** | Production agents (`phenotype_agent`, `extraction_agent`) call `SQLonFHIRAdapter` directly. `feasibility_service` calls `db_client` directly. `HybridRunner.execute()` is exercised by tests and the batch-refresh path only — it's the documented serving layer but not yet on any production read hot-path. | **Sprint 6.5** candidate |
+| **Streamlit dashboard auth** | 3 Streamlit ports have zero authentication. Anyone reaching the bound port can approve HITL escalations and scrape researcher PII. Today only `localhost` bind protects them. | **Phase 3c** ([#39](https://github.com/jagnyesh/researchflow/issues/39)) |
+| **Exploratory portal cache_hit_rate = 0%** | The `QueryInterpreter` system prompt sits below Anthropic's caching threshold and/or doesn't use the content-block-array form that the Sprint 8.2 wire-fix requires for cache_control transmission. Same class of bug as Sprint 8.2's formal-portal prompt issue, not yet applied to QueryInterpreter. | **Sprint 8.6** candidate |
+| **Cost telemetry calibrated for bursty traffic only** | The `$0.008/request` measurement and the rolling-30 cost-band gate ceilings are calibrated against 30 requests fired in 6-7 minutes (within Anthropic's 5-minute cache TTL). Sparse real-world traffic with gaps > 5 min would shift the median toward cache-create cost. | **Sprint 8.5** candidate |
+| **HAPI FHIR Docker healthcheck broken** | The `docker inspect hapi-fhir-server` healthcheck reports `unhealthy` because the distroless image's healthcheck CMD invokes `/bin/sh`, which doesn't exist in distroless. The container serves traffic correctly (HAPI returns 200 on `/fhir/metadata`); only the healthcheck signal is broken. CI / monitoring would see HAPI as down even when it's up. | Cosmetic — fix when monitoring/CI matters |
+| **Phenotype SQL drops demographic predicates in some cases** | Despite the Sprint 6.2 fix to `sql_generator.py`, gender + age predicates are sometimes dropped from generated SQL on natural-language inputs like "all diagnoses of male patients above age 18 with diabetes." Filed as a correctness bug; needs probe-logging at the three plausible failure layers. | TBD — dedicated issue |
+
+There's also one **latent bug preserved bug-for-bug** through Sprint 7.2 (will be fixed in a future sprint, NOT in 7.2):
+- **`research.py` queries `WHERE current_state IN ('delivered', 'complete')`** but LangGraph never writes the `'delivered'` state — terminal is `'complete'` only. LangGraph-completed rows are silently missing from those result sets today. Sprint 7.2 preserves this behavior since it's outside the named scope of the migration close-out. Filed as [#53](https://github.com/jagnyesh/researchflow/issues/53).
 
 ---
 
@@ -601,41 +669,6 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 
 ---
 
-## Project Status
-
-**Version**: 2.0-experimental
-**Status**: Proof-of-Concept / Demonstration
-**Last Updated**: October 2025
-**Development Progress**: 44.44% (8/18 planned sprints)
-
-### Key Proof Points
-
-- ✅ **Meta-Experiment Validated**: AI can build AI for workflow automation
-- ✅ **Architecture Pattern Demonstrated**: AI for coordination, humans for expertise
-- ✅ **Human-in-Loop Safety**: 5 mandatory approval gates prove sustainable AI design
-- ✅ **Observability**: LangSmith traces prove division of labor works
-- ✅ **Open Source**: MIT License enables community learning and adaptation
-
-### What This Project Demonstrates
-
-**For Healthcare IT:**
-- Sustainable pattern for AI in regulated domains
-- Clear boundaries between AI coordination and human expertise
-- SQL-on-FHIR v2 implementation as performance optimization
-
-**For AI Engineers:**
-- Multi-agent orchestration with LangGraph (20-state FSM)
-- Lambda Architecture for FHIR analytics (Batch + Speed + Serving)
-- Multi-provider LLM architecture with intelligent routing
-- Production observability with LangSmith
-
-**For Product Managers:**
-- Where AI should own workflows (administrative coordination)
-- Where humans are irreplaceable (technical validation)
-- How to design human-AI collaboration at scale
-
----
-
 For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
 
-**ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs. 🤖🏥
+**ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs.

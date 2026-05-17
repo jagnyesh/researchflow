@@ -9,6 +9,16 @@ These tests verify that:
 """
 
 import pytest
+
+# Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator was deleted.
+# Per ADR 0024 D3, this file is classified PORT — pending port to
+# LangGraphRequestFacade in Phase 6. Until then, this whole module
+# is skipped at collection time.
+pytest.importorskip(
+    "app.orchestrator.orchestrator",
+    reason="Sprint 7.2 Phase 4: A2A retired. PORT to LangGraph pending in Phase 6 (ADR 0024 D3).",
+)
+
 import asyncio
 from datetime import datetime
 from unittest.mock import Mock, AsyncMock, patch
