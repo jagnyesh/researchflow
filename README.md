@@ -151,12 +151,16 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 - **Input validation**: `PHIInputModel` base + typed primitives across 12 Tier 1 PHI/credential routers; PHI-safe 422 error responses
 - **JWT auth + RBAC**: Split human/agent auth (researcher vs service tokens); admin gates on mutating analytics routes
 
-### 💡 Multi-Provider LLM Architecture
+### 💡 LLM Cost Discipline
 
-- **Intelligent Routing**: Claude (critical medical tasks) + OpenAI/Ollama (non-critical)
-- **60% Cost Reduction**: Smart routing based on task criticality
-- **Auto-Fallback**: Secondary provider failures route to Claude
-- **LangSmith Observability**: Full workflow tracing proves AI vs human division of labor
+The dominant cost lever turned out to be **caching architecture + scope discipline**, not provider switching. The actual story (corrected post-Sprint-8 series):
+
+- **Scope:** 5 of 6 agents are procedural (no LLM). Only the **Requirements Agent** invokes LLMs — Sonnet for cohort-spec extraction (`extract_requirements`), Haiku for medical-concept extraction (`extract_medical_concepts`).
+- **Caching sized to threshold:** Sonnet system prompts ~3,000 tokens, Haiku ~5,185 tokens — deliberately above Anthropic's prompt-caching thresholds (1,024 / 4,096). System prompts are byte-stable across calls.
+- **Wire-level discipline:** the `cache_control` marker must reach Anthropic's API in the content-block-array form; the wrapper's string-content form silently drops it. Caught a 6-month silent bug ([ADR 0021](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md), [PR #45](https://github.com/jagnyesh/researchflow/pull/45)).
+- **Measured outcome:** 94.88% Sonnet hit rate / 100% Haiku hit rate after warmup. Median formal-portal cost: **$0.008 per request** ([ADR 0025](docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)).
+- **`MultiLLMClient` exists** as fallback infrastructure (Anthropic primary; OpenAI/Ollama for non-critical paths) but provider routing is **not** the primary cost driver. Multi-provider routing was the original Sprint 8 hypothesis; Sprint 8.1–8.3 measurement falsified that framing.
+- **LangSmith observability:** `@traceable` on all 6 agents + `MultiLLMClient.complete`; per-portal tagging (`portal:formal`, `portal:exploratory`) drives Cost Telemetry Service aggregation.
 
 ### 📱 Two Researcher Interfaces
 
@@ -233,21 +237,25 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Repeated Query Execution | 116.2s | 0.101s | **1151x faster** |
-| Workflow Turnaround | 2-3 weeks | 4-8 hours | **95% faster** |
-| LLM Costs (multi-provider) | $750/month | $295/month | **60% reduction** |
-| Cache Hit Rate | 0% | 95% | N/A |
+| Repeated Query Execution | 116.2s | 0.101s | **~1100× faster** (cache-hit path) |
+| Workflow Turnaround | 2–3 weeks | 4–8 hours | **~95% faster** (proof-of-concept) |
+| Per-request LLM cost (formal portal) | — | **$0.008 measured** | Sprint 8.3 median, n=30 bursty traffic |
+| Anthropic prompt cache hit (Sonnet, after warmup) | 0% | **94.88%** | Sprint 8.2 wire-fix + Sprint 8.3 measurement |
+| Anthropic prompt cache hit (Haiku, after warmup) | 0% | **100%** | post Sprint 8.2 prompt bulk-up |
 
 ### Lambda Architecture Performance
 
 | Layer | Metric | Performance |
 |-------|--------|-------------|
-| **Batch** | Materialized view query | 5-15ms |
+| **Batch** | Materialized view query | 5–15 ms |
 | **Speed** | Real-time data latency | <1 minute |
-| **Cache** | Repeated query speedup | **1151x faster** |
-| **Overall** | Historical data speedup | **10-100x faster** |
+| **Serving** | Materialized views vs live FHIR REST | **10–100× faster** (typical) |
+| **Serving** | Repeated-query cache-hit path | **~1100× faster** (benchmark) |
 
-**Note:** These benchmarks are from experimental implementation. Performance will vary based on data volume and infrastructure.
+**Caveats** (be aware before citing):
+- The turnaround number is from proof-of-concept runs against Synthea-generated FHIR data, not from field measurement at scale with real research requests.
+- The `$0.008` per-request cost is measured under **bursty traffic** (30 requests within Anthropic's 5-minute cache TTL via [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py)). Sparse-traffic measurement (gaps > 5 min between requests) is filed as Sprint 8.5 candidate — sparse traffic would shift the median toward cache-create cost.
+- The `1100×` is specifically the cache-hit path on a repeated query; first-run cohort queries see the 10–100× materialized-view speedup.
 
 ---
 
@@ -364,7 +372,7 @@ Complete API documentation: **http://localhost:8000/docs** (Swagger UI)
 # Required
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
 
-# Optional: Multi-Provider LLM (60% cost reduction)
+# Optional: Multi-Provider LLM fallback (not the primary cost lever — see "LLM Cost Discipline" section above)
 SECONDARY_LLM_PROVIDER=openai  # or ollama
 OPENAI_API_KEY=sk-your-openai-key
 OLLAMA_BASE_URL=http://localhost:11434
