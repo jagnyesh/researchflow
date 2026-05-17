@@ -220,3 +220,224 @@ async def test_dimension_1_state_sequence_sorts_out_of_order_timestamps(clean_da
         "feasibility_validation",
         "complete",
     ], "fetcher must sort by timestamp ascending before extracting state names"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 3 — dimension 2: agent_execution_order from LangSmith
+# Per ADR 0024 D4: per-orchestrator query branch.
+#   LangGraph: filter execute_task chain spans, sort by start_time, extract
+#              agent name from `agent=*-agent` tag
+#   A2A: filter is_root=True chain runs, sort by start_time, return run.name
+# ---------------------------------------------------------------------------
+
+
+def _mk_run(name, start_time, run_type="chain", tags=None, metadata=None):
+    """Build a synthetic Mock run object with the attributes the fetcher reads."""
+    from unittest.mock import MagicMock
+
+    run = MagicMock()
+    run.name = name
+    run.start_time = start_time
+    run.run_type = run_type
+    run.tags = tags or []
+    run.metadata = metadata or {}
+    return run
+
+
+def test_dimension_2_agent_execution_order_langgraph_happy_path():
+    """LangGraph trace shape: depth-1 children of the `LangGraph` root are
+    state nodes, depth-2 `execute_task` chain spans carry the agent name in
+    their `agent=*-agent` tag. The fetcher should sort by start_time and
+    return the ordered list of agent names.
+
+    Per ADR 0024 D4 pre-flight (2026-05-15): this branch returns the agents
+    in invocation order; that's what dimension 2 parity needs.
+    """
+    from datetime import datetime
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_agent_execution_order
+
+    thread_id = "REQ-20260516-PARITYC3"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+    # Synthetic LangGraph trace: 3 execute_task spans (one per agent run)
+    # plus some noise (the root span, a non-execute_task chain span, an LLM
+    # leaf) to exercise the filter logic.
+    runs = [
+        _mk_run(
+            name="LangGraph",
+            start_time=base_ts,
+            tags=["portal:formal"],
+            metadata={"thread_id": thread_id},
+        ),
+        _mk_run(
+            name="execute_task",
+            start_time=base_ts.replace(second=10),
+            tags=["portal:formal", "agent=requirements-agent"],
+            metadata={"thread_id": thread_id},
+        ),
+        _mk_run(
+            name="execute_task",
+            start_time=base_ts.replace(second=20),
+            tags=["portal:formal", "agent=phenotype-agent"],
+            metadata={"thread_id": thread_id},
+        ),
+        # Noise: a different state-node chain span (not execute_task)
+        _mk_run(
+            name="requirements_gathering",
+            start_time=base_ts.replace(second=5),
+            tags=["portal:formal"],
+            metadata={"thread_id": thread_id},
+        ),
+        # Noise: an LLM leaf at deeper depth
+        _mk_run(
+            name="ChatAnthropic",
+            start_time=base_ts.replace(second=11),
+            run_type="llm",
+            tags=["portal:formal", "agent=requirements-agent"],
+            metadata={"thread_id": thread_id},
+        ),
+        _mk_run(
+            name="execute_task",
+            start_time=base_ts.replace(second=30),
+            tags=["portal:formal", "agent=qa-agent"],
+            metadata={"thread_id": thread_id},
+        ),
+        # Noise: wrong thread_id (should be filtered out)
+        _mk_run(
+            name="execute_task",
+            start_time=base_ts.replace(second=12),
+            tags=["portal:formal", "agent=delivery-agent"],
+            metadata={"thread_id": "REQ-OTHER-THREAD"},
+        ),
+    ]
+    mock_client = MagicMock()
+    mock_client.list_runs.return_value = iter(runs)
+
+    result = fetch_agent_execution_order(
+        thread_id=thread_id,
+        orchestrator="langgraph",
+        langsmith_client=mock_client,
+    )
+
+    assert result == [
+        "requirements-agent",
+        "phenotype-agent",
+        "qa-agent",
+    ], "LangGraph branch must return execute_task agents in start_time order, filtered by thread_id"
+
+
+def test_dimension_2_agent_execution_order_a2a_happy_path():
+    """A2A trace shape: each agent invocation produces an INDEPENDENT root
+    run (run_type='chain'). The harness reads is_root=True chain runs,
+    filters by thread_id, sorts by start_time, and returns run.name verbatim.
+
+    Per ADR 0024 D4 pre-flight: A2A's `WorkflowEngine.determine_next_step`
+    is NOT @traceable, so state transitions don't appear in LangSmith;
+    only the agent calls themselves do, as disconnected roots.
+    """
+    from datetime import datetime
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_agent_execution_order
+
+    thread_id = "REQ-20260516-PARITYC3A2A"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+    runs = [
+        # Three agent roots for this thread
+        _mk_run(
+            name="RequirementsAgent",
+            start_time=base_ts,
+            metadata={"thread_id": thread_id},
+        ),
+        _mk_run(
+            name="PhenotypeAgent",
+            start_time=base_ts.replace(second=10),
+            metadata={"thread_id": thread_id},
+        ),
+        _mk_run(
+            name="QAAgent",
+            start_time=base_ts.replace(second=20),
+            metadata={"thread_id": thread_id},
+        ),
+        # Noise: wrong thread
+        _mk_run(
+            name="DeliveryAgent",
+            start_time=base_ts.replace(second=5),
+            metadata={"thread_id": "REQ-OTHER"},
+        ),
+        # Noise: an llm-typed root (not a chain) — should be filtered out
+        _mk_run(
+            name="ChatAnthropic",
+            start_time=base_ts.replace(second=15),
+            run_type="llm",
+            metadata={"thread_id": thread_id},
+        ),
+    ]
+    mock_client = MagicMock()
+    mock_client.list_runs.return_value = iter(runs)
+
+    result = fetch_agent_execution_order(
+        thread_id=thread_id,
+        orchestrator="a2a",
+        langsmith_client=mock_client,
+    )
+
+    assert result == [
+        "RequirementsAgent",
+        "PhenotypeAgent",
+        "QAAgent",
+    ], "A2A branch must return chain roots in start_time order, filtered by thread_id, excluding llm leaves"
+
+    # Confirm the query was made for ROOT runs only (A2A trace shape).
+    call_kwargs = mock_client.list_runs.call_args.kwargs
+    assert call_kwargs.get("is_root") is True, "A2A branch must query is_root=True"
+
+
+def test_dimension_2_agent_execution_order_unknown_thread_returns_empty():
+    """No matching runs → returns []. Same contract as dimension 1: empty
+    list signals the orchestrator never persisted runs for this thread_id;
+    the caller (compare_pair) decides parity-row semantics."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_agent_execution_order
+
+    mock_client = MagicMock()
+    mock_client.list_runs.return_value = iter([])
+
+    for orchestrator in ("langgraph", "a2a"):
+        result = fetch_agent_execution_order(
+            thread_id="REQ-DOES-NOT-EXIST",
+            orchestrator=orchestrator,
+            langsmith_client=mock_client,
+        )
+        assert result == [], f"{orchestrator}: unknown thread_id must return []"
+
+
+def test_dimension_2_agent_execution_order_invalid_orchestrator_raises():
+    """Unknown orchestrator name → ValueError. The harness's caller passes
+    the literal flag value being tested ("langgraph" vs "a2a"); anything
+    else is a harness bug and should fail loudly."""
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_agent_execution_order
+
+    mock_client = MagicMock()
+    with pytest.raises(ValueError, match="Unknown orchestrator"):
+        fetch_agent_execution_order(
+            thread_id="REQ-ANY",
+            orchestrator="bogus",
+            langsmith_client=mock_client,
+        )
