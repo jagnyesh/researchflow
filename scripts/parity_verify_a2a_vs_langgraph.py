@@ -34,6 +34,7 @@ metadata.thread_id.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional
@@ -448,11 +449,202 @@ async def fetch_audit_trail_shape(thread_id: str, db_session) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Cycle 7 (TBD): bounded-vs-blocking severity classifier
-# Cycle 8 (driver): subprocess plumbing for 30-request drive per flag value
+# Cycle 8 — driver: orchestrate all 5 dimensions across thread_id pairs
+# Operational glue (subprocess plumbing to drive_qa_traffic.py) lives in
+# the __main__ block below; the testable core is run_parity_verification.
 # ---------------------------------------------------------------------------
 
 
+def _bump_summary(summary: Dict[str, int], row: ParityRow) -> None:
+    """Increment match / bounded / blocking counter based on row outcome."""
+    if row.match:
+        summary["match"] += 1
+    elif row.severity == "bounded":
+        summary["bounded"] += 1
+    else:
+        summary["blocking"] += 1
+
+
+async def run_parity_verification(
+    thread_pairs: List[tuple],  # List[Tuple[lg_thread_id, a2a_thread_id]]
+    db_session,
+    langsmith_client,
+    output_path: Path,
+) -> Dict[str, int]:
+    """Drive the 5-dimension parity comparison across a list of thread pairs.
+
+    Each pair is `(langgraph_thread_id, a2a_thread_id)` — typically paired
+    by input index from two `drive_qa_traffic.py` runs against each
+    USE_LANGGRAPH_WORKFLOW value.
+
+    For each pair, queries all 5 dimensions from both orchestrators and
+    emits one ParityRow per dimension to the JSONL log at `output_path`
+    (appended). The row's `thread_id` field is set to the LangGraph
+    thread_id (the orchestrator under test); the A2A counterpart is
+    implicit in the pair's index position in the source data.
+
+    Returns aggregate counts: `{"match": N, "bounded": N, "blocking": N}`.
+    Sprint 7.2 close gate: `blocking == 0`.
+    """
+    summary: Dict[str, int] = {"match": 0, "bounded": 0, "blocking": 0}
+
+    for lg_id, a2a_id in thread_pairs:
+        # Dimension 1: state_sequence
+        lg_v: Any = await fetch_state_sequence(lg_id, db_session)
+        a2a_v: Any = await fetch_state_sequence(a2a_id, db_session)
+        row = compare_pair(lg_id, "state_sequence", lg_v, a2a_v)
+        write_jsonl_row(row, output_path)
+        _bump_summary(summary, row)
+
+        # Dimension 2: agent_execution_order (per-orchestrator query)
+        lg_v = fetch_agent_execution_order(lg_id, "langgraph", langsmith_client)
+        a2a_v = fetch_agent_execution_order(a2a_id, "a2a", langsmith_client)
+        row = compare_pair(lg_id, "agent_execution_order", lg_v, a2a_v)
+        write_jsonl_row(row, output_path)
+        _bump_summary(summary, row)
+
+        # Dimension 3: approval_gate_triggers
+        lg_v = await fetch_approval_gate_triggers(lg_id, db_session)
+        a2a_v = await fetch_approval_gate_triggers(a2a_id, db_session)
+        row = compare_pair(lg_id, "approval_gate_triggers", lg_v, a2a_v)
+        write_jsonl_row(row, output_path)
+        _bump_summary(summary, row)
+
+        # Dimension 4: final_state (bucket-classified)
+        lg_v = await fetch_final_state_bucket(lg_id, db_session)
+        a2a_v = await fetch_final_state_bucket(a2a_id, db_session)
+        row = compare_pair(lg_id, "final_state", lg_v, a2a_v)
+        write_jsonl_row(row, output_path)
+        _bump_summary(summary, row)
+
+        # Dimension 5: audit_trail_shape
+        lg_v = await fetch_audit_trail_shape(lg_id, db_session)
+        a2a_v = await fetch_audit_trail_shape(a2a_id, db_session)
+        row = compare_pair(lg_id, "audit_trail_shape", lg_v, a2a_v)
+        write_jsonl_row(row, output_path)
+        _bump_summary(summary, row)
+
+    return summary
+
+
+async def _main_async(
+    lg_threads_path: Path,
+    a2a_threads_path: Path,
+    output_path: Path,
+) -> int:
+    """Operational driver entry point.
+
+    Pre-condition: drive_qa_traffic.py has been run twice — once with
+    USE_LANGGRAPH_WORKFLOW=true (capture 30 thread_ids → lg_threads.txt)
+    and once with USE_LANGGRAPH_WORKFLOW=false (capture 30 thread_ids →
+    a2a_threads.txt). Each file is plain-text, one thread_id per line.
+    Pairs are formed by line index — `lg_threads.txt:N` pairs with
+    `a2a_threads.txt:N`.
+
+    Reads the two thread-id files, opens a DB session + LangSmith client,
+    runs `run_parity_verification`, and emits the JSONL report.
+
+    Exit code: 0 if `blocking == 0` (Sprint 7.2 close gate); 1 otherwise.
+    """
+    import os
+
+    lg_ids = [line.strip() for line in lg_threads_path.read_text().splitlines() if line.strip()]
+    a2a_ids = [line.strip() for line in a2a_threads_path.read_text().splitlines() if line.strip()]
+    if len(lg_ids) != len(a2a_ids):
+        print(
+            f"ERROR: thread-id file length mismatch — {len(lg_ids)} LG vs {len(a2a_ids)} A2A. "
+            "Pairs are formed by line index; lists must be the same length.",
+            file=sys.stderr,
+        )
+        return 1
+    if not lg_ids:
+        print("ERROR: no thread_ids in input files.", file=sys.stderr)
+        return 1
+
+    pairs = list(zip(lg_ids, a2a_ids))
+    print(f"Parity verification: {len(pairs)} thread pairs, output → {output_path}")
+
+    # Lazy imports for the driver path so the testable core doesn't
+    # require these at import time.
+    from langsmith import Client as LangSmithClient
+
+    from app.database import get_db_session
+
+    langsmith_client = LangSmithClient()
+    project_name = os.environ.get("LANGCHAIN_PROJECT", "researchflow-production")
+    print(f"LangSmith project: {project_name}")
+
+    # Truncate the output file before writing (run_parity_verification appends).
+    if output_path.exists():
+        output_path.unlink()
+
+    async with get_db_session() as session:
+        summary = await run_parity_verification(
+            thread_pairs=pairs,
+            db_session=session,
+            langsmith_client=langsmith_client,
+            output_path=output_path,
+        )
+
+    print("")
+    print("=" * 60)
+    print("PARITY VERIFICATION SUMMARY")
+    print("=" * 60)
+    print(f"  Total comparisons : {sum(summary.values())} ({len(pairs)} pairs × 5 dimensions)")
+    print(f"  Match             : {summary['match']}")
+    print(f"  Bounded diff      : {summary['bounded']}")
+    print(f"  Blocking diff     : {summary['blocking']}")
+    print("=" * 60)
+
+    if summary["blocking"] == 0:
+        print("\n✓ Sprint 7.2 close gate PASSED (0 blocking rows).")
+        return 0
+    else:
+        print(
+            f"\n✗ Sprint 7.2 close gate FAILED: {summary['blocking']} blocking rows. "
+            f"Inspect {output_path} for diff rationales, then either fix or document each "
+            "as a bounded rule in BOUNDED_DIFF_RULES (cycle 7 mechanism)."
+        )
+        return 1
+
+
 if __name__ == "__main__":
-    # Driver entry point (Cycle 8). For Cycle 1, just confirm the module imports.
-    print("Sprint 7.2 Phase 1 parity verifier — driver not yet wired (Cycle 8).")
+    import argparse
+    import asyncio
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Sprint 7.2 Phase 1 parity verifier. Reads two thread-id files "
+            "(one per orchestrator, paired by line index), queries 5 parity "
+            "dimensions for each pair, emits JSONL report. Exit 0 if no "
+            "blocking diffs (Sprint 7.2 close gate)."
+        )
+    )
+    parser.add_argument(
+        "--lg-threads",
+        type=Path,
+        required=True,
+        help="Path to text file with LangGraph thread_ids, one per line",
+    )
+    parser.add_argument(
+        "--a2a-threads",
+        type=Path,
+        required=True,
+        help="Path to text file with A2A thread_ids, one per line (paired by index)",
+    )
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=Path("logs/sprint_7_2_parity.jsonl"),
+        help="Path to JSONL output (default: logs/sprint_7_2_parity.jsonl)",
+    )
+    args = parser.parse_args()
+
+    exit_code = asyncio.run(
+        _main_async(
+            lg_threads_path=args.lg_threads,
+            a2a_threads_path=args.a2a_threads,
+            output_path=args.output,
+        )
+    )
+    sys.exit(exit_code)

@@ -986,3 +986,213 @@ def test_compare_pair_random_diff_remains_blocking():
 
     assert row2.match is False
     assert row2.severity == "blocking", "no rules registered for final_state yet → blocking"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 8 — driver: orchestrate all 5 dimensions across thread_id pairs,
+# emit JSONL report, return aggregate summary.
+# Subprocess plumbing to drive_qa_traffic.py lives in the script's __main__
+# block (operational glue, not unit-tested).
+# ---------------------------------------------------------------------------
+
+
+async def test_run_parity_verification_emits_5_rows_per_pair_all_matching(clean_database, tmp_path):
+    """Cycle 8 tracer: given one (lg_thread_id, a2a_thread_id) pair with
+    matching evidence across all 5 dimensions, the driver should:
+    - emit exactly 5 JSONL rows (one per dimension)
+    - return {"match": 5, "bounded": 0, "blocking": 0}
+    - cover all 5 dimension names in the rows
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import run_parity_verification
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+    state_history = [
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {"state": "complete", "timestamp": (base_ts + timedelta(seconds=10)).isoformat()},
+    ]
+
+    async with get_db_session() as session:
+        # Two synthetic rows representing the "same input" processed by
+        # each orchestrator. Same state_history → dim 1 matches. Same
+        # current_state → dim 4 matches. No approvals → dim 3 matches
+        # ([] vs []). No audit_logs → dim 5 matches.
+        for rid in ("REQ-LG-CYCLE8", "REQ-A2A-CYCLE8"):
+            session.add(
+                ResearchRequest(
+                    id=rid,
+                    researcher_name="parity-harness-cycle8",
+                    researcher_email="cycle8@parity.test",
+                    initial_request="parity-harness cycle 8 synthetic row",
+                    current_state="complete",
+                    state_history=state_history,
+                )
+            )
+        await session.commit()
+
+        # Mock LangSmith returning no runs → dim 2 [] vs [] → matches
+        mock_client = MagicMock()
+        mock_client.list_runs.return_value = iter([])
+
+        output_path = tmp_path / "parity.jsonl"
+        summary = await run_parity_verification(
+            thread_pairs=[("REQ-LG-CYCLE8", "REQ-A2A-CYCLE8")],
+            db_session=session,
+            langsmith_client=mock_client,
+            output_path=output_path,
+        )
+
+    assert summary == {
+        "match": 5,
+        "bounded": 0,
+        "blocking": 0,
+    }, "all 5 dimensions should match for synthetic-identical pair"
+
+    raw = output_path.read_text().strip().splitlines()
+    assert len(raw) == 5, "exactly 5 JSONL rows (one per dimension)"
+
+    rows = [json.loads(line) for line in raw]
+    assert {r["dimension"] for r in rows} == {
+        "state_sequence",
+        "agent_execution_order",
+        "approval_gate_triggers",
+        "final_state",
+        "audit_trail_shape",
+    }, "all 5 dimensions must appear"
+    assert all(r["match"] is True for r in rows), "all rows should be match=True"
+    assert all(r["severity"] is None for r in rows), "matched rows have null severity"
+
+
+async def test_run_parity_verification_aggregates_mixed_outcomes_across_pairs(
+    clean_database, tmp_path
+):
+    """Two pairs: one all-matching, one with divergent final_state.
+    Driver should emit 10 rows total (5 dims × 2 pairs), and summary
+    should aggregate counts across all pairs.
+
+    Pair 1: both rows have current_state='complete' → all 5 dims match
+    Pair 2: lg row 'complete', a2a row 'qa_failed' → 4 dims match
+            (state_sequence, agent, approval, audit all []==[] or
+            same-shape); dim 4 final_state diverges SUCCESS vs FAILED →
+            severity='blocking' (no bounded rule for final_state)
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    from unittest.mock import MagicMock
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import run_parity_verification
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+
+    # Pair 1: all matching
+    pair1_history = [
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {"state": "complete", "timestamp": (base_ts + timedelta(seconds=10)).isoformat()},
+    ]
+    # Pair 2: A2A also has 'qa_failed' state_history + current_state to match
+    # state_history vs final_state divergence creates a single blocking row
+    # (state_sequence and final_state both differ for pair 2)
+    pair2_lg_history = [
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {"state": "complete", "timestamp": (base_ts + timedelta(seconds=10)).isoformat()},
+    ]
+    pair2_a2a_history = [
+        {"state": "new_request", "timestamp": base_ts.isoformat()},
+        {"state": "qa_failed", "timestamp": (base_ts + timedelta(seconds=10)).isoformat()},
+    ]
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id="REQ-LG-CYCLE8B-P1",
+                researcher_name="cycle8b",
+                researcher_email="cycle8b@parity.test",
+                initial_request="cycle 8b pair 1 lg",
+                current_state="complete",
+                state_history=pair1_history,
+            )
+        )
+        session.add(
+            ResearchRequest(
+                id="REQ-A2A-CYCLE8B-P1",
+                researcher_name="cycle8b",
+                researcher_email="cycle8b@parity.test",
+                initial_request="cycle 8b pair 1 a2a",
+                current_state="complete",
+                state_history=pair1_history,
+            )
+        )
+        session.add(
+            ResearchRequest(
+                id="REQ-LG-CYCLE8B-P2",
+                researcher_name="cycle8b",
+                researcher_email="cycle8b@parity.test",
+                initial_request="cycle 8b pair 2 lg",
+                current_state="complete",
+                state_history=pair2_lg_history,
+            )
+        )
+        session.add(
+            ResearchRequest(
+                id="REQ-A2A-CYCLE8B-P2",
+                researcher_name="cycle8b",
+                researcher_email="cycle8b@parity.test",
+                initial_request="cycle 8b pair 2 a2a",
+                current_state="qa_failed",
+                state_history=pair2_a2a_history,
+            )
+        )
+        await session.commit()
+
+        mock_client = MagicMock()
+        mock_client.list_runs.return_value = iter([])
+
+        output_path = tmp_path / "parity.jsonl"
+        summary = await run_parity_verification(
+            thread_pairs=[
+                ("REQ-LG-CYCLE8B-P1", "REQ-A2A-CYCLE8B-P1"),
+                ("REQ-LG-CYCLE8B-P2", "REQ-A2A-CYCLE8B-P2"),
+            ],
+            db_session=session,
+            langsmith_client=mock_client,
+            output_path=output_path,
+        )
+
+    # Pair 1: 5 matches.
+    # Pair 2: dims 2,3,5 still match (LangSmith empty, no approvals, no audit).
+    #         dim 1 differs (state_sequence ends differently).
+    #         dim 4 differs (final_state SUCCESS vs FAILED).
+    # Total: 5+3 = 8 matches, 0 bounded, 2 blocking.
+    assert summary == {
+        "match": 8,
+        "bounded": 0,
+        "blocking": 2,
+    }, f"expected 8 match + 2 blocking, got {summary}"
+
+    raw = output_path.read_text().strip().splitlines()
+    assert len(raw) == 10, "5 dims × 2 pairs = 10 rows"
+
+    # Verify the blocking rows are dim 1 and dim 4 of pair 2
+    rows = [json.loads(line) for line in raw]
+    blocking_rows = [r for r in rows if r["severity"] == "blocking"]
+    assert len(blocking_rows) == 2
+    assert {r["dimension"] for r in blocking_rows} == {
+        "state_sequence",
+        "final_state",
+    }, "blocking rows are state_sequence and final_state divergences in pair 2"
+    assert all(
+        r["thread_id"] == "REQ-LG-CYCLE8B-P2" for r in blocking_rows
+    ), "row.thread_id uses LangGraph id (orchestrator under test)"
