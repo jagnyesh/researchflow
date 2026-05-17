@@ -85,7 +85,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│      (Workflow Engine | 20 States | A2A Protocol)     │
+│  (LangGraph FSM | 17 Nodes | Sprint 7.2 retiring A2A) │
 └────────────────────┬──────────────────────────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -128,19 +128,28 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 ### 🛡️ Human-in-Loop Safety Gates
 
-**5 Mandatory Approval Checkpoints:**
-- **SQL Review** (CRITICAL): Informatician must approve queries before execution
-- **Requirements Validation**: Verify medical accuracy
-- **Extraction Authorization**: Approve data access
-- **QA Review**: Validate quality results
-- **Scope Changes**: Evaluate mid-workflow modifications
+**4 routine gates + 1 escalation terminal** (source: `interrupt_after_list` at [`app/langchain_orchestrator/langgraph_workflow.py:241`](app/langchain_orchestrator/langgraph_workflow.py#L241)):
+
+- **G1 Requirements Review** (`requirements_review`): Informatician approves the cohort spec extracted from natural language
+- **G2 Phenotype SQL Review** (`phenotype_review`): Informatician approves the generated SQL-on-FHIR before any execution
+- **G3 Preview QA Review** (`preview_qa_review`, conditional): Fires only when preview QA fails — informatician reviews and decides whether to proceed
+- **G4 QA Sign-off** (`qa_review`): Approval after full QA passes
+- **★ Human Review** (`human_review`, escalation terminal): Reached on workflow error or scope-change rejection
 
 ### 📊 SQL-on-FHIR v2 Implementation
 
 - **ViewDefinitions**: Standards-compliant FHIR analytics
-- **Performance**: 1151x speedup (in-database vs REST API)
+- **Performance**: 10–100× speedup from materialized views; up to ~1100× on the repeated-query cache-hit path
 - **Dual Runners**: PostgreSQL (fast) + In-Memory (flexible)
 - **Query Optimization**: Automatic SNOMED/LOINC/ICD-10 code resolution
+
+### 🔐 HIPAA Security Baseline (Sprint 6.1)
+
+- **Encryption-at-rest**: Tier 1 ePHI columns (`initial_request`, inclusion/exclusion criteria, phenotype SQL) wrapped in `FernetEngine` — see [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md)
+- **Audit logging**: Default-deny Redis-queue audit pipeline; fail-closed on PHI routes
+- **TLS enforcement**: 308 redirects + HSTS (1-year, includeSubDomains) gated by `ENVIRONMENT=production`
+- **Input validation**: `PHIInputModel` base + typed primitives across 12 Tier 1 PHI/credential routers; PHI-safe 422 error responses
+- **JWT auth + RBAC**: Split human/agent auth (researcher vs service tokens); admin gates on mutating analytics routes
 
 ### 💡 Multi-Provider LLM Architecture
 
@@ -448,47 +457,50 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 | Metric | Value |
 |--------|-------|
-| **Lines of Code** | 15,000+ (generated with agentic AI coding) |
-| **AI Agents** | 6 specialized agents |
-| **Database Tables** | 8 tables |
-| **Workflow States** | 20 states (LangGraph FSM) |
+| **Lines of Code** | ~36,000 (application code under `app/`) |
+| **AI Agents** | 6 specialized agents (1 LLM-using, 5 procedural) |
+| **Database Tables** | 10 tables |
+| **Workflow Nodes** | 17 nodes (LangGraph FSM) |
 | **API Endpoints** | 25+ REST endpoints |
-| **Test Coverage** | 85%+ across core modules |
-| **Test Files** | 42 comprehensive test files |
-| **Documentation** | 60+ markdown files |
+| **Test Files** | 88 test files |
+| **Documentation** | 150+ markdown files, including 27 ADRs in `docs/decisions/` |
 
 ### Experimental Achievements
 
-- ⚡ **1151x speedup** - Repeated query caching (proof-of-concept)
-- 🚀 **10-100x speedup** - Materialized views vs raw SQL
-- 💰 **60% cost reduction** - Multi-provider LLM routing
-- ⏱️ **95% time savings** - Weeks → hours turnaround (experimental)
-- 📊 **Lambda Architecture** - Complete 3-layer implementation
-- 🛡️ **Human-in-Loop** - 5 mandatory approval gates
+- ⚡ **10–100× speedup** from materialized views vs live FHIR REST; up to ~1100× on the repeated-query cache-hit path
+- ⏱️ **4–8 hour end-to-end turnaround** vs 2–3 weeks manual (proof-of-concept; not yet field-measured at scale)
+- 💰 **$0.008 measured LLM cost per formal-portal request** (Sprint 8.3 median, n=30 bursty traffic; measurement harness: [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py))
+- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` exercised by tests and batch refresh
+- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
+- 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
 
-### Roadmap
+### Roadmap (~18/22 sprints shipped)
 
-**Completed (Sprint 5.5 - Lambda Architecture)**
-- ✅ Complete Lambda Architecture (Batch + Speed + Serving)
-- ✅ Redis speed layer with <1 minute latency
-- ✅ HybridRunner serving layer with intelligent merging
-- ✅ 29 comprehensive tests (100% pass rate)
-- ✅ LangSmith observability integration
+**Recently shipped:**
+- ✅ Sprint 6.4 (2026-05-15) — sqlonfhir engine integration for 3 zero-row materialized views ([ADR 0026](docs/decisions/0026-sprint-6-4-sqlonfhir-integration.md))
+- ✅ Sprint 8 series (2026-05-12 through 2026-05-14) — cost telemetry verification, prompt-caching wire fix, aggregator double-charge fix, ceiling re-derivation ([ADRs 0018–0025](docs/decisions/INDEX.md))
+- ✅ Sprint 6.3 (2026-05-14) — DuckDB-FHIR / sqlonfhir engine spike + verdict revision ([ADRs 0019–0020](docs/decisions/INDEX.md))
+- ✅ Sprint 6.2 (2026-05-08) — Lambda Architecture transpiler harness + speed-layer wiring + materialized-views router hardening
+- ✅ Sprint 6.1 (2026-05-08) — HIPAA security baseline (audit pipeline, input validation, TLS, encryption-at-rest)
+- ✅ Sprint 7 — LangGraph migration finalized (singleton checkpointer + `@traceable` instrumentation on all 6 agents)
 
-**Current (Sprint 6 - Security Baseline)**
-- 🔄 JWT authentication & RBAC authorization
-- 🔄 SQL injection prevention & input validation
-- 🔄 PHI audit logging & encryption
-- 🔄 HIPAA compliance checklist
+**Active:**
+- 🔄 **Sprint 7.2** — A2A FSM → LangGraph close-out: delete `app/orchestrator/` (1,324 LOC); flip template default to LangGraph; structural parity verification ([ADR 0024](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md))
 
-**Planned (Sprint 7-18)**
-- 📅 MCP Tools Integration (terminology servers, calendar APIs)
-- 📅 Advanced analytics dashboard
-- 📅 Multi-tenant support
-- 🔮 Machine learning for cohort optimization
-- 🔮 Real-time collaboration features
+**Next (filed candidates):**
+- 📅 **Sprint 6.5** — wire production agents through `HybridRunner` for online reads (closes the documented-vs-actual Lambda read-path gap)
+- 📅 **Sprint 8.5** — sparse-traffic median cost measurement (current numbers are bursty-traffic only)
+- 📅 **Sprint 8.6** — exploratory portal prompt caching (currently 0% cache hit rate)
 
-See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for complete 8-month implementation plan.
+**Phase 2 (clinical intelligence):**
+- 📅 Sprint 9 — Temporal Reasoning Engine (clinical time windows: "HbA1c > 7 within 6mo before diabetes dx")
+- 📅 Sprint 10 — Complex Cohort Logic (nested AND/OR/NOT, exclusion subqueries, phenotype-as-code)
+
+**Phase 3 (production readiness):**
+- 📅 Sprint 11 — Multi-Tenant Architecture (institution-scoped data, per-tenant audit logs)
+- 📅 Sprint 12 — Performance Optimization
+
+See [`BACKLOG.md`](BACKLOG.md) for the forward plan and [`docs/decisions/INDEX.md`](docs/decisions/INDEX.md) for the architectural-decision log.
 
 ---
 
@@ -500,7 +512,7 @@ See **[docs/GAP_ANALYSIS_AND_ROADMAP.md](docs/GAP_ANALYSIS_AND_ROADMAP.md)** for
 - ✋ **Limited testing**: Tested with synthetic data only (Synthea FHIR generator)
 - ✋ **Single institution**: Not tested across multiple healthcare systems
 - ✋ **Manual refresh**: Materialized views require manual/cron refresh
-- ✋ **No encryption**: PHI encryption not yet implemented
+- ✋ **PII encryption deferred**: Tier 1 ePHI columns are encrypted at rest (Sprint 6.1 Phase 3b, FernetEngine — see [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md)); researcher-PII encryption (`User.email`, `*.researcher_email`) is deferred to Phase 3b.1
 - ✋ **Basic authentication**: JWT authentication not yet production-hardened
 
 **For demonstration and learning purposes only. Do not use with real patient data without proper security review.**
@@ -601,41 +613,6 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 
 ---
 
-## Project Status
-
-**Version**: 2.0-experimental
-**Status**: Proof-of-Concept / Demonstration
-**Last Updated**: October 2025
-**Development Progress**: 44.44% (8/18 planned sprints)
-
-### Key Proof Points
-
-- ✅ **Meta-Experiment Validated**: AI can build AI for workflow automation
-- ✅ **Architecture Pattern Demonstrated**: AI for coordination, humans for expertise
-- ✅ **Human-in-Loop Safety**: 5 mandatory approval gates prove sustainable AI design
-- ✅ **Observability**: LangSmith traces prove division of labor works
-- ✅ **Open Source**: MIT License enables community learning and adaptation
-
-### What This Project Demonstrates
-
-**For Healthcare IT:**
-- Sustainable pattern for AI in regulated domains
-- Clear boundaries between AI coordination and human expertise
-- SQL-on-FHIR v2 implementation as performance optimization
-
-**For AI Engineers:**
-- Multi-agent orchestration with LangGraph (20-state FSM)
-- Lambda Architecture for FHIR analytics (Batch + Speed + Serving)
-- Multi-provider LLM architecture with intelligent routing
-- Production observability with LangSmith
-
-**For Product Managers:**
-- Where AI should own workflows (administrative coordination)
-- Where humans are irreplaceable (technical validation)
-- How to design human-AI collaboration at scale
-
----
-
 For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
 
-**ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs. 🤖🏥
+**ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs.
