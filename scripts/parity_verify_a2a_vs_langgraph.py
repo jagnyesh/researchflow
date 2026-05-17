@@ -239,7 +239,41 @@ def fetch_agent_execution_order(
 
 
 # ---------------------------------------------------------------------------
-# Cycles 4-6 (TBD): one dimension query per cycle
+# Cycle 4 — dimension 3: approval_gate_triggers
+# Same shape for both orchestrators — DB rows are written by ApprovalBridge
+# which both orchestrators delegate to. Ordered list of approval_type
+# strings sorted by created_at ascending.
+# ---------------------------------------------------------------------------
+
+
+async def fetch_approval_gate_triggers(thread_id: str, db_session) -> List[str]:
+    """Return ordered list of approval_type values for `thread_id`.
+
+    Approvals are written by ApprovalBridge when a workflow hits a HITL
+    pause point. Each row is one approval gate firing; `approval_type`
+    names the gate (`requirements`, `phenotype_sql`, `qa`, etc.).
+
+    Sort by `created_at` ascending — workflow-chronological order. Same
+    semantics regardless of orchestrator: LangGraph and A2A both delegate
+    approval creation to the same bridge.
+
+    Returns [] if no approvals match (workflow never hit any HITL pause,
+    or thread_id doesn't exist).
+    """
+    from sqlalchemy import select
+
+    from app.database.models import Approval
+
+    result = await db_session.execute(
+        select(Approval.approval_type)
+        .where(Approval.request_id == thread_id)
+        .order_by(Approval.created_at.asc())
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# Cycles 5-6 (TBD): one dimension query per cycle
 # Cycle 7 (TBD): bounded-vs-blocking severity classifier
 # Cycle 8 (driver): subprocess plumbing for 30-request drive per flag value
 # ---------------------------------------------------------------------------

@@ -441,3 +441,175 @@ def test_dimension_2_agent_execution_order_invalid_orchestrator_raises():
             orchestrator="bogus",
             langsmith_client=mock_client,
         )
+
+
+# ---------------------------------------------------------------------------
+# Cycle 4 — dimension 3: approval_gate_triggers from approvals table
+# Per ADR 0024 D4: approvals table joined on request_id. Same shape for
+# both orchestrators (DB rows are written by ApprovalBridge which both
+# orchestrators delegate to). Ordered list of approval_type strings.
+# ---------------------------------------------------------------------------
+
+
+async def test_dimension_3_approval_gate_triggers_returns_ordered_approval_types(clean_database):
+    """fetch_approval_gate_triggers returns the ordered list of approval_type
+    values for a given thread_id (== ResearchRequest.id), sorted by created_at.
+
+    Approval rows are written by ApprovalBridge as the workflow hits HITL
+    pause points. For Sprint 7.2 parity verification, same approval_type
+    sequence == same HITL behavior regardless of orchestrator.
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_approval_gate_triggers
+
+    from app.database import get_db_session
+    from app.database.models import Approval, ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC4"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+
+    async with get_db_session() as session:
+        # Parent request row (FK target)
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle4",
+                researcher_email="cycle4@parity.test",
+                initial_request="parity-harness cycle 4 synthetic row",
+                current_state="complete",
+            )
+        )
+        # 3 approval rows in workflow order
+        session.add_all(
+            [
+                Approval(
+                    request_id=request_id,
+                    approval_type="requirements",
+                    submitted_at=base_ts,
+                    submitted_by="requirements_agent",
+                    approval_data={},
+                    created_at=base_ts,
+                ),
+                Approval(
+                    request_id=request_id,
+                    approval_type="phenotype_sql",
+                    submitted_at=base_ts + timedelta(seconds=10),
+                    submitted_by="phenotype_agent",
+                    approval_data={},
+                    created_at=base_ts + timedelta(seconds=10),
+                ),
+                Approval(
+                    request_id=request_id,
+                    approval_type="qa",
+                    submitted_at=base_ts + timedelta(seconds=20),
+                    submitted_by="qa_agent",
+                    approval_data={},
+                    created_at=base_ts + timedelta(seconds=20),
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await fetch_approval_gate_triggers(thread_id=request_id, db_session=session)
+
+    assert result == [
+        "requirements",
+        "phenotype_sql",
+        "qa",
+    ], "approval_type sequence must be returned in created_at ascending order"
+
+
+async def test_dimension_3_approval_gate_triggers_returns_empty_for_unknown_thread(clean_database):
+    """No approvals for this thread_id → []. Either the thread doesn't
+    exist, or the workflow never hit a HITL pause point. Same [] contract
+    as dimensions 1 and 2."""
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_approval_gate_triggers
+
+    from app.database import get_db_session
+
+    async with get_db_session() as session:
+        result = await fetch_approval_gate_triggers(
+            thread_id="REQ-DOES-NOT-EXIST", db_session=session
+        )
+
+    assert result == [], "unknown thread_id must return [] (not None, not raise)"
+
+
+async def test_dimension_3_approval_gate_triggers_sorts_by_created_at_not_insertion_order(
+    clean_database,
+):
+    """Rows inserted in non-chronological order are returned in
+    chronological order via ORDER BY created_at — same defensive-sort
+    pattern as dimension 1's state_history sort. Protects against future
+    code paths that might insert approvals out of order (e.g., backfill
+    scripts or async writes from agents racing the approval bridge).
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_approval_gate_triggers
+
+    from app.database import get_db_session
+    from app.database.models import Approval, ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC4SORT"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle4-sort",
+                researcher_email="cycle4sort@parity.test",
+                initial_request="parity-harness cycle 4 out-of-order row",
+                current_state="complete",
+            )
+        )
+        # Insertion order intentionally NOT chronological
+        session.add_all(
+            [
+                Approval(
+                    request_id=request_id,
+                    approval_type="qa",
+                    submitted_at=base_ts + timedelta(seconds=20),
+                    submitted_by="qa_agent",
+                    approval_data={},
+                    created_at=base_ts + timedelta(seconds=20),
+                ),
+                Approval(
+                    request_id=request_id,
+                    approval_type="requirements",
+                    submitted_at=base_ts,
+                    submitted_by="requirements_agent",
+                    approval_data={},
+                    created_at=base_ts,
+                ),
+                Approval(
+                    request_id=request_id,
+                    approval_type="phenotype_sql",
+                    submitted_at=base_ts + timedelta(seconds=10),
+                    submitted_by="phenotype_agent",
+                    approval_data={},
+                    created_at=base_ts + timedelta(seconds=10),
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await fetch_approval_gate_triggers(thread_id=request_id, db_session=session)
+
+    assert result == [
+        "requirements",
+        "phenotype_sql",
+        "qa",
+    ], "fetcher must sort by created_at ascending, not by insertion order"
