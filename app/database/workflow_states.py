@@ -1,39 +1,31 @@
 """Canonical workflow state strings for research_requests.current_state.
 
-This enum was historically internal to the A2A orchestrator
-(app/orchestrator/workflow_engine.py). Sprint 7.2 Phase 0 promoted it to a
-schema module because production code (5 callers in app/api/research.py,
-app/web_ui/dashboard_helpers.py, and others) depends on the .value strings
-as the canonical DB state values.
+This enum was originally internal to the A2A orchestrator at
+app/orchestrator/workflow_engine.py. Sprint 7.2 Phase 0 (2026-05-15)
+promoted it to a schema module because production code depends on the
+`.value` strings as the canonical DB state values. Sprint 7.2 Phase 4
+(2026-05-17) then deleted app/orchestrator/ entirely. This module is now
+the sole home; there is no compatibility shim, no re-export path.
 
 The enum contains 27 states. The current LangGraph orchestrator
 (app/langchain_orchestrator/langgraph_workflow.py) emits 17 distinct
-state strings, all of which are members of this enum. The remaining
-10 states are historical-only — they may appear in production DB rows
-from the A2A era but LangGraph never writes them:
+state strings, all members of this enum. The remaining 10 are
+historical-only — they may appear in `research_requests.current_state`
+for pre-LangGraph rows but LangGraph never writes them:
 
     REQUIREMENTS_COMPLETE, EXTRACTION_APPROVAL, SCOPE_CHANGE,
     PREVIEW_COMPLETE, FEASIBLE, KICKOFF_COMPLETE, EXTRACTION_COMPLETE,
     QA_PASSED, DELIVERY_REVIEW, DELIVERED, FAILED
 
-These are retained for backward-compat queries. Production code that
-filters by state should be aware that LangGraph never emits these
-values — any query depending on them only matches pre-LangGraph rows.
+These are retained so old-row queries don't break. Code that filters by
+state should be aware that LangGraph never writes these values — any
+filter depending on them only matches pre-LangGraph rows.
 
-(Empirical note: Sprint 8.4 grilling claimed 25 A2A values and listed
-HUMAN_REVIEW as LangGraph-only. Sprint 7.2 Phase 0 implementation
-verified the actual count is 27, and HUMAN_REVIEW is in both engines.
-The DECISIONS.md ADR is corrected separately.)
-
-Known related issue: app/api/research.py queries
-WHERE current_state IN ('delivered', 'complete'). LangGraph never writes
-'delivered'. Pre-existing latent bug, filed as #53 — not in
-Sprint 7.2 scope (Sprint 7.2 preserves existing query behavior).
-
-Until Sprint 7.2 Phase 4 deletes app/orchestrator/, the old import path
-(app.orchestrator.workflow_engine.WorkflowState) continues to resolve
-via a re-export. Both paths point to the same enum object — there is no
-drift. After Phase 4, only the new home remains.
+Known latent bug: app/api/research.py queries
+`WHERE current_state IN ('delivered', 'complete')`. LangGraph never
+writes 'delivered'. Filed as #53. Sprint 7.2 preserved this bug-for-bug
+because fixing it was out of scope (orchestrator retirement vs query
+correctness). Future sprint should address.
 """
 
 from __future__ import annotations

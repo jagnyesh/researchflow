@@ -1,53 +1,39 @@
 # ResearchFlow — Current State
 
-**Sprint:** 7.2 (A2A FSM → LangGraph migration close-out) — **ACTIVE. Grilling now; implementation pending.** Sequenced AFTER Sprint 6.4 closes, BEFORE Sprint 6.5 (agents through HybridRunner). Scope: delete `app/orchestrator/` (1,324 LOC), flip `config/.env.example` default, migrate 7 production scripts, port-vs-delete 7 A2A test files, simplify dispatchers in `researcher_portal.py` + `admin_dashboard.py`. Pre-committed gate is **structural** parity (state sequence + agent execution order + approval gate triggers + final-state classification + audit-trail shape), NOT LLM content equality.
-**Branch:** main is fresh; feature branch TBD post-grilling.
-**Recently shipped:** Sprint 6.4 squash-merged 2026-05-15 as `b64d0d8` (sqlonfhir integration, all 6 gates GREEN; PR #52). Sprint 8.3 squash-merged 2026-05-14 (closed Sprint 8 series). Sprint 8.4 squash-merged 2026-05-14 as `039848c`. Sprint 8.2 squash-merged 2026-05-14 as `185de26`. Sprint 6.3 spike merged 2026-05-14 as `4fd7562`. PR #45 wire-level fix merged 2026-05-14 as `6bf1e86`. Sprint 8.1 squash-merged 2026-05-12 as `9b7d22b`.
-**Overall progress:** Sprint 6.1/6.2 SHIPPED 2026-05-08, CI #25 SHIPPED 2026-05-11, Sprint 8.1 CLOSED 2026-05-12 (RED — confirmed correct), Sprint 6.3 spike VERDICT 2026-05-14 (GO sqlonfhir), Sprint 8.2/8.4 SHIPPED 2026-05-14, Sprint 8.3 SHIPPED 2026-05-14 (closed Sprint 8 series), Sprint 6.4 SHIPPED 2026-05-15 (sqlonfhir). **Sprint 8 series CLOSED.** ~18/22 sprints shipped.
-**Last updated:** 2026-05-15
+**Sprint:** 6.5 next — wire production agents through `HybridRunner` for online reads (closes the documented-vs-actual Lambda read-path gap surfaced by Sprint 6.3 /zoom-out). Now safely-scoped to LangGraph only after Sprint 7.2 retired A2A.
+**Branch:** main is fresh; feature branch TBD when Sprint 6.5 starts.
+**Recently shipped:** Sprint 7.2 SHIPPED 2026-05-17 (this session, 23 commits) — A2A FSM retired, `app/orchestrator/` deleted (1,324 LOC), LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14 (cost telemetry verification + wire-fix + aggregator audit + ceilings re-derived). Sprint 6.3 spike + verdict revision 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08 (HIPAA baseline + Lambda finish).
+**Overall progress:** Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~19/22 sprints shipped.** A2A FSM permanently retired.
+**Last updated:** 2026-05-17
 
-## Sprint 7.2 active (2026-05-15) — A2A FSM to LangGraph close-out
+## Sprint 7.2 SHIPPED (2026-05-17) — A2A FSM retired
 
-Promote locally-validated LangGraph default to template + remove the deprecated A2A FSM. Sprint 4 started the migration (parallel implementations behind `USE_LANGGRAPH_WORKFLOW`); Sprint 7 completed the technical migration (singleton checkpointer + LangSmith tracing); Sprint 7.2 closes the loop with deprecation + cleanup. Empirically validated state at sprint start:
+23 commits across one session. The 1,324 LOC A2A FSM under `app/orchestrator/` is permanently gone. LangGraph is the only orchestrator. See [`docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md`](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md) for the full close ADR with per-phase commit ledger + meta-pattern lessons.
 
-| Surface | Value |
+| Phase | Outcome |
 |---|---|
-| User's local `.env:87` | `USE_LANGGRAPH_WORKFLOW=true` (Sprint 8 traffic ran through LangGraph) |
-| Template `config/.env.example:125` | `USE_LANGGRAPH_WORKFLOW=false` (fresh clones default to A2A) |
-| Sprint 8.4 trace root | `name=LangGraph` (empirical proof) |
-| `app/orchestrator/` LOC | 1,324 across 3 files (to be deleted) |
-| `app/langchain_orchestrator/` LOC | 6,490 across 9 files (canonical) |
-| Production scripts coupled to A2A | 7 (verified at Sprint 7.2 ADR time) |
-| Tests exercising A2A path | 7 files (port-or-delete TBD per file) |
+| 0 — WorkflowState promotion | `100ef8c` — schema enum moved to `app/database/workflow_states.py`; 8 importers re-routed |
+| 1 — Parity verification | `697bcf9` close addendum — 8 /tdd cycles, 22 unit tests, harness produced `logs/sprint_7_2_parity.jsonl` evidence artifact; Path-0 diagnostic re-framed the literal "FAILED gate" verdict as 3 pre-existing observations (Findings 1+2+3, none Sprint-7.2-introduced) |
+| 2 — Template default flip | `e14908b` — `USE_LANGGRAPH_WORKFLOW=true` in `config/.env.example` |
+| 3 — Migrate/retire 7 scripts | `c845d75` — 3 migrated, 4 deleted (`route_task` was a no-op in LG); + new `docs/operations/stuck-request-recovery.md` runbook |
+| 4+5 — Delete A2A + simplify dispatchers | `2b7d72d` — **-2,386 LOC** (1,324 A2A FSM + orphan dev scripts; production dispatchers in `researcher_portal.py` + `admin_dashboard.py` + `app/main.py` + `app/api/approvals.py` + `app/services/approval_service.py` all migrated to `LangGraphRequestFacade`) |
+| 6 (partial — D-hybrid) | `3950eed` — `test_nlp_to_sql_workflow.py` ported (3 tests, schema-drift bug fixed); 2 files deferred to Sprint 7.3 candidate ([#65](https://github.com/jagnyesh/researchflow/issues/65)) |
+| 7 — Close ADR + this doc update | (this commit) |
 
-### Pre-committed gates (per Sprint 7.2 ADR in DECISIONS.md)
+**Net codebase change:** ~-3,200 LOC across the sprint. The project shrunk meaningfully while gaining the parity verification harness as the evidence artifact for the deletion.
 
-1. **Parity verification (structural):** 30 formal-portal requests through each flag value. Five checks:
-   - Workflow state sequence identical
-   - Agent execution order identical
-   - Approval gate triggers identical
-   - Final state classification equivalent (SUCCESS / NEEDS_HUMAN_REVIEW / FAILED bucket)
-   - Audit trail same shape (event count + event-type sequence per `thread_id`)
-   - **NOT compared:** LLM-generated content (non-deterministic; would fail on irrelevant differences)
-2. Template flip: `config/.env.example` → `USE_LANGGRAPH_WORKFLOW=true`
-3. 7 production scripts migrated to `LangGraphRequestFacade` + run against real stuck-state row
-4. `app/orchestrator/` deleted via `git rm -r` (NOT archived; git history is rollback)
-5. Dispatchers in `researcher_portal.py:430-480` + `admin_dashboard.py:160-210` collapse to unconditional LangGraph instantiation
-6. Test files: port-vs-delete decision per file (PORT if behavior LangGraph must exhibit; DELETE if A2A-internal)
-7. CONTEXT.md updated to remove "two parallel implementations" framing
-8. Sprint 7.2 close ADR appended documenting port/delete decisions + parity verification result
+### Issues filed by Sprint 7.2 (not blockers; documented separately)
 
-### Currently grilling
-
-- D1 — **Parity verification methodology**: how to capture the 5 structural-parity checks in practice (audit_logs DB dump? LangSmith trace tree? hybrid?).
-- D2 — **Migration execution order**: 8 phases. Verify before delete? Two-phase flag removal?
-- D3 — **Per-file test port-vs-delete decisions**: which 7 A2A test files become LangGraph regression tests vs which get deleted?
+- **[#63](https://github.com/jagnyesh/researchflow/issues/63)** — `state_history` persistence gap (medium, both orchestrators pre-existing). Workflow transitions update in-memory state but never `UPDATE research_requests.state_history`.
+- **[#64](https://github.com/jagnyesh/researchflow/issues/64)** — PHI access audit not firing for agent-driven workflows (HIGH, compliance, pre-existing since Sprint 6.1). The audit middleware fires for HTTP routes only; the production data path bypasses FastAPI.
+- **[#65](https://github.com/jagnyesh/researchflow/issues/65)** — Sprint 7.3 candidate: port the 2 remaining A2A behavioral test files (`test_agent_handoffs.py`, `test_admin_dashboard_updates.py`) to LangGraph. ~14-20 hours per inspection-time triage.
 
 ### Next per BACKLOG
 
-- **Sprint 6.5** — wire agents through HybridRunner for online reads (Sprint 6.2's documented-but-uncalled architecture). Sequenced AFTER Sprint 7.2 closes (so the wiring change only touches LangGraph).
+- **Sprint 6.5** — wire agents through `HybridRunner` for online reads. Sprint 7.2 unblocked this by removing the dual-orchestration; Sprint 6.5 only touches LangGraph.
 - **Sprint 6.6 candidate** — custom-path MV health-check oracles.
-- **Sprint 8.5/8.6 candidates** — sparse-traffic median measurement + exploratory portal caching.
+- **Sprint 7.3 candidate** ([#65](https://github.com/jagnyesh/researchflow/issues/65)) — port the 2 deferred test files.
+- **Sprint 8.5/8.6 candidates** — sparse-traffic median + exploratory portal caching.
 
 ---
 
