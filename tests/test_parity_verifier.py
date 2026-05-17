@@ -858,3 +858,131 @@ async def test_dimension_5_audit_trail_shape_returns_empty_for_unknown_thread(cl
         result = await fetch_audit_trail_shape(thread_id="REQ-DOES-NOT-EXIST", db_session=session)
 
     assert result == [], "unknown thread_id must return [] (not None, not raise)"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 7 — bounded-vs-blocking severity classifier
+# Per ADR 0024 D4c: when langgraph != a2a, evaluate the diff against
+# per-dimension permitted-diff rules. Rule fires → severity='bounded'
+# (acceptable per close-ADR documentation). No rule fires → severity=
+# 'blocking' (sprint cannot close until rationalized).
+# ---------------------------------------------------------------------------
+
+
+def test_compare_pair_classifies_diff_as_bounded_when_dimension_rule_fires():
+    """Cycle 7 tracer: the bounded-rules registry is the extension point.
+    Each dimension can register one or more rules; if any rule fires on a
+    mismatch, severity is 'bounded' (with the rule's rationale as diff).
+
+    Test injects a custom rule dict (override of production
+    BOUNDED_DIFF_RULES) to avoid coupling the test to whatever rules are
+    actually registered in production. Proves the dispatcher works without
+    needing a concrete production rule to exist yet.
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import compare_pair
+
+    # Custom rule that always fires with a known rationale
+    custom_rules = {
+        "fake_dim": [lambda lg, a2a: "test-only rule fired (cycle 7a tracer)"],
+    }
+
+    row = compare_pair(
+        thread_id="REQ-7A",
+        dimension="fake_dim",
+        langgraph=[1, 2, 3],
+        a2a=[4, 5, 6],
+        bounded_rules=custom_rules,
+    )
+
+    assert row.match is False, "values genuinely differ"
+    assert row.severity == "bounded", "rule fired → bounded, not blocking"
+    assert row.diff == "test-only rule fired (cycle 7a tracer)"
+
+
+def test_compare_pair_state_sequence_preview_qa_substitution_is_bounded():
+    """ADR 0024 D4c concrete example: LangGraph's `preview_qa_review` state
+    is semantically equivalent to A2A's two-state `preview_qa` → `qa_review`
+    subsequence. Same gate fires (preview QA review by an informatician),
+    different state names per orchestrator. Should classify as bounded,
+    not blocking, when this is the only difference.
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import compare_pair
+
+    lg_seq = [
+        "new_request",
+        "requirements_review",
+        "preview_qa_review",
+        "data_extraction",
+        "complete",
+    ]
+    a2a_seq = [
+        "new_request",
+        "requirements_review",
+        "preview_qa",
+        "qa_review",
+        "data_extraction",
+        "complete",
+    ]
+
+    row = compare_pair(
+        thread_id="REQ-7B",
+        dimension="state_sequence",
+        langgraph=lg_seq,
+        a2a=a2a_seq,
+    )
+
+    assert row.match is False, "raw sequences differ in length and content"
+    assert (
+        row.severity == "bounded"
+    ), "preview_qa substitution is semantically equivalent per ADR 0024 D4c"
+    assert "preview_qa" in row.diff, "diff message must name the substitution"
+    assert (
+        "ADR 0024" in row.diff or "same gate" in row.diff
+    ), "diff must explain why this is bounded"
+
+
+def test_compare_pair_random_diff_remains_blocking():
+    """Negative regression: when the mismatch isn't a known equivalence
+    pattern, severity must stay 'blocking'. The cycle 7b rule for
+    state_sequence must NOT accidentally classify unrelated diffs as
+    bounded. Preserves the Sprint 7.2 close-gate semantics: 0 blocking
+    rows required to ship.
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import compare_pair
+
+    # Genuinely-different terminal states — no known equivalence
+    row = compare_pair(
+        thread_id="REQ-7C",
+        dimension="state_sequence",
+        langgraph=["new_request", "complete"],
+        a2a=["new_request", "qa_failed"],
+    )
+
+    assert row.match is False
+    assert (
+        row.severity == "blocking"
+    ), "no rule applies to complete-vs-qa_failed; must stay blocking"
+    assert "Raw values differ" in row.diff
+
+    # And: a dimension with no rules registered → mismatch is blocking
+    row2 = compare_pair(
+        thread_id="REQ-7C-DIM4",
+        dimension="final_state",
+        langgraph="SUCCESS",
+        a2a="FAILED",
+    )
+
+    assert row2.match is False
+    assert row2.severity == "blocking", "no rules registered for final_state yet → blocking"

@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -71,28 +71,106 @@ class ParityRow:
 # ---------------------------------------------------------------------------
 
 
+# Per-dimension permitted-diff rules. A `BoundedRule` is a callable that
+# takes `(langgraph_value, a2a_value)` and returns:
+#   - None: rule doesn't apply (the diff is NOT acceptable per this rule)
+#   - str: rule applies; returned string is the rationale to record in
+#          ParityRow.diff (and surfaced in the Sprint 7.2 close ADR).
+#
+# Production rules accumulate as cycle-8 driver runs surface real diffs.
+BoundedRule = Callable[[Any, Any], Optional[str]]
+
+
+def _rule_state_sequence_preview_qa_substitution(lg: Any, a2a: Any) -> Optional[str]:
+    """ADR 0024 D4c rule: LangGraph's `preview_qa_review` collapses A2A's
+    two-state `preview_qa` → `qa_review` subsequence into a single state.
+    Same gate fires (preview QA review by informatician); different state
+    names.
+
+    Normalize A2A's sequence by replacing every `[preview_qa, qa_review]`
+    adjacent pair with `preview_qa_review`. If the normalized A2A matches
+    LangGraph exactly, this is the only difference → bounded.
+    """
+    if not isinstance(lg, list) or not isinstance(a2a, list):
+        return None
+    a2a_normalized: List[Any] = []
+    i = 0
+    while i < len(a2a):
+        if i + 1 < len(a2a) and a2a[i] == "preview_qa" and a2a[i + 1] == "qa_review":
+            a2a_normalized.append("preview_qa_review")
+            i += 2
+        else:
+            a2a_normalized.append(a2a[i])
+            i += 1
+    if a2a_normalized == lg:
+        return (
+            "state_sequence: A2A's [preview_qa, qa_review] subsequence is "
+            "semantically equivalent to LangGraph's preview_qa_review — same "
+            "gate, different state names (per ADR 0024 D4c)"
+        )
+    return None
+
+
+BOUNDED_DIFF_RULES: Dict[str, List[BoundedRule]] = {
+    "state_sequence": [_rule_state_sequence_preview_qa_substitution],
+}
+
+
 def compare_pair(
     thread_id: str,
     dimension: str,
     langgraph: Any,
     a2a: Any,
+    *,
+    bounded_rules: Optional[Dict[str, List[BoundedRule]]] = None,
 ) -> ParityRow:
     """Build a ParityRow comparing one dimension's evidence between the two
     orchestrators.
 
-    For Cycle 1 (tracer bullet): simple equality comparison. Bounded-vs-
-    blocking classification rules (cycle 7) will extend this with per-
-    dimension permitted-diff lists.
+    Behaviour:
+    1. Exact match → severity=None, diff=None, match=True
+    2. Mismatch + a registered bounded-diff rule for `dimension` fires →
+       severity='bounded', diff=<rationale from the rule>
+    3. Mismatch + no rule fires → severity='blocking', diff='Raw values differ...'
+
+    `bounded_rules` defaults to the module-level `BOUNDED_DIFF_RULES`.
+    Tests pass a custom dict to exercise the dispatcher in isolation from
+    production rules.
     """
     matched = langgraph == a2a
+    if matched:
+        return ParityRow(
+            thread_id=thread_id,
+            dimension=dimension,
+            langgraph=langgraph,
+            a2a=a2a,
+            match=True,
+            severity=None,
+            diff=None,
+        )
+
+    rules = bounded_rules if bounded_rules is not None else BOUNDED_DIFF_RULES
+    for rule in rules.get(dimension, []):
+        rationale = rule(langgraph, a2a)
+        if rationale is not None:
+            return ParityRow(
+                thread_id=thread_id,
+                dimension=dimension,
+                langgraph=langgraph,
+                a2a=a2a,
+                match=False,
+                severity="bounded",
+                diff=rationale,
+            )
+
     return ParityRow(
         thread_id=thread_id,
         dimension=dimension,
         langgraph=langgraph,
         a2a=a2a,
-        match=matched,
-        severity=None if matched else "blocking",
-        diff=None if matched else f"Raw values differ at dimension {dimension!r}",
+        match=False,
+        severity="blocking",
+        diff=f"Raw values differ at dimension {dimension!r}",
     )
 
 
