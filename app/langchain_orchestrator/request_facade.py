@@ -1073,35 +1073,15 @@ def create_langgraph_facade(
 
 
 # ============================================================================
-# Migration Notes (Sprint 6.5)
+# Migration history (Sprint 6.5 → Sprint 7.2)
 # ============================================================================
-
-# MIGRATION STRATEGY:
-# The facade provides a drop-in replacement for ResearchRequestOrchestrator.
-# UIs can switch with a simple import change:
+# The facade was introduced in Sprint 6.5 as a drop-in replacement for the
+# (now-deleted) ResearchRequestOrchestrator. Sprint 7 finalized the technical
+# migration (singleton checkpointer + LangSmith @traceable on all 6 agents).
+# Sprint 7.2 retired the legacy A2A FSM entirely — see
+# docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md.
 #
-# # Old code:
-# from app.orchestrator.orchestrator import ResearchRequestOrchestrator
-# orchestrator = ResearchRequestOrchestrator()
-#
-# # New code (with facade):
-# from app.langchain_orchestrator.request_facade import create_langgraph_facade
-# orchestrator = create_langgraph_facade()
-#
-# All existing UI code continues to work without modification!
-#
-# FEATURE FLAG APPROACH:
-# Use environment variable to toggle between old and new:
-#
-# USE_LANGGRAPH = os.getenv("USE_LANGGRAPH", "false").lower() == "true"
-#
-# if USE_LANGGRAPH:
-#     from app.langchain_orchestrator.request_facade import create_langgraph_facade
-#     orchestrator = create_langgraph_facade()
-# else:
-#     from app.orchestrator.orchestrator import ResearchRequestOrchestrator
-#     orchestrator = ResearchRequestOrchestrator()
-#
-# FUTURE CLEANUP:
-# Once UIs are fully migrated and tested with LangGraph, this facade can be removed.
-# UIs should be updated to use LangGraph workflow directly without the facade layer.
+# This facade can be flattened (its callers can construct FullWorkflow directly)
+# in a future sprint if a refactor opportunity surfaces; today it carries
+# value as the API surface that researcher_portal/admin_dashboard/main.py
+# all depend on without coupling to LangGraph internals.

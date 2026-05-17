@@ -20,17 +20,8 @@ from .api.analytics import router as analytics_router
 from .api.materialized_views import router as materialized_views_router
 from .api.approvals import router as approvals_router, set_orchestrator as set_approvals_orch
 from .api.research import router as research_router, set_orchestrator as set_research_orch
-from .orchestrator.orchestrator import ResearchRequestOrchestrator
+from .langchain_orchestrator.request_facade import LangGraphRequestFacade
 from .database import init_db
-from .agents import (
-    RequirementsAgent,
-    PhenotypeValidationAgent,
-    CalendarAgent,
-    DataExtractionAgent,
-    QualityAssuranceAgent,
-    DeliveryAgent,
-)
-from .agents.coordinator_agent import CoordinatorAgent
 from .security.rate_limit import setup_rate_limiting
 from .security import audit_middleware as audit_mw
 from .security.audit_drain import audit_drain_loop, recovery_sweep
@@ -107,33 +98,15 @@ async def lifespan(app: FastAPI):
     enable_orchestrator = os.getenv("ENABLE_ORCHESTRATOR", "true").lower() == "true"
 
     if enable_orchestrator:
-        logger.info("Initializing orchestrator and agents (full workflow mode)...")
+        logger.info("Initializing LangGraph orchestrator (full workflow mode)...")
 
-        # Initialize orchestrator
-        orchestrator = ResearchRequestOrchestrator()
-        logger.info("Orchestrator initialized")
-
-        # Get HAPI FHIR database URL from environment
-        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-        logger.info(f"Using HAPI database: {hapi_db_url}")
-
-        # Initialize and register all agents
-        requirements_agent = RequirementsAgent()
-        phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
-        calendar_agent = CalendarAgent()
-        extraction_agent = DataExtractionAgent()
-        qa_agent = QualityAssuranceAgent()
-        delivery_agent = DeliveryAgent()
-        coordinator_agent = CoordinatorAgent()
-
-        orchestrator.register_agent("requirements_agent", requirements_agent)
-        orchestrator.register_agent("phenotype_agent", phenotype_agent)
-        orchestrator.register_agent("calendar_agent", calendar_agent)
-        orchestrator.register_agent("extraction_agent", extraction_agent)
-        orchestrator.register_agent("qa_agent", qa_agent)
-        orchestrator.register_agent("delivery_agent", delivery_agent)
-        orchestrator.register_agent("coordinator_agent", coordinator_agent)
-        logger.info("All agents registered with orchestrator")
+        # Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator + manual agent
+        # registration are deleted. LangGraphRequestFacade with use_real_agents=True
+        # handles all 6 agent setup internally.
+        orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
+        logger.info(
+            "LangGraph orchestrator initialized (use_real_agents=True, use_persistence=True)"
+        )
 
         # Set orchestrator in API routers
         set_approvals_orch(orchestrator)

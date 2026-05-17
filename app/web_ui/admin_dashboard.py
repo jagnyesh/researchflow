@@ -48,16 +48,7 @@ from app.security.encryption_keys import assert_encryption_key_present_if_produc
 
 assert_encryption_key_present_if_production()
 
-from app.orchestrator import ResearchRequestOrchestrator
 from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
-from app.agents import (
-    RequirementsAgent,
-    PhenotypeValidationAgent,
-    CalendarAgent,
-    DataExtractionAgent,
-    QualityAssuranceAgent,
-    DeliveryAgent,
-)
 from app.database import get_db_session, get_engine
 from app.database.models import AgentExecution, ResearchRequest
 from app.services.approval_service import ApprovalService
@@ -161,67 +152,13 @@ def initialize_orchestrator():
         # This prevents "Queue is bound to a different event loop" errors
         get_engine()
 
-        # ====================================================================
-        # LangGraph Migration Feature Flag (Sprint 6.5 + 6.6 + 7)
-        # ====================================================================
-        # Check if LangGraph workflow is enabled via environment variable
-        use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
-
-        # Gradual rollout support (Sprint 7)
-        # If feature flag is enabled, check rollout percentage for gradual deployment
-        if use_langgraph:
-            import random
-
-            rollout_pct = int(os.getenv("LANGGRAPH_ROLLOUT_PCT", "100"))
-
-            # Randomly decide based on rollout percentage
-            # Generate a random number between 0-99, if it's < rollout_pct, use LangGraph
-            if rollout_pct < 100:
-                random_draw = random.randint(0, 99)  # nosec B311 - Feature rollout, not security
-                use_langgraph = random_draw < rollout_pct
-
-                if use_langgraph:
-                    st.caption(
-                        f"🎲 Selected for LangGraph (rollout: {rollout_pct}%, draw: {random_draw})"
-                    )
-                else:
-                    st.caption(
-                        f"🎲 Using legacy orchestrator (rollout: {rollout_pct}%, draw: {random_draw})"
-                    )
-
-        if use_langgraph:
-            # Use new LangGraph declarative orchestrator
-            st.caption("🆕 Using LangGraph Orchestrator (Beta)")
-            orchestrator = LangGraphRequestFacade(
-                use_real_agents=True,  # Use production agents
-                use_persistence=True,  # Enable checkpointing
-            )
-        else:
-            # Use legacy custom orchestrator (default)
-            orchestrator = ResearchRequestOrchestrator()
-
-            # Get HAPI FHIR database URL from environment
-            hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-
-            # Convert to asyncpg format for SQLAlchemy async engine
-            # SQLonFHIRAdapter requires postgresql+asyncpg:// URL format
-            if "postgresql://" in hapi_db_url and "+asyncpg" not in hapi_db_url:
-                hapi_db_url_async = hapi_db_url.replace("postgresql://", "postgresql+asyncpg://")
-            else:
-                hapi_db_url_async = hapi_db_url
-
-            # Register all agents (phenotype and extraction agents need HAPI database for ViewDefinitions)
-            orchestrator.register_agent("requirements_agent", RequirementsAgent())
-            orchestrator.register_agent(
-                "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url_async)
-            )
-            orchestrator.register_agent("calendar_agent", CalendarAgent())
-            orchestrator.register_agent(
-                "extraction_agent", DataExtractionAgent(database_url=hapi_db_url_async)
-            )
-            orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
-            orchestrator.register_agent("delivery_agent", DeliveryAgent())
-
+        # Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator deleted; the
+        # USE_LANGGRAPH_WORKFLOW + LANGGRAPH_ROLLOUT_PCT feature flags are
+        # retired with it. LangGraph is now the unconditional default.
+        orchestrator = LangGraphRequestFacade(
+            use_real_agents=True,  # Use production agents
+            use_persistence=True,  # Enable checkpointing
+        )
         st.session_state.orchestrator = orchestrator
 
 

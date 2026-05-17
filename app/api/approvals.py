@@ -12,7 +12,7 @@ import logging
 
 from ..database import get_db_session
 from ..services.approval_service import ApprovalService
-from ..orchestrator.orchestrator import ResearchRequestOrchestrator
+from ..langchain_orchestrator.request_facade import LangGraphRequestFacade
 from ..schemas.approvals import ApprovalResponse, ScopeChangeRequest
 
 logger = logging.getLogger(__name__)
@@ -23,11 +23,14 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 # Schemas migrated to app/schemas/approvals.py (Sprint 6.1 Phase 2.3 Issue #5)
 
 
-# Global orchestrator instance (will be set by main.py)
-orchestrator: Optional[ResearchRequestOrchestrator] = None
+# Global orchestrator instance (will be set by main.py).
+# Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator deleted; now uses
+# LangGraphRequestFacade which exposes the same process_approval_response /
+# get_request_status surface this router relies on.
+orchestrator: Optional[LangGraphRequestFacade] = None
 
 
-def set_orchestrator(orch: ResearchRequestOrchestrator):
+def set_orchestrator(orch: LangGraphRequestFacade):
     """Set the orchestrator instance"""
     global orchestrator
     orchestrator = orch

@@ -136,29 +136,20 @@ def test_workflow_state_total_count_locked():
 # ---------------------------------------------------------------------------
 
 
-def test_old_home_re_exports_same_workflow_state_object():
-    """`from app.orchestrator.workflow_engine import WorkflowState` still works
-    AND resolves to the SAME enum object as the new home.
+def test_old_home_no_longer_exists_after_phase_4_deletion():
+    """`from app.orchestrator.workflow_engine import WorkflowState` MUST FAIL
+    after Phase 4 deleted app/orchestrator/ entirely (Sprint 7.2 2026-05-17).
 
-    Phase 0 keeps the A2A package import-clean for its self-references
-    (app/orchestrator/__init__.py:8, app/orchestrator/orchestrator.py:16)
-    by re-exporting WorkflowState from the new home. There is ONE source
-    of truth — `is` identity check rather than name equality — so any
-    future renaming or value drift breaks both paths together, not just
-    one.
+    Phase 0 (cycle ~3-week ago) added a re-export shim so the A2A package
+    could keep importing WorkflowState during the transitional period.
+    Phase 4 retired that shim by deleting app/orchestrator/ wholesale.
 
-    Phase 4 will delete app/orchestrator/ entirely; this test will fail
-    by the same import error at that point, signalling Phase 0's
-    transitional state has ended.
+    This test inverts the original Cycle-3 assertion: the old import path
+    is now expected to be gone. If somehow `app.orchestrator.workflow_engine`
+    is importable again, something has regressed (either Phase 4's deletion
+    got reverted or someone re-created the package).
     """
-    from app.database.workflow_states import WorkflowState as WS_NEW
-    from app.orchestrator.workflow_engine import WorkflowState as WS_OLD
+    import pytest
 
-    assert WS_OLD is WS_NEW, (
-        "app.orchestrator.workflow_engine.WorkflowState and "
-        "app.database.workflow_states.WorkflowState should be the same "
-        "object (re-export, not duplicate definition). Got different "
-        "objects — likely two parallel definitions, which means value "
-        "drift becomes possible. Fix: replace the class definition in "
-        "workflow_engine.py with a re-export."
-    )
+    with pytest.raises(ImportError):
+        from app.orchestrator.workflow_engine import WorkflowState  # noqa: F401

@@ -110,55 +110,13 @@ def make_exploratory_query(idx: int) -> str:
     )
 
 
-def _build_formal_orchestrator():
-    """Dispatch on USE_LANGGRAPH_WORKFLOW — mirrors the production pattern
-    in app/web_ui/researcher_portal.py:439-494. Both orchestrators expose
-    `await process_new_request(researcher_request, researcher_info,
-    from_formal_portal=True)`; this function builds the right object.
-
-    Used by drive_formal() so Sprint 7.2 Phase 1 parity verification can
-    drive the same 30 inputs through each orchestrator.
-    """
-    use_langgraph = os.getenv("USE_LANGGRAPH_WORKFLOW", "false").lower() == "true"
-
-    if use_langgraph:
-        from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
-
-        return LangGraphRequestFacade(use_real_agents=True, use_persistence=True), "LangGraph"
-
-    # Legacy A2A path — register the 6 agents exactly as researcher_portal.py does
-    from app.agents.calendar_agent import CalendarAgent
-    from app.agents.delivery_agent import DeliveryAgent
-    from app.agents.extraction_agent import DataExtractionAgent
-    from app.agents.phenotype_agent import PhenotypeValidationAgent
-    from app.agents.qa_agent import QualityAssuranceAgent
-    from app.agents.requirements_agent import RequirementsAgent
-    from app.orchestrator.orchestrator import ResearchRequestOrchestrator
-
-    orchestrator = ResearchRequestOrchestrator()
-    hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-    if "postgresql://" in hapi_db_url and "+asyncpg" not in hapi_db_url:
-        hapi_db_url_async = hapi_db_url.replace("postgresql://", "postgresql+asyncpg://")
-    else:
-        hapi_db_url_async = hapi_db_url
-    orchestrator.register_agent("requirements_agent", RequirementsAgent())
-    orchestrator.register_agent(
-        "phenotype_agent", PhenotypeValidationAgent(database_url=hapi_db_url_async)
-    )
-    orchestrator.register_agent("calendar_agent", CalendarAgent())
-    orchestrator.register_agent(
-        "extraction_agent", DataExtractionAgent(database_url=hapi_db_url_async)
-    )
-    orchestrator.register_agent("qa_agent", QualityAssuranceAgent())
-    orchestrator.register_agent("delivery_agent", DeliveryAgent())
-    return orchestrator, "A2A"
-
-
 async def drive_formal(start: int, n: int) -> list[dict]:
-    orchestrator, label = _build_formal_orchestrator()
-    print(
-        f"  formal portal: {label} orchestrator (USE_LANGGRAPH_WORKFLOW={os.getenv('USE_LANGGRAPH_WORKFLOW', 'false')})"
-    )
+    # Sprint 7.2 Phase 4: A2A orchestrator deleted. The earlier env-var
+    # dispatcher in this function (Phase 1 parity verification) is gone;
+    # LangGraph is the only orchestrator.
+    from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
+
+    orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
     out: list[dict] = []
     for i in range(start, start + n):
         case_idx = i % len(CASES)
