@@ -39,6 +39,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional
 
+# Allow imports from app.* when invoked as `python scripts/parity_verify_a2a_vs_langgraph.py`
+# (mirrors scripts/drive_qa_traffic.py:24)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 
 # ---------------------------------------------------------------------------
 # Schema (D4c)
@@ -256,8 +260,10 @@ def _extract_agent_name_from_tags(run: Any) -> Optional[str]:
 def fetch_agent_execution_order(
     thread_id: str,
     orchestrator: str,
-    langsmith_client: Any,
+    langsmith_client: Any = None,
     project_name: str = "researchflow-production",
+    *,
+    runs: Optional[List[Any]] = None,
 ) -> List[str]:
     """Return ordered agent invocation names for `thread_id` from LangSmith.
 
@@ -277,10 +283,23 @@ def fetch_agent_execution_order(
     error semantics).
     """
     if orchestrator == "langgraph":
-        runs_iter = langsmith_client.list_runs(
-            project_name=project_name,
-            filter='has(tags, "portal:formal")',
-        )
+        # LangSmith filter DSL does NOT support eq(metadata.X, ...) — that's
+        # why this query fetches by tag and filters thread_id in Python.
+        # `limit` bounds worst-case iteration; LangSmith returns
+        # reverse-chronological so recent traces fall within the window.
+        # Caller may pass `runs=` to skip the LangSmith fetch (driver
+        # prefetches once and partitions across all pairs).
+        if runs is not None:
+            runs_iter = runs
+        else:
+            runs_iter = langsmith_client.list_runs(
+                project_name=project_name,
+                filter='has(tags, "portal:formal")',
+                limit=2000,
+            )
+        # Belt-and-suspenders: server-side filter SHOULD drop wrong-thread
+        # rows but we re-check in Python as a correctness guard against
+        # LangSmith filter-DSL syntax surprises.
         matching = [
             r
             for r in runs_iter
@@ -298,13 +317,17 @@ def fetch_agent_execution_order(
         # A2A trace shape: each agent invocation is its own ROOT chain run.
         # State-transition logic (WorkflowEngine.determine_next_step) is NOT
         # @traceable, so we only see the agent calls themselves as
-        # disconnected roots. Filter by thread_id, exclude llm-typed roots
-        # (no agent calls invoke @traceable at the LLM layer in A2A), sort
-        # by start_time.
-        runs_iter = langsmith_client.list_runs(
-            project_name=project_name,
-            is_root=True,
-        )
+        # disconnected roots. Push thread_id filter server-side; limit caps
+        # the worst-case.
+        if runs is not None:
+            runs_iter = runs
+        else:
+            runs_iter = langsmith_client.list_runs(
+                project_name=project_name,
+                is_root=True,
+                limit=2000,
+            )
+        # Belt-and-suspenders: defense in depth (see langgraph branch).
         matching = [
             r
             for r in runs_iter
@@ -488,6 +511,25 @@ async def run_parity_verification(
     """
     summary: Dict[str, int] = {"match": 0, "bounded": 0, "blocking": 0}
 
+    # Prefetch LangSmith runs ONCE per orchestrator branch. The data is
+    # the same for all pairs; calling list_runs per-pair (60 times) was
+    # too slow because each call paginates through ~2000 server-side rows.
+    # Prefetch + Python partition reduces it to 2 calls.
+    lg_runs = list(
+        langsmith_client.list_runs(
+            project_name="researchflow-production",
+            filter='has(tags, "portal:formal")',
+            limit=2000,
+        )
+    )
+    a2a_root_runs = list(
+        langsmith_client.list_runs(
+            project_name="researchflow-production",
+            is_root=True,
+            limit=2000,
+        )
+    )
+
     for lg_id, a2a_id in thread_pairs:
         # Dimension 1: state_sequence
         lg_v: Any = await fetch_state_sequence(lg_id, db_session)
@@ -496,9 +538,10 @@ async def run_parity_verification(
         write_jsonl_row(row, output_path)
         _bump_summary(summary, row)
 
-        # Dimension 2: agent_execution_order (per-orchestrator query)
-        lg_v = fetch_agent_execution_order(lg_id, "langgraph", langsmith_client)
-        a2a_v = fetch_agent_execution_order(a2a_id, "a2a", langsmith_client)
+        # Dimension 2: agent_execution_order (uses prefetched runs to avoid
+        # the per-pair LangSmith round-trip)
+        lg_v = fetch_agent_execution_order(lg_id, "langgraph", runs=lg_runs)
+        a2a_v = fetch_agent_execution_order(a2a_id, "a2a", runs=a2a_root_runs)
         row = compare_pair(lg_id, "agent_execution_order", lg_v, a2a_v)
         write_jsonl_row(row, output_path)
         _bump_summary(summary, row)
