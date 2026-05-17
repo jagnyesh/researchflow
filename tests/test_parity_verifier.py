@@ -613,3 +613,148 @@ async def test_dimension_3_approval_gate_triggers_sorts_by_created_at_not_insert
         "phenotype_sql",
         "qa",
     ], "fetcher must sort by created_at ascending, not by insertion order"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 5 — dimension 4: final_state classification
+# Per ADR 0024 D4: SUCCESS / NEEDS_HUMAN_REVIEW / FAILED bucket per request.
+# Bucket-level comparison (not raw current_state) so cross-orchestrator
+# semantic equivalence holds (e.g., LangGraph's `complete` == A2A's
+# `delivered` both = SUCCESS).
+# ---------------------------------------------------------------------------
+
+
+async def test_dimension_4_final_state_returns_success_for_complete(clean_database):
+    """`current_state='complete'` (LangGraph's terminal SUCCESS) classifies
+    into the SUCCESS bucket. Tracer bullet for the dimension-4 fetcher +
+    classifier shape.
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_final_state_bucket
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC5"
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle5",
+                researcher_email="cycle5@parity.test",
+                initial_request="parity-harness cycle 5 synthetic row",
+                current_state="complete",
+            )
+        )
+        await session.commit()
+
+        result = await fetch_final_state_bucket(thread_id=request_id, db_session=session)
+
+    assert result == "SUCCESS", "current_state='complete' must classify as SUCCESS"
+
+
+async def test_dimension_4_final_state_classifies_other_terminal_buckets(clean_database):
+    """The classifier handles all 3 named buckets per ADR 0024 D4:
+    SUCCESS, NEEDS_HUMAN_REVIEW, FAILED. Cross-orchestrator parity requires
+    that A2A's historical `delivered` terminal maps to the same SUCCESS
+    bucket as LangGraph's `complete` — otherwise old A2A rows and new
+    LangGraph rows would never compare equal in dimension 4.
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_final_state_bucket
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    cases = [
+        # (request_id_suffix, current_state, expected_bucket, reason)
+        ("HR", "human_review", "NEEDS_HUMAN_REVIEW", "LangGraph escalation terminal"),
+        ("QF", "qa_failed", "FAILED", "LangGraph QA-failure terminal"),
+        ("ERR", "error", "FAILED", "A2A error terminal (historical)"),
+        (
+            "DEL",
+            "delivered",
+            "SUCCESS",
+            "A2A historical SUCCESS — must match LangGraph's `complete`",
+        ),
+        ("NF", "not_feasible", "SUCCESS", "LangGraph cohort-too-small (workflow ran normally)"),
+    ]
+
+    async with get_db_session() as session:
+        for suffix, current_state, _, _ in cases:
+            session.add(
+                ResearchRequest(
+                    id=f"REQ-20260516-PARITYC5{suffix}",
+                    researcher_name="parity-harness-cycle5b",
+                    researcher_email="cycle5b@parity.test",
+                    initial_request=f"parity-harness cycle 5b synthetic row ({current_state})",
+                    current_state=current_state,
+                )
+            )
+        await session.commit()
+
+        for suffix, _, expected_bucket, reason in cases:
+            result = await fetch_final_state_bucket(
+                thread_id=f"REQ-20260516-PARITYC5{suffix}", db_session=session
+            )
+            assert result == expected_bucket, f"{reason}: expected {expected_bucket}, got {result}"
+
+
+async def test_dimension_4_final_state_in_progress_for_non_terminal(clean_database):
+    """A row in a non-terminal state classifies as IN_PROGRESS. The harness
+    is supposed to read AFTER all 30 drives finish; if any row is still
+    mid-flight, the parity report should surface that (the comparison will
+    still work — both orchestrators must reach the same bucket — but
+    IN_PROGRESS is itself a useful diagnostic signal).
+    """
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_final_state_bucket
+
+    from app.database import get_db_session
+    from app.database.models import ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC5MID"
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle5c",
+                researcher_email="cycle5c@parity.test",
+                initial_request="parity-harness cycle 5c mid-flight row",
+                current_state="phenotype_review",  # Non-terminal HITL pause
+            )
+        )
+        await session.commit()
+
+        result = await fetch_final_state_bucket(thread_id=request_id, db_session=session)
+
+    assert result == "IN_PROGRESS", "non-terminal current_state must classify as IN_PROGRESS"
+
+
+async def test_dimension_4_final_state_returns_none_for_unknown_thread(clean_database):
+    """No row for thread_id → None. Unlike dimensions 1-3 (which return [])
+    dimension 4 returns a single string-or-None. compare_pair handles both
+    shapes via raw equality."""
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_final_state_bucket
+
+    from app.database import get_db_session
+
+    async with get_db_session() as session:
+        result = await fetch_final_state_bucket(thread_id="REQ-DOES-NOT-EXIST", db_session=session)
+
+    assert result is None, "unknown thread_id must return None (not raise, not 'UNKNOWN')"

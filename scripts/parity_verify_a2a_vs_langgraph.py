@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +273,67 @@ async def fetch_approval_gate_triggers(thread_id: str, db_session) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Cycles 5-6 (TBD): one dimension query per cycle
+# Cycle 5 — dimension 4: final_state classification
+# Per ADR 0024 D4: SUCCESS / NEEDS_HUMAN_REVIEW / FAILED bucket per request.
+# Bucket-level (not raw current_state) so cross-orchestrator semantic
+# equivalence holds — LangGraph's `complete` and A2A's `delivered` both =
+# SUCCESS even though the raw strings differ.
+# ---------------------------------------------------------------------------
+
+
+# Map of raw `current_state` strings → parity bucket. Covers both
+# LangGraph (current orchestrator) and A2A (historical) terminal states.
+# Anything not in this dict classifies as IN_PROGRESS (non-terminal or
+# unrecognized).
+_TERMINAL_STATE_BUCKETS: Dict[str, str] = {
+    # LangGraph terminals (langgraph_workflow.py:272-275)
+    "complete": "SUCCESS",
+    "not_feasible": "SUCCESS",  # workflow ran normally; cohort just wasn't viable
+    "qa_failed": "FAILED",
+    "human_review": "NEEDS_HUMAN_REVIEW",
+    # A2A historical terminals (rows from pre-LangGraph era; see
+    # app/database/workflow_states.py for the full WorkflowState enum)
+    "delivered": "SUCCESS",  # A2A's terminal SUCCESS (LangGraph never emits — see #53)
+    "error": "FAILED",
+}
+
+
+def classify_final_state(current_state: Optional[str]) -> str:
+    """Map a raw `current_state` string into a parity bucket.
+
+    Returns one of: 'SUCCESS', 'NEEDS_HUMAN_REVIEW', 'FAILED', 'IN_PROGRESS'.
+    Unknown/non-terminal states → 'IN_PROGRESS' (catch-all).
+    """
+    if current_state is None:
+        return "IN_PROGRESS"
+    return _TERMINAL_STATE_BUCKETS.get(current_state, "IN_PROGRESS")
+
+
+async def fetch_final_state_bucket(thread_id: str, db_session) -> Optional[str]:
+    """Return the parity bucket for `thread_id`'s terminal workflow state.
+
+    Reads `research_requests.current_state` and classifies into SUCCESS /
+    NEEDS_HUMAN_REVIEW / FAILED / IN_PROGRESS via `classify_final_state`.
+
+    Returns `None` if no row matches `thread_id` (e.g., the orchestrator
+    failed to persist anything). The caller decides whether `None` is a
+    parity-row signal or a harness error.
+    """
+    from sqlalchemy import select
+
+    from app.database.models import ResearchRequest
+
+    result = await db_session.execute(
+        select(ResearchRequest.current_state).where(ResearchRequest.id == thread_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+    return classify_final_state(row)
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 (TBD): dimension 5 — audit_trail_shape
 # Cycle 7 (TBD): bounded-vs-blocking severity classifier
 # Cycle 8 (driver): subprocess plumbing for 30-request drive per flag value
 # ---------------------------------------------------------------------------
