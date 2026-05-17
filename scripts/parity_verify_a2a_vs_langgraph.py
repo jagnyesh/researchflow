@@ -333,7 +333,43 @@ async def fetch_final_state_bucket(thread_id: str, db_session) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
-# Cycle 6 (TBD): dimension 5 — audit_trail_shape
+# Cycle 6 — dimension 5: audit_trail_shape
+# Same shape for both orchestrators — audit rows are written by the Sprint
+# 6.1 audit middleware (Redis-queue pipeline) which both orchestrators
+# delegate to. Ordered list of event_type strings sorted by timestamp
+# ascending. The HIPAA-grade evidence channel per ADR 0024 D4.
+# ---------------------------------------------------------------------------
+
+
+async def fetch_audit_trail_shape(thread_id: str, db_session) -> List[str]:
+    """Return ordered list of audit event_type strings for `thread_id`.
+
+    Each `audit_logs` row is one event fired by the Sprint 6.1 audit
+    middleware. `event_type` names the event (`REQUEST_CREATE`,
+    `AGENT_STARTED`, `QUERY_EXECUTE`, `DATA_DELIVER`, etc. — see the
+    AuditLog model docstring at app/database/models.py:320 for the full
+    vocabulary).
+
+    Sort by `timestamp` ascending — workflow-chronological order. Same
+    semantics regardless of orchestrator: LangGraph and A2A both route
+    PHI-touching requests through the same audit pipeline.
+
+    Returns [] if no audit rows match (e.g., the workflow never fired
+    audit events, or thread_id doesn't exist).
+    """
+    from sqlalchemy import select
+
+    from app.database.models import AuditLog
+
+    result = await db_session.execute(
+        select(AuditLog.event_type)
+        .where(AuditLog.request_id == thread_id)
+        .order_by(AuditLog.timestamp.asc())
+    )
+    return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
 # Cycle 7 (TBD): bounded-vs-blocking severity classifier
 # Cycle 8 (driver): subprocess plumbing for 30-request drive per flag value
 # ---------------------------------------------------------------------------

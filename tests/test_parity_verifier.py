@@ -758,3 +758,103 @@ async def test_dimension_4_final_state_returns_none_for_unknown_thread(clean_dat
         result = await fetch_final_state_bucket(thread_id="REQ-DOES-NOT-EXIST", db_session=session)
 
     assert result is None, "unknown thread_id must return None (not raise, not 'UNKNOWN')"
+
+
+# ---------------------------------------------------------------------------
+# Cycle 6 — dimension 5: audit_trail_shape from audit_logs
+# Per ADR 0024 D4: audit_logs grouped by thread_id (request_id). Same shape
+# for both orchestrators because audit rows are written by the shared
+# Sprint 6.1 audit middleware. Ordered list of event_type strings sorted
+# by timestamp ascending.
+# ---------------------------------------------------------------------------
+
+
+async def test_dimension_5_audit_trail_shape_returns_ordered_event_types(clean_database):
+    """fetch_audit_trail_shape returns the ordered list of event_type
+    strings for a given thread_id (== request_id on AuditLog).
+
+    Audit rows are written by the Sprint 6.1 audit middleware (Redis-queue
+    pipeline). Sort by timestamp ascending — workflow-chronological order.
+    Same query for both orchestrators since the audit pipeline is shared.
+    """
+    from datetime import datetime, timedelta
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_audit_trail_shape
+
+    from app.database import get_db_session
+    from app.database.models import AuditLog, ResearchRequest
+
+    request_id = "REQ-20260516-PARITYC6"
+    base_ts = datetime(2026, 5, 16, 10, 0, 0)
+
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="parity-harness-cycle6",
+                researcher_email="cycle6@parity.test",
+                initial_request="parity-harness cycle 6 synthetic row",
+                current_state="complete",
+            )
+        )
+        # Synthetic audit trail: workflow-relevant events for one request
+        session.add_all(
+            [
+                AuditLog(
+                    timestamp=base_ts,
+                    request_id=request_id,
+                    event_type="REQUEST_CREATE",
+                    phi_accessed=False,
+                ),
+                AuditLog(
+                    timestamp=base_ts + timedelta(seconds=5),
+                    request_id=request_id,
+                    event_type="AGENT_STARTED",
+                    phi_accessed=False,
+                ),
+                AuditLog(
+                    timestamp=base_ts + timedelta(seconds=20),
+                    request_id=request_id,
+                    event_type="QUERY_EXECUTE",
+                    phi_accessed=True,
+                ),
+                AuditLog(
+                    timestamp=base_ts + timedelta(seconds=30),
+                    request_id=request_id,
+                    event_type="DATA_DELIVER",
+                    phi_accessed=True,
+                ),
+            ]
+        )
+        await session.commit()
+
+        result = await fetch_audit_trail_shape(thread_id=request_id, db_session=session)
+
+    assert result == [
+        "REQUEST_CREATE",
+        "AGENT_STARTED",
+        "QUERY_EXECUTE",
+        "DATA_DELIVER",
+    ], "audit event_type sequence must be returned in timestamp ascending order"
+
+
+async def test_dimension_5_audit_trail_shape_returns_empty_for_unknown_thread(clean_database):
+    """No audit rows for this thread_id → []. Same [] contract as
+    dimensions 1, 2, 3. Could indicate: (a) workflow never fired events
+    (broken audit middleware integration), (b) thread_id doesn't exist,
+    or (c) thread is still mid-flight with no audit events yet."""
+    from pathlib import Path
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from parity_verify_a2a_vs_langgraph import fetch_audit_trail_shape
+
+    from app.database import get_db_session
+
+    async with get_db_session() as session:
+        result = await fetch_audit_trail_shape(thread_id="REQ-DOES-NOT-EXIST", db_session=session)
+
+    assert result == [], "unknown thread_id must return [] (not None, not raise)"
