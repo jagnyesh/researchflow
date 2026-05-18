@@ -168,15 +168,23 @@ class HybridRunner:
                 view_definition, search_params=search_params, max_resources=max_resources
             )
 
-        # Sprint 6.5 cycle 3 (#69): populate batch_anchor_ts for FORMAL_DRAFT.
-        # FORMAL_EXTRACTION extends this in cycle 4; cycle 6 generalizes the
-        # SQL to MAX across multiple touched views for multi-view queries.
-        if mode == FreshnessAnnotation.FORMAL_DRAFT:
+        # Sprint 6.5 cycle 3+4 (#69): populate batch_anchor_ts for both
+        # FORMAL_* modes. Cycle 6 generalizes the SQL to MAX across
+        # multiple touched views for multi-view queries.
+        if mode in (FreshnessAnnotation.FORMAL_DRAFT, FreshnessAnnotation.FORMAL_EXTRACTION):
             self._last_batch_anchor_ts = await self.db_client.execute_scalar(
                 "SELECT MAX(refreshed_at) FROM sqlonfhir.mv_refresh_metadata "
                 "WHERE view_name = $1",
                 [view_name],
             )
+
+        # Sprint 6.5 cycle 4 (#69): FORMAL_EXTRACTION skips speed-layer
+        # merge entirely. The citability contract requires batch-only
+        # reads — re-running the same query against the same
+        # batch_anchor_ts must be bit-identical. Speed-layer overlay
+        # would break that.
+        if mode == FreshnessAnnotation.FORMAL_EXTRACTION:
+            return batch_result
 
         # Step 2: Query speed layer for recent data (if enabled)
         if self.use_speed_layer:

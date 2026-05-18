@@ -188,3 +188,62 @@ class TestHybridRunnerRouting:
         assert isinstance(
             anchor, datetime
         ), f"batch_anchor_ts should be a datetime; got {type(anchor).__name__}"
+
+    async def test_hybrid_runner_routes_formal_extraction_to_batch_only(
+        self, hybrid_runner, redis_client, view_def_manager
+    ):
+        """FORMAL_EXTRACTION mode skips speed-layer merge entirely.
+
+        Post-approval extraction in the Formal Portal workflow needs the
+        opposite of FORMAL_DRAFT: citable reproducibility, not freshness.
+        Researcher approves a cohort *definition* (SQL/criteria), not a
+        row-set. The row-set materializes at extraction time against the
+        current BATCH state — speed-layer overlay is excluded so that
+        re-running the same query (against the same batch state, anchored
+        by batch_anchor_ts) is bit-identical.
+
+        Observable contract: a Patient that exists ONLY in the speed
+        layer (Redis pre-loaded, MV not refreshed since) must NOT appear
+        in FORMAL_EXTRACTION result rows. The same id is verified absent.
+        """
+        from datetime import datetime
+
+        synthetic_patient = {
+            "resourceType": "Patient",
+            "id": "formal-extraction-cycle-4",
+            "gender": "male",
+            "birthDate": "1975-11-22",
+            "name": [{"family": "FormalExtractionCycle4", "given": ["Synthetic"]}],
+        }
+        await redis_client.set_fhir_resource("Patient", synthetic_patient["id"], synthetic_patient)
+
+        view_def = view_def_manager.load("patient_simple")
+        assert view_def is not None
+
+        rows = await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_EXTRACTION,
+        )
+
+        # Speed-merge skipped — the synthetic id (Redis-only, not in MV)
+        # must NOT appear in the result.
+        result_ids = {r.get("id") for r in rows if r.get("id")}
+        assert "formal-extraction-cycle-4" not in result_ids, (
+            "FORMAL_EXTRACTION leaked a speed-layer-only row into result. "
+            "The citability contract requires batch-only reads — re-running "
+            "the same query against the same batch_anchor_ts must be "
+            f"bit-identical. Got {len(result_ids)} ids including the "
+            "synthetic one that should have been excluded."
+        )
+
+        # batch_anchor_ts is still populated — FORMAL_EXTRACTION needs it
+        # MORE than FORMAL_DRAFT does (it's the citation anchor).
+        anchor = hybrid_runner.get_last_batch_anchor_ts()
+        assert anchor is not None, (
+            "FORMAL_EXTRACTION must populate batch_anchor_ts — without it "
+            "the result is not citable (no way to identify which batch "
+            "state the extraction was anchored against)."
+        )
+        assert isinstance(anchor, datetime)
