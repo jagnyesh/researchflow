@@ -1032,8 +1032,23 @@ def show_agent_metrics():
     # Query AgentExecution table from database
     async def fetch_agent_metrics():
         async with get_db_session() as session:
-            # Get all registered agents from orchestrator (shows ALL agents, not just executed ones)
-            registered_agents = list(st.session_state.orchestrator.agents.keys())
+            # Sprint 7.2 migration gap fix (2026-05-17, discovered during
+            # Sprint 6.5 portal walkthrough on REQ-20260517-A097C5F6): the
+            # old A2A pattern populated orchestrator.agents via explicit
+            # register_agent() calls. LangGraphRequestFacade constructs
+            # agents internally and leaves self.agents = {} empty, so this
+            # panel rendered "No agent metrics available yet" for every
+            # request even when agent_executions had rows.
+            #
+            # Derive registered_agents from the agent_executions table
+            # itself — self-maintaining as the agent set evolves and works
+            # regardless of which orchestrator implementation is wired.
+            distinct_agents_result = await session.execute(
+                select(AgentExecution.agent_id)
+                .where(AgentExecution.agent_id.isnot(None))
+                .distinct()
+            )
+            registered_agents = [row[0] for row in distinct_agents_result.all()]
 
             # Initialize metrics for ALL registered agents
             metrics_by_agent = {}
