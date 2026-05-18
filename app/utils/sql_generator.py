@@ -466,12 +466,6 @@ class SQLGenerator:
         logger.debug(
             f"_build_demographic_clause: term='{term}' (normalized: '{term_lower}'), details='{details}'"
         )
-        # [ISSUE-51-PROBE-C-ENTRY] Layer 2 input. Shows what shape the dispatcher
-        # delivers to the demographic clause builder.
-        logger.info(
-            f"[ISSUE-51-PROBE-C-ENTRY] term={term!r} details={details!r} "
-            f"term_lower={term_lower!r} details_lower={details_lower!r}"
-        )
 
         # Parse age criteria. The LLM extractor emits details in mixed
         # forms — symbolic ("> 18"), natural-language ("greater than 18
@@ -481,10 +475,6 @@ class SQLGenerator:
             op, age_value = self._parse_age_details(details)
             if op is None:
                 logger.warning(f"Could not parse age details: {details!r}")
-                logger.info(
-                    f"[ISSUE-51-PROBE-C-EXIT] branch=age_parse_fail "
-                    f"term={term!r} details={details!r} sql='' params={{}}"
-                )
                 return "", {}
             # birth_date is materialized as text (FHIR transpiler default);
             # cast to date so AGE() accepts it.
@@ -500,14 +490,10 @@ class SQLGenerator:
                     f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) "
                     f"BETWEEN :{lo_param} AND :{hi_param}"
                 )
-                logger.info(
-                    f"[ISSUE-51-PROBE-C-EXIT] branch=age_success_between term={term!r} sql={sql!r}"
-                )
                 return sql, params
             param_name = self._get_param_name("age")
             params = {param_name: age_value}
             sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) {op} :{param_name}"
-            logger.info(f"[ISSUE-51-PROBE-C-EXIT] branch=age_success term={term!r} sql={sql!r}")
             return sql, params
 
         # Parse gender - MORE ROBUST MATCHING
@@ -532,14 +518,10 @@ class SQLGenerator:
             params = {param_name: gender_value}
             sql = f"p.gender = :{param_name}"
             logger.info(f"✓ Generated gender filter: {sql} with {param_name}='{gender_value}'")
-            logger.info(f"[ISSUE-51-PROBE-C-EXIT] branch=gender_success term={term!r} sql={sql!r}")
             return sql, params
 
         # If no match, log warning
         logger.warning(f"Could not build demographic clause for term='{term}', details='{details}'")
-        logger.info(
-            f"[ISSUE-51-PROBE-C-EXIT] branch=no_match term={term!r} details={details!r} sql='' params={{}}"
-        )
         return "", {}
 
     def _build_lab_clause(self, lab_term: str, include: bool) -> Tuple[str, Dict[str, Any]]:
