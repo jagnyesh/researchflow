@@ -1,10 +1,54 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.5 next — wire production agents through `HybridRunner` for online reads (closes the documented-vs-actual Lambda read-path gap surfaced by Sprint 6.3 /zoom-out). Now safely-scoped to LangGraph only after Sprint 7.2 retired A2A.
-**Branch:** main is fresh; feature branch TBD when Sprint 6.5 starts.
-**Recently shipped:** Sprint 7.2 SHIPPED 2026-05-17 (this session, 23 commits) — A2A FSM retired, `app/orchestrator/` deleted (1,324 LOC), LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14 (cost telemetry verification + wire-fix + aggregator audit + ceilings re-derived). Sprint 6.3 spike + verdict revision 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08 (HIPAA baseline + Lambda finish).
-**Overall progress:** Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~19/22 sprints shipped.** A2A FSM permanently retired.
+**Sprint:** 6.5b next (#71) — extraction_agent + feasibility_service multi-view JOIN wiring through HybridRunner. Deferred from Sprint 6.5 Phase 2B-2 audit (all 4 extraction sql_adapter sites are multi-view JOIN / IN-list shapes that don't fit HybridRunner's single-view-def API; needs API extension first).
+**Branch:** main is fresh after Sprint 6.5 merge; feature branch TBD when Sprint 6.5b starts.
+**Recently shipped:** Sprint 6.5 SHIPPED 2026-05-17 as squash PR #78 (`d457fe8`) — `HybridRunner` now has its first production caller (`phenotype_agent`) with three-mode `FreshnessAnnotation` routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 8/8 gate assertions GREEN; ADR 0027. Sprint 7.2 SHIPPED 2026-05-17 (23 commits) — A2A FSM retired, LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08.
+**Overall progress:** Sprint 6.5 SHIPPED 2026-05-17, Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~20/22 sprints shipped.** A2A FSM permanently retired; HybridRunner has its first production caller.
 **Last updated:** 2026-05-17
+
+## Sprint 6.5 SHIPPED (2026-05-17 as `d457fe8`) — Lambda differential freshness routing
+
+19 commits, ~2,400 net insertions, squash PR #78. The documented-but-uncalled `HybridRunner` serving layer now has its first production caller: `phenotype_agent` routes through `HybridRunner.execute(..., mode=FreshnessAnnotation.FORMAL_DRAFT, caller="phenotype_agent")` at both cohort-estimation + condition-filter callsites. Three-mode freshness routing landed end-to-end. See [`docs/decisions/0027-sprint-6-5-differential-freshness-routing.md`](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md) for the per-phase commit ledger + 5 coupled grilling decisions.
+
+### Phase ledger
+
+| Phase | Outcome |
+|---|---|
+| 1 (#68 writer + metadata) | `f3f21d7` — `scripts/drive_fhir_traffic.py` synthetic FHIR writer with `--cohort` presets (t2dm, hypertension) + `sqlonfhir.mv_refresh_metadata` table for `batch_anchor_ts` citation anchors; `materialize_views.py` records refresh completions across all 3 paths |
+| 2A (#69 HybridRunner core, 8 /tdd cycles) | `7424621` → `f4f4416` — `FreshnessAnnotation` enum + three-mode routing in `HybridRunner.execute()` + `HybridRunnerMetric` single-source-of-truth dataclass + Postgres `hybrid_runner_metrics` writes + `suppress_metrics=True` escape + LangSmith `RunTree.add_metadata` mirroring + `get_batch_anchor_ts_for_views` multi-view MAX |
+| 2B-1 (#70 phenotype wiring) | `f71ac4e` — `phenotype_agent.use_view_definitions = True` (toggle flipped post-pre-flight; Sprint 6.2-era "broken" comment was stale per Path-0 diagnostic); HybridRunner instantiated with Redis + caching; both call sites pass `mode=FORMAL_DRAFT, caller="phenotype_agent"` |
+| 2B-2 (#70 extraction audit) | `7f87662` — empirical audit found all 4 extraction sql_adapter sites are multi-view JOIN or raw-table-ref IN-list shapes that don't fit HybridRunner's single-view-def API; deferred to #71 (Sprint 6.5b candidate) |
+| 2B-3 (#70 phenotype integration test) | `4140a34` — focused agent-boundary test (pivoted from path-i after /diagnose found `test_nlp_to_sql_workflow` is LLM-judgment-flaky for whole file; filed #75) |
+| 4 (#72 gate) | `dbb016c` — `scripts/sprint_6_5_gate.py` 7-step gate fires 8/8 assertions GREEN against synthetic t2dm cohort writes; JSONL evidence at `logs/sprint_6_5_gate.jsonl` |
+| Close + production-walkthrough fixes | `49643c6` (ADR 0027 + CONTEXT.md + INDEX.md), `d1c8a04` (admin dashboard Sprint 7.2 migration gap — `LangGraphRequestFacade.agents = {}` empty; refactored panel to query distinct `agent_executions.agent_id`), `2d0b472` (extraction silent-failure honesty patch surfacing `extraction_warnings` in delivery README), plus 2 CI fixes (`f1e548a` F821 forward-ref import, `3cb1537` CodeQL FP on synthetic Patient IDs) |
+
+### Gate evidence (Phase 4 empirical run 2026-05-17)
+
+| Assertion | Result |
+|---|---|
+| `redis_speed_layer_seeded` | 5 t2dm patient keys present ✅ |
+| `exploratory_row_count` | 47 (N+5=42+5) — speed-merged ✅ |
+| `formal_draft_row_count` | 47 (N+5) — speed-merged ✅ |
+| `formal_draft_freshness` | 1s (< 90s bound) ✅ |
+| `formal_extraction_count` | 42 (N, batch-only — speed layer NOT merged) ✅ |
+| `formal_extraction_anchor` | exact match w/ `mv_refresh_metadata.MAX(refreshed_at)` ✅ |
+| `langsmith_cross_correlation` | RunTree metadata mirrors Postgres `hybrid_runner_metrics` exactly ✅ |
+| **Blockers** | **0** ✅ |
+
+### Issues filed during sprint (non-blocking)
+
+- **[#71](https://github.com/jagnyesh/researchflow/issues/71)** — Sprint 6.5b candidate: extraction_agent + feasibility_service multi-view JOIN wiring (HybridRunner API extension needed first).
+- **[#74](https://github.com/jagnyesh/researchflow/issues/74)** — `test_phase20a_speed_layer` flake on soft-deleted Patients (test bug, not production).
+- **[#75](https://github.com/jagnyesh/researchflow/issues/75)** — `test_nlp_to_sql_workflow` LLM-judgment-flaky for whole file.
+- **[#76](https://github.com/jagnyesh/researchflow/issues/76)** — Exploratory portal age-filter analysis (manual REQ-20260517-A097C5F6 walkthrough).
+
+### Next per BACKLOG
+
+- **Sprint 6.5b** ([#71](https://github.com/jagnyesh/researchflow/issues/71)) — extraction_agent + feasibility_service multi-view JOIN wiring through HybridRunner.
+- **Sprint 6.6 candidate** — custom-path MV health-check oracles (filed by Sprint 6.4).
+- **Sprint 8.5/8.6 candidates** — sparse-traffic median + exploratory portal caching.
+
+---
 
 ## Sprint 7.2 SHIPPED (2026-05-17) — A2A FSM retired
 
