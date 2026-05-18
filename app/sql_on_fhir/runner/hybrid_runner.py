@@ -111,6 +111,7 @@ class HybridRunner:
         search_params: Optional[Dict[str, Any]] = None,
         max_resources: Optional[int] = None,
         mode: "FreshnessAnnotation" = None,
+        suppress_metrics: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Execute ViewDefinition using best available method with speed layer merge
@@ -223,10 +224,11 @@ class HybridRunner:
                         f"Speed layer query failed for '{view_name}': {e}. Using batch only"
                     )
 
-        # Sprint 6.5 cycle 5 (#69): write one metric row for FORMAL_DRAFT.
-        # FORMAL_EXTRACTION and EXPLORATORY are not in cycle 5's scope —
-        # future cycles extend the condition as the test surface demands.
-        if mode == FreshnessAnnotation.FORMAL_DRAFT:
+        # Sprint 6.5 cycle 5+7 (#69): write one metric row for FORMAL_DRAFT
+        # unless suppress_metrics=True (the dashboard's escape hatch to
+        # avoid polluting its own polling reads — Phase 3 #73 uses this).
+        # FORMAL_EXTRACTION and EXPLORATORY are not in cycle 5's scope.
+        if mode == FreshnessAnnotation.FORMAL_DRAFT and not suppress_metrics:
             latency_ms = int((time.perf_counter() - t_start) * 1000)
             await self._record_metric(
                 view_name=view_name,

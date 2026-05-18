@@ -433,3 +433,82 @@ class TestHybridRunnerMetrics:
         assert (
             "patient_simple" in view_names
         ), f"view_names should contain the touched view; got {view_names!r}"
+
+    async def test_hybrid_runner_suppress_metrics_param_skips_writes(
+        self, hybrid_runner, redis_client, view_def_manager, db_client
+    ):
+        """suppress_metrics=True skips the Postgres write entirely.
+
+        Phase 3's dashboard polls hybrid_runner_metrics every 5s; without
+        a suppression flag, its own polling queries would dominate the
+        table over a 24h session (~52K rows) and pollute the aggregations
+        meant to reflect real agent activity. suppress_metrics=True is
+        the dashboard's escape hatch.
+
+        Falsifiability requires BOTH branches:
+          1. suppress_metrics=True → no new row appears
+          2. suppress_metrics=False → one new row DOES appear
+        If the implementation silently ignores the parameter, branch (1)
+        catches it. If the implementation accidentally suppresses every
+        call regardless of the parameter, branch (2) catches it.
+        """
+        # Pre-load Redis so a metric WOULD be written if suppression is
+        # off (speed_layer_hit will be True for both branches).
+        synthetic_patient = {
+            "resourceType": "Patient",
+            "id": "suppress-cycle-7",
+            "gender": "female",
+            "birthDate": "1980-08-08",
+            "name": [{"family": "SuppressCycle7", "given": ["Synthetic"]}],
+        }
+        await redis_client.set_fhir_resource("Patient", synthetic_patient["id"], synthetic_patient)
+
+        view_def = view_def_manager.load("patient_simple")
+        await hybrid_runner.create_hybrid_runner_metrics_table()
+
+        # Branch 1: suppress_metrics=True must NOT write
+        async with db_client.pool.acquire() as conn:
+            max_id_before_suppress = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+            suppress_metrics=True,
+        )
+
+        async with db_client.pool.acquire() as conn:
+            max_id_after_suppress = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        assert max_id_after_suppress == max_id_before_suppress, (
+            f"suppress_metrics=True must skip the Postgres write. "
+            f"max id went from {max_id_before_suppress} to "
+            f"{max_id_after_suppress} — implementation ignored the flag."
+        )
+
+        # Branch 2: suppress_metrics=False (default) must WRITE — proves
+        # the test isn't trivially passing because of broken plumbing.
+        await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+            suppress_metrics=False,
+        )
+
+        async with db_client.pool.acquire() as conn:
+            max_id_after_write = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        assert max_id_after_write > max_id_after_suppress, (
+            f"suppress_metrics=False (default) must write a row. "
+            f"max id went from {max_id_after_suppress} to "
+            f"{max_id_after_write} — no row written, so the suppress=True "
+            f"branch was trivially passing."
+        )
