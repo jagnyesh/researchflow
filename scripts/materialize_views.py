@@ -64,6 +64,60 @@ class ViewMaterializer:
         )
         logger.info(f"✅ Schema '{SCHEMA_NAME}' ready")
 
+    async def create_metadata_table(self, conn: asyncpg.Connection):
+        """Create mv_refresh_metadata table for batch_anchor_ts tracking.
+
+        Sprint 6.5 Phase 1 (#68): HybridRunner reads MAX(refreshed_at)
+        from this table to compute batch_anchor_ts for FORMAL_EXTRACTION
+        mode reads. Append-only log; one row per successful refresh per
+        view. Lives in HAPI :5433 alongside the MVs so both the writer
+        (this script) and reader (HybridRunner via HAPIDBClient) reach
+        it without cross-DB connections.
+        """
+        await conn.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {SCHEMA_NAME}.mv_refresh_metadata (
+                id           SERIAL PRIMARY KEY,
+                view_name    TEXT NOT NULL,
+                refreshed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                row_count    INTEGER NOT NULL
+            )
+            """
+        )
+        await conn.execute(
+            f"""
+            CREATE INDEX IF NOT EXISTS idx_mv_refresh_view_time
+                ON {SCHEMA_NAME}.mv_refresh_metadata(view_name, refreshed_at DESC)
+            """
+        )
+        logger.info(f"✅ Table '{SCHEMA_NAME}.mv_refresh_metadata' ready")
+
+    async def _record_refresh_completion(
+        self, conn: asyncpg.Connection, view_name: str, row_count: int
+    ):
+        """Append one row to mv_refresh_metadata after a successful refresh.
+
+        Best-effort: failures here are logged but do NOT roll back the
+        underlying MV refresh (the refresh has already committed by the
+        time we record completion). The next successful refresh writes a
+        new row, so a single missed record self-heals.
+        """
+        try:
+            await conn.execute(
+                f"""
+                INSERT INTO {SCHEMA_NAME}.mv_refresh_metadata
+                    (view_name, row_count)
+                VALUES ($1, $2)
+                """,
+                view_name,
+                row_count,
+            )
+        except Exception as e:
+            logger.warning(
+                f"  ⚠ Failed to record refresh completion for {view_name}: {e}. "
+                f"MV refresh itself succeeded; next refresh will self-heal the metadata gap."
+            )
+
     async def get_view_definitions(self) -> List[Dict[str, Any]]:
         """Load all ViewDefinitions from the directory."""
         view_defs = []
@@ -171,6 +225,10 @@ class ViewMaterializer:
             # (the 4 custom-path MVs today). Logs WARN if delta > threshold
             # or alarm fires (N=3 consecutive warn records).
             await post_write_health_check(conn, view_name, row_count)
+
+            # Sprint 6.5 Phase 1 (#68) — record refresh completion for
+            # HybridRunner's batch_anchor_ts lookup.
+            await self._record_refresh_completion(conn, view_name, row_count)
 
             return True
 
@@ -305,6 +363,10 @@ class ViewMaterializer:
             # the same-run delta check + JSONL log + N=3 alarm filter.
             await post_write_health_check(conn, view_name, row_count)
 
+            # Sprint 6.5 Phase 1 (#68) — record refresh completion for
+            # HybridRunner's batch_anchor_ts lookup.
+            await self._record_refresh_completion(conn, view_name, row_count)
+
             return True
 
         except Exception as e:
@@ -354,6 +416,11 @@ class ViewMaterializer:
             )
             row_count = count_result["count"]
             logger.info(f"  ✅ View refreshed: {SCHEMA_NAME}.{view_name} ({row_count:,} rows)")
+
+            # Sprint 6.5 Phase 1 (#68) — record refresh completion for
+            # HybridRunner's batch_anchor_ts lookup.
+            await self._record_refresh_completion(conn, view_name, row_count)
+
             return True
         except Exception as e:
             logger.error(f"  ❌ Failed to refresh {view_name}: {e}")
@@ -412,8 +479,9 @@ class ViewMaterializer:
         conn = await asyncpg.connect(self.database_url)
 
         try:
-            # Create schema
+            # Create schema + metadata table (Sprint 6.5 Phase 1 #68)
             await self.create_schema(conn)
+            await self.create_metadata_table(conn)
 
             # Load ViewDefinitions
             logger.info(f"\nLoading ViewDefinitions from {VIEW_DEFINITIONS_DIR}...")
@@ -463,6 +531,10 @@ class ViewMaterializer:
         conn = await asyncpg.connect(self.database_url)
 
         try:
+            # Ensure metadata table exists for refresh-only flows that may
+            # predate Sprint 6.5 Phase 1 (#68) on long-running deployments.
+            await self.create_metadata_table(conn)
+
             # Get list of views
             result = await conn.fetch(
                 f"""
