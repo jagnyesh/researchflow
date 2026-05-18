@@ -158,7 +158,9 @@ async def run_writer() -> List[str]:
                 patient_ids.append(pid)
             except IndexError:
                 pass
-    logger.info(f"  ✅ Wrote {len(patient_ids)} patients: {patient_ids}")
+    # IDs are written to JSONL evidence below; keep this line ID-free so
+    # CodeQL doesn't flag synthetic-Patient-ID logging as clear-text PHI.
+    logger.info(f"  ✅ Wrote {len(patient_ids)} patients")
     return patient_ids
 
 
@@ -187,7 +189,7 @@ async def wait_for_keys_in_redis(redis: RedisClient, patient_ids: List[str]) -> 
             logger.info(f"  ✅ All {len(patient_ids)} patient keys present in Redis")
             return True
         await asyncio.sleep(2)
-    logger.warning(f"  ⚠ Timeout: still missing {len(missing)}/{len(patient_ids)} keys: {missing}")
+    logger.warning(f"  ⚠ Timeout: still missing {len(missing)}/{len(patient_ids)} keys")
     return False
 
 
