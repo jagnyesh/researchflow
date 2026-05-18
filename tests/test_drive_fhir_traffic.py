@@ -160,15 +160,19 @@ class TestMVRefreshMetadata:
     """Verify scripts/materialize_views.py wrote refresh metadata to the
     sqlonfhir.mv_refresh_metadata table — Sprint 6.5 Phase 1 second half."""
 
-    async def test_mv_refresh_metadata_has_entries_after_refresh(self):
+    async def test_mv_refresh_metadata_has_entries_after_refresh(self, db_client):
         """After at least one materialize_views.py --refresh run, the
         metadata table should have one row per MV. This test assumes the
-        operator (or a prior gate run) has refreshed at least once today."""
-        import asyncpg
+        operator (or a prior gate run) has refreshed at least once today.
 
-        hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
-        conn = await asyncpg.connect(hapi_db_url)
-        try:
+        Uses the conftest db_client fixture rather than raw asyncpg.connect
+        so the DSN-prefix handling stays consistent with HAPIDBClient
+        (which strips postgresql+asyncpg:// → postgresql:// before
+        connecting). Originally written with raw asyncpg.connect, this
+        test failed when .env's HAPI_DB_URL was loaded into the shell
+        because asyncpg can't parse the SQLAlchemy-flavored DSN.
+        """
+        async with db_client.pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT view_name, MAX(refreshed_at) AS last_refresh, MAX(row_count) AS row_count
@@ -177,8 +181,6 @@ class TestMVRefreshMetadata:
                 ORDER BY view_name
                 """
             )
-        finally:
-            await conn.close()
 
         assert len(rows) > 0, (
             "sqlonfhir.mv_refresh_metadata is empty — run "
