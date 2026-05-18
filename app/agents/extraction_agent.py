@@ -384,12 +384,10 @@ class DataExtractionAgent(BaseAgent):
                 select_fields = f"patient_id, {db_field}"
 
             # nosec B608 - SQL structure is safe, all values parameterized
-            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
-            # Single-view query, but the `patient_id IN (...)` shape doesn't
-            # fit HybridRunner.execute()'s search_params dict API. Wiring
-            # requires either extending search_params semantics (list values
-            # → ANY clause) OR execute_sql_with_view_hints pass-through.
-            # Deferred for scope coherence with the multi-view sites below.
+            # Sprint 6.5b cleanup (2026-05-18, #79): this query is LIVE and works
+            # today against the Sprint 6.2 patient_demographics MV. Future
+            # HybridRunner wiring follows #71's `execute_sql_with_view_hints`
+            # API extension when a driving requirement activates that issue.
             sql = f"""
                 SELECT {select_fields}
                 FROM sqlonfhir.patient_demographics
@@ -403,75 +401,19 @@ class DataExtractionAgent(BaseAgent):
                 logger.warning(f"[{self.agent_id}] Demographic extraction failed: {str(e)}")
                 return []
 
-        elif data_element == "clinical_notes":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    note_id,
-                    note_date,
-                    note_type,
-                    note_text
-                FROM document_reference
-                WHERE patient_id IN ({patient_id_placeholders})
-            """
-        elif data_element == "lab_results":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    observation_id,
-                    code,
-                    code_display,
-                    value,
-                    unit,
-                    effectiveDateTime
-                FROM observation
-                WHERE patient_id IN ({patient_id_placeholders})
-                AND category = 'laboratory'
-            """
-        elif data_element == "medications":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    medication_id,
-                    code_display,
-                    authoredOn,
-                    status
-                FROM medication_request
-                WHERE patient_id IN ({patient_id_placeholders})
-            """
-        else:
-            # Generic query
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT *
-                FROM observation
-                WHERE patient_id IN ({patient_id_placeholders})
-                LIMIT 1000
-            """
-
-        # Add time period filter if specified (parameterized)
-        if time_period.get("start") and time_period.get("end"):
-            # Note: This is simplified - in production would handle different date fields
-            sql += " AND date BETWEEN :date_start AND :date_end"
-            params["date_start"] = time_period["start"]
-            params["date_end"] = time_period["end"]
-
-        try:
-            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
-            # Generic extraction queries `observation`, `document_reference`,
-            # and other raw table names (no `sqlonfhir.` prefix) that are
-            # Sprint 5/6-era TODO targets which may not exist in HAPI today.
-            # Raw table refs + patient_id IN-list shape don't fit HybridRunner's
-            # view-def API. Deferred to #71; if 6.5b confirms dead code,
-            # delete instead of wiring.
-            result = await self.sql_adapter.execute_sql(sql, params)
-            return result if result else []
-        except Exception as e:
-            logger.warning(f"[{self.agent_id}] Extraction query failed: {str(e)}")
-            return []
+        # Sprint 6.5b cleanup (2026-05-18, #79): non-demographic data elements
+        # (clinical_notes, lab_results, medications, procedures, etc.) have no
+        # dispatch implementation yet. Sprint 6.5's `extraction_warnings`
+        # honesty patch in `_extract_data` surfaces the empty result to the
+        # researcher. Proper dispatch (wiring to sqlonfhir.observation_labs,
+        # sqlonfhir.medication_requests, sqlonfhir.condition_diagnoses,
+        # sqlonfhir.procedure_history) is #71's scope.
+        logger.warning(
+            f"[{self.agent_id}] Data element '{data_element}' has no extraction "
+            f"dispatch. Only demographic data elements are currently supported; "
+            f"others require #71's dispatch fix."
+        )
+        return []
 
     async def _extract_data_element_preview(
         self, data_element: str, patient_ids: list, time_period: Dict, limit: int = 10
@@ -508,111 +450,67 @@ class DataExtractionAgent(BaseAgent):
 
         # Generate extraction query based on data element type
         # Note: f-strings used only for structure, all data in params dict
-        if data_element == "clinical_notes":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    note_id,
-                    note_date,
-                    note_type,
-                    note_text
-                FROM document_reference
-                WHERE patient_id IN ({patient_id_placeholders})
-                LIMIT :preview_limit
-            """
-        elif data_element == "lab_results":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    observation_id,
-                    code,
-                    code_display,
-                    value,
-                    unit,
-                    effectiveDateTime
-                FROM observation
-                WHERE patient_id IN ({patient_id_placeholders})
-                AND category = 'laboratory'
-                LIMIT :preview_limit
-            """
-        elif data_element == "medications":
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT
-                    patient_id,
-                    medication_id,
-                    code_display,
-                    authoredOn,
-                    status
-                FROM medication_request
-                WHERE patient_id IN ({patient_id_placeholders})
-                LIMIT :preview_limit
-            """
-        # Bug fix: Case-insensitive matching for preview extraction
         data_element_lower = data_element.lower()
-        if data_element_lower in [
+
+        if data_element_lower not in [
             "family name",
             "given name",
             "date of birth",
             "address",
             "demographics (age, gender, race)",
         ]:
-            # Extract demographics from patient_demographics materialized view
-            # nosec B608 - SQL structure is safe, all values parameterized
+            # Sprint 6.5b cleanup (2026-05-18, #79): non-demographic data
+            # elements have no preview extraction dispatch. Sprint 6.5's
+            # `extraction_warnings` honesty patch in `_extract_preview`
+            # surfaces the empty result to the QA reviewer. Proper dispatch
+            # (lab_results, medications, clinical_notes, procedures) is #71's
+            # scope and arrives when that issue's design pass activates.
+            logger.warning(
+                f"[{self.agent_id}] Data element '{data_element}' has no preview "
+                f"extraction dispatch. Only demographic data elements are currently "
+                f"supported; others require #71's dispatch fix."
+            )
+            return []
 
-            # NOTE: patient_demographics MV has: patient_id, gender, birth_date, given_name, family_name
-            # It does NOT have: race, address (not in FHIR synthetic data)
+        # Demographics-only dispatch. The patient_demographics MV has:
+        # patient_id, gender, birth_date, given_name, family_name.
+        # It does NOT have: race, address (not in FHIR synthetic data).
+        field_mapping = {
+            "family name": "family_name",
+            "given name": "given_name",
+            "date of birth": "birth_date",
+            "address": None,  # Not available in patient_demographics
+        }
 
-            # Field mapping for available columns only
-            field_mapping = {
-                "family name": "family_name",
-                "given name": "given_name",
-                "date of birth": "birth_date",
-                "address": None,  # Not available in patient_demographics
-            }
-
-            # Build SELECT clause based on requested demographic fields
-            if data_element_lower == "demographics (age, gender, race)":
-                # Select all available demographic fields (race not available)
-                select_fields = "patient_id, family_name, given_name, gender, birth_date"
-            elif data_element_lower == "address":
-                # Address not available in patient_demographics - return empty
+        if data_element_lower == "demographics (age, gender, race)":
+            # Select all available demographic fields (race not available)
+            select_fields = "patient_id, family_name, given_name, gender, birth_date"
+        elif data_element_lower == "address":
+            logger.warning(
+                f"[{self.agent_id}] Address data not available in patient_demographics table"
+            )
+            return []
+        else:
+            db_field = field_mapping.get(data_element_lower)
+            if db_field is None:
                 logger.warning(
-                    f"[{self.agent_id}] Address data not available in patient_demographics table"
+                    f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
                 )
                 return []
-            else:
-                db_field = field_mapping.get(data_element_lower)
-                if db_field is None:
-                    logger.warning(
-                        f"[{self.agent_id}] Data element '{data_element}' not available in patient_demographics"
-                    )
-                    return []
-                select_fields = f"patient_id, {db_field}"
+            select_fields = f"patient_id, {db_field}"
 
-            sql = f"""
-                SELECT {select_fields}
-                FROM sqlonfhir.patient_demographics
-                WHERE patient_id IN ({patient_id_placeholders})
-                LIMIT :preview_limit
-            """
-        else:
-            # Generic query for other data types
-            # nosec B608 - SQL structure is safe, all values parameterized
-            sql = f"""
-                SELECT *
-                FROM observation
-                WHERE patient_id IN ({patient_id_placeholders})
-                LIMIT :preview_limit
-            """
+        # nosec B608 - SQL structure is safe, all values parameterized
+        sql = f"""
+            SELECT {select_fields}
+            FROM sqlonfhir.patient_demographics
+            WHERE patient_id IN ({patient_id_placeholders})
+            LIMIT :preview_limit
+        """
 
         # Add time period filter if specified (parameterized)
         # Note: LIMIT must come AFTER WHERE but we already have LIMIT above
         # So we need to insert time filter before LIMIT
         if time_period.get("start") and time_period.get("end"):
-            # Insert time filter before LIMIT clause
             sql = sql.replace(
                 "LIMIT :preview_limit",
                 "AND date BETWEEN :date_start AND :date_end LIMIT :preview_limit",
@@ -621,10 +519,6 @@ class DataExtractionAgent(BaseAgent):
             params["date_end"] = time_period["end"]
 
         try:
-            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
-            # Same shape as _extract_data_element above (raw table refs +
-            # patient_id IN-list, possibly dead code). Deferred for
-            # consistency with the other 3 sites in this file.
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:

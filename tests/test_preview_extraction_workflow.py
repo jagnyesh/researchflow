@@ -44,11 +44,18 @@ def qa_agent():
 
 @pytest.fixture
 def sample_context():
-    """Sample context for preview extraction"""
+    """Sample context for preview extraction.
+
+    Sprint 6.5b (#79): data_elements use the live demographic dispatch path
+    (only path that reaches sql_adapter post-cleanup). The previous
+    lab_results/medications/clinical_notes list exercised dead branches that
+    silently failed in production; tests asserting their result shape were
+    asserting dead-code behavior against a mocked adapter.
+    """
     return {
         "request_id": "REQ-20250104-12345",
         "requirements": {
-            "data_elements": ["lab_results", "medications", "clinical_notes"],
+            "data_elements": ["family name", "given name", "date of birth"],
             "time_period": {"start": "2020-01-01", "end": "2023-12-31"},
             "phi_level": "de-identified",
             "delivery_format": "CSV",
@@ -116,77 +123,75 @@ class TestExtractionAgentPreview:
     async def test_extract_preview_calls_preview_method_for_each_element(
         self, extraction_agent, mock_sql_adapter, sample_context
     ):
-        """Test that preview extraction calls preview method for each data element"""
-        # Mock responses
+        """Verify the preview loop dispatches _extract_data_element_preview
+        for each requested data element. Sample_context uses the demographic
+        live-dispatch keys (see fixture docstring)."""
         mock_sql_adapter.execute_sql.side_effect = [
             # Cohort query
             [{"patient_id": f"P{i}", "birthDate": "1970-01-01"} for i in range(50)],
-            # Lab results (10 rows)
-            [{"patient_id": "P1", "code": "GLU", "value": 95} for _ in range(10)],
-            # Medications (10 rows)
-            [{"patient_id": "P1", "medication": "Metformin"} for _ in range(10)],
-            # Clinical notes (10 rows)
-            [{"patient_id": "P1", "note_text": "Test note"} for _ in range(10)],
+            # family name (10 rows)
+            [{"patient_id": "P1", "family_name": "Doe"} for _ in range(10)],
+            # given name (10 rows)
+            [{"patient_id": "P1", "given_name": "Jane"} for _ in range(10)],
+            # date of birth (10 rows)
+            [{"patient_id": "P1", "birth_date": "1970-01-01"} for _ in range(10)],
         ]
 
         result = await extraction_agent._extract_preview(sample_context)
 
-        # Verify all data elements were extracted
         preview_data = result["preview_package"]["preview_data"]
-        assert "lab_results" in preview_data
-        assert "medications" in preview_data
-        assert "clinical_notes" in preview_data
+        assert "family name" in preview_data
+        assert "given name" in preview_data
+        assert "date of birth" in preview_data
 
-        # Verify each element has 10 rows
-        assert len(preview_data["lab_results"]) == 10
-        assert len(preview_data["medications"]) == 10
-        assert len(preview_data["clinical_notes"]) == 10
+        assert len(preview_data["family name"]) == 10
+        assert len(preview_data["given name"]) == 10
+        assert len(preview_data["date of birth"]) == 10
 
     @pytest.mark.asyncio
     async def test_extract_preview_no_deidentification(
         self, extraction_agent, mock_sql_adapter, sample_context
     ):
-        """Test that preview skips de-identification"""
-        # Mock responses
+        """Preview is internal-review-only; PHI should remain in the result
+        even though phi_level=de-identified. Verified against the live
+        demographic dispatch path."""
         mock_sql_adapter.execute_sql.side_effect = [
-            [{"patient_id": "P123", "birthDate": "1970-01-01"}],
-            [{"patient_id": "P123", "patient_name": "John Doe", "ssn": "123-45-6789"}],
-            [],
-            [],
+            [{"patient_id": "P123", "birthDate": "1970-01-01"}],  # cohort
+            [{"patient_id": "P123", "family_name": "Doe"}],  # family name
+            [{"patient_id": "P123", "given_name": "Jane"}],  # given name
+            [{"patient_id": "P123", "birth_date": "1970-01-01"}],  # date of birth
         ]
 
         result = await extraction_agent._extract_preview(sample_context)
 
-        # Verify PHI is NOT removed (preview is internal review only)
         preview_data = result["preview_package"]["preview_data"]
-        if preview_data.get("lab_results"):
-            first_record = preview_data["lab_results"][0]
-            # PHI should still be present (not de-identified)
-            assert "patient_id" in first_record
-            # Note: De-identification is skipped in preview, so PHI remains
+        # PHI must remain in preview (researcher inspects raw data pre-delivery)
+        assert preview_data["family name"], "expected demographic rows to flow through"
+        first_record = preview_data["family name"][0]
+        assert "patient_id" in first_record
+        assert "family_name" in first_record
 
     @pytest.mark.asyncio
-    async def test_extract_data_element_preview_uses_limit_parameter(
+    async def test_extract_data_element_preview_demographics_uses_limit(
         self, extraction_agent, mock_sql_adapter, sample_context
     ):
-        """Test that preview extraction uses LIMIT parameter"""
-        # Mock patient IDs
+        """Sprint 6.5b (#79): preview extraction's only live dispatch path is
+        the demographics branch against sqlonfhir.patient_demographics.
+        Verify preview_limit gets bound when a demographic data element is
+        requested. Non-demographic data elements take the early-return path
+        and never reach sql_adapter."""
         patient_ids = [f"P{i}" for i in range(50)]
         time_period = {}
 
-        # Call preview method
         await extraction_agent._extract_data_element_preview(
-            data_element="lab_results",
+            data_element="family name",
             patient_ids=patient_ids,
             time_period=time_period,
             limit=10,
         )
 
-        # Verify SQL was called
         assert mock_sql_adapter.execute_sql.called
         call_args = mock_sql_adapter.execute_sql.call_args
-
-        # Verify params contain preview_limit
         params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("params", {})
         assert params.get("preview_limit") == 10
 
