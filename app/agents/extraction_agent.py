@@ -270,6 +270,14 @@ class DataExtractionAgent(BaseAgent):
 
         Returns:
             List of patient dicts with id, birthDate, etc.
+
+        Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+        phenotype_sql is the multi-view JOIN built by SQLGenerator
+        (patient_demographics + condition_simple). HybridRunner's merge
+        logic at hybrid_runner.py:347-400 only row-merges ONE view at a
+        time; wiring requires execute_sql_with_view_hints designed in #71
+        for feasibility_service's same shape problem. Stays direct in
+        Sprint 6.5; picks up in Sprint 6.5b alongside feasibility_service.
         """
         try:
             result = await self.sql_adapter.execute_sql(phenotype_sql, parameters)
@@ -349,6 +357,12 @@ class DataExtractionAgent(BaseAgent):
                 select_fields = f"patient_id, {db_field}"
 
             # nosec B608 - SQL structure is safe, all values parameterized
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Single-view query, but the `patient_id IN (...)` shape doesn't
+            # fit HybridRunner.execute()'s search_params dict API. Wiring
+            # requires either extending search_params semantics (list values
+            # → ANY clause) OR execute_sql_with_view_hints pass-through.
+            # Deferred for scope coherence with the multi-view sites below.
             sql = f"""
                 SELECT {select_fields}
                 FROM sqlonfhir.patient_demographics
@@ -419,6 +433,13 @@ class DataExtractionAgent(BaseAgent):
             params["date_end"] = time_period["end"]
 
         try:
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Generic extraction queries `observation`, `document_reference`,
+            # and other raw table names (no `sqlonfhir.` prefix) that are
+            # Sprint 5/6-era TODO targets which may not exist in HAPI today.
+            # Raw table refs + patient_id IN-list shape don't fit HybridRunner's
+            # view-def API. Deferred to #71; if 6.5b confirms dead code,
+            # delete instead of wiring.
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:
@@ -573,6 +594,10 @@ class DataExtractionAgent(BaseAgent):
             params["date_end"] = time_period["end"]
 
         try:
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Same shape as _extract_data_element above (raw table refs +
+            # patient_id IN-list, possibly dead code). Deferred for
+            # consistency with the other 3 sites in this file.
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:
