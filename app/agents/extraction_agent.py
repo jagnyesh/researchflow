@@ -112,13 +112,15 @@ class DataExtractionAgent(BaseAgent):
 
         # Sprint 6.5 honesty patch (2026-05-17, REQ-20260517-A097C5F6): surface
         # silent-failure pattern as warnings instead of shipping incomplete
-        # deliveries with status=success. extraction_agent's per-element
-        # _extract_data_element catches SQL failures internally and returns []
-        # (e.g., the `FROM observation` catch-all queries a non-existent table).
-        # Without this hook, a missing Procedures.csv looks indistinguishable
-        # from a genuine zero-cohort. The dispatch fix (procedures + lab_results
-        # + clinical_notes proper queries) is #71's scope; this hook just makes
-        # the silent failures visible to the researcher in the meantime.
+        # deliveries with status=success. Sprint 6.5b cleanup (#79) deleted
+        # the dead `FROM observation` catch-all that originally motivated this
+        # patch; non-demographic data elements now take an early-return path
+        # with their own warning, so this loop's empty-list detection covers
+        # both legitimate-zero-cohort AND no-dispatch-implementation cases.
+        # The proper dispatch fix (procedures + lab_results + clinical_notes
+        # wired to real sqlonfhir MVs) remains #71's scope; until then this
+        # researcher-facing warning is the only signal a data element was
+        # requested but not extracted.
         extraction_warnings = [
             (
                 f"No records extracted for '{el}'. Either the cohort genuinely has "
@@ -303,8 +305,10 @@ class DataExtractionAgent(BaseAgent):
         (patient_demographics + condition_simple). HybridRunner's merge
         logic at hybrid_runner.py:347-400 only row-merges ONE view at a
         time; wiring requires execute_sql_with_view_hints designed in #71
-        for feasibility_service's same shape problem. Stays direct in
-        Sprint 6.5; picks up in Sprint 6.5b alongside feasibility_service.
+        for feasibility_service's same shape problem. Stays direct until
+        #71 activates with the HybridRunner API extension. Sprint 6.5b
+        (#79) was cleanup-only; this site is not dead code, just waiting
+        for the API extension.
         """
         try:
             result = await self.sql_adapter.execute_sql(phenotype_sql, parameters)
