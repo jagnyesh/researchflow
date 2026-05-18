@@ -180,15 +180,12 @@ class HybridRunner:
                 view_definition, search_params=search_params, max_resources=max_resources
             )
 
-        # Sprint 6.5 cycle 3+4 (#69): populate batch_anchor_ts for both
-        # FORMAL_* modes. Cycle 6 generalizes the SQL to MAX across
-        # multiple touched views for multi-view queries.
+        # Sprint 6.5 cycle 3+4+6 (#69): populate batch_anchor_ts for both
+        # FORMAL_* modes via the multi-view helper (single-element list
+        # today; Sprint 6.5b will pass multi-view lists for feasibility
+        # JOIN queries).
         if mode in (FreshnessAnnotation.FORMAL_DRAFT, FreshnessAnnotation.FORMAL_EXTRACTION):
-            self._last_batch_anchor_ts = await self.db_client.execute_scalar(
-                "SELECT MAX(refreshed_at) FROM sqlonfhir.mv_refresh_metadata "
-                "WHERE view_name = $1",
-                [view_name],
-            )
+            self._last_batch_anchor_ts = await self.get_batch_anchor_ts_for_views([view_name])
 
         # Sprint 6.5 cycle 4 (#69): FORMAL_EXTRACTION skips speed-layer
         # merge entirely. The citability contract requires batch-only
@@ -311,6 +308,28 @@ class HybridRunner:
         ExecutionResult dataclass returned from execute() directly).
         """
         return self._last_batch_anchor_ts
+
+    async def get_batch_anchor_ts_for_views(self, view_names: List[str]) -> Optional[datetime]:
+        """MAX(refreshed_at) across the named views in mv_refresh_metadata.
+
+        Sprint 6.5 Phase 2A cycle 6 (#69). Generalizes the single-view
+        lookup behind get_last_batch_anchor_ts() to handle a list of view
+        names. execute() always passes a single-element list today; Phase
+        4's gate uses this method directly for FORMAL_EXTRACTION assertion;
+        Sprint 6.5b (#71) will pass multiple view names when wiring
+        feasibility_service's multi-view JOIN queries.
+
+        Returns None when view_names is empty OR when none of the named
+        views have any rows in mv_refresh_metadata (i.e., they've never
+        been refreshed since Phase 1 introduced the metadata table).
+        """
+        if not view_names:
+            return None
+        return await self.db_client.execute_scalar(
+            "SELECT MAX(refreshed_at) FROM sqlonfhir.mv_refresh_metadata "
+            "WHERE view_name = ANY($1::text[])",
+            [view_names],
+        )
 
     async def create_hybrid_runner_metrics_table(self) -> None:
         """CREATE TABLE IF NOT EXISTS for sqlonfhir.hybrid_runner_metrics.

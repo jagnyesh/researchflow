@@ -249,6 +249,97 @@ class TestHybridRunnerRouting:
         assert isinstance(anchor, datetime)
 
 
+class TestBatchAnchorMultiView:
+    """Cycle 6: MAX(refreshed_at) generalized across multiple views."""
+
+    pytestmark = pytest.mark.requires_services
+
+    async def test_hybrid_runner_reads_batch_anchor_ts_from_mv_refresh_metadata_max(
+        self, hybrid_runner, db_client
+    ):
+        """get_batch_anchor_ts_for_views(view_names) returns MAX(refreshed_at)
+        across the named views — and ONLY those views.
+
+        Forward-compatible with Sprint 6.5b's feasibility_service wiring
+        which will need this when JOIN queries span multiple MVs. Phase 4's
+        gate also relies on this method to verify FORMAL_EXTRACTION's anchor.
+
+        Falsifiability:
+          - If WHERE clause drops the view filter, the unrelated view's
+            +1h timestamp leaks in → assertion fails.
+          - If only the first view name is honored (regression to scalar
+            equality), View B's contribution is missed → MAX wrong.
+        """
+        from datetime import timedelta
+
+        inserted_ids: list = []
+        async with db_client.pool.acquire() as conn:
+            # View A: latest refresh — should be the MAX returned
+            a_id = await conn.fetchval(
+                """
+                INSERT INTO sqlonfhir.mv_refresh_metadata
+                    (view_name, refreshed_at, row_count)
+                VALUES ('test_cycle6_view_a', NOW() + INTERVAL '5 minutes', 1)
+                RETURNING id
+                """
+            )
+            # View B: earlier than A but still after Phase 1's real seeds
+            b_id = await conn.fetchval(
+                """
+                INSERT INTO sqlonfhir.mv_refresh_metadata
+                    (view_name, refreshed_at, row_count)
+                VALUES ('test_cycle6_view_b', NOW() + INTERVAL '2 minutes', 1)
+                RETURNING id
+                """
+            )
+            # View C: LATER than A but NOT in the query — must NOT leak in
+            c_id = await conn.fetchval(
+                """
+                INSERT INTO sqlonfhir.mv_refresh_metadata
+                    (view_name, refreshed_at, row_count)
+                VALUES ('test_cycle6_view_c_unrelated', NOW() + INTERVAL '1 hour', 1)
+                RETURNING id
+                """
+            )
+            inserted_ids = [a_id, b_id, c_id]
+
+            # Compute the expected MAX directly so the assertion has a
+            # ground-truth target (Postgres NOW() between INSERTs may
+            # differ slightly from our wall clock).
+            expected_max = await conn.fetchval(
+                """
+                SELECT MAX(refreshed_at) FROM sqlonfhir.mv_refresh_metadata
+                WHERE view_name = ANY($1::text[])
+                """,
+                ["test_cycle6_view_a", "test_cycle6_view_b"],
+            )
+
+        try:
+            anchor = await hybrid_runner.get_batch_anchor_ts_for_views(
+                ["test_cycle6_view_a", "test_cycle6_view_b"]
+            )
+            assert anchor == expected_max, (
+                f"Expected MAX(refreshed_at) across views A+B = {expected_max}, "
+                f"got {anchor}. WHERE clause or aggregation may be wrong."
+            )
+
+            # The unrelated view C is 1 hour ahead of A; if the filter
+            # were missing, anchor would be ≥ C's timestamp.
+            c_threshold = expected_max + timedelta(minutes=55)
+            assert anchor < c_threshold, (
+                f"batch_anchor_ts ({anchor}) should be earlier than the "
+                f"unrelated view C's timestamp window ({c_threshold}) — "
+                f"the WHERE clause may be dropping the view filter."
+            )
+        finally:
+            # Clean up the seeded rows so we don't pollute future tests
+            async with db_client.pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM sqlonfhir.mv_refresh_metadata WHERE id = ANY($1::int[])",
+                    inserted_ids,
+                )
+
+
 class TestHybridRunnerMetrics:
     """Cycles 5-7: metrics emission to sqlonfhir.hybrid_runner_metrics."""
 
