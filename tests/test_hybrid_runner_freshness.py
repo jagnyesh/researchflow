@@ -473,6 +473,95 @@ class TestHybridRunnerMetrics:
         )
 
 
+class TestPhenotypeAgentWiring:
+    """Phase 2B-3: phenotype_agent's HybridRunner wiring is LIVE in agent code.
+
+    Phase 2B-1's empirical inline-print check (commit f71ac4e) proved the
+    wiring in isolation. This test runs as part of the pytest suite and
+    asserts the contract that Phase 2B-1 ships: a real phenotype_agent
+    invocation produces hybrid_runner_metrics rows with caller='phenotype_agent',
+    mode='formal_draft', and a non-null trace_id (LangSmith correlation).
+
+    Drives phenotype_agent directly via _estimate_cohort_size — NOT
+    through LangGraph orchestration. The orchestrated path is intentionally
+    bypassed because tests/test_nlp_to_sql_workflow.py is LLM-judgment-flaky
+    (requirements_agent's completeness scoring of hardcoded prompts varies
+    with Anthropic model behavior across days). This test's seam is the
+    agent boundary itself — the smallest scope that proves wiring works
+    without depending on the LLM gate above it.
+    """
+
+    pytestmark = [pytest.mark.requires_services, pytest.mark.requires_api_key]
+
+    async def test_phenotype_agent_emits_metric_with_caller_attribution(self, db_client):
+        """Phase 2B-3 close criterion: caller='phenotype_agent' rows appear
+        in hybrid_runner_metrics after a real cohort estimation."""
+        from app.agents.phenotype_agent import PhenotypeValidationAgent
+
+        if not os.getenv("LANGCHAIN_API_KEY"):
+            pytest.skip("LANGCHAIN_API_KEY not set; trace_id assertion needs LangSmith access")
+
+        async with db_client.pool.acquire() as conn:
+            max_id_before = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        agent = PhenotypeValidationAgent(
+            database_url=os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+        )
+        assert agent.use_view_definitions is True
+        assert agent.hybrid_runner is not None
+
+        # Trigger _estimate_cohort_size — the call site Phase 2B-1 wired.
+        # Pass empty requirements → no Python-side filtering → the full
+        # patient_simple result flows through HybridRunner. count_sql and
+        # sql_params are only used by the legacy non-view-def path; with
+        # use_view_definitions=True they're ignored.
+        count = await agent._estimate_cohort_size(
+            count_sql="SELECT COUNT(*) FROM patient_demographics",
+            sql_params={},
+            requirements={},
+        )
+        assert count > 0, "Phenotype agent returned empty cohort against Synthea data"
+
+        async with db_client.pool.acquire() as conn:
+            new_rows = await conn.fetch(
+                """
+                SELECT mode, caller, trace_id, view_names, row_count, speed_layer_hit
+                FROM sqlonfhir.hybrid_runner_metrics
+                WHERE id > $1 AND caller = 'phenotype_agent'
+                ORDER BY id ASC
+                """,
+                max_id_before,
+            )
+
+        assert len(new_rows) > 0, (
+            "phenotype_agent should emit ≥1 hybrid_runner_metric row with "
+            "caller='phenotype_agent'. Phase 2B-1's wiring isn't reaching "
+            "the agent's actual code path — either use_view_definitions is "
+            "False, or the HybridRunner.execute() call doesn't pass caller="
+        )
+
+        for row in new_rows:
+            assert row["mode"] == "formal_draft", (
+                f"Expected mode='formal_draft' (Phase 2A FORMAL_DRAFT routing); "
+                f"got {row['mode']!r}"
+            )
+            assert row["trace_id"] is not None, (
+                "LangSmith trace_id must be non-null — proves cross-correlation "
+                "works through the @traceable phenotype_agent → @traceable "
+                "HybridRunner span hierarchy. Without this, Sprint 8.1's Cost "
+                "Telemetry tab can't break down cost by mode."
+            )
+
+            import json
+
+            view_names = row["view_names"]
+            if isinstance(view_names, str):
+                view_names = json.loads(view_names)
+            assert "patient_simple" in view_names
+
+
 class TestHybridRunnerLangSmithCorrelation:
     """Cycle 8: LangSmith metadata tags + trace_id cross-correlation."""
 
