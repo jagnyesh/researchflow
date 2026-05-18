@@ -214,12 +214,19 @@ This PR (`feature/sprint-8-2-task-3-remeasurement`):
 
 **Sprint 6.4** ([#40](https://github.com/jagnyesh/researchflow/issues/40)) — sqlonfhir integration; 3-5 days; runs after Sprint 8.2 close (this PR). The engine swap happens at the batch-refresh path; agents and FeasibilityService are unaffected (see "Architectural reality vs documentation" below).
 
-## Domain terms (resolved 2026-05-11, unchanged)
+## Domain terms (resolved 2026-05-11; extended 2026-05-17 by Sprint 6.5)
 
 - **Formal Portal** — 6-agent LangGraph workflow at `app/web_ui/researcher_portal.py`. Cost metric: cost-per-request (sum across all runs in one `thread_id`).
 - **Exploratory Portal** — Text2SQL NL path at `app/web_ui/research_notebook.py`. Cost metric: cost-per-query (per root trace).
 - **Cost Telemetry** — read-side service aggregating LangSmith runs into per-portal medians (`app/services/cost_telemetry_service.py`).
-- **Sprint gate** — pre-committed numeric criterion that fires sprint completion. For Sprint 8.1: rolling-30 cost-band on both portals.
+- **Sprint gate** — pre-committed numeric criterion that fires sprint completion. For Sprint 8.1: rolling-30 cost-band on both portals. For Sprint 6.5: three-way routing divergence + LangSmith cross-correlation in `logs/sprint_6_5_gate.jsonl`.
+
+### Differential freshness routing (Sprint 6.5, 2026-05-17)
+
+- **FreshnessAnnotation** — three-value enum (`EXPLORATORY`, `FORMAL_DRAFT`, `FORMAL_EXTRACTION`) passed to `HybridRunner.execute(..., mode=...)`. Each mode produces a semantically distinct read: speed-merged vs batch-only, citation-anchor surfaced or not. See `app/sql_on_fhir/runner/freshness.py`.
+- **FORMAL_DRAFT** — Formal Portal pre-approval cohort estimation mode. Speed-merged so the researcher sees today's reality (including new patients arriving since last batch refresh) while iterating on criteria. `batch_anchor_ts` surfaced for citation metadata in `hybrid_runner_metrics` row.
+- **FORMAL_EXTRACTION** — Formal Portal post-approval extraction mode. Batch-only, no speed merge. The citability contract: re-running the same SQL against the same `batch_anchor_ts` produces a bit-identical row-set. Researcher approves a cohort *definition* (SQL/criteria), not a row-set; the row-set materializes at extraction time against the current batch.
+- **batch_anchor_ts** — `MAX(refreshed_at)` across the views a HybridRunner query touched, read from `sqlonfhir.mv_refresh_metadata`. The citation anchor that makes `FORMAL_EXTRACTION` reproducible.
 
 ## Architectural reality vs documentation (surfaced by Sprint 6.3 /zoom-out)
 

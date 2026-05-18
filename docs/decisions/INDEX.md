@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0027** — [Sprint 6.5: Lambda architecture differential freshness routing](0027-sprint-6-5-differential-freshness-routing.md) (2026-05-17, shipped)
 - **0026** — [Sprint 6.4: sqlonfhir integration](0026-sprint-6-4-sqlonfhir-integration.md) (2026-05-15, shipped)
 - **0024** — [Sprint 7.2: A2A FSM → LangGraph close-out](0024-sprint-7-2-a2a-fsm-closeout.md) (2026-05-15, **in-progress**)
 - **0025** — [Sprint 8.3: Cost ceilings re-derived; Sprint 8 series closes](0025-sprint-8-3-cost-ceilings-re-derived.md) (2026-05-14, shipped)
@@ -36,6 +37,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0019 — Sprint 6.3: DuckDB-FHIR verdict GO Pathling (superseded)](0019-sprint-6-3-duckdb-fhir-verdict-go-pathling.md)
 - [0020 — Sprint 6.3: verdict revision GO sqlonfhir](0020-sprint-6-3-verdict-revision-go-sqlonfhir.md)
 - [0026 — Sprint 6.4: sqlonfhir integration + dispatch plumbing](0026-sprint-6-4-sqlonfhir-integration.md)
+- [0027 — Sprint 6.5: Lambda differential freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION)](0027-sprint-6-5-differential-freshness-routing.md)
 
 ### Orchestration
 
