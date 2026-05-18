@@ -672,23 +672,6 @@ MIT License - see **[LICENSE](LICENSE)** file for details.
 
 ---
 
-## Citation
-
-If you use ResearchFlow in your research or find the architecture pattern useful, please cite:
-
-```bibtex
-@software{researchflow2025,
-  title = {ResearchFlow: Experimental Multi-Agent System for Clinical Research Automation},
-  author = {Jagnyesh Patra},
-  year = {2026},
-  url = {https://github.com/jagnyesh/researchflow},
-  version = {2.0-experimental},
-  note = {Proof-of-concept demonstrating AI for coordination, humans for expertise}
-}
-```
-
----
-
 ## Acknowledgments
 
 - Built with [FastAPI](https://fastapi.tiangolo.com/)
