@@ -409,15 +409,35 @@ class SQLGenerator:
         """
         Parse an age comparison from free-form details.
 
-        Accepts symbolic ('> 18', '< 65') and natural-language forms
-        ('greater than 18', 'above 18', 'over 65', 'below 18',
-        'less than 65', 'under 18'). Returns (op, int_age) or (None, None).
+        Issue #51 (Sprint 6.5c, 2026-05-18): the LLM's medical-concept prompt
+        documents `details: 'between 18 and 40'` as a canonical age-range
+        format. The pre-fix parser only handled comparison ops (>/<) and
+        silently dropped any range-shaped input. Sprint 6.5c stress test
+        showed 28% (7/25) of demographic inputs hit this path. Now returns
+        ('BETWEEN', (lo, hi)) for range syntax so _build_demographic_clause
+        can emit a BETWEEN SQL predicate.
+
+        Return shapes:
+          - (">", int_age) for greater-than comparisons
+          - ("<", int_age) for less-than comparisons
+          - ("BETWEEN", (lo, hi)) for inclusive ranges
+          - (None, None) when no parseable age constraint is present
         """
         import re
 
         if not details:
             return None, None
         text = details.lower().strip()
+
+        # Try range syntax first ("between X and Y"). Matches the LLM's
+        # canonical age-range format per _MEDICAL_CONCEPTS_SYSTEM_PROMPT.
+        # Trailing comments (e.g., "between 20 and 29 (in their 20s)") are
+        # ignored by the partial-match regex.
+        range_match = re.search(r"between\s+(\d+)\s+and\s+(\d+)", text)
+        if range_match:
+            lo, hi = int(range_match.group(1)), int(range_match.group(2))
+            return "BETWEEN", (lo, hi)
+
         gt_words = ("greater than", "more than", "older than", "above", "over")
         lt_words = ("less than", "fewer than", "younger than", "below", "under")
         op = None
@@ -448,18 +468,31 @@ class SQLGenerator:
         )
 
         # Parse age criteria. The LLM extractor emits details in mixed
-        # forms — symbolic ("> 18") or natural-language ("greater than 18
-        # years", "above 18", "over 65"). Normalize all to a comparison op
-        # plus an integer age.
+        # forms — symbolic ("> 18"), natural-language ("greater than 18
+        # years", "above 18", "over 65"), or range ("between 40 and 65").
+        # Normalize all to a comparison op + integer age, or BETWEEN + (lo, hi).
         if "age" in term_lower:
             op, age_value = self._parse_age_details(details)
             if op is None:
                 logger.warning(f"Could not parse age details: {details!r}")
                 return "", {}
-            param_name = self._get_param_name("age")
-            params = {param_name: age_value}
             # birth_date is materialized as text (FHIR transpiler default);
             # cast to date so AGE() accepts it.
+            if op == "BETWEEN":
+                # Issue #51 fix: range-shaped age criteria. The LLM emits
+                # 'between X and Y' per the medical-concepts prompt; emit
+                # an inclusive SQL BETWEEN predicate.
+                lo, hi = age_value
+                lo_param = self._get_param_name("age_lo")
+                hi_param = self._get_param_name("age_hi")
+                params = {lo_param: lo, hi_param: hi}
+                sql = (
+                    f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) "
+                    f"BETWEEN :{lo_param} AND :{hi_param}"
+                )
+                return sql, params
+            param_name = self._get_param_name("age")
+            params = {param_name: age_value}
             sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) {op} :{param_name}"
             return sql, params
 
