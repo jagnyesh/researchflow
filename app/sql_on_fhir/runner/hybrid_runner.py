@@ -99,6 +99,7 @@ class HybridRunner:
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
         max_resources: Optional[int] = None,
+        mode: "FreshnessAnnotation" = None,
     ) -> List[Dict[str, Any]]:
         """
         Execute ViewDefinition using best available method with speed layer merge
@@ -107,6 +108,11 @@ class HybridRunner:
             view_definition: ViewDefinition resource
             search_params: Optional FHIR search parameters
             max_resources: Maximum number of resources/rows
+            mode: FreshnessAnnotation routing intent (Sprint 6.5 #69).
+                Defaults to EXPLORATORY for backward compatibility with
+                pre-Sprint-6.5 callers; EXPLORATORY preserves the existing
+                speed-merged behavior. Cycle 2 only introduces the
+                parameter; cycles 3-4 specialize behavior per mode.
 
         Returns:
             List of rows (each row is a dict with column values)
@@ -116,6 +122,12 @@ class HybridRunner:
             2. If enabled, query speed layer (Redis) for recent data
             3. Merge results and deduplicate
         """
+        # Cycle 2 (#69): accept mode parameter, default to EXPLORATORY for
+        # backward compat. Behavior per-mode is specialized in later cycles.
+        from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
+
+        if mode is None:
+            mode = FreshnessAnnotation.EXPLORATORY
         view_name = view_definition.get("name")
 
         # Step 1: Query batch layer
