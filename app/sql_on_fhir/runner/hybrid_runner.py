@@ -88,6 +88,12 @@ class HybridRunner:
         self._postgres_queries = 0
         self._speed_layer_queries = 0
 
+        # Sprint 6.5 Phase 2A cycle 3 (#69): last-execution metadata
+        # surfaced via sibling getters, mirroring get_last_executed_sql()
+        # at line 229. Populated from sqlonfhir.mv_refresh_metadata by
+        # execute() after each call.
+        self._last_batch_anchor_ts: Optional[datetime] = None
+
         logger.info(
             f"Initialized HybridRunner "
             f"(materialized views: enabled, postgres fallback: enabled, "
@@ -160,6 +166,16 @@ class HybridRunner:
             postgres_runner = await self._get_postgres_runner()
             batch_result = await postgres_runner.execute(
                 view_definition, search_params=search_params, max_resources=max_resources
+            )
+
+        # Sprint 6.5 cycle 3 (#69): populate batch_anchor_ts for FORMAL_DRAFT.
+        # FORMAL_EXTRACTION extends this in cycle 4; cycle 6 generalizes the
+        # SQL to MAX across multiple touched views for multi-view queries.
+        if mode == FreshnessAnnotation.FORMAL_DRAFT:
+            self._last_batch_anchor_ts = await self.db_client.execute_scalar(
+                "SELECT MAX(refreshed_at) FROM sqlonfhir.mv_refresh_metadata "
+                "WHERE view_name = $1",
+                [view_name],
             )
 
         # Step 2: Query speed layer for recent data (if enabled)
@@ -237,6 +253,23 @@ class HybridRunner:
             Dictionary mapping column names to types
         """
         return self.materialized_runner.get_schema(view_definition)
+
+    def get_last_batch_anchor_ts(self) -> Optional[datetime]:
+        """Citation anchor for the last execute() call's batch state.
+
+        Sprint 6.5 Phase 2A cycle 3 (#69). Populated from
+        sqlonfhir.mv_refresh_metadata after each FORMAL_* mode execute().
+        Returns None when no qualifying execute() has run, or when the
+        touched views have no recorded refreshes yet (run
+        `python scripts/materialize_views.py --refresh` to seed).
+
+        Sibling getter pattern (matches get_last_executed_sql at line ~270)
+        chosen for backward compatibility — existing HybridRunner callers
+        get unchanged List[Dict] return shape. If a future sprint wires
+        staleness-aware agent reasoning, revisit return shape (likely to
+        ExecutionResult dataclass returned from execute() directly).
+        """
+        return self._last_batch_anchor_ts
 
     def get_last_executed_sql(self) -> Optional[str]:
         """

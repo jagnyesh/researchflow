@@ -129,3 +129,62 @@ class TestHybridRunnerRouting:
             f"EXPLORATORY mode failed to merge speed-layer row. "
             f"Expected 'speed-merge-cycle-2' in results; got {len(result_ids)} ids."
         )
+
+    async def test_hybrid_runner_routes_formal_draft_to_speed_merge_with_metadata(
+        self, hybrid_runner, redis_client, view_def_manager
+    ):
+        """FORMAL_DRAFT mode merges speed-layer rows AND exposes batch_anchor_ts.
+
+        The pre-approval cohort-estimation step in the Formal Portal workflow
+        needs BOTH:
+          1. Fresh data (speed-layer merge, same as EXPLORATORY) so the
+             researcher sees today's reality while iterating on criteria
+          2. A citation anchor (batch_anchor_ts) so the same query can be
+             traced back to the batch state at estimation time
+
+        Observable through public interface via the result rows + the sibling
+        getter HybridRunner.get_last_batch_anchor_ts() — same pattern as the
+        existing get_last_executed_sql() at hybrid_runner.py:229. Test does
+        NOT poke at HybridRunner internals; the getter is the contract.
+        """
+        from datetime import datetime
+
+        synthetic_patient = {
+            "resourceType": "Patient",
+            "id": "formal-draft-cycle-3",
+            "gender": "female",
+            "birthDate": "1985-06-15",
+            "name": [{"family": "FormalDraftCycle3", "given": ["Synthetic"]}],
+        }
+        await redis_client.set_fhir_resource("Patient", synthetic_patient["id"], synthetic_patient)
+
+        view_def = view_def_manager.load("patient_simple")
+        assert view_def is not None
+
+        rows = await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+        )
+
+        # Speed-merge fired (same shape as EXPLORATORY for FORMAL_DRAFT)
+        result_ids = {r.get("id") for r in rows if r.get("id")}
+        assert "formal-draft-cycle-3" in result_ids, (
+            f"FORMAL_DRAFT mode failed to merge speed-layer row. "
+            f"Expected 'formal-draft-cycle-3' in results; got {len(result_ids)} ids."
+        )
+
+        # batch_anchor_ts is accessible via the sibling getter and points
+        # to a real refresh event (mv_refresh_metadata seeded by Phase 1
+        # for patient_simple; non-null datetime is the contract here, the
+        # MAX-across-views assertion lands in Cycle 6).
+        anchor = hybrid_runner.get_last_batch_anchor_ts()
+        assert anchor is not None, (
+            "FORMAL_DRAFT must populate batch_anchor_ts via "
+            "get_last_batch_anchor_ts() — required for the citation anchor "
+            "Phase 4's gate asserts on."
+        )
+        assert isinstance(
+            anchor, datetime
+        ), f"batch_anchor_ts should be a datetime; got {type(anchor).__name__}"
