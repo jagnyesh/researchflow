@@ -15,17 +15,19 @@ ResearchFlow tests whether AI agents can absorb the administrative coordination 
 
 ---
 
-## The Experiment
+## What's distinctive about this project
 
-**The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
+ResearchFlow groups into four multi-sprint engineering arcs that each have substantive depth worth reviewing:
 
-As a biomedical informatician supporting clinical research, I observed that ~50% of work was administrative coordination (scheduling, routing, status tracking) handled by non-technical staff, while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality) which required years of domain experience in healthcare data.
+1. **Lambda Architecture for Clinical Data** (Sprints 6.2 → 6.5) — built batch + speed + serving stack against real FHIR data, with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 15 transpiler bugs found and fixed across 7 TDD cycles in Sprint 6.2 alone. SAS/sqlonfhir chosen over Pathling after the original verdict's premise was empirically falsified. See [`docs/epics/lambda.md`](docs/epics/lambda.md).
 
-**The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
-- **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
-- **Humans must validate:** All technical decisions requiring domain expertise (SQL queries, computations, data quality)
+2. **A2A → LangGraph Migration** (Sprints 7.0 → 7.2) — retired 3,200 LOC of legacy orchestrator behind a parity-verification harness. The parity gate's "FAILED" verdict initially looked like real divergence; diagnostic checks revealed it was measuring non-executed workflows. See [`docs/epics/orchestration.md`](docs/epics/orchestration.md).
 
-**The Result:** A multi-agent system demonstrating sustainable AI architecture for regulated technical domains.
+3. **LLM Cost Telemetry — Falsification + Repair** (Sprints 8 → 8.4, five sprints) — projected 73% cost reduction, measured 0%, diagnosed three concurrent bugs including a 6-month silent langchain-anthropic bug where cache_control was silently dropped for plain-string SystemMessage content. Each bug fixed in its own sprint with wire-level integration tests. See [`docs/epics/cost-telemetry.md`](docs/epics/cost-telemetry.md).
+
+4. **HIPAA Security Baseline** (Sprint 6.1) — five-phase compliance foundation in 8 days: JWT auth + RBAC, audit middleware with Redis-backed durable queue, PHI-safe input validation framework, TLS enforcement, ePHI encryption-at-rest via Fernet. 74 audit tests + 163 input-validation schema tests. See [`docs/epics/security.md`](docs/epics/security.md).
+
+Each epic doc covers the problem, the design decisions (including the bad guesses and the corrections), the empirical evidence, and the residual work.
 
 ---
 
