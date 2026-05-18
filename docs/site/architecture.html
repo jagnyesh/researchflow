@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ResearchFlow — System Architecture</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg: #0b0e14;
+  --surface: #131720;
+  --surface2: #1a2030;
+  --border: #242c3d;
+  --border2: #2e3a52;
+
+  /* Layer accent colors */
+  --ui:     #7c6af7;   /* purple   — UI layer */
+  --api:    #3b9eff;   /* blue     — API layer */
+  --orch:   #f5a623;   /* amber    — orchestration */
+  --agent:  #4ecdc4;   /* teal     — agents */
+  --svc:    #7ed321;   /* green    — core services */
+  --infra:  #e85d75;   /* rose     — infrastructure */
+  --data:   #50c8a8;   /* mint     — data layer */
+  --ext:    #a0a8b8;   /* slate    — external */
+
+  --text-primary: #e8ecf4;
+  --text-secondary: #8892a4;
+  --text-dim: #4a5568;
+
+  --font-mono: 'IBM Plex Mono', monospace;
+  --font-sans: 'IBM Plex Sans', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── Header ── */
+.header {
+  padding: 24px 32px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.logo { display: flex; align-items: center; gap: 12px; }
+.logo-mark {
+  width: 36px; height: 36px;
+  background: linear-gradient(135deg, var(--ui), var(--api));
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: #fff;
+}
+.logo-text { font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+.logo-sub  { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); margin-top: 1px; }
+.sprint-badge {
+  padding: 4px 12px;
+  border-radius: 99px;
+  background: rgba(245,166,35,.12);
+  border: .5px solid rgba(245,166,35,.35);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--orch);
+}
+
+/* ── Legend ── */
+.legend {
+  display: flex; gap: 16px; flex-wrap: wrap;
+  padding: 16px 32px 0;
+}
+.li {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px; font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+.ld {
+  width: 8px; height: 8px; border-radius: 2px;
+}
+
+/* ── Main diagram canvas ── */
+.canvas {
+  padding: 20px 28px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ── Layer row ── */
+.layer {
+  border: .5px solid var(--border2);
+  border-radius: 12px;
+  overflow: hidden;
+  animation: fadeUp .4s ease both;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+.layer:nth-child(1)  { animation-delay: .05s; }
+.layer:nth-child(2)  { animation-delay: .10s; }
+.layer:nth-child(3)  { animation-delay: .15s; }
+.layer:nth-child(4)  { animation-delay: .20s; }
+.layer:nth-child(5)  { animation-delay: .25s; }
+.layer:nth-child(6)  { animation-delay: .30s; }
+.layer:nth-child(7)  { animation-delay: .35s; }
+.layer:nth-child(8)  { animation-delay: .40s; }
+
+.layer-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 14px;
+  border-bottom: .5px solid var(--border);
+}
+.layer-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.layer-label {
+  font-size: 9px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 1px;
+  font-family: var(--font-mono);
+}
+.layer-port {
+  margin-left: auto;
+  font-size: 9px; font-family: var(--font-mono);
+  color: var(--text-dim);
+}
+
+.layer-body {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+/* ── Node card ── */
+.node {
+  padding: 9px 13px;
+  border-radius: 8px;
+  border: .5px solid var(--border2);
+  background: var(--surface2);
+  cursor: pointer;
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+  flex: 1;
+  min-width: 130px;
+  position: relative;
+}
+.node:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+.node-title {
+  font-size: 12px; font-weight: 500;
+  color: var(--text-primary);
+  line-height: 1.2;
+  margin-bottom: 3px;
+}
+.node-sub {
+  font-size: 10px; font-family: var(--font-mono);
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.node-badge {
+  display: inline-block;
+  padding: 1px 5px; border-radius: 3px;
+  font-size: 9px; font-family: var(--font-mono);
+  margin-top: 4px;
+}
+.node-accent {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 2.5px; border-radius: 8px 0 0 8px;
+}
+
+/* Full-width node */
+.node.wide { flex: 100%; }
+.node.mid  { flex: 2; min-width: 200px; }
+
+/* accent tints for hover */
+.a-ui:hover    { border-color: var(--ui); }
+.a-api:hover   { border-color: var(--api); }
+.a-orch:hover  { border-color: var(--orch); }
+.a-agent:hover { border-color: var(--agent); }
+.a-svc:hover   { border-color: var(--svc); }
+.a-infra:hover { border-color: var(--infra); }
+.a-data:hover  { border-color: var(--data); }
+.a-ext:hover   { border-color: var(--ext); }
+
+/* ── Flow arrows between layers ── */
+.flow-arrow {
+  display: flex; align-items: center; justify-content: center;
+  height: 18px; color: var(--text-dim);
+  font-size: 11px; font-family: var(--font-mono);
+  gap: 8px;
+  position: relative;
+}
+.flow-arrow::before, .flow-arrow::after {
+  content: '';
+  flex: 1;
+  height: .5px;
+  background: linear-gradient(90deg, transparent, var(--border2));
+}
+.flow-arrow::after {
+  background: linear-gradient(90deg, var(--border2), transparent);
+}
+
+/* ── Gate badges ── */
+.gate {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 1px 6px; border-radius: 99px;
+  font-size: 9px; font-family: var(--font-mono);
+}
+.gate-human {
+  background: rgba(245,166,35,.12);
+  border: .5px solid rgba(245,166,35,.4);
+  color: var(--orch);
+}
+.gate-ok {
+  background: rgba(78,205,196,.1);
+  border: .5px solid rgba(78,205,196,.3);
+  color: var(--agent);
+}
+.gate-warn {
+  background: rgba(232,93,117,.1);
+  border: .5px solid rgba(232,93,117,.3);
+  color: var(--infra);
+}
+
+/* ── Two-column bottom ── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+/* ── Tooltip ── */
+.tooltip {
+  position: fixed;
+  background: var(--surface2);
+  border: .5px solid var(--border2);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 11px; font-family: var(--font-mono);
+  color: var(--text-secondary);
+  max-width: 280px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .15s;
+  z-index: 100;
+  line-height: 1.55;
+}
+.tooltip.show { opacity: 1; }
+.tooltip-title { font-weight: 600; color: var(--text-primary); margin-bottom: 3px; }
+
+/* ── Perf strip ── */
+.perf-strip {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 10px 28px 4px;
+}
+.perf-chip {
+  padding: 4px 12px;
+  border-radius: 6px;
+  background: var(--surface2);
+  border: .5px solid var(--border2);
+  font-size: 10px; font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+.perf-chip span { color: var(--text-primary); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-mark">RF</div>
+    <div>
+      <div class="logo-text">ResearchFlow</div>
+      <div class="logo-sub">Clinical Research Data Automation — System Architecture</div>
+    </div>
+  </div>
+  <div class="sprint-badge">Sprint 6 · Security Baseline · 44.4% complete</div>
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="li"><div class="ld" style="background:var(--ui)"></div>UI Layer</div>
+  <div class="li"><div class="ld" style="background:var(--api)"></div>API Layer</div>
+  <div class="li"><div class="ld" style="background:var(--orch)"></div>Orchestration</div>
+  <div class="li"><div class="ld" style="background:var(--agent)"></div>Agents</div>
+  <div class="li"><div class="ld" style="background:var(--svc)"></div>Core Services</div>
+  <div class="li"><div class="ld" style="background:var(--infra)"></div>Infrastructure</div>
+  <div class="li"><div class="ld" style="background:var(--data)"></div>Data Layer</div>
+  <div class="li"><div class="ld" style="background:var(--ext)"></div>External Systems</div>
+</div>
+
+<!-- Perf strip -->
+<div class="perf-strip">
+  <div class="perf-chip"><span>1151×</span> query cache speedup</div>
+  <div class="perf-chip"><span>95%</span> faster than manual</div>
+  <div class="perf-chip"><span>60%</span> LLM cost reduction</div>
+  <div class="perf-chip"><span>29/29</span> tests passing</div>
+  <div class="perf-chip"><span>4–8 hr</span> turnaround (was 14–21 days)</div>
+  <div class="perf-chip"><span>$100–150</span> per request (was $1,500+)</div>
+</div>
+
+<!-- Main canvas -->
+<div class="canvas">
+
+  <!-- 1. UI Layer -->
+  <div class="layer" style="border-color: rgba(124,106,247,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--ui)"></div>
+      <div class="layer-label" style="color:var(--ui)">UI Layer — Streamlit</div>
+      <div class="layer-port">:8501 · :8502 · :8503</div>
+    </div>
+    <div class="layer-body">
+      <div class="node a-ui" data-tip="Research Notebook|Chat-based exploratory analytics. Submit natural-language feasibility queries, get cohort size estimates instantly. No approval gate — counts only.">
+        <div class="node-accent" style="background:var(--ui)"></div>
+        <div class="node-title">Research Notebook</div>
+        <div class="node-sub">:8501 · Chat analytics · feasibility</div>
+        <div class="node-badge" style="background:rgba(124,106,247,.12);color:var(--ui);border:.5px solid rgba(124,106,247,.3)">exploratory</div>
+      </div>
+      <div class="node a-ui" data-tip="Researcher Portal|Form-based IRB-approved data request submission. Full multi-agent pipeline triggered from here. Tracks request status through all 15 workflow states.">
+        <div class="node-accent" style="background:var(--ui)"></div>
+        <div class="node-title">Researcher Portal</div>
+        <div class="node-sub">:8502 · IRB form · request tracker</div>
+        <div class="node-badge" style="background:rgba(124,106,247,.12);color:var(--ui);border:.5px solid rgba(124,106,247,.3)">formal requests</div>
+      </div>
+      <div class="node a-ui" data-tip="Admin Dashboard|Informaticians and admins review pending approvals, approve/reject SQL queries, monitor agent performance, and view escalations. Powers all 5 human-in-loop gates.">
+        <div class="node-accent" style="background:var(--ui)"></div>
+        <div class="node-title">Admin Dashboard</div>
+        <div class="node-sub">:8503 · Approvals · monitoring</div>
+        <span class="gate gate-human">⊙ 5 approval gates</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ HTTPS / REST</div>
+
+  <!-- 2. API Layer -->
+  <div class="layer" style="border-color: rgba(59,158,255,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--api)"></div>
+      <div class="layer-label" style="color:var(--api)">API Layer — FastAPI</div>
+      <div class="layer-port">:8000 · uvicorn · async</div>
+    </div>
+    <div class="layer-body">
+      <div class="node a-api" data-tip="POST /research/submit|Entry point for the full multi-agent workflow. Creates ResearchRequest row, fires the orchestrator. Also: GET /{id} for status polling, GET /active for active requests list.">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/research</div>
+        <div class="node-sub">submit · status · active</div>
+      </div>
+      <div class="node a-api" data-tip="Approval endpoints|GET /pending lists all unreviewed gates. POST /{id}/respond with decision=approve|reject|modify resumes the paused workflow. POST /scope-change re-routes to requirements agent.">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/approvals</div>
+        <div class="node-sub">pending · respond · scope-change</div>
+      </div>
+      <div class="node a-api" data-tip="/analytics/execute runs a named ViewDefinition through the full HybridRunner stack (batch+speed). Used by Research Notebook for instant feasibility counts.">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/analytics</div>
+        <div class="node-sub">execute · view-defs · schema</div>
+      </div>
+      <div class="node a-api" data-tip="Materialized view lifecycle — refresh-all (nightly cron), refresh-stale (hourly cron), {name}/refresh (on-demand), /health, /status. All hit MaterializedViewService.">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/analytics/materialized-views</div>
+        <div class="node-sub">refresh · stale · status</div>
+      </div>
+      <div class="node a-api" data-tip="Three health probes: GET /health (full — DB + FHIR + cache), GET /health/live (Kubernetes liveness, lightweight), GET /health/ready (Kubernetes readiness — checks DB + FHIR connectivity).">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/health</div>
+        <div class="node-sub">full · /live · /ready (k8s)</div>
+      </div>
+      <div class="node a-api" data-tip="MCP context store — saves and loads per-request context dicts to FileContextStore. Agents use this to persist state across the multi-turn workflow without passing large dicts in memory.">
+        <div class="node-accent" style="background:var(--api)"></div>
+        <div class="node-title">/mcp  /a2a</div>
+        <div class="node-sub">context · agent messages</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Sprint 6 middleware note -->
+  <div style="display:flex;align-items:center;gap:10px;padding:0 4px">
+    <div style="flex:1;height:.5px;background:linear-gradient(90deg,transparent,rgba(232,93,117,.4))"></div>
+    <div style="font-size:10px;font-family:var(--font-mono);color:var(--infra);white-space:nowrap">
+      ⚠ Sprint 6 adds here: AuthMiddleware (JWT) → RBACMiddleware → InputValidationMiddleware
+    </div>
+    <div style="flex:1;height:.5px;background:linear-gradient(90deg,rgba(232,93,117,.4),transparent)"></div>
+  </div>
+
+  <!-- 3. Orchestration Layer -->
+  <div class="layer" style="border-color: rgba(245,166,35,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--orch)"></div>
+      <div class="layer-label" style="color:var(--orch)">Orchestration Layer — LangGraph</div>
+      <div class="layer-port">15 workflow states · A2A coordination</div>
+    </div>
+    <div class="layer-body">
+      <div class="node mid a-orch" data-tip="ResearchRequestOrchestrator|Pure coordinator — holds no domain logic. Runs a 3-step loop on every agent completion: (1) check requires_approval gate, (2) lookup WorkflowEngine transition rule, (3) call route_task() recursively. Context dict grows at each hop.">
+        <div class="node-accent" style="background:var(--orch)"></div>
+        <div class="node-title">ResearchRequestOrchestrator</div>
+        <div class="node-sub">route_task() · 3-step routing loop · recursive A2A</div>
+        <span class="gate gate-human">approval gate checks</span>
+      </div>
+      <div class="node mid a-orch" data-tip="WorkflowEngine|Dict keyed on (agent_id, task). Each entry has a lambda condition + next_agent/task/state. 12 rules total. HybridRunner called determine_next_step() — no routing logic in the orchestrator itself.">
+        <div class="node-accent" style="background:var(--orch)"></div>
+        <div class="node-title">WorkflowEngine</div>
+        <div class="node-sub">12 transition rules · (agent, task) → next_step</div>
+        <span class="gate gate-ok">state machine</span>
+      </div>
+      <div class="node a-orch" data-tip="CoordinatorAgent|The only agent that can short-circuit backwards. Handles scope changes mid-workflow — re-routes to requirements_agent without creating a new request. Also handles escalations.">
+        <div class="node-accent" style="background:var(--orch)"></div>
+        <div class="node-title">CoordinatorAgent</div>
+        <div class="node-sub">scope changes · escalation</div>
+      </div>
+      <div class="node a-orch" data-tip="ApprovalService|Persists pending approvals to DB. Pauses workflow until admin acts. Resumes via approval_service.approve_* which is itself a WorkflowEngine transition rule routing to the next real agent.">
+        <div class="node-accent" style="background:var(--orch)"></div>
+        <div class="node-title">ApprovalService</div>
+        <div class="node-sub">gate persistence · RBAC · timeouts</div>
+        <span class="gate gate-human">human-in-loop</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ agent dispatch</div>
+
+  <!-- 4. Agents Layer -->
+  <div class="layer" style="border-color: rgba(78,205,196,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--agent)"></div>
+      <div class="layer-label" style="color:var(--agent)">Agent Layer — 6 Specialized Agents</div>
+      <div class="layer-port">BaseAgent · 3 retries · exponential backoff</div>
+    </div>
+    <div class="layer-body">
+      <div class="node a-agent" data-tip="RequirementsAgent|Multi-turn LLM conversation to extract structured JSON: populations, time periods, data elements, PHI level, IRB number. Completeness score. Returns requires_approval:true — triggers REQUIREMENTS_REVIEW gate.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">Requirements</div>
+        <div class="node-sub">LLM extraction · JSON</div>
+        <span class="gate gate-human">gate 1</span>
+      </div>
+      <div class="node a-agent" data-tip="PhenotypeValidationAgent|Generates SQL-on-FHIR ViewDefinition query. Runs COUNT via HybridRunner. Returns feasibility_score, cohort_size. Requires_approval:true for SQL — triggers PHENOTYPE_REVIEW gate. not_feasible if cohort too small.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">Phenotype</div>
+        <div class="node-sub">SQL gen · feasibility</div>
+        <span class="gate gate-human">gate 2</span>
+      </div>
+      <div class="node a-agent" data-tip="CalendarAgent|Schedules kickoff meeting between researcher and informatics team. LLM generates agenda. Returns meeting details. Triggers EXTRACTION_APPROVAL gate — admin must authorize data access before extraction begins.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">Calendar</div>
+        <div class="node-sub">kickoff scheduling · agenda</div>
+        <span class="gate gate-human">gate 3</span>
+      </div>
+      <div class="node a-agent" data-tip="DataExtractionAgent|Multi-source retrieval from HAPI FHIR, Epic Clarity (stub), CDW. Assembles data package. Uses SQLonFHIRAdapter for queries. Returns extraction_complete with row counts per source.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">Extraction</div>
+        <div class="node-sub">FHIR · Epic · CDW</div>
+      </div>
+      <div class="node a-agent" data-tip="QualityAssuranceAgent|Validates extracted data: completeness, format consistency, PHI checks, outlier detection. Returns qa_passed or qa_failed. Failed → QA_FAILED state, operator decides re-extract or reject. Gate 4 if passed.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">QA</div>
+        <div class="node-sub">validation · quality checks</div>
+        <span class="gate gate-human">gate 4</span>
+      </div>
+      <div class="node a-agent" data-tip="DeliveryAgent|Packages approved data, generates download link, notifies researcher by email. Writes DataDelivery record. Transitions to DELIVERED → COMPLETE. Final audit trail entry written.">
+        <div class="node-accent" style="background:var(--agent)"></div>
+        <div class="node-title">Delivery</div>
+        <div class="node-sub">packaging · notification</div>
+        <span class="gate gate-ok">→ COMPLETE</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ service calls</div>
+
+  <!-- 5. Core Services -->
+  <div class="layer" style="border-color: rgba(126,211,33,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--svc)"></div>
+      <div class="layer-label" style="color:var(--svc)">Core Services</div>
+      <div class="layer-port">LangChain · SQLAlchemy async · asyncpg</div>
+    </div>
+    <div class="layer-body">
+      <div class="node a-svc" data-tip="Multi-provider LLM Client|Claude (primary, critical medical tasks) + OpenAI/Ollama (secondary, non-critical). Auto-fallback. 60% cost reduction via intelligent routing. LangSmith @traceable on every call — tokens, cost, latency tracked.">
+        <div class="node-accent" style="background:var(--svc)"></div>
+        <div class="node-title">LLM Client</div>
+        <div class="node-sub">Claude · OpenAI · Ollama · fallback</div>
+      </div>
+      <div class="node a-svc" data-tip="SQLonFHIRAdapter|SELECT-only sandbox. Thin wrapper over SQLAlchemy async engine. Raises ValueError if query doesn't start with SELECT. Used directly by Phenotype and Extraction agents. No caching — that's the runner stack's job.">
+        <div class="node-accent" style="background:var(--svc)"></div>
+        <div class="node-title">SQLonFHIRAdapter</div>
+        <div class="node-sub">SELECT sandbox · async engine</div>
+      </div>
+      <div class="node mid a-svc" data-tip="HybridRunner (default VIEWDEF_RUNNER)|Routing: check _view_exists_cache → MaterializedViewRunner (5-10ms) or PostgresRunner fallback (50-500ms). Independently also fires SpeedLayerRunner against Redis. Merges and deduplicates results. Total: 15-30ms.">
+        <div class="node-accent" style="background:var(--svc)"></div>
+        <div class="node-title">HybridRunner</div>
+        <div class="node-sub">MaterializedViewRunner · PostgresRunner · SpeedLayerRunner · merge</div>
+        <span class="gate gate-ok">15–30ms end-to-end</span>
+      </div>
+      <div class="node a-svc" data-tip="MCP Server Registry|TerminologyServer (SNOMED/LOINC/RxNorm — currently mock, 3-5 hardcoded codes), EpicClarityServer (stub), FHIRServer (stub). Sprint 7 replaces stubs with real MCP integrations.">
+        <div class="node-accent" style="background:var(--svc)"></div>
+        <div class="node-title">MCP Servers</div>
+        <div class="node-sub">Terminology · Epic · FHIR stubs</div>
+        <span class="gate gate-warn">Sprint 7 →</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ storage / caching</div>
+
+  <!-- 6. Infrastructure -->
+  <div class="layer" style="border-color: rgba(232,93,117,.3)">
+    <div class="layer-head">
+      <div class="layer-dot" style="background:var(--infra)"></div>
+      <div class="layer-label" style="color:var(--infra)">Infrastructure — Lambda Architecture</div>
+      <div class="layer-port">Docker Compose · Redis :6379 · asyncpg pool 5-20</div>
+    </div>
+    <div class="layer-body">
+      <div class="node a-infra" data-tip="Batch Layer|Nightly REFRESH MATERIALIZED VIEW CONCURRENTLY at 2AM (cron). Views: patient_simple, condition_simple, observation_labs, medication_requests in sqlonfhir schema. Flat indexed tables — no FHIRPath parsing at query time. 5-10ms queries.">
+        <div class="node-accent" style="background:var(--infra)"></div>
+        <div class="node-title">Batch Layer</div>
+        <div class="node-sub">Materialized views · 2AM cron · 5-10ms</div>
+      </div>
+      <div class="node a-infra" data-tip="Speed Layer|Redis 7. Keys: fhir:{type}:{id}, TTL 24h (synchronized with nightly batch refresh). SpeedLayerRunner scans recent resources, filters by criteria, returns patient IDs. Captures everything since last batch refresh.">
+        <div class="node-accent" style="background:var(--infra)"></div>
+        <div class="node-title">Speed Layer</div>
+        <div class="node-sub">Redis 7 · TTL 24h · fhir:{type}:{id}</div>
+      </div>
+      <div class="node a-infra" data-tip="LangSmith Observability|@traceable on FullWorkflow.run() (chain) and every agent execute_task() (agent). ChatAnthropic calls auto-traced by LangChain — tokens, cost, latency for free. Runs: tagged production vs e2e-test. Project: researchflow-production.">
+        <div class="node-accent" style="background:var(--infra)"></div>
+        <div class="node-title">LangSmith</div>
+        <div class="node-sub">@traceable · cost tracking · traces</div>
+      </div>
+      <div class="node a-infra" data-tip="HAPIDBClient|asyncpg connection pool (5-20 connections, 30s timeout). Normalizes postgresql+asyncpg:// → postgresql:// for asyncpg. Shared by PostgresRunner, MaterializedViewRunner, and MaterializedViewService (refresh).">
+        <div class="node-accent" style="background:var(--infra)"></div>
+        <div class="node-title">HAPIDBClient</div>
+        <div class="node-sub">asyncpg pool · 5-20 conns · :5433</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="flow-arrow">↓ persistence</div>
+
+  <!-- 7 + 8 — Data + External side by side -->
+  <div class="two-col">
+
+    <!-- 7. Data Layer -->
+    <div class="layer" style="border-color: rgba(80,200,168,.3)">
+      <div class="layer-head">
+        <div class="layer-dot" style="background:var(--data)"></div>
+        <div class="layer-label" style="color:var(--data)">Data Layer</div>
+        <div class="layer-port">:5432 · :5433 · :5434</div>
+      </div>
+      <div class="layer-body" style="flex-direction:column">
+        <div class="node a-data" data-tip="HAPI FHIR PostgreSQL (:5433)|hfj_resource + hfj_res_ver tables store raw FHIR JSON. 105 patients · 423 conditions (Synthea synthetic). HAPI FHIR server runs on :8081. MaterializedViewRunner queries sqlonfhir schema views on top of this DB.">
+          <div class="node-accent" style="background:var(--data)"></div>
+          <div class="node-title">HAPI FHIR PostgreSQL</div>
+          <div class="node-sub">:5433 · hfj_resource · hfj_res_ver · sqlonfhir views</div>
+        </div>
+        <div class="node a-data" data-tip="ResearchFlow DB (:5434)|6 SQLAlchemy models: ResearchRequest (15 states), RequirementsData, FeasibilityReport, AgentExecution, Escalation, DataDelivery. Also stores MaterializedViewMetadata (last_refreshed_at, staleness). SQLite for dev.">
+          <div class="node-accent" style="background:var(--data)"></div>
+          <div class="node-title">ResearchFlow DB</div>
+          <div class="node-sub">:5434 · 6 tables · audit trail · approvals</div>
+        </div>
+        <div class="node a-data" data-tip="Redis (:6379)|Speed layer cache. TTL 24h synchronized with nightly batch refresh. maxmemory 256mb with allkeys-lru eviction. Append-only AOF persistence. Also used (planned) for approval session state in Sprint 6.">
+          <div class="node-accent" style="background:var(--data)"></div>
+          <div class="node-title">Redis 7</div>
+          <div class="node-sub">:6379 · TTL 24h · 256mb · AOF</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. External Systems -->
+    <div class="layer" style="border-color: rgba(160,168,184,.3)">
+      <div class="layer-head">
+        <div class="layer-dot" style="background:var(--ext)"></div>
+        <div class="layer-label" style="color:var(--ext)">External Systems</div>
+        <div class="layer-port">API · FHIR R4 · future MCP</div>
+      </div>
+      <div class="layer-body" style="flex-direction:column">
+        <div class="node a-ext" data-tip="Anthropic API|Claude 3.5 Sonnet (primary). Used by RequirementsAgent and CalendarAgent for LLM calls. Multi-provider routing sends non-critical tasks to OpenAI or Ollama for 60% cost reduction. All calls traced by LangSmith automatically via LangChain.">
+          <div class="node-accent" style="background:var(--ext)"></div>
+          <div class="node-title">Anthropic API</div>
+          <div class="node-sub">claude-3-5-sonnet · primary LLM</div>
+        </div>
+        <div class="node a-ext" data-tip="HAPI FHIR Server (:8081)|hapiproject/hapi:latest. FHIR R4. PostgreSQL backend (:5433). Synthea-generated synthetic patients. REST endpoint at /fhir — used by InMemoryRunner (fallback). Direct DB access used by all other runners.">
+          <div class="node-accent" style="background:var(--ext)"></div>
+          <div class="node-title">HAPI FHIR Server</div>
+          <div class="node-sub">:8081 · R4 · hapiproject/hapi</div>
+        </div>
+        <div class="node a-ext" data-tip="Clinical Data Warehouse|Epic Clarity, OMOP CDM (planned). DataExtractionAgent queries these via MCP servers (currently stubs). Sprint 7 replaces stubs with real Epic Clarity MCP server and FHIR Subscription resources.">
+          <div class="node-accent" style="background:var(--ext)"></div>
+          <div class="node-title">Clinical Data Warehouse</div>
+          <div class="node-sub">Epic · OMOP · CDW (Sprint 7)</div>
+          <span class="gate gate-warn">stubs → Sprint 7</span>
+        </div>
+        <div class="node a-ext" data-tip="Email / Calendar|Not yet integrated — MCP servers are stubs. DeliveryAgent currently logs delivery rather than sending email. CalendarAgent returns mock meeting details. Sprint 7 wires up real calendar MCP and email MCP.">
+          <div class="node-accent" style="background:var(--ext)"></div>
+          <div class="node-title">Email / Calendar</div>
+          <div class="node-sub">MCP stubs · Sprint 7 target</div>
+          <span class="gate gate-warn">not yet live</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- /canvas -->
+
+<!-- Tooltip -->
+<div class="tooltip" id="tooltip">
+  <div class="tooltip-title" id="tt-title"></div>
+  <div id="tt-body"></div>
+</div>
+
+<script>
+const tooltip = document.getElementById('tooltip');
+const ttTitle = document.getElementById('tt-title');
+const ttBody  = document.getElementById('tt-body');
+
+document.querySelectorAll('[data-tip]').forEach(el => {
+  el.addEventListener('mouseenter', e => {
+    const [title, ...rest] = el.dataset.tip.split('|');
+    ttTitle.textContent = title;
+    ttBody.textContent  = rest.join('|');
+    tooltip.classList.add('show');
+    move(e);
+  });
+  el.addEventListener('mousemove', move);
+  el.addEventListener('mouseleave', () => tooltip.classList.remove('show'));
+});
+
+function move(e) {
+  const pad = 14;
+  let x = e.clientX + pad;
+  let y = e.clientY + pad;
+  const tw = tooltip.offsetWidth  || 280;
+  const th = tooltip.offsetHeight || 80;
+  if (x + tw > window.innerWidth  - 8) x = e.clientX - tw - pad;
+  if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
+  tooltip.style.left = x + 'px';
+  tooltip.style.top  = y + 'px';
+}
+</script>
+</body>
+</html>

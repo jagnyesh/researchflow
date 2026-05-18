@@ -151,6 +151,7 @@ log/
 docs/_build/
 docs/.doctrees/
 site/
+!docs/site/
 .mkdocs/
 
 # ============================================
