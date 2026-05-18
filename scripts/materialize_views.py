@@ -43,7 +43,12 @@ logger = logging.getLogger(__name__)
 # Configuration
 SCHEMA_NAME = "sqlonfhir"
 VIEW_DEFINITIONS_DIR = Path(__file__).parent.parent / "app" / "sql_on_fhir" / "view_definitions"
-HAPI_DB_URL = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
+# asyncpg can't parse SQLAlchemy's "postgresql+asyncpg://" prefix; strip it so
+# both shell-loaded and .env-loaded HAPI_DB_URL values work. Same fix that
+# landed in tests/test_drive_fhir_traffic.py during Sprint 6.5 /qa pass.
+HAPI_DB_URL = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi").replace(
+    "postgresql+asyncpg://", "postgresql://"
+)
 
 
 class ViewMaterializer:
