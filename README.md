@@ -33,6 +33,7 @@ Each epic doc covers the problem, the design decisions (including the bad guesse
 
 ## Table of Contents
 
+- [What's distinctive about this project](#whats-distinctive-about-this-project)
 - [Engineering arcs (four epics)](#engineering-arcs-four-epics)
 - [Architecture](#architecture)
 - [Key Features](#key-features)
@@ -40,6 +41,8 @@ Each epic doc covers the problem, the design decisions (including the bad guesse
 - [Performance](#performance)
 - [Human-in-Loop Safety](#human-in-loop-safety)
 - [Current Status](#current-status)
+- [Known Limitations](#known-limitations)
+- [What's Not Done Yet](#whats-not-done-yet)
 - [Documentation](#documentation)
 
 ---
