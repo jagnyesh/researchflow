@@ -94,6 +94,11 @@ class HybridRunner:
         # execute() after each call.
         self._last_batch_anchor_ts: Optional[datetime] = None
 
+        # Sprint 6.5 Phase 2A cycle 5 (#69): metrics table is created
+        # lazily on first execute(); flag avoids redundant CREATE IF NOT
+        # EXISTS roundtrips per call. The helper itself is idempotent.
+        self._metrics_table_ensured: bool = False
+
         logger.info(
             f"Initialized HybridRunner "
             f"(materialized views: enabled, postgres fallback: enabled, "
@@ -130,11 +135,18 @@ class HybridRunner:
         """
         # Cycle 2 (#69): accept mode parameter, default to EXPLORATORY for
         # backward compat. Behavior per-mode is specialized in later cycles.
+        import time
+
         from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
 
         if mode is None:
             mode = FreshnessAnnotation.EXPLORATORY
+        t_start = time.perf_counter()
         view_name = view_definition.get("name")
+
+        # Cycle 5 (#69): track merge-side state for the metric row.
+        speed_layer_hit = False
+        speed_layer_rows_merged = 0
 
         # Step 1: Query batch layer
         view_exists = await self._check_view_exists(view_name)
@@ -184,30 +196,51 @@ class HybridRunner:
         # batch_anchor_ts must be bit-identical. Speed-layer overlay
         # would break that.
         if mode == FreshnessAnnotation.FORMAL_EXTRACTION:
-            return batch_result
-
-        # Step 2: Query speed layer for recent data (if enabled)
-        if self.use_speed_layer:
-            try:
-                self._speed_layer_queries += 1
-                speed_result = await self.speed_layer_runner.execute(
-                    view_definition, search_params=search_params, max_resources=max_resources
-                )
-
-                # Step 3: Merge results (if speed layer has data)
-                if speed_result.get("total_count", 0) > 0:
-                    logger.debug(
-                        f"Merging batch layer ({len(batch_result)} rows) with "
-                        f"speed layer ({speed_result['total_count']} patients)"
-                    )
-                    return self._merge_batch_and_speed_results(
-                        batch_result, speed_result, view_definition
+            final_result = batch_result
+        else:
+            # Step 2: Query speed layer for recent data (if enabled)
+            final_result = batch_result
+            if self.use_speed_layer:
+                try:
+                    self._speed_layer_queries += 1
+                    speed_result = await self.speed_layer_runner.execute(
+                        view_definition,
+                        search_params=search_params,
+                        max_resources=max_resources,
                     )
 
-            except Exception as e:
-                logger.warning(f"Speed layer query failed for '{view_name}': {e}. Using batch only")
+                    # Step 3: Merge results (if speed layer has data)
+                    if speed_result.get("total_count", 0) > 0:
+                        speed_layer_hit = True
+                        speed_layer_rows_merged = speed_result["total_count"]
+                        logger.debug(
+                            f"Merging batch layer ({len(batch_result)} rows) with "
+                            f"speed layer ({speed_result['total_count']} patients)"
+                        )
+                        final_result = self._merge_batch_and_speed_results(
+                            batch_result, speed_result, view_definition
+                        )
 
-        return batch_result
+                except Exception as e:
+                    logger.warning(
+                        f"Speed layer query failed for '{view_name}': {e}. Using batch only"
+                    )
+
+        # Sprint 6.5 cycle 5 (#69): write one metric row for FORMAL_DRAFT.
+        # FORMAL_EXTRACTION and EXPLORATORY are not in cycle 5's scope —
+        # future cycles extend the condition as the test surface demands.
+        if mode == FreshnessAnnotation.FORMAL_DRAFT:
+            latency_ms = int((time.perf_counter() - t_start) * 1000)
+            await self._record_metric(
+                view_name=view_name,
+                mode=mode,
+                speed_layer_hit=speed_layer_hit,
+                speed_layer_rows_merged=speed_layer_rows_merged,
+                row_count=len(final_result),
+                latency_ms=latency_ms,
+            )
+
+        return final_result
 
     @traceable(tags=["hybrid-runner", "count"])
     async def execute_count(
@@ -278,6 +311,108 @@ class HybridRunner:
         ExecutionResult dataclass returned from execute() directly).
         """
         return self._last_batch_anchor_ts
+
+    async def create_hybrid_runner_metrics_table(self) -> None:
+        """CREATE TABLE IF NOT EXISTS for sqlonfhir.hybrid_runner_metrics.
+
+        Sprint 6.5 Phase 2A cycle 5 (#69). Named helper mirroring Phase 1's
+        ViewMaterializer.create_metadata_table() at
+        scripts/materialize_views.py:~75 — the table-creation SQL lives in
+        a reviewable, idempotent function, never inlined into execute().
+
+        Schema per issue #69's design block. Indexes target the dashboard's
+        polling read pattern (time-series + group-by-mode).
+        """
+        if self._metrics_table_ensured:
+            return
+        if not self.db_client.pool:
+            await self.db_client.connect()
+        async with self.db_client.pool.acquire() as conn:
+            await conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sqlonfhir.hybrid_runner_metrics (
+                    id                       SERIAL PRIMARY KEY,
+                    created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    trace_id                 VARCHAR(64),
+                    caller                   VARCHAR(64) NOT NULL DEFAULT 'direct',
+                    mode                     VARCHAR(32) NOT NULL,
+                    view_names               JSONB NOT NULL,
+                    batch_anchor_ts          TIMESTAMPTZ NOT NULL,
+                    speed_layer_hit          BOOLEAN NOT NULL,
+                    speed_layer_rows_merged  INTEGER NOT NULL DEFAULT 0,
+                    freshness_delta_seconds  INTEGER NOT NULL,
+                    latency_ms               INTEGER NOT NULL,
+                    row_count                INTEGER NOT NULL,
+                    extra                    JSONB
+                )
+                """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_hrm_created_at
+                    ON sqlonfhir.hybrid_runner_metrics(created_at DESC)
+                """
+            )
+            await conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_hrm_mode_created
+                    ON sqlonfhir.hybrid_runner_metrics(mode, created_at DESC)
+                """
+            )
+        self._metrics_table_ensured = True
+
+    async def _record_metric(
+        self,
+        view_name: str,
+        mode: "FreshnessAnnotation",
+        speed_layer_hit: bool,
+        speed_layer_rows_merged: int,
+        row_count: int,
+        latency_ms: int,
+    ) -> None:
+        """INSERT one row into sqlonfhir.hybrid_runner_metrics.
+
+        Sprint 6.5 Phase 2A cycle 5 (#69). Private helper — execute()
+        calls this. Best-effort: a failure here logs a warning but does
+        not raise back into the caller (HybridRunner's contract is to
+        return data; metric write failure must not break the read path).
+        """
+        import json
+        from datetime import datetime, timezone
+
+        await self.create_hybrid_runner_metrics_table()
+
+        anchor = self._last_batch_anchor_ts
+        if anchor is not None:
+            now = datetime.now(anchor.tzinfo or timezone.utc)
+            freshness_delta_seconds = int((now - anchor).total_seconds())
+        else:
+            freshness_delta_seconds = 0
+
+        try:
+            async with self.db_client.pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO sqlonfhir.hybrid_runner_metrics
+                        (caller, mode, view_names, batch_anchor_ts,
+                         speed_layer_hit, speed_layer_rows_merged,
+                         freshness_delta_seconds, latency_ms, row_count)
+                    VALUES ('direct', $1, $2::jsonb, $3, $4, $5, $6, $7, $8)
+                    """,
+                    mode.value,
+                    json.dumps([view_name]),
+                    anchor,
+                    speed_layer_hit,
+                    speed_layer_rows_merged,
+                    freshness_delta_seconds,
+                    latency_ms,
+                    row_count,
+                )
+        except Exception as e:
+            logger.warning(
+                f"Failed to record hybrid_runner_metric for '{view_name}' "
+                f"mode={mode.value}: {e}. Read path was unaffected."
+            )
 
     def get_last_executed_sql(self) -> Optional[str]:
         """

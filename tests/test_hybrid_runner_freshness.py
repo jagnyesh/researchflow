@@ -247,3 +247,98 @@ class TestHybridRunnerRouting:
             "state the extraction was anchored against)."
         )
         assert isinstance(anchor, datetime)
+
+
+class TestHybridRunnerMetrics:
+    """Cycles 5-7: metrics emission to sqlonfhir.hybrid_runner_metrics."""
+
+    pytestmark = pytest.mark.requires_services
+
+    async def test_hybrid_runner_writes_postgres_metric_row(
+        self, hybrid_runner, redis_client, view_def_manager, db_client
+    ):
+        """HybridRunner.execute() writes one row to hybrid_runner_metrics
+        per non-suppressed call.
+
+        Foundation for Phase 3's dashboard (polls this table for the live
+        three-line divergence chart) and Phase 4's gate (asserts that the
+        speed_layer_hit/mode columns match the routing decisions made by
+        cycles 2-4). Schema per issue #69's design block.
+        """
+        import json
+
+        # Pre-load Redis so speed_layer_hit will be True post-call
+        synthetic_patient = {
+            "resourceType": "Patient",
+            "id": "metric-write-cycle-5",
+            "gender": "male",
+            "birthDate": "1992-03-14",
+            "name": [{"family": "MetricWriteCycle5", "given": ["Synthetic"]}],
+        }
+        await redis_client.set_fhir_resource("Patient", synthetic_patient["id"], synthetic_patient)
+
+        view_def = view_def_manager.load("patient_simple")
+        assert view_def is not None
+
+        # Seed the table via the public helper so the baseline-max-id
+        # query below has something to read. The execute() call would
+        # also lazy-create on first use; we're just being explicit so
+        # the test environment is deterministic.
+        await hybrid_runner.create_hybrid_runner_metrics_table()
+
+        # Capture max id before so we can identify "the row we just wrote"
+        # even if prior cycles' tests left rows in the table.
+        async with db_client.pool.acquire() as conn:
+            max_id_before = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        rows = await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+        )
+
+        # Query the new row HybridRunner just wrote
+        async with db_client.pool.acquire() as conn:
+            new_row = await conn.fetchrow(
+                """
+                SELECT mode, view_names, batch_anchor_ts, speed_layer_hit,
+                       speed_layer_rows_merged, freshness_delta_seconds,
+                       latency_ms, row_count
+                FROM sqlonfhir.hybrid_runner_metrics
+                WHERE id > $1
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                max_id_before,
+            )
+
+        assert new_row is not None, (
+            "HybridRunner.execute(FORMAL_DRAFT) did not write to "
+            "sqlonfhir.hybrid_runner_metrics — Phase 3 dashboard cannot "
+            "read what was never written, Phase 4 gate cannot cross-correlate."
+        )
+
+        assert (
+            new_row["mode"] == "formal_draft"
+        ), f"Expected mode='formal_draft', got {new_row['mode']!r}"
+        assert new_row["row_count"] == len(rows), (
+            f"Row count in metrics ({new_row['row_count']}) doesn't match "
+            f"actual returned rows ({len(rows)})"
+        )
+        assert new_row["speed_layer_hit"] is True, (
+            "Pre-loaded Redis should result in speed_layer_hit=True; "
+            "got False which means the merge didn't fire or wasn't recorded"
+        )
+        assert new_row["batch_anchor_ts"] is not None
+        assert new_row["latency_ms"] >= 0
+
+        # view_names is JSONB — asyncpg may return as str or as parsed object
+        view_names = new_row["view_names"]
+        if isinstance(view_names, str):
+            view_names = json.loads(view_names)
+        assert (
+            "patient_simple" in view_names
+        ), f"view_names should contain the touched view; got {view_names!r}"
