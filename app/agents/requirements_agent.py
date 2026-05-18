@@ -380,6 +380,15 @@ class RequirementsAgent(BaseAgent):
             logger.info(
                 f"[{self.agent_id}] Batch extraction successful (1 LLM call vs {len(criteria_list)} calls)"
             )
+            # [ISSUE-51-PROBE-A] Layer 1 output — structured criteria shape
+            # produced by LLM after _criteria_to_structured. Diagnostic for #51:
+            # phenotype SQL generator drops gender + age predicates. We need to
+            # see what shape the LLM emits to determine if Layer 1 is the bug.
+            for idx, sc in enumerate(structured_criteria):
+                logger.info(
+                    f"[ISSUE-51-PROBE-A] criterion[{idx}] description={sc.get('description')!r} "
+                    f"concepts={sc.get('concepts')}"
+                )
             return structured_criteria
 
         except Exception as e:
@@ -407,6 +416,12 @@ class RequirementsAgent(BaseAgent):
                         {"description": criterion, "concepts": [], "codes": []}
                     )
 
+            # [ISSUE-51-PROBE-A] Layer 1 output (fallback path).
+            for idx, sc in enumerate(structured_criteria):
+                logger.info(
+                    f"[ISSUE-51-PROBE-A] criterion[{idx}] description={sc.get('description')!r} "
+                    f"concepts={sc.get('concepts')}"
+                )
             return structured_criteria
 
     def _validate_dates(self, time_period: dict) -> dict:
