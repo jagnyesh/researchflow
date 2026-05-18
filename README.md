@@ -698,7 +698,7 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 - SQL-on-FHIR v2 specification by [HL7 FHIR](https://hl7.org/fhir/)
 - UI powered by [Streamlit](https://streamlit.io/)
 
-**Special thanks to the agentic AI coding workflow that made this experiment possible.**
+**Developed with Claude Code using structured pre-implementation grilling discipline. See [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md) for the documented meta-patterns that emerged across 22 sprints.**
 
 ---
 
