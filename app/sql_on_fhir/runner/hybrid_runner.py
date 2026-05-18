@@ -23,9 +23,11 @@ Performance Profile:
 - View check overhead: <1ms (cached after first check)
 """
 
+import json
 import os
 import logging
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
@@ -38,6 +40,78 @@ from app.cache.redis_client import RedisClient
 from app.sql_on_fhir.runner.speed_layer_runner import SpeedLayerRunner
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class HybridRunnerMetric:
+    """Single source of truth for what HybridRunner emits per execute() call.
+
+    Sprint 6.5 Phase 2A retro refactor (2026-05-17). Replaces the
+    hand-mirrored two-sink pattern that Cycle 5 (Postgres INSERT) and
+    Cycle 8 (LangSmith metadata) had introduced — `execute()` would
+    build the same metric data twice in two different shapes, and the
+    cycle 8 cross-correlation test existed specifically to catch drift
+    between the two.
+
+    Now one dataclass, two adapters:
+      - to_insert_params() → positional args for the Postgres INSERT
+      - to_langsmith_metadata() → dict for run.add_metadata()
+
+    Adding a new metric field is a one-line dataclass change; both
+    sinks pick it up automatically. The cycle 8 test continues to pass
+    but now verifies that adapter outputs are consistent with the
+    dataclass — the actual property worth testing — rather than that
+    two hand-written emissions happen to match.
+    """
+
+    mode: "FreshnessAnnotation"
+    view_names: List[str]
+    batch_anchor_ts: Optional[datetime]
+    speed_layer_hit: bool
+    speed_layer_rows_merged: int
+    freshness_delta_seconds: int
+    latency_ms: int
+    row_count: int
+    trace_id: Optional[str] = None
+    caller: str = "direct"
+
+    def to_langsmith_metadata(self) -> Dict[str, Any]:
+        """Mirror of the metric for langsmith.RunTree.add_metadata().
+
+        Sprint 8.1's Cost Telemetry tab reads from LangSmith and inherits
+        these keys as filterable span attributes without any Postgres-side
+        join — the cross-sprint compounding D4 grilling chose B for.
+        """
+        return {
+            "hybrid_runner.mode": self.mode.value,
+            "hybrid_runner.freshness_delta_seconds": self.freshness_delta_seconds,
+            "hybrid_runner.batch_anchor_ts": (
+                self.batch_anchor_ts.isoformat() if self.batch_anchor_ts else None
+            ),
+            "hybrid_runner.speed_layer_hit": self.speed_layer_hit,
+            "hybrid_runner.row_count": self.row_count,
+        }
+
+    def to_insert_params(self) -> Tuple:
+        """Positional params for the sqlonfhir.hybrid_runner_metrics INSERT.
+
+        Order matches the column list in HybridRunner._record_metric — if
+        the INSERT statement's column order changes, this method changes
+        with it (the dataclass is the source of truth, the INSERT statement
+        is one adapter).
+        """
+        return (
+            self.trace_id,
+            self.caller,
+            self.mode.value,
+            json.dumps(self.view_names),
+            self.batch_anchor_ts,
+            self.speed_layer_hit,
+            self.speed_layer_rows_merged,
+            self.freshness_delta_seconds,
+            self.latency_ms,
+            self.row_count,
+        )
 
 
 class HybridRunner:
@@ -226,17 +300,14 @@ class HybridRunner:
                         f"Speed layer query failed for '{view_name}': {e}. Using batch only"
                     )
 
-        # Sprint 6.5 cycle 5+7+8 (#69): write one metric row for FORMAT_DRAFT
-        # unless suppress_metrics=True. Cycle 8 adds LangSmith
-        # cross-correlation — the same metric is mirrored to LangSmith's
-        # run.extra.metadata so Sprint 8.1's cost telemetry tab can filter
-        # by hybrid_runner.mode without joining to Postgres.
+        # Sprint 6.5 cycle 5+7+8 (#69): write one metric row for FORMAL_DRAFT
+        # unless suppress_metrics=True. The metric data flows through
+        # HybridRunnerMetric (Phase 2A retro 2026-05-17) so both sinks
+        # — Postgres INSERT and LangSmith metadata — derive from the
+        # same value object. No more hand-mirroring.
         if mode == FreshnessAnnotation.FORMAL_DRAFT and not suppress_metrics:
             latency_ms = int((time.perf_counter() - t_start) * 1000)
 
-            # Compute freshness_delta_seconds ONCE and propagate to both
-            # sinks. If we computed it twice (once for LangSmith metadata,
-            # once for Postgres INSERT) they could drift by a second.
             anchor = self._last_batch_anchor_ts
             if anchor is not None:
                 now = datetime.now(anchor.tzinfo or timezone.utc)
@@ -244,26 +315,26 @@ class HybridRunner:
             else:
                 freshness_delta_seconds = 0
 
-            # LangSmith run tree (we're inside @traceable, so there IS a
-            # current run; if get_current_run_tree returns None for any
-            # reason, trace_id stays None and the cross-correlation gap
-            # gets surfaced by the gate).
-            trace_id: Optional[str] = None
+            metric = HybridRunnerMetric(
+                mode=mode,
+                view_names=[view_name],
+                batch_anchor_ts=anchor,
+                speed_layer_hit=speed_layer_hit,
+                speed_layer_rows_merged=speed_layer_rows_merged,
+                freshness_delta_seconds=freshness_delta_seconds,
+                latency_ms=latency_ms,
+                row_count=len(final_result),
+            )
+
+            # LangSmith sink. trace_id captured here and mutated onto the
+            # metric so the Postgres sink writes the same id. @traceable
+            # on this method guarantees a current run; defensive None-check
+            # is for the unusual case where context propagation is broken.
             try:
                 run = get_current_run_tree()
                 if run is not None:
-                    trace_id = str(run.id)
-                    run.add_metadata(
-                        {
-                            "hybrid_runner.mode": mode.value,
-                            "hybrid_runner.freshness_delta_seconds": freshness_delta_seconds,
-                            "hybrid_runner.batch_anchor_ts": (
-                                anchor.isoformat() if anchor else None
-                            ),
-                            "hybrid_runner.speed_layer_hit": speed_layer_hit,
-                            "hybrid_runner.row_count": len(final_result),
-                        }
-                    )
+                    metric.trace_id = str(run.id)
+                    run.add_metadata(metric.to_langsmith_metadata())
             except Exception as e:
                 logger.warning(
                     f"LangSmith metadata write failed for '{view_name}': {e}. "
@@ -271,16 +342,8 @@ class HybridRunner:
                     f"missing for this call."
                 )
 
-            await self._record_metric(
-                view_name=view_name,
-                mode=mode,
-                speed_layer_hit=speed_layer_hit,
-                speed_layer_rows_merged=speed_layer_rows_merged,
-                row_count=len(final_result),
-                latency_ms=latency_ms,
-                trace_id=trace_id,
-                freshness_delta_seconds=freshness_delta_seconds,
-            )
+            # Postgres sink.
+            await self._record_metric(metric)
 
         return final_result
 
@@ -425,40 +488,24 @@ class HybridRunner:
             )
         self._metrics_table_ensured = True
 
-    async def _record_metric(
-        self,
-        view_name: str,
-        mode: "FreshnessAnnotation",
-        speed_layer_hit: bool,
-        speed_layer_rows_merged: int,
-        row_count: int,
-        latency_ms: int,
-        trace_id: Optional[str] = None,
-        freshness_delta_seconds: Optional[int] = None,
-    ) -> None:
+    # Future refactor consideration: extract metrics emission (this method
+    # + create_hybrid_runner_metrics_table + the LangSmith add_metadata call
+    # in execute()) to a separate HybridRunnerMetricsRecorder module IF a
+    # second caller (e.g., Sprint 6.5b feasibility multi-view metrics) needs
+    # a different schema or different lifecycle. Single-caller scope today
+    # doesn't justify the indirection — "one adapter = hypothetical seam,
+    # two adapters = real seam" (LANGUAGE.md). See Phase 2A retro 2026-05-17.
+
+    async def _record_metric(self, metric: "HybridRunnerMetric") -> None:
         """INSERT one row into sqlonfhir.hybrid_runner_metrics.
 
-        Sprint 6.5 Phase 2A cycle 5+8 (#69). Private helper — execute()
-        calls this. Best-effort: a failure here logs a warning but does
-        not raise back into the caller (HybridRunner's contract is to
-        return data; metric write failure must not break the read path).
-
-        trace_id and freshness_delta_seconds are computed by execute()
-        and passed in so the Postgres row matches the LangSmith run
-        metadata exactly (single computation, propagated to both sinks).
+        Sprint 6.5 Phase 2A cycle 5+8 (#69), retro-refactored 2026-05-17.
+        Signature reduced from 10 args to 1 dataclass via HybridRunnerMetric.
+        Best-effort: a failure here logs a warning but does not raise back
+        into the caller (HybridRunner's contract is to return data; metric
+        write failure must not break the read path).
         """
-        import json
-
         await self.create_hybrid_runner_metrics_table()
-
-        anchor = self._last_batch_anchor_ts
-        if freshness_delta_seconds is None:
-            if anchor is not None:
-                now = datetime.now(anchor.tzinfo or timezone.utc)
-                freshness_delta_seconds = int((now - anchor).total_seconds())
-            else:
-                freshness_delta_seconds = 0
-
         try:
             async with self.db_client.pool.acquire() as conn:
                 await conn.execute(
@@ -467,22 +514,15 @@ class HybridRunner:
                         (trace_id, caller, mode, view_names, batch_anchor_ts,
                          speed_layer_hit, speed_layer_rows_merged,
                          freshness_delta_seconds, latency_ms, row_count)
-                    VALUES ($1, 'direct', $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
+                    VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, $8, $9, $10)
                     """,
-                    trace_id,
-                    mode.value,
-                    json.dumps([view_name]),
-                    anchor,
-                    speed_layer_hit,
-                    speed_layer_rows_merged,
-                    freshness_delta_seconds,
-                    latency_ms,
-                    row_count,
+                    *metric.to_insert_params(),
                 )
         except Exception as e:
             logger.warning(
-                f"Failed to record hybrid_runner_metric for '{view_name}' "
-                f"mode={mode.value}: {e}. Read path was unaffected."
+                f"Failed to record hybrid_runner_metric for "
+                f"{metric.view_names} mode={metric.mode.value}: {e}. "
+                f"Read path was unaffected."
             )
 
     def get_last_executed_sql(self) -> Optional[str]:
