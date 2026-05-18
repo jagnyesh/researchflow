@@ -38,6 +38,7 @@ from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column
 from app.sql_on_fhir.query_builder import create_sql_query_builder
 from app.cache.redis_client import RedisClient
 from app.sql_on_fhir.runner.speed_layer_runner import SpeedLayerRunner
+from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class HybridRunnerMetric:
     two hand-written emissions happen to match.
     """
 
-    mode: "FreshnessAnnotation"
+    mode: FreshnessAnnotation
     view_names: List[str]
     batch_anchor_ts: Optional[datetime]
     speed_layer_hit: bool
@@ -186,7 +187,7 @@ class HybridRunner:
         view_definition: Dict[str, Any],
         search_params: Optional[Dict[str, Any]] = None,
         max_resources: Optional[int] = None,
-        mode: "FreshnessAnnotation" = None,
+        mode: Optional[FreshnessAnnotation] = None,
         suppress_metrics: bool = False,
         caller: str = "direct",
     ) -> List[Dict[str, Any]]:
@@ -214,8 +215,6 @@ class HybridRunner:
         # Cycle 2 (#69): accept mode parameter, default to EXPLORATORY for
         # backward compat. Behavior per-mode is specialized in later cycles.
         import time
-
-        from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
 
         if mode is None:
             mode = FreshnessAnnotation.EXPLORATORY
