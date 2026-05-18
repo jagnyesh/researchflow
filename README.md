@@ -29,6 +29,7 @@ As a biomedical informatician supporting clinical research, I observed that ~50%
 
 ## Table of Contents
 
+- [Engineering arcs (four epics)](#engineering-arcs-four-epics)
 - [Architecture](#architecture)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
@@ -36,6 +37,28 @@ As a biomedical informatician supporting clinical research, I observed that ~50%
 - [Human-in-Loop Safety](#human-in-loop-safety)
 - [Current Status](#current-status)
 - [Documentation](#documentation)
+
+---
+
+## Engineering arcs (four epics)
+
+The project's most portfolio-distinctive work groups into four multi-sprint engineering arcs. Each has its own long-form write-up in `docs/epics/` covering the problem, the design decisions (including the bad guesses and the corrections), the empirical evidence, and the residual work.
+
+### Epic 1: Lambda Architecture for clinical data — `docs/epics/lambda.md`
+
+**Sprints 6.2 → 6.3 (spike) → 6.4 → 6.5.** Built the batch + speed + serving stack against real FHIR data, then surfaced a documented-vs-actual gap (production agents bypassed the serving layer), grilled the right engine choice through a spike that produced a verdict revision, and started closing the gap with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 15 transpiler bugs found and fixed across 7 TDD cycles in Sprint 6.2 alone. SAS/`sqlonfhir` library chosen over Pathling after the original verdict's premise was empirically falsified.
+
+### Epic 2: A2A → LangGraph migration — `docs/epics/orchestration.md`
+
+**Sprints 7.0 → 7.1 → 7.2.** Migrated from a custom 15-state A2A FSM to LangGraph behind a feature flag, ran them in parallel, verified parity, then deleted 1,324 LOC of the legacy orchestrator. Net codebase change across Sprint 7.2 alone: ~-3,200 LOC. The parity verification harness ([`scripts/parity_verify_a2a_vs_langgraph.py`](scripts/parity_verify_a2a_vs_langgraph.py)) became the load-bearing evidence artifact for the deletion. Includes the meta-pattern catch where the gate's "FAILED" verdict turned out to be measuring non-executed workflows — documented in [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md).
+
+### Epic 3: LLM cost telemetry — falsification + repair — `docs/epics/cost-telemetry.md`
+
+**Sprints 8 → 8.1 → 8.2 → 8.4 → 8.3 (five sprints).** The most sophisticated arc in the project. Sprint 8 projected 73% cost reduction via prompt caching. Sprint 8.1 measured 0% reduction. The diagnostic chain found three concurrent bugs: (1) system prompt below Anthropic's caching threshold, (2) a **6-month silent `langchain-anthropic` bug** where `cache_control` was dropped when SystemMessage content was a plain string instead of a content-block array, and (3) a 2.95× cost-aggregator double-charge from misreading `cache_read_input_tokens` semantics. Each bug fixed in its own sprint. Ceilings re-derived against measured medians. Documented across [ADRs 0018–0025](docs/decisions/INDEX.md).
+
+### Epic 4: HIPAA security baseline — `docs/epics/security.md`
+
+**Sprint 6.1 (one sprint but substantial).** Five-phase baseline shipped in 8 days: JWT authentication + RBAC, fail-closed audit middleware with Redis-backed durable queue (Phase 2.2), PHI-safe input validation framework (Phase 2.3), TLS enforcement with HSTS (Phase 3a), ePHI encryption-at-rest via Fernet (Phase 3b). 74 audit tests + 163 input-validation schema tests across Phases 2.2/2.3 alone. Researcher-PII encryption (`User.email`, `*.researcher_email`) deferred to Phase 3b.1; Streamlit dashboard auth deferred to Phase 3c. Documented in [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md) + [ADRs 0007–0016](docs/decisions/INDEX.md).
 
 ---
 
@@ -80,14 +103,14 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
          └─────────────────────────────────────┘
 ```
 
-> ⚠️ **Architecture-vs-actual gap:** Production agents currently call `SQLonFHIRAdapter` directly and bypass `HybridRunner`. The diagram above shows the *designed* read path; wiring agents through `HybridRunner.execute()` (which is what unlocks the speed-layer merge for online reads) is filed as the **Sprint 6.5** candidate. See [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md) for the documented-vs-actual breakdown.
+> ⚠️ **Architecture-vs-actual gap (partially closed):** Sprint 6.5 wired `phenotype_agent` through `HybridRunner` with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION) — see [ADR 0027](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md). `feasibility_service` and `extraction_agent` still call `SQLonFHIRAdapter` directly because their multi-view JOIN shapes need an API extension that's filed as [Sprint 6.5b candidate (#71)](https://github.com/jagnyesh/researchflow/issues/71). See [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md) for the documented-vs-actual breakdown.
 
 ### Multi-Agent System (6 Specialized Agents)
 
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│  (LangGraph FSM | 17 Nodes | Sprint 7.2 retiring A2A) │
+│  (LangGraph FSM | 23 nodes | A2A retired Sprint 7.2)  │
 └────────────────────┬──────────────────────────────────┘
                      │
      ┌───────────────┼───────────────┐
@@ -472,11 +495,13 @@ pytest tests/e2e/
 - 📋 **[`BACKLOG.md`](BACKLOG.md)** — forward plan with decision gates
 
 Notable ADRs:
-- [0024 — Sprint 7.2 A2A FSM closeout](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md) (in-progress)
+- [0027 — Sprint 6.5 Lambda differential freshness routing](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md)
+- [0024 — Sprint 7.2 A2A FSM closeout](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md)
 - [0026 — Sprint 6.4 sqlonfhir integration](docs/decisions/0026-sprint-6-4-sqlonfhir-integration.md)
 - [0023 — Sprint 8.4 aggregator double-charge fix](docs/decisions/0023-sprint-8-4-aggregator-cache-read-double-charge.md)
 - [0021 — Sprint 8.2 the 6-month silent prompt-caching bug](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md)
 - [0020 — Sprint 6.3 verdict revision: GO sqlonfhir](docs/decisions/0020-sprint-6-3-verdict-revision-go-sqlonfhir.md)
+- [0000 — Recurring workflow pattern (meta)](docs/decisions/0000-meta-recurring-workflow-pattern.md)
 
 ### All Documentation
 
@@ -511,9 +536,13 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 - 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
 - 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
 
-### Roadmap (~18/22 sprints shipped)
+### Roadmap (~21/22 sprints shipped)
 
-**Recently shipped:**
+**Recently shipped (latest first):**
+- ✅ Issue #51 fix (2026-05-18) — `_parse_age_details` range support; LLM's canonical `"between X and Y"` age format now emits SQL `BETWEEN` predicate ([PR #83](https://github.com/jagnyesh/researchflow/pull/83))
+- ✅ Sprint 6.5b (2026-05-18) — `extraction_agent.py` dead-code cleanup; removed non-existent-table branches that the Sprint 6.5 honesty patch documented ([PR #81](https://github.com/jagnyesh/researchflow/pull/81), closes #79)
+- ✅ Sprint 6.5 (2026-05-17) — Lambda differential freshness routing: `HybridRunner` gets its first production caller (`phenotype_agent`) with three-mode `FreshnessAnnotation` routing ([ADR 0027](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md))
+- ✅ Sprint 7.2 (2026-05-17) — A2A FSM retired: `app/orchestrator/` deleted (1,324 LOC); LangGraph is the only orchestrator ([ADR 0024](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md))
 - ✅ Sprint 6.4 (2026-05-15) — sqlonfhir engine integration for 3 zero-row materialized views ([ADR 0026](docs/decisions/0026-sprint-6-4-sqlonfhir-integration.md))
 - ✅ Sprint 8 series (2026-05-12 through 2026-05-14) — cost telemetry verification, prompt-caching wire fix, aggregator double-charge fix, ceiling re-derivation ([ADRs 0018–0025](docs/decisions/INDEX.md))
 - ✅ Sprint 6.3 (2026-05-14) — DuckDB-FHIR / sqlonfhir engine spike + verdict revision ([ADRs 0019–0020](docs/decisions/INDEX.md))
@@ -521,11 +550,11 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 - ✅ Sprint 6.1 (2026-05-08) — HIPAA security baseline (audit pipeline, input validation, TLS, encryption-at-rest)
 - ✅ Sprint 7 — LangGraph migration finalized (singleton checkpointer + `@traceable` instrumentation on all 6 agents)
 
-**Active:**
-- 🔄 **Sprint 7.2** — A2A FSM → LangGraph close-out: delete `app/orchestrator/` (1,324 LOC); flip template default to LangGraph; structural parity verification ([ADR 0024](docs/decisions/0024-sprint-7-2-a2a-fsm-closeout.md))
-
 **Next (filed candidates):**
-- 📅 **Sprint 6.5** — wire production agents through `HybridRunner` for online reads (closes the documented-vs-actual Lambda read-path gap)
+- 📅 **Sprint 6.5b expanded** ([#71](https://github.com/jagnyesh/researchflow/issues/71)) — `feasibility_service` + `extraction_agent` multi-view JOIN wiring through `HybridRunner` (needs API extension first)
+- 📅 **Sprint 6.5c** ([#82](https://github.com/jagnyesh/researchflow/issues/82)) — defensive fall-through in `_build_demographic_clause` age-first branch (latent, confirmed not firing in stress test)
+- 📅 **Sprint 6.6 candidate** — custom-path MV health-check oracles
+- 📅 **Sprint 7.3 candidate** ([#65](https://github.com/jagnyesh/researchflow/issues/65)) — port 2 deferred A2A behavioral test files to LangGraph
 - 📅 **Sprint 8.5** — sparse-traffic median cost measurement (current numbers are bursty-traffic only)
 - 📅 **Sprint 8.6** — exploratory portal prompt caching (currently 0% cache hit rate)
 
@@ -563,15 +592,15 @@ Most portfolio READMEs hide their gaps. This section enumerates the architecture
 
 | Gap | Detail | Closing sprint |
 |---|---|---|
-| **HybridRunner bypass** | Production agents (`phenotype_agent`, `extraction_agent`) call `SQLonFHIRAdapter` directly. `feasibility_service` calls `db_client` directly. `HybridRunner.execute()` is exercised by tests and the batch-refresh path only — it's the documented serving layer but not yet on any production read hot-path. | **Sprint 6.5** candidate |
+| **HybridRunner partial wiring** | Sprint 6.5 wired `phenotype_agent` through `HybridRunner` with three-mode freshness routing. `feasibility_service` (3 sites) and `extraction_agent._execute_phenotype_query` still call `SQLonFHIRAdapter` directly because their multi-view JOIN shapes need an `execute_sql_with_view_hints` API extension. | **Sprint 6.5b expanded** ([#71](https://github.com/jagnyesh/researchflow/issues/71)) |
 | **Streamlit dashboard auth** | 3 Streamlit ports have zero authentication. Anyone reaching the bound port can approve HITL escalations and scrape researcher PII. Today only `localhost` bind protects them. | **Phase 3c** ([#39](https://github.com/jagnyesh/researchflow/issues/39)) |
 | **Exploratory portal cache_hit_rate = 0%** | The `QueryInterpreter` system prompt sits below Anthropic's caching threshold and/or doesn't use the content-block-array form that the Sprint 8.2 wire-fix requires for cache_control transmission. Same class of bug as Sprint 8.2's formal-portal prompt issue, not yet applied to QueryInterpreter. | **Sprint 8.6** candidate |
 | **Cost telemetry calibrated for bursty traffic only** | The `$0.008/request` measurement and the rolling-30 cost-band gate ceilings are calibrated against 30 requests fired in 6-7 minutes (within Anthropic's 5-minute cache TTL). Sparse real-world traffic with gaps > 5 min would shift the median toward cache-create cost. | **Sprint 8.5** candidate |
 | **HAPI FHIR Docker healthcheck broken** | The `docker inspect hapi-fhir-server` healthcheck reports `unhealthy` because the distroless image's healthcheck CMD invokes `/bin/sh`, which doesn't exist in distroless. The container serves traffic correctly (HAPI returns 200 on `/fhir/metadata`); only the healthcheck signal is broken. CI / monitoring would see HAPI as down even when it's up. | Cosmetic — fix when monitoring/CI matters |
-| **Phenotype SQL drops demographic predicates in some cases** | Despite the Sprint 6.2 fix to `sql_generator.py`, gender + age predicates are sometimes dropped from generated SQL on natural-language inputs like "all diagnoses of male patients above age 18 with diabetes." Filed as a correctness bug; needs probe-logging at the three plausible failure layers. | TBD — dedicated issue |
+| **`sql_generator.py:507` raw `FROM observation o`** | `_build_lab_value_criterion` emits SQL against the raw FHIR `observation` table that doesn't exist in HAPI. Same dead-code class as the Sprint 6.5b cleanup. Phenotypes that include a lab-value criterion would silently produce a 0-patient cohort. Currently masked because no test traffic hits this code path. | **Sprint 6.5b followup** ([#80](https://github.com/jagnyesh/researchflow/issues/80)) |
 
-There's also one **latent bug preserved bug-for-bug** through Sprint 7.2 (will be fixed in a future sprint, NOT in 7.2):
-- **`research.py` queries `WHERE current_state IN ('delivered', 'complete')`** but LangGraph never writes the `'delivered'` state — terminal is `'complete'` only. LangGraph-completed rows are silently missing from those result sets today. Sprint 7.2 preserves this behavior since it's outside the named scope of the migration close-out. Filed as [#53](https://github.com/jagnyesh/researchflow/issues/53).
+There's also one **latent bug preserved bug-for-bug** through Sprint 7.2's A2A retirement (will be fixed in a future sprint):
+- **`research.py` queries `WHERE current_state IN ('delivered', 'complete')`** but LangGraph never writes the `'delivered'` state — terminal is `'complete'` only. LangGraph-completed rows are silently missing from those result sets. Sprint 7.2 preserved this behavior because it was outside the named scope of the migration close-out. Filed as [#53](https://github.com/jagnyesh/researchflow/issues/53).
 
 ---
 
