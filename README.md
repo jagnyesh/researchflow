@@ -153,7 +153,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 **The Core Pattern:**
 - **AI Handles:** Scheduling, routing, status tracking, notifications, workflow orchestration
 - **Humans Validate:** SQL queries, phenotype definitions, data quality, computational validity
-- **Result:** 95% time savings (weeks → hours) with 100% expert validation maintained
+- **Result:** 95% time savings on proof-of-concept runs against synthetic FHIR data (weeks → hours); 100% expert validation maintained at all 4 HITL gates
 
 ### 🛡️ Human-in-Loop Safety Gates
 
@@ -270,7 +270,7 @@ streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Repeated Query Execution | 116.2s | 0.101s | **~1100× faster** (cache-hit path) |
+| Repeated Query Execution | 116.2s | 0.101s | ~1100× faster (cache-hit path; first-run queries see the 10-100× materialized-view speedup, not this number) |
 | Workflow Turnaround | 2–3 weeks | 4–8 hours | **~95% faster** (proof-of-concept) |
 | Per-request LLM cost (formal portal) | — | **$0.008 measured** | Sprint 8.3 median, n=30 bursty traffic |
 | Anthropic prompt cache hit (Sonnet, after warmup) | 0% | **94.88%** | Sprint 8.2 wire-fix + Sprint 8.3 measurement |
