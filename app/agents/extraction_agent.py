@@ -110,6 +110,31 @@ class DataExtractionAgent(BaseAgent):
                 logger.error(f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}")
                 extraction_results[data_element] = []
 
+        # Sprint 6.5 honesty patch (2026-05-17, REQ-20260517-A097C5F6): surface
+        # silent-failure pattern as warnings instead of shipping incomplete
+        # deliveries with status=success. extraction_agent's per-element
+        # _extract_data_element catches SQL failures internally and returns []
+        # (e.g., the `FROM observation` catch-all queries a non-existent table).
+        # Without this hook, a missing Procedures.csv looks indistinguishable
+        # from a genuine zero-cohort. The dispatch fix (procedures + lab_results
+        # + clinical_notes proper queries) is #71's scope; this hook just makes
+        # the silent failures visible to the researcher in the meantime.
+        extraction_warnings = [
+            (
+                f"No records extracted for '{el}'. Either the cohort genuinely has "
+                f"zero records for this data element, OR the extraction query "
+                f"failed silently (see logs for SQL errors). Compare against the "
+                f"requested cohort to determine which case applies."
+            )
+            for el, recs in extraction_results.items()
+            if not recs
+        ]
+        if extraction_warnings:
+            logger.warning(
+                f"[{self.agent_id}] Extraction completed with {len(extraction_warnings)} "
+                f"empty-result warning(s); delivery_agent will surface to researcher."
+            )
+
         # Step 3: Apply de-identification if needed
         phi_level = requirements.get("phi_level", "de-identified")
         if phi_level != "identified":
@@ -124,11 +149,13 @@ class DataExtractionAgent(BaseAgent):
             "cohort": cohort,
             "data_elements": extraction_results,
             "formatted_data": formatted_data,
+            "extraction_warnings": extraction_warnings,
             "metadata": {
                 "request_id": request_id,
                 "extraction_date": self._get_timestamp(),
                 "cohort_size": len(cohort),
                 "data_elements_extracted": list(extraction_results.keys()),
+                "data_elements_empty": [el for el, recs in extraction_results.items() if not recs],
                 "phi_level": phi_level,
                 "delivery_format": delivery_format,
             },
@@ -270,6 +297,14 @@ class DataExtractionAgent(BaseAgent):
 
         Returns:
             List of patient dicts with id, birthDate, etc.
+
+        Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+        phenotype_sql is the multi-view JOIN built by SQLGenerator
+        (patient_demographics + condition_simple). HybridRunner's merge
+        logic at hybrid_runner.py:347-400 only row-merges ONE view at a
+        time; wiring requires execute_sql_with_view_hints designed in #71
+        for feasibility_service's same shape problem. Stays direct in
+        Sprint 6.5; picks up in Sprint 6.5b alongside feasibility_service.
         """
         try:
             result = await self.sql_adapter.execute_sql(phenotype_sql, parameters)
@@ -349,6 +384,12 @@ class DataExtractionAgent(BaseAgent):
                 select_fields = f"patient_id, {db_field}"
 
             # nosec B608 - SQL structure is safe, all values parameterized
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Single-view query, but the `patient_id IN (...)` shape doesn't
+            # fit HybridRunner.execute()'s search_params dict API. Wiring
+            # requires either extending search_params semantics (list values
+            # → ANY clause) OR execute_sql_with_view_hints pass-through.
+            # Deferred for scope coherence with the multi-view sites below.
             sql = f"""
                 SELECT {select_fields}
                 FROM sqlonfhir.patient_demographics
@@ -419,6 +460,13 @@ class DataExtractionAgent(BaseAgent):
             params["date_end"] = time_period["end"]
 
         try:
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Generic extraction queries `observation`, `document_reference`,
+            # and other raw table names (no `sqlonfhir.` prefix) that are
+            # Sprint 5/6-era TODO targets which may not exist in HAPI today.
+            # Raw table refs + patient_id IN-list shape don't fit HybridRunner's
+            # view-def API. Deferred to #71; if 6.5b confirms dead code,
+            # delete instead of wiring.
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:
@@ -573,6 +621,10 @@ class DataExtractionAgent(BaseAgent):
             params["date_end"] = time_period["end"]
 
         try:
+            # Sprint 6.5 Phase 2B-2 audit (2026-05-17) — DEFERRED to #71.
+            # Same shape as _extract_data_element above (raw table refs +
+            # patient_id IN-list, possibly dead code). Deferred for
+            # consistency with the other 3 sites in this file.
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:

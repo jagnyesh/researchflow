@@ -30,58 +30,20 @@ import sys
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from app.clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
+# Shared fixtures (db_client, redis_client, hybrid_runner, view_def_manager)
+# live in tests/conftest.py — promoted Sprint 6.5 Phase 2A retro 2026-05-17.
+# Imports below stay because individual tests re-instantiate HybridRunner
+# directly (e.g. to flip USE_SPEED_LAYER on/off inside one test body).
+
 from app.cache.redis_client import RedisClient
+from app.clients.hapi_db_client import close_hapi_db_client, create_hapi_db_client
 from app.sql_on_fhir.runner.hybrid_runner import HybridRunner
 from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 
 
 # ============================================================================
-# Fixtures
+# Local fixtures
 # ============================================================================
-
-
-@pytest.fixture
-async def db_client():
-    """Create HAPI database client"""
-    client = await create_hapi_db_client()
-    yield client
-    await close_hapi_db_client()
-
-
-@pytest.fixture
-async def redis_client():
-    """Create Redis client for speed layer"""
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")  # Use DB 1 for tests
-    client = RedisClient(redis_url=redis_url)
-
-    # Connect
-    await client.connect()
-
-    # Clean up any existing test data
-    await client.flush_all()
-
-    yield client
-
-    # Cleanup after test
-    await client.flush_all()
-    await client.disconnect()
-
-
-@pytest.fixture
-async def hybrid_runner(db_client, redis_client):
-    """Create HybridRunner instance"""
-    return HybridRunner(
-        db_client=db_client,
-        redis_client=redis_client,
-        enable_cache=False,  # Disable caching for tests
-    )
-
-
-@pytest.fixture
-def view_def_manager():
-    """Create ViewDefinitionManager"""
-    return ViewDefinitionManager()
 
 
 @pytest.fixture

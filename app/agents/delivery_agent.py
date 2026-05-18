@@ -98,6 +98,12 @@ class DeliveryAgent(BaseAgent):
                 "extraction_methods": await self._document_extraction_methods(requirements),
                 "citation_info": await self._generate_citation_info(requirements),
                 "qa_summary": self._summarize_qa_report(qa_report),
+                # Sprint 6.5 honesty patch (2026-05-17): thread extraction
+                # warnings through so the README surfaces silent-failure
+                # patterns to the researcher. Without this, missing CSVs
+                # ship without explanation. See #71 for the dispatch fix
+                # that prevents the silent failures in the first place.
+                "extraction_warnings": data_package.get("extraction_warnings", []),
             },
         }
 
@@ -498,6 +504,17 @@ Keep it concise and professional."""
         lines.append("  • extraction_metadata.json - Full metadata")
         lines.append("  • *.csv - Data files")
         lines.append("")
+
+        # Sprint 6.5 honesty patch (2026-05-17): surface extraction_warnings
+        # so the researcher knows when a requested data element returned no
+        # records (silent failure vs genuine zero-cohort).
+        warnings = documentation.get("extraction_warnings", []) or []
+        if warnings:
+            lines.append("⚠ EXTRACTION WARNINGS:")
+            lines.append("-" * 40)
+            for warning in warnings:
+                lines.append(f"  • {warning}")
+            lines.append("")
 
         lines.append("=" * 80)
 

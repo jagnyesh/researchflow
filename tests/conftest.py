@@ -95,6 +95,64 @@ def init_test_db(event_loop):
     event_loop.run_until_complete(init_db())
 
 
+# ----------------------------------------------------------------------
+# HybridRunner test fixtures (Sprint 6.5 Phase 2A retro 2026-05-17).
+# Promoted from tests/test_hybrid_runner_freshness.py and
+# tests/test_hybrid_runner_speed_integration.py — the same four fixtures
+# were duplicated in both files. The Phase 2A "minimize blast radius"
+# rationale for keeping them per-file no longer applies; consolidating
+# here eliminates ~30 LOC × 2 files of duplication and gives future
+# HybridRunner test files a single fixture seam.
+#
+# Fixtures only fire when requested by name (no autouse), so
+# non-HybridRunner tests are unaffected.
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture
+async def db_client():
+    """HAPI database client at :5433 — shared HybridRunner test fixture."""
+    from app.clients.hapi_db_client import close_hapi_db_client, create_hapi_db_client
+
+    client = await create_hapi_db_client()
+    yield client
+    await close_hapi_db_client()
+
+
+@pytest.fixture
+async def redis_client():
+    """Redis client for the speed layer, isolated DB to avoid prod data."""
+    from app.cache.redis_client import RedisClient
+
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
+    client = RedisClient(redis_url=redis_url)
+    await client.connect()
+    await client.flush_all()
+    yield client
+    await client.flush_all()
+    await client.disconnect()
+
+
+@pytest.fixture
+async def hybrid_runner(db_client, redis_client):
+    """HybridRunner under test, caching disabled for determinism."""
+    from app.sql_on_fhir.runner.hybrid_runner import HybridRunner
+
+    return HybridRunner(
+        db_client=db_client,
+        redis_client=redis_client,
+        enable_cache=False,
+    )
+
+
+@pytest.fixture
+def view_def_manager():
+    """ViewDefinitionManager loading the project's view-def JSON files."""
+    from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
+
+    return ViewDefinitionManager()
+
+
 @pytest.fixture(scope="session", autouse=True)
 def session_audit_redis(event_loop):
     """Provide a default fakeredis client for the audit pipeline (Issue #2).
