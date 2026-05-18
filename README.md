@@ -31,9 +31,22 @@ Each epic doc covers the problem, the design decisions (including the bad guesse
 
 ---
 
+## Architecture Overview
+
+![ResearchFlow Architecture](docs/images/architecture-overview.png)
+
+ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (FastAPI) → Orchestration (LangGraph) → Agents (6 specialized) → Core Services → Infrastructure (Lambda Architecture) → Data → External integrations.
+
+[View interactive architecture diagram →](https://jagnyesh.github.io/researchflow/architecture.html)
+
+For the empirically-derived per-layer breakdown of what's documented vs what's actually wired, see [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md).
+
+---
+
 ## Table of Contents
 
 - [What's distinctive about this project](#whats-distinctive-about-this-project)
+- [Architecture Overview](#architecture-overview)
 - [Engineering arcs (four epics)](#engineering-arcs-four-epics)
 - [Architecture](#architecture)
 - [Key Features](#key-features)
