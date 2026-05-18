@@ -188,6 +188,7 @@ class HybridRunner:
         max_resources: Optional[int] = None,
         mode: "FreshnessAnnotation" = None,
         suppress_metrics: bool = False,
+        caller: str = "direct",
     ) -> List[Dict[str, Any]]:
         """
         Execute ViewDefinition using best available method with speed layer merge
@@ -324,6 +325,7 @@ class HybridRunner:
                 freshness_delta_seconds=freshness_delta_seconds,
                 latency_ms=latency_ms,
                 row_count=len(final_result),
+                caller=caller,
             )
 
             # LangSmith sink. trace_id captured here and mutated onto the

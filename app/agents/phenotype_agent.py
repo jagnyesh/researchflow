@@ -20,7 +20,9 @@ from ..clients.fhir_client import create_fhir_client
 from ..clients.hapi_db_client import HAPIDBClient
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
-from ..sql_on_fhir.runner.postgres_runner import PostgresRunner
+from ..sql_on_fhir.runner.hybrid_runner import HybridRunner
+from ..sql_on_fhir.runner.freshness import FreshnessAnnotation
+from ..cache.redis_client import RedisClient
 
 logger = logging.getLogger(__name__)
 
@@ -42,26 +44,40 @@ class PhenotypeValidationAgent(BaseAgent):
         self.sql_generator = SQLGenerator(use_materialized_views=True)
         self.sql_adapter = SQLonFHIRAdapter(database_url)
         self.view_definition_manager = ViewDefinitionManager()
-        # Use legacy SQL for cohort counting (ViewDefinition Python filtering is broken - returns 0)
-        # But skip detailed data availability checks (query non-existent tables)
-        # Default to 90% data availability for HAPI FHIR materialized views
-        self.use_view_definitions = False  # Toggle to use ViewDefinitions instead of legacy SQL
 
-        # Initialize ViewDefinition runner if using ViewDefinitions
+        # Sprint 6.5 Phase 2B (#70): wire cohort-estimation reads through
+        # HybridRunner with FORMAL_DRAFT mode. The pre-approval workflow
+        # step iterates on criteria; FORMAL_DRAFT speed-merges so the
+        # researcher sees today's reality including patients arriving
+        # since the last batch refresh. batch_anchor_ts is surfaced as
+        # citation metadata in the hybrid_runner_metrics row.
+        #
+        # Default flipped to True (was False since Sprint 6.2 with comment
+        # claiming "ViewDefinition Python filtering is broken - returns 0").
+        # Pre-flight empirical check 2026-05-17 confirmed the comment was
+        # stale: patient_simple returns 366 (Synthea baseline), condition_simple
+        # returns 14,832 (matches Sprint 6.4 oracle), search_params filtering
+        # narrows correctly. The Sprint 6.2 transpiler bugs (#10-#16) and
+        # Sprint 6.4's sqlonfhir integration fixed the underlying issues.
+        self.use_view_definitions = True
+
         if self.use_view_definitions and database_url:
-            logger.info(f"[{self.agent_id}] Initializing PostgresRunner for HAPI FHIR database")
+            logger.info(f"[{self.agent_id}] Initializing HybridRunner for HAPI FHIR database")
 
             # HAPIDBClient uses asyncpg directly, which doesn't understand SQLAlchemy URL schemes
             # Strip '+asyncpg' suffix if present
             hapi_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
 
             self.hapi_db_client = HAPIDBClient(connection_url=hapi_url)
-            self.postgres_runner = PostgresRunner(
-                db_client=self.hapi_db_client, enable_cache=True, cache_ttl_seconds=300
+            self.hybrid_runner = HybridRunner(
+                db_client=self.hapi_db_client,
+                redis_client=RedisClient(),
+                enable_cache=True,
+                cache_ttl_seconds=300,
             )
         else:
             self.hapi_db_client = None
-            self.postgres_runner = None
+            self.hybrid_runner = None
 
     @traceable(tags=["phenotype-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -244,8 +260,12 @@ class PhenotypeValidationAgent(BaseAgent):
             Estimated patient count
         """
         try:
-            if self.use_view_definitions and self.postgres_runner:
-                # Use ViewDefinition approach (SQL-on-FHIR v2)
+            if self.use_view_definitions and self.hybrid_runner:
+                # Sprint 6.5 Phase 2B (#70): cohort estimation goes through
+                # HybridRunner with FORMAL_DRAFT mode. The Formal Portal's
+                # pre-approval workflow iterates on criteria — speed-merged
+                # results so the researcher sees today's reality including
+                # patients arriving since the last batch refresh.
                 logger.info(f"[{self.agent_id}] Using ViewDefinition to estimate cohort size")
 
                 # Build search parameters from requirements
@@ -259,11 +279,13 @@ class PhenotypeValidationAgent(BaseAgent):
                 # Load patient_simple ViewDefinition
                 view_def = self.view_definition_manager.load("patient_simple")
 
-                # Execute ViewDefinition with filters
-                results = await self.postgres_runner.execute(
+                # Execute via HybridRunner with FORMAL_DRAFT mode
+                results = await self.hybrid_runner.execute(
                     view_definition=view_def,
                     search_params=search_params,
                     max_resources=None,  # No limit - get full count
+                    mode=FreshnessAnnotation.FORMAL_DRAFT,
+                    caller="phenotype_agent",
                 )
 
                 logger.info(
@@ -503,7 +525,7 @@ class PhenotypeValidationAgent(BaseAgent):
             Set of patient IDs (as strings)
         """
         try:
-            if not self.use_view_definitions or not self.postgres_runner:
+            if not self.use_view_definitions or not self.hybrid_runner:
                 logger.warning(
                     f"[{self.agent_id}] ViewDefinitions not enabled, skipping condition filtering"
                 )
@@ -512,10 +534,17 @@ class PhenotypeValidationAgent(BaseAgent):
             # Load condition_simple ViewDefinition
             view_def = self.view_definition_manager.load("condition_simple")
 
-            # Execute query to get all conditions
+            # Execute via HybridRunner with FORMAL_DRAFT mode (Sprint 6.5 #70).
+            # Condition filtering happens during cohort estimation in the
+            # pre-approval phenotype-validation step; same freshness rationale
+            # as the patient_simple read above.
             logger.info(f"[{self.agent_id}] Querying conditions for '{condition_term}'...")
-            results = await self.postgres_runner.execute(
-                view_definition=view_def, search_params={}, max_resources=None
+            results = await self.hybrid_runner.execute(
+                view_definition=view_def,
+                search_params={},
+                max_resources=None,
+                mode=FreshnessAnnotation.FORMAL_DRAFT,
+                caller="phenotype_agent",
             )
 
             logger.info(f"[{self.agent_id}] Found {len(results)} total conditions in database")
