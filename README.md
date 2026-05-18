@@ -76,7 +76,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 ┌─────────────────────────────────────────────────────────────┐
 │                    FHIR DATA SOURCE                         │
 │               HAPI FHIR Server (PostgreSQL)                 │
-│         105 patients, 423 conditions (real FHIR R4)         │
+│   375 patients, 14,841 conditions (Synthea FHIR R4)         │
 └────────────────┬──────────────────┬─────────────────────────┘
                  │                  │
         Batch Ingestion      Real-time Updates
@@ -540,7 +540,7 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 - 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
 - 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
 
-### Roadmap (~21/22 sprints shipped)
+### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
 
 **Recently shipped (latest first):**
 - ✅ Issue #51 fix (2026-05-18) — `_parse_age_details` range support; LLM's canonical `"between X and Y"` age format now emits SQL `BETWEEN` predicate ([PR #83](https://github.com/jagnyesh/researchflow/pull/83))
