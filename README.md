@@ -5,11 +5,13 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.104+-green.svg)](https://fastapi.tiangolo.com/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-**Experimental Multi-Agent AI System for Clinical Research Automation**
+**Multi-Agent AI System for Clinical Research Automation**
 
-> ⚠️ **Work in Progress**: ResearchFlow is an experimental prototype demonstrating where AI should own workflows versus where humans are essential. Built entirely with agentic AI coding (Claude Code) as a meta-experiment to prove the concept. Not yet production-ready.
+ResearchFlow is a proof-of-concept testing whether AI can replace the administrative middle layer in academic clinical research data requests. After 9 years supporting research at academic medical centers, I observed a consistent structural pattern: the people with the tacit knowledge to do the technical work — informaticians, data engineers, biostatisticians — are typically separated from researchers by administrative gatekeepers who don't share that expertise. The result is 2-4 week turnaround times where most of the wait is coordination latency, not technical work.
 
-ResearchFlow automates clinical research data requests from natural language to delivery, reducing turnaround time from **weeks to hours** while maintaining rigorous human oversight at critical decision points.
+ResearchFlow tests whether AI agents can absorb the administrative coordination (scheduling, routing, status tracking, requirements gathering) while routing technical decisions (SQL generation, phenotype validation, data quality) directly to the human experts who can make them. The architecture reflects this hypothesis: 4 human-in-loop gates for technical decisions, fully autonomous multi-agent orchestration for everything administrative.
+
+> Active development project. See [Known Limitations](#known-limitations) for what's not production-ready and [What's Not Done Yet](#whats-not-done-yet) for the documented gaps between this proof-of-concept and a real deployment.
 
 ---
 
