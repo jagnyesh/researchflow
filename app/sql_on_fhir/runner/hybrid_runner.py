@@ -26,8 +26,9 @@ Performance Profile:
 import os
 import logging
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from langsmith import traceable
+from langsmith.run_helpers import get_current_run_tree
 
 from app.clients.hapi_db_client import HAPIDBClient
 from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
@@ -105,6 +106,7 @@ class HybridRunner:
             f"speed layer: {'enabled' if self.use_speed_layer else 'disabled'})"
         )
 
+    @traceable(tags=["hybrid-runner", "execute"])
     async def execute(
         self,
         view_definition: Dict[str, Any],
@@ -224,12 +226,51 @@ class HybridRunner:
                         f"Speed layer query failed for '{view_name}': {e}. Using batch only"
                     )
 
-        # Sprint 6.5 cycle 5+7 (#69): write one metric row for FORMAL_DRAFT
-        # unless suppress_metrics=True (the dashboard's escape hatch to
-        # avoid polluting its own polling reads — Phase 3 #73 uses this).
-        # FORMAL_EXTRACTION and EXPLORATORY are not in cycle 5's scope.
+        # Sprint 6.5 cycle 5+7+8 (#69): write one metric row for FORMAT_DRAFT
+        # unless suppress_metrics=True. Cycle 8 adds LangSmith
+        # cross-correlation — the same metric is mirrored to LangSmith's
+        # run.extra.metadata so Sprint 8.1's cost telemetry tab can filter
+        # by hybrid_runner.mode without joining to Postgres.
         if mode == FreshnessAnnotation.FORMAL_DRAFT and not suppress_metrics:
             latency_ms = int((time.perf_counter() - t_start) * 1000)
+
+            # Compute freshness_delta_seconds ONCE and propagate to both
+            # sinks. If we computed it twice (once for LangSmith metadata,
+            # once for Postgres INSERT) they could drift by a second.
+            anchor = self._last_batch_anchor_ts
+            if anchor is not None:
+                now = datetime.now(anchor.tzinfo or timezone.utc)
+                freshness_delta_seconds = int((now - anchor).total_seconds())
+            else:
+                freshness_delta_seconds = 0
+
+            # LangSmith run tree (we're inside @traceable, so there IS a
+            # current run; if get_current_run_tree returns None for any
+            # reason, trace_id stays None and the cross-correlation gap
+            # gets surfaced by the gate).
+            trace_id: Optional[str] = None
+            try:
+                run = get_current_run_tree()
+                if run is not None:
+                    trace_id = str(run.id)
+                    run.add_metadata(
+                        {
+                            "hybrid_runner.mode": mode.value,
+                            "hybrid_runner.freshness_delta_seconds": freshness_delta_seconds,
+                            "hybrid_runner.batch_anchor_ts": (
+                                anchor.isoformat() if anchor else None
+                            ),
+                            "hybrid_runner.speed_layer_hit": speed_layer_hit,
+                            "hybrid_runner.row_count": len(final_result),
+                        }
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"LangSmith metadata write failed for '{view_name}': {e}. "
+                    f"Postgres metric will still be written; cross-correlation "
+                    f"missing for this call."
+                )
+
             await self._record_metric(
                 view_name=view_name,
                 mode=mode,
@@ -237,6 +278,8 @@ class HybridRunner:
                 speed_layer_rows_merged=speed_layer_rows_merged,
                 row_count=len(final_result),
                 latency_ms=latency_ms,
+                trace_id=trace_id,
+                freshness_delta_seconds=freshness_delta_seconds,
             )
 
         return final_result
@@ -390,36 +433,43 @@ class HybridRunner:
         speed_layer_rows_merged: int,
         row_count: int,
         latency_ms: int,
+        trace_id: Optional[str] = None,
+        freshness_delta_seconds: Optional[int] = None,
     ) -> None:
         """INSERT one row into sqlonfhir.hybrid_runner_metrics.
 
-        Sprint 6.5 Phase 2A cycle 5 (#69). Private helper — execute()
+        Sprint 6.5 Phase 2A cycle 5+8 (#69). Private helper — execute()
         calls this. Best-effort: a failure here logs a warning but does
         not raise back into the caller (HybridRunner's contract is to
         return data; metric write failure must not break the read path).
+
+        trace_id and freshness_delta_seconds are computed by execute()
+        and passed in so the Postgres row matches the LangSmith run
+        metadata exactly (single computation, propagated to both sinks).
         """
         import json
-        from datetime import datetime, timezone
 
         await self.create_hybrid_runner_metrics_table()
 
         anchor = self._last_batch_anchor_ts
-        if anchor is not None:
-            now = datetime.now(anchor.tzinfo or timezone.utc)
-            freshness_delta_seconds = int((now - anchor).total_seconds())
-        else:
-            freshness_delta_seconds = 0
+        if freshness_delta_seconds is None:
+            if anchor is not None:
+                now = datetime.now(anchor.tzinfo or timezone.utc)
+                freshness_delta_seconds = int((now - anchor).total_seconds())
+            else:
+                freshness_delta_seconds = 0
 
         try:
             async with self.db_client.pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO sqlonfhir.hybrid_runner_metrics
-                        (caller, mode, view_names, batch_anchor_ts,
+                        (trace_id, caller, mode, view_names, batch_anchor_ts,
                          speed_layer_hit, speed_layer_rows_merged,
                          freshness_delta_seconds, latency_ms, row_count)
-                    VALUES ('direct', $1, $2::jsonb, $3, $4, $5, $6, $7, $8)
+                    VALUES ($1, 'direct', $2, $3::jsonb, $4, $5, $6, $7, $8, $9)
                     """,
+                    trace_id,
                     mode.value,
                     json.dumps([view_name]),
                     anchor,

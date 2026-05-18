@@ -512,3 +512,127 @@ class TestHybridRunnerMetrics:
             f"{max_id_after_write} — no row written, so the suppress=True "
             f"branch was trivially passing."
         )
+
+
+class TestHybridRunnerLangSmithCorrelation:
+    """Cycle 8: LangSmith metadata tags + trace_id cross-correlation."""
+
+    pytestmark = [pytest.mark.requires_services, pytest.mark.requires_api_key]
+
+    async def test_hybrid_runner_attaches_langsmith_metadata_tags(
+        self, hybrid_runner, redis_client, view_def_manager, db_client
+    ):
+        """LangSmith run metadata mirrors the Postgres metric row.
+
+        Cross-sprint compounding gate. The entire reason D4's grilling
+        chose B (Postgres + LangSmith) over A (Postgres only) was this
+        cross-correlation: Sprint 8.1's Cost Telemetry tab reads from
+        LangSmith and now inherits hybrid_runner.mode as a span attribute
+        without any Postgres-side join. If LangSmith tags rot, B degrades
+        to A at B's cost.
+
+        Test asserts:
+          1. Postgres metric row's trace_id is populated (not NULL)
+          2. LangSmith run at that trace_id exists and is queryable
+          3. run.extra['metadata']['hybrid_runner.mode'] matches Postgres
+          4. run.extra['metadata']['hybrid_runner.speed_layer_hit'] matches
+          5. run.extra['metadata']['hybrid_runner.freshness_delta_seconds']
+             matches Postgres (computed once, propagated to both sinks)
+        """
+        import asyncio
+
+        if not os.getenv("LANGCHAIN_API_KEY"):
+            pytest.skip("LANGCHAIN_API_KEY not set; cross-correlation test needs LangSmith access")
+
+        from langsmith import Client as LangSmithClient
+
+        # Pre-load Redis so speed_layer_hit=True ends up in BOTH sinks
+        synthetic_patient = {
+            "resourceType": "Patient",
+            "id": "langsmith-cycle-8",
+            "gender": "male",
+            "birthDate": "1970-12-25",
+            "name": [{"family": "LangSmithCycle8", "given": ["Synthetic"]}],
+        }
+        await redis_client.set_fhir_resource("Patient", synthetic_patient["id"], synthetic_patient)
+
+        view_def = view_def_manager.load("patient_simple")
+        await hybrid_runner.create_hybrid_runner_metrics_table()
+
+        async with db_client.pool.acquire() as conn:
+            max_id_before = await conn.fetchval(
+                "SELECT COALESCE(MAX(id), 0) FROM sqlonfhir.hybrid_runner_metrics"
+            )
+
+        await hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+        )
+
+        # Read the Postgres row we just wrote
+        async with db_client.pool.acquire() as conn:
+            new_row = await conn.fetchrow(
+                """
+                SELECT trace_id, mode, freshness_delta_seconds,
+                       speed_layer_hit
+                FROM sqlonfhir.hybrid_runner_metrics
+                WHERE id > $1
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                max_id_before,
+            )
+
+        assert new_row is not None
+        assert new_row["trace_id"] is not None, (
+            "HybridRunner.execute() must capture trace_id from "
+            "langsmith.get_current_run_tree() and persist it to "
+            "hybrid_runner_metrics.trace_id. Without trace_id the "
+            "cross-correlation B was built for is broken."
+        )
+
+        # LangSmith write is async — span close → queryable can take
+        # 200ms-2s. Poll up to 5s before failing.
+        client = LangSmithClient()
+        run = None
+        for _ in range(10):
+            try:
+                run = client.read_run(new_row["trace_id"])
+                if run is not None:
+                    break
+            except Exception:
+                pass
+            await asyncio.sleep(0.5)
+
+        assert run is not None, (
+            f"Failed to fetch LangSmith run trace_id={new_row['trace_id']} "
+            f"within 5s. Either the run wasn't created (traceable not firing) "
+            f"or the trace_id captured in Postgres doesn't match the actual "
+            f"LangSmith run id."
+        )
+
+        # LangSmith stores metadata at run.extra['metadata']
+        extra = getattr(run, "extra", {}) or {}
+        metadata = extra.get("metadata", {}) if isinstance(extra, dict) else {}
+
+        assert metadata.get("hybrid_runner.mode") == "formal_draft", (
+            f"LangSmith metadata.hybrid_runner.mode mismatch. "
+            f"Expected 'formal_draft'; got {metadata.get('hybrid_runner.mode')!r}. "
+            f"Full metadata: {metadata!r}"
+        )
+        assert metadata.get("hybrid_runner.speed_layer_hit") == new_row["speed_layer_hit"], (
+            f"LangSmith and Postgres disagree on speed_layer_hit. "
+            f"LangSmith: {metadata.get('hybrid_runner.speed_layer_hit')!r}; "
+            f"Postgres: {new_row['speed_layer_hit']!r}"
+        )
+        assert (
+            metadata.get("hybrid_runner.freshness_delta_seconds")
+            == new_row["freshness_delta_seconds"]
+        ), (
+            f"LangSmith and Postgres disagree on freshness_delta_seconds. "
+            f"LangSmith: {metadata.get('hybrid_runner.freshness_delta_seconds')!r}; "
+            f"Postgres: {new_row['freshness_delta_seconds']!r}. "
+            f"They must be computed once and propagated to both sinks."
+        )
