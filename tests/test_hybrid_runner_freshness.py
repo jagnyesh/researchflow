@@ -20,53 +20,12 @@ import os
 
 import pytest
 
-from app.cache.redis_client import RedisClient
-from app.clients.hapi_db_client import close_hapi_db_client, create_hapi_db_client
 from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
-from app.sql_on_fhir.runner.hybrid_runner import HybridRunner
-from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
 
 
-# ============================================================================
-# Fixtures (Cycle 2+) — duplicated from
-# tests/test_hybrid_runner_speed_integration.py with caching disabled for
-# deterministic test runs. Cycles 1's enum test doesn't use these.
-# ============================================================================
-
-
-@pytest.fixture
-async def db_client():
-    """HAPI database client at :5433."""
-    client = await create_hapi_db_client()
-    yield client
-    await close_hapi_db_client()
-
-
-@pytest.fixture
-async def redis_client():
-    """Redis client for the speed layer, isolated DB to avoid prod data."""
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379/1")
-    client = RedisClient(redis_url=redis_url)
-    await client.connect()
-    await client.flush_all()
-    yield client
-    await client.flush_all()
-    await client.disconnect()
-
-
-@pytest.fixture
-async def hybrid_runner(db_client, redis_client):
-    """HybridRunner under test, caching disabled for determinism."""
-    return HybridRunner(
-        db_client=db_client,
-        redis_client=redis_client,
-        enable_cache=False,
-    )
-
-
-@pytest.fixture
-def view_def_manager():
-    return ViewDefinitionManager()
+# HybridRunner test fixtures (db_client, redis_client, hybrid_runner,
+# view_def_manager) live in tests/conftest.py — shared with
+# tests/test_hybrid_runner_speed_integration.py.
 
 
 class TestFreshnessAnnotation:
