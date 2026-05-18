@@ -17,7 +17,7 @@ ResearchFlow automates clinical research data requests from natural language to 
 
 **The Core Question:** Can AI build AI that handles administrative coordination while preserving human expertise where it's truly irreplaceable?
 
-As a biomedical informatician supporting clinical research, I observed that ~50% of work was administrative coordination (scheduling, routing, status tracking) handled by non-techincal staff, while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality) which required years of domain experience in healthcare data.
+As a biomedical informatician supporting clinical research, I observed that ~50% of work was administrative coordination (scheduling, routing, status tracking) handled by non-technical staff, while ~50% required deep technical expertise (validating SQL queries, phenotype definitions, data quality) which required years of domain experience in healthcare data.
 
 **The Meta-Experiment:** I built ResearchFlow using agentic AI coding to prove that:
 - **AI should own:** Administrative workflow orchestration (coordination, routing, notifications)
@@ -219,7 +219,7 @@ The dominant cost lever turned out to be **caching architecture + scope discipli
 
 ```bash
 # 1. Clone and setup environment
-git clone https://github.com/yourusername/researchflow.git
+git clone https://github.com/jagnyesh/researchflow.git
 cd researchflow
 python3 -m venv .venv
 source .venv/bin/activate
@@ -675,9 +675,9 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 ```bibtex
 @software{researchflow2025,
   title = {ResearchFlow: Experimental Multi-Agent System for Clinical Research Automation},
-  author = {ResearchFlow Contributors},
-  year = {2025},
-  url = {https://github.com/yourusername/researchflow},
+  author = {Jagnyesh Patra},
+  year = {2026},
+  url = {https://github.com/jagnyesh/researchflow},
   version = {2.0-experimental},
   note = {Proof-of-concept demonstrating AI for coordination, humans for expertise}
 }
@@ -698,6 +698,6 @@ If you use ResearchFlow in your research or find the architecture pattern useful
 
 ---
 
-For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/yourusername/researchflow/issues).
+For questions, issues, or collaboration requests, please use [GitHub Issues](https://github.com/jagnyesh/researchflow/issues).
 
 **ResearchFlow**: An experiment in AI-human collaboration for clinical research. Built with AI to prove where AI belongs.
