@@ -7,7 +7,7 @@
 
 **Multi-Agent AI System for Clinical Research Automation**
 
-ResearchFlow is a proof-of-concept testing whether AI can replace the administrative middle layer in academic clinical research data requests. After 2 years supporting research at an academic medical center, I observed a consistent structural pattern: the people with the tacit knowledge to do the technical work — informaticians, data engineers, biostatisticians — are typically separated from researchers by administrative gatekeepers who don't share that expertise. The result is 2-4 week turnaround times where most of the wait is coordination latency, not technical work.
+ResearchFlow is a proof-of-concept testing whether AI can replace the administrative middle layer in academic clinical research data requests. After 2 years supporting clinical research at an academic medical center, I observed a consistent structural pattern: the people with the tacit knowledge to do the technical work — informaticians, data engineers, biostatisticians — are typically separated from researchers by administrative gatekeepers who don't share that expertise. The result is 2-4 week turnaround times where most of the wait is coordination latency, not technical work.
 
 ResearchFlow tests whether AI agents can absorb the administrative coordination (scheduling, routing, status tracking, requirements gathering) while routing technical decisions (SQL generation, phenotype validation, data quality) directly to the human experts who can make them. The architecture reflects this hypothesis: 4 human-in-loop gates for technical decisions, fully autonomous multi-agent orchestration for everything administrative.
 
@@ -17,17 +17,17 @@ ResearchFlow tests whether AI agents can absorb the administrative coordination 
 
 ## What's distinctive about this project
 
-ResearchFlow groups into four multi-sprint engineering arcs that each have substantive depth worth reviewing:
+The project's first 5 sprints built the **Foundation**: prototyped the Requirements Agent, validated LangGraph as a 15-state workflow, benchmarked it against the custom A2A FSM (3-55× faster), and made the MIGRATE decision (Sprints 0-4). Sprint 5 instrumented all 6 agents with `@traceable` for LangSmith observability — the substrate every subsequent sprint depended on. The four engineering arcs below build on that foundation.
 
-1. **Lambda Architecture for Clinical Data** (Sprints 6.2 → 6.5) — built batch + speed + serving stack against real FHIR data, with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 15 transpiler bugs found and fixed across 7 TDD cycles in Sprint 6.2 alone. SAS/sqlonfhir chosen over Pathling after the original verdict's premise was empirically falsified. See [`docs/epics/lambda.md`](docs/epics/lambda.md).
+1. **Lambda Architecture for Clinical Data** (Sprints 4.5 → 5.5 → 6.2 → 6.3 → 6.4 → 6.5, six sprints) — built batch + speed + serving stack against real FHIR data, starting with the original batch layer (10-100× speedup, Sprint 4.5), adding the Redis speed layer (Sprint 5.5, 29/29 tests), then a 7-cycle TDD transpiler-correctness arc that fixed 15 bugs (Sprint 6.2), grilled the right engine through a spike that produced a verdict revision (Sprint 6.3, GO sqlonfhir over Pathling), shipped the engine swap for 3 zero-row MVs (Sprint 6.4), and closed with three-mode freshness routing — EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION (Sprint 6.5).
 
-2. **A2A → LangGraph Migration** (Sprints 7.0 → 7.2) — retired 3,200 LOC of legacy orchestrator behind a parity-verification harness. The parity gate's "FAILED" verdict initially looked like real divergence; diagnostic checks revealed it was measuring non-executed workflows. See [`docs/epics/orchestration.md`](docs/epics/orchestration.md).
+2. **A2A → LangGraph Migration** (Sprints 1 → 2 → 3 → 4 → 7 → 7.2, six sprints) — prototyped the Requirements Agent in LangChain (Sprint 1), validated the StateGraph pattern with a simple workflow (Sprint 2), built the full 15-state workflow (Sprint 3), benchmarked against the custom A2A FSM and made the MIGRATE decision (Sprint 4, 3-55× faster, 71/71 tests), completed LangGraph integration in production (Sprint 7, singleton checkpointer + `@traceable` on all 6 agents), then retired 1,324 LOC of the legacy A2A orchestrator behind a parity-verification harness (Sprint 7.2, ~-3,200 LOC net). The parity gate's "FAILED" verdict initially looked like real divergence; diagnostic checks revealed it was measuring non-executed workflows — the meta-pattern documented in [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md).
 
-3. **LLM Cost Telemetry — Falsification + Repair** (Sprints 8 → 8.4, five sprints) — projected 73% cost reduction, measured 0%, diagnosed three concurrent bugs including a 6-month silent langchain-anthropic bug where cache_control was silently dropped for plain-string SystemMessage content. Each bug fixed in its own sprint with wire-level integration tests. See [`docs/epics/cost-telemetry.md`](docs/epics/cost-telemetry.md).
+3. **LLM Cost Telemetry — Falsification + Repair** (Sprints 8 → 8.1 → 8.2 → 8.4 → 8.3, five sprints) — projected 73% cost reduction (Sprint 8), measured 0% reduction (Sprint 8.1), diagnosed three concurrent bugs (Sprint 8.2) including a 6-month silent langchain-anthropic bug where `cache_control` was silently dropped for plain-string SystemMessage content, then fixed the cost-aggregator's 2.95× double-charge (Sprint 8.4) and re-derived ceilings against measured medians (Sprint 8.3). Each bug fixed in its own sprint with wire-level integration tests.
 
-4. **HIPAA Security Baseline** (Sprint 6.1) — five-phase compliance foundation in 8 days: JWT auth + RBAC, audit middleware with Redis-backed durable queue, PHI-safe input validation framework, TLS enforcement, ePHI encryption-at-rest via Fernet. 74 audit tests + 163 input-validation schema tests. See [`docs/epics/security.md`](docs/epics/security.md).
+4. **Security Baseline** (Sprints 6 → 6.1, two sprints) — started with 30 SQL-injection vulnerability fixes (Sprint 6, Nov 2025: parameterized SQL via SQLAlchemy `text()` across all 6 agents + the FHIR query builders), then a five-phase HIPAA compliance baseline shipped in 8 days (Sprint 6.1, May 2026): JWT auth + RBAC, audit middleware with Redis-backed durable queue, PHI-safe input validation framework, TLS enforcement with HSTS, ePHI encryption-at-rest via Fernet. 74 audit tests + 163 input-validation schema tests across Phases 2.2/2.3 alone.
 
-Each epic doc covers the problem, the design decisions (including the bad guesses and the corrections), the empirical evidence, and the residual work.
+Detailed long-form write-ups for each arc — covering the problem, the design decisions including bad guesses and corrections, empirical evidence, and residual work — are queued as separate deliverables in the project plan.
 
 ---
 
@@ -47,7 +47,6 @@ For the empirically-derived per-layer breakdown of what's documented vs what's a
 
 - [What's distinctive about this project](#whats-distinctive-about-this-project)
 - [Architecture Overview](#architecture-overview)
-- [Engineering arcs (four epics)](#engineering-arcs-four-epics)
 - [Architecture](#architecture)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
@@ -57,28 +56,6 @@ For the empirically-derived per-layer breakdown of what's documented vs what's a
 - [Known Limitations](#known-limitations)
 - [What's Not Done Yet](#whats-not-done-yet)
 - [Documentation](#documentation)
-
----
-
-## Engineering arcs (four epics)
-
-The project's most portfolio-distinctive work groups into four multi-sprint engineering arcs. Each has its own long-form write-up in `docs/epics/` covering the problem, the design decisions (including the bad guesses and the corrections), the empirical evidence, and the residual work.
-
-### Epic 1: Lambda Architecture for clinical data — `docs/epics/lambda.md`
-
-**Sprints 6.2 → 6.3 (spike) → 6.4 → 6.5.** Built the batch + speed + serving stack against real FHIR data, then surfaced a documented-vs-actual gap (production agents bypassed the serving layer), grilled the right engine choice through a spike that produced a verdict revision, and started closing the gap with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 15 transpiler bugs found and fixed across 7 TDD cycles in Sprint 6.2 alone. SAS/`sqlonfhir` library chosen over Pathling after the original verdict's premise was empirically falsified.
-
-### Epic 2: A2A → LangGraph migration — `docs/epics/orchestration.md`
-
-**Sprints 7.0 → 7.1 → 7.2.** Migrated from a custom 15-state A2A FSM to LangGraph behind a feature flag, ran them in parallel, verified parity, then deleted 1,324 LOC of the legacy orchestrator. Net codebase change across Sprint 7.2 alone: ~-3,200 LOC. The parity verification harness ([`scripts/parity_verify_a2a_vs_langgraph.py`](scripts/parity_verify_a2a_vs_langgraph.py)) became the load-bearing evidence artifact for the deletion. Includes the meta-pattern catch where the gate's "FAILED" verdict turned out to be measuring non-executed workflows — documented in [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md).
-
-### Epic 3: LLM cost telemetry — falsification + repair — `docs/epics/cost-telemetry.md`
-
-**Sprints 8 → 8.1 → 8.2 → 8.4 → 8.3 (five sprints).** The most sophisticated arc in the project. Sprint 8 projected 73% cost reduction via prompt caching. Sprint 8.1 measured 0% reduction. The diagnostic chain found three concurrent bugs: (1) system prompt below Anthropic's caching threshold, (2) a **6-month silent `langchain-anthropic` bug** where `cache_control` was dropped when SystemMessage content was a plain string instead of a content-block array, and (3) a 2.95× cost-aggregator double-charge from misreading `cache_read_input_tokens` semantics. Each bug fixed in its own sprint. Ceilings re-derived against measured medians. Documented across [ADRs 0018–0025](docs/decisions/INDEX.md).
-
-### Epic 4: HIPAA security baseline — `docs/epics/security.md`
-
-**Sprint 6.1 (one sprint but substantial).** Five-phase baseline shipped in 8 days: JWT authentication + RBAC, fail-closed audit middleware with Redis-backed durable queue (Phase 2.2), PHI-safe input validation framework (Phase 2.3), TLS enforcement with HSTS (Phase 3a), ePHI encryption-at-rest via Fernet (Phase 3b). 74 audit tests + 163 input-validation schema tests across Phases 2.2/2.3 alone. Researcher-PII encryption (`User.email`, `*.researcher_email`) deferred to Phase 3b.1; Streamlit dashboard auth deferred to Phase 3c. Documented in [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md) + [ADRs 0007–0016](docs/decisions/INDEX.md).
 
 ---
 
@@ -173,13 +150,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 ### 🛡️ Human-in-Loop Safety Gates
 
-**4 routine gates + 1 escalation terminal** (source: `interrupt_after_list` at [`app/langchain_orchestrator/langgraph_workflow.py:241`](app/langchain_orchestrator/langgraph_workflow.py#L241)):
-
-- **G1 Requirements Review** (`requirements_review`): Informatician approves the cohort spec extracted from natural language
-- **G2 Phenotype SQL Review** (`phenotype_review`): Informatician approves the generated SQL-on-FHIR before any execution
-- **G3 Preview QA Review** (`preview_qa_review`, conditional): Fires only when preview QA fails — informatician reviews and decides whether to proceed
-- **G4 QA Sign-off** (`qa_review`): Approval after full QA passes
-- **★ Human Review** (`human_review`, escalation terminal): Reached on workflow error or scope-change rejection
+**4 routine gates + 1 escalation terminal.** No SQL query executes without informatician approval. See the [Human-in-Loop Safety](#human-in-loop-safety) section for the per-gate table, criticality ratings, and the safety guarantee.
 
 ### 📊 SQL-on-FHIR v2 Implementation
 
@@ -202,7 +173,7 @@ The dominant cost lever turned out to be **caching architecture + scope discipli
 
 - **Scope:** 5 of 6 agents are procedural (no LLM). Only the **Requirements Agent** invokes LLMs — Sonnet for cohort-spec extraction (`extract_requirements`), Haiku for medical-concept extraction (`extract_medical_concepts`).
 - **Caching sized to threshold:** Sonnet system prompts ~3,000 tokens, Haiku ~5,185 tokens — deliberately above Anthropic's prompt-caching thresholds (1,024 / 4,096). System prompts are byte-stable across calls.
-- **Wire-level discipline:** the `cache_control` marker must reach Anthropic's API in the content-block-array form; the wrapper's string-content form silently drops it. Caught a 6-month silent bug ([ADR 0021](docs/decisions/0021-sprint-8-2-prompt-caching-bug.md), [PR #45](https://github.com/jagnyesh/researchflow/pull/45)).
+- **Wire-level discipline:** caught a 6-month silent `langchain-anthropic` bug where `cache_control` was dropped for plain-string SystemMessage content — see [Engineering discipline](#engineering-discipline--what-the-sprint-8-series-taught) below for the lessons-distilled version.
 - **Measured outcome:** 94.88% Sonnet hit rate / 100% Haiku hit rate after warmup. Median formal-portal cost: **$0.008 per request** ([ADR 0025](docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)).
 - **`MultiLLMClient` exists** as fallback infrastructure (Anthropic primary; OpenAI/Ollama for non-critical paths) but provider routing is **not** the primary cost driver. Multi-provider routing was the original Sprint 8 hypothesis; Sprint 8.1–8.3 measurement falsified that framing.
 - **LangSmith observability:** `@traceable` on all 6 agents + `MultiLLMClient.complete`; per-portal tagging (`portal:formal`, `portal:exploratory`) drives Cost Telemetry Service aggregation.
@@ -549,12 +520,10 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 ### Experimental Achievements
 
-- ⚡ **10–100× speedup** from materialized views vs live FHIR REST; up to ~1100× on the repeated-query cache-hit path
-- ⏱️ **4–8 hour end-to-end turnaround** vs 2–3 weeks manual (proof-of-concept; not yet field-measured at scale)
-- 💰 **$0.008 measured LLM cost per formal-portal request** (Sprint 8.3 median, n=30 bursty traffic; measurement harness: [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py))
-- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` exercised by tests and batch refresh
-- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
-- 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
+For headline performance numbers (speedup, turnaround, LLM cost) see the [Performance](#performance) section. The shipping milestones:
+
+- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` is now a production caller via `phenotype_agent` with three-mode `FreshnessAnnotation` routing (Sprint 6.5)
+- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal wired through LangGraph's `interrupt_after` mechanism
 
 ### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
 
