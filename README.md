@@ -39,7 +39,7 @@ ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (Fast
 
 [View interactive architecture diagram →](https://jagnyesh.github.io/researchflow/architecture.html)
 
-For the empirically-derived per-layer breakdown of what's documented vs what's actually wired, see [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md).
+For the empirically-derived per-layer breakdown of what's documented vs what's actually wired, see [`docs/architecture/05-24architecturereview.md`](docs/architecture/05-24architecturereview.md). The earlier [05-15 snapshot](docs/architecture/05-15architecturereview.md) is retained for historical chronology.
 
 ---
 
@@ -484,7 +484,7 @@ pytest tests/e2e/
 ### Design Decisions (ADR log)
 
 - 📜 **[ADR index — `docs/decisions/INDEX.md`](docs/decisions/INDEX.md)** — 27 architectural decision records, append-only, chronological + topic-grouped
-- 🗺️ **[Architectural Map — `docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md)** — Empirically-derived 8-section map of the live system (the canonical reference for the carousel + this README)
+- 🗺️ **[Architectural Map — `docs/architecture/05-24architecturereview.md`](docs/architecture/05-24architecturereview.md)** — Empirically-derived 8-section map of the live system (the canonical reference; supersedes the [05-15 snapshot](docs/architecture/05-15architecturereview.md) which is retained for historical chronology)
 - 📌 **[`CONTEXT.md`](CONTEXT.md)** — what's true right now (active sprint, in-progress work, blockers)
 - 📋 **[`BACKLOG.md`](BACKLOG.md)** — forward plan with decision gates
 
@@ -580,7 +580,7 @@ See [`BACKLOG.md`](BACKLOG.md) for the forward plan and [`docs/decisions/INDEX.m
 
 ## What's Not Done Yet
 
-Most portfolio READMEs hide their gaps. This section enumerates the architecture-vs-documentation gaps surfaced by the 2026-05-15 zoom-out review ([`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md)) — what's known to be incomplete, and which sprint candidate closes it.
+Most portfolio READMEs hide their gaps. This section enumerates the architecture-vs-documentation gaps surfaced by the live architectural-map review ([`docs/architecture/05-24architecturereview.md`](docs/architecture/05-24architecturereview.md)) — what's known to be incomplete, and which sprint candidate closes it.
 
 | Gap | Detail | Closing sprint |
 |---|---|---|
