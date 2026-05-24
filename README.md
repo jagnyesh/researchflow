@@ -47,7 +47,6 @@ For the empirically-derived per-layer breakdown of what's documented vs what's a
 
 - [What's distinctive about this project](#whats-distinctive-about-this-project)
 - [Architecture Overview](#architecture-overview)
-- [Engineering arcs (four epics)](#engineering-arcs-four-epics)
 - [Architecture](#architecture)
 - [Key Features](#key-features)
 - [Quick Start](#quick-start)
@@ -57,28 +56,6 @@ For the empirically-derived per-layer breakdown of what's documented vs what's a
 - [Known Limitations](#known-limitations)
 - [What's Not Done Yet](#whats-not-done-yet)
 - [Documentation](#documentation)
-
----
-
-## Engineering arcs (four epics)
-
-The project's most portfolio-distinctive work groups into four multi-sprint engineering arcs. Each has its own long-form write-up in `docs/epics/` covering the problem, the design decisions (including the bad guesses and the corrections), the empirical evidence, and the residual work.
-
-### Epic 1: Lambda Architecture for clinical data — `docs/epics/lambda.md`
-
-**Sprints 6.2 → 6.3 (spike) → 6.4 → 6.5.** Built the batch + speed + serving stack against real FHIR data, then surfaced a documented-vs-actual gap (production agents bypassed the serving layer), grilled the right engine choice through a spike that produced a verdict revision, and started closing the gap with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 15 transpiler bugs found and fixed across 7 TDD cycles in Sprint 6.2 alone. SAS/`sqlonfhir` library chosen over Pathling after the original verdict's premise was empirically falsified.
-
-### Epic 2: A2A → LangGraph migration — `docs/epics/orchestration.md`
-
-**Sprints 7.0 → 7.1 → 7.2.** Migrated from a custom 15-state A2A FSM to LangGraph behind a feature flag, ran them in parallel, verified parity, then deleted 1,324 LOC of the legacy orchestrator. Net codebase change across Sprint 7.2 alone: ~-3,200 LOC. The parity verification harness ([`scripts/parity_verify_a2a_vs_langgraph.py`](scripts/parity_verify_a2a_vs_langgraph.py)) became the load-bearing evidence artifact for the deletion. Includes the meta-pattern catch where the gate's "FAILED" verdict turned out to be measuring non-executed workflows — documented in [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md).
-
-### Epic 3: LLM cost telemetry — falsification + repair — `docs/epics/cost-telemetry.md`
-
-**Sprints 8 → 8.1 → 8.2 → 8.4 → 8.3 (five sprints).** The most sophisticated arc in the project. Sprint 8 projected 73% cost reduction via prompt caching. Sprint 8.1 measured 0% reduction. The diagnostic chain found three concurrent bugs: (1) system prompt below Anthropic's caching threshold, (2) a **6-month silent `langchain-anthropic` bug** where `cache_control` was dropped when SystemMessage content was a plain string instead of a content-block array, and (3) a 2.95× cost-aggregator double-charge from misreading `cache_read_input_tokens` semantics. Each bug fixed in its own sprint. Ceilings re-derived against measured medians. Documented across [ADRs 0018–0025](docs/decisions/INDEX.md).
-
-### Epic 4: HIPAA security baseline — `docs/epics/security.md`
-
-**Sprint 6.1 (one sprint but substantial).** Five-phase baseline shipped in 8 days: JWT authentication + RBAC, fail-closed audit middleware with Redis-backed durable queue (Phase 2.2), PHI-safe input validation framework (Phase 2.3), TLS enforcement with HSTS (Phase 3a), ePHI encryption-at-rest via Fernet (Phase 3b). 74 audit tests + 163 input-validation schema tests across Phases 2.2/2.3 alone. Researcher-PII encryption (`User.email`, `*.researcher_email`) deferred to Phase 3b.1; Streamlit dashboard auth deferred to Phase 3c. Documented in [`docs/HIPAA_POSTURE.md`](docs/HIPAA_POSTURE.md) + [ADRs 0007–0016](docs/decisions/INDEX.md).
 
 ---
 
