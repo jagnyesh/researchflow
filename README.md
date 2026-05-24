@@ -89,25 +89,28 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
             │                           │
             └──────────┬────────────────┘
                        ↓
-         ┌─────────────────────────────────────┐
-         │   SERVING LAYER                     │
-         │  HybridRunner (Smart Routing)       │
-         ├─────────────────────────────────────┤
-         │ • Merges batch + speed results      │
-         │ • Deduplication (speed wins)        │
-         │ • View existence caching            │
-         │ • Statistics tracking               │
-         └─────────────────────────────────────┘
+         ┌─────────────────────────────────────────┐
+         │   SERVING LAYER                         │
+         │  HybridRunner (FreshnessAnnotation)     │
+         ├─────────────────────────────────────────┤
+         │ • EXPLORATORY    → batch + speed merge  │
+         │ • FORMAL_DRAFT   → batch + speed merge  │
+         │                    + batch_anchor_ts    │
+         │ • FORMAL_EXTRACTION → batch-only        │
+         │                       (citable, no merge)│
+         │ • Dedup (speed wins) on merged modes    │
+         │ • View existence caching                │
+         └─────────────────────────────────────────┘
 ```
 
-> ⚠️ **Architecture-vs-actual gap (partially closed):** Sprint 6.5 wired `phenotype_agent` through `HybridRunner` with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION) — see [ADR 0027](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md). `feasibility_service` and `extraction_agent` still call `SQLonFHIRAdapter` directly because their multi-view JOIN shapes need an API extension that's filed as [Sprint 6.5b candidate (#71)](https://github.com/jagnyesh/researchflow/issues/71). See [`docs/architecture/05-15architecturereview.md`](docs/architecture/05-15architecturereview.md) for the documented-vs-actual breakdown.
+> ⚠️ **Architecture-vs-actual gap (partially closed):** Sprint 6.5 wired `phenotype_agent` through `HybridRunner` with three-mode freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). `FORMAL_EXTRACTION` deliberately skips the speed-layer merge so the same SQL re-run against the same `batch_anchor_ts` produces a bit-identical row-set (citability contract) — see [ADR 0027](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md). `feasibility_service` and `extraction_agent` still call `SQLonFHIRAdapter` directly because their multi-view JOIN shapes need an API extension that's filed as [Sprint 6.5b candidate (#71)](https://github.com/jagnyesh/researchflow/issues/71). See [`docs/architecture/05-24architecturereview.md`](docs/architecture/05-24architecturereview.md) for the current empirical map.
 
 ### Multi-Agent System (6 Specialized Agents)
 
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│  (LangGraph FSM | 23 nodes | A2A retired Sprint 7.2)  │
+│  (LangGraph FSM | 17 nodes | A2A retired Sprint 7.2)  │
 └────────────────────┬──────────────────────────────────┘
                      │
      ┌───────────────┼───────────────┐
