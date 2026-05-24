@@ -167,7 +167,7 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
 
 ## 📋 Sprint Documentation
 
-For current sprint state, blockers, and what's in flight, see **[../CONTEXT.md](../CONTEXT.md)** at repo root. For architectural decisions across sprints, see **[../DECISIONS.md](../DECISIONS.md)**. For upcoming work, see **[../BACKLOG.md](../BACKLOG.md)**.
+For current sprint state, blockers, and what's in flight, see **[../CONTEXT.md](../CONTEXT.md)** at repo root. For architectural decisions across sprints, see **[decisions/INDEX.md](decisions/INDEX.md)** (append-only ADR log, one file per decision). For upcoming work, see **[../BACKLOG.md](../BACKLOG.md)**.
 
 ### Active Sprint
 - **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** — Sprint 6.1 Security Baseline implementation plan
@@ -177,7 +177,7 @@ For current sprint state, blockers, and what's in flight, see **[../CONTEXT.md](
 
 ### Historical sprint reports
 
-Archived in **[sprints/archive/](sprints/archive/)**. The original master tracker lives there as `SPRINT_TRACKER_v1.md`. Don't load these into context unless researching a specific past decision; the distilled record is in `DECISIONS.md`.
+Archived in **[sprints/archive/](sprints/archive/)**. The original master tracker lives there as `SPRINT_TRACKER_v1.md`. Don't load these into context unless researching a specific past decision; the distilled record is in [`decisions/INDEX.md`](decisions/INDEX.md).
 
 ---
 
