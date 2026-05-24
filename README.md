@@ -531,7 +531,6 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 - 💰 **$0.008 measured LLM cost per formal-portal request** (Sprint 8.3 median, n=30 bursty traffic; measurement harness: [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py))
 - 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` exercised by tests and batch refresh
 - 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
-- 🔐 **HIPAA security baseline** shipped Sprint 6.1: encryption-at-rest, audit pipeline, TLS, JWT + RBAC, PHI-safe input validation
 
 ### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
 
