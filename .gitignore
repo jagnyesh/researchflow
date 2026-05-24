@@ -229,6 +229,10 @@ docs/TECHNICAL_INTERVIEW_PREP*.md
 docs/PROJECT_PORTFOLIO_ASSESSMENT.md
 LINKEDIN_POST*.md
 
+# Private docs (Tier 2 cleanup — local-only debug writeups, session notes,
+# internal task lists; preserved here for archaeology rather than git-rm'd)
+.private-docs/
+
 # Temporary development completion markers
 PHASE*.md
 *_COMPLETE.md
