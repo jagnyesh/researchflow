@@ -189,6 +189,11 @@ output/
 # Test output
 test_output/
 test-results/
+*test_output*.txt
+phase[0-9]_test_output*.txt
+
+# Dev-session screenshots (Playwright MCP captures these during interactive sessions)
+.playwright-mcp/
 
 # ============================================
 # Distribution / Packaging
