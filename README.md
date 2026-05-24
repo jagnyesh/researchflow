@@ -150,13 +150,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 ### 🛡️ Human-in-Loop Safety Gates
 
-**4 routine gates + 1 escalation terminal** (source: `interrupt_after_list` at [`app/langchain_orchestrator/langgraph_workflow.py:241`](app/langchain_orchestrator/langgraph_workflow.py#L241)):
-
-- **G1 Requirements Review** (`requirements_review`): Informatician approves the cohort spec extracted from natural language
-- **G2 Phenotype SQL Review** (`phenotype_review`): Informatician approves the generated SQL-on-FHIR before any execution
-- **G3 Preview QA Review** (`preview_qa_review`, conditional): Fires only when preview QA fails — informatician reviews and decides whether to proceed
-- **G4 QA Sign-off** (`qa_review`): Approval after full QA passes
-- **★ Human Review** (`human_review`, escalation terminal): Reached on workflow error or scope-change rejection
+**4 routine gates + 1 escalation terminal.** No SQL query executes without informatician approval. See the [Human-in-Loop Safety](#human-in-loop-safety) section for the per-gate table, criticality ratings, and the safety guarantee.
 
 ### 📊 SQL-on-FHIR v2 Implementation
 
