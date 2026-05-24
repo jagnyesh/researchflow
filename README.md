@@ -520,11 +520,10 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 ### Experimental Achievements
 
-- ⚡ **10–100× speedup** from materialized views vs live FHIR REST; up to ~1100× on the repeated-query cache-hit path
-- ⏱️ **4–8 hour end-to-end turnaround** vs 2–3 weeks manual (proof-of-concept; not yet field-measured at scale)
-- 💰 **$0.008 measured LLM cost per formal-portal request** (Sprint 8.3 median, n=30 bursty traffic; measurement harness: [`scripts/drive_qa_traffic.py`](scripts/drive_qa_traffic.py))
-- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` exercised by tests and batch refresh
-- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal
+For headline performance numbers (speedup, turnaround, LLM cost) see the [Performance](#performance) section. The shipping milestones:
+
+- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` is now a production caller via `phenotype_agent` with three-mode `FreshnessAnnotation` routing (Sprint 6.5)
+- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal wired through LangGraph's `interrupt_after` mechanism
 
 ### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
 
