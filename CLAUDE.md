@@ -30,8 +30,8 @@ information. When new information reveals a pre-commit's premise was broken,
 deliberate override is appropriate when documented. Precedent: Sprint 6.2
 Phase 1.5 Q1 refinement; Sprint 6.3 verdict revision GO sqlonfhir.
 
-Full context with 10 documented cases: see DECISIONS.md "Recurring workflow
-pattern" section.
+Full context with 10 documented cases: see [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md)
+"Recurring workflow pattern" in the ADR log.
 
 ## Quick start
 
@@ -111,4 +111,4 @@ Default vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-
 
 ### Domain docs
 
-Single-context layout. `CONTEXT.md` at the root for domain vocabulary; `DECISIONS.md` at the root for the append-only ADR log (one entry per sprint). See `docs/agents/domain.md`.
+Single-context layout. `CONTEXT.md` at the root for domain vocabulary; `docs/decisions/` for the append-only ADR log (one file per decision, indexed at `docs/decisions/INDEX.md`). See `docs/agents/domain.md`.
