@@ -54,6 +54,10 @@ New Postgres role `rf_readonly` on :5433 — `USAGE` on schema `sqlonfhir` + `SE
 | ADR 0027 mode table | Corrected (append-only): `EXPLORATORY` freshness mode had no production caller on the exploratory portal; portal stays batch-only with disclosed anchor |
 | ADR 0005 ("parameterized SQL everywhere") | Qualified: LLM-synthesized SQL is validated-not-parameterized on this aggregate-only path; values appear inline but can never reach a row-returning or mutating statement |
 
+## Implementation deviation notes (recorded as slices land)
+
+- **#94 (2026-07-12):** decision 4 said "live `information_schema` introspection at startup." Shipped as **pg_catalog at first use, process-cached** — two deliberate corrections: (a) the 4 custom-path materialized views do not appear in `information_schema.columns` at all (empirical, found during #91), so `pg_catalog.pg_class/pg_attribute` is the working mechanism; (b) first-use-with-asyncio-lock beats import-time startup because `SQLSynthesizer` is constructed per request and streamlit entry points have no lifespan hook (the known lifespan-gate gap). Operational note: a schema-changing MV rebuild leaves a running portal's prompt cache stale until process restart — same restart class as the documented streamlit module-cache behavior; failure mode is loud (undefined column at execution), not silent-wrong.
+
 ## Close checklist (flip status to `shipped` when all fire)
 
 - [ ] Gate JSONL evidence artifact committed (`logs/sprint_6_7_gate.jsonl`): accuracy ≥90%, adversarial escapes = 0, invariant green, baseline row recorded
