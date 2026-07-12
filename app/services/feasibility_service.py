@@ -19,6 +19,8 @@ from langsmith import traceable
 
 from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
+from app.services.sql_synthesis import SQLSynthesizer
+from app.services.sql_validator import SQLValidationError, SQLValidator
 import os
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,11 @@ class FeasibilityService:
         self.db_client = HAPIDBClient(hapi_db_url)
 
     @traceable(tags=["feasibility-service", "cohort-estimation", "portal:exploratory"])
-    async def execute_feasibility_check(self, query_intent: Dict[str, Any]) -> Dict[str, Any]:
+    async def execute_feasibility_check(
+        self,
+        query_intent: Dict[str, Any],
+        natural_language_query: Optional[str] = None,
+    ) -> Dict[str, Any]:
         """
         Execute feasibility check for research query
 
@@ -46,6 +52,10 @@ class FeasibilityService:
                 - search_params: Filter parameters
                 - data_elements: Requested data elements
                 - time_period: Time range
+            natural_language_query: The researcher's original question. When
+                provided AND USE_LLM_SQL_SYNTHESIS=true, SQL is synthesized
+                directly from it (Sprint 6.7 #91, ADR 0028) instead of built
+                from query_intent.
 
         Returns:
             Dictionary with feasibility results:
@@ -55,6 +65,9 @@ class FeasibilityService:
                 - warnings: List of concerns
                 - recommendations: List of suggestions
         """
+        if natural_language_query and os.getenv("USE_LLM_SQL_SYNTHESIS", "false").lower() == "true":
+            return await self._execute_via_llm_synthesis(natural_language_query, query_intent)
+
         try:
             # Detect if this is a multi-view query (e.g., demographics + conditions)
             view_definitions = query_intent.get("view_definitions", [])
@@ -206,6 +219,67 @@ class FeasibilityService:
         except Exception as e:
             logger.error(f"Feasibility check failed: {e}")
             raise
+
+    async def _execute_via_llm_synthesis(
+        self, natural_language_query: str, query_intent: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Sprint 6.7 #91 tracer: synthesize -> validate -> execute.
+
+        Validation failure raises SQLValidationError — never a fabricated 0
+        (#76 lesson). #96 converts the raise into the honest-error result
+        variant; #95 extends validation to the full 8-rule set.
+        """
+        synthesizer = SQLSynthesizer()
+        synthesis = await synthesizer.synthesize(natural_language_query)
+
+        validation = SQLValidator().validate(synthesis.sql)
+        if not validation.valid:
+            logger.warning("Synthesized SQL rejected by validator: %s", validation.violations)
+            raise SQLValidationError(validation.violations)
+
+        start_time = datetime.now()
+        rows = await self.db_client.execute_query(synthesis.sql)
+        execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+
+        estimated_cohort = self._extract_scalar_count(rows)
+        logger.info(
+            "LLM-synthesized query returned %s (%.1fms)", estimated_cohort, execution_time_ms
+        )
+
+        return {
+            "estimated_cohort": estimated_cohort,
+            "cohort_counts_by_view": {},
+            "data_availability": {},
+            "feasibility_score": 1.0 if estimated_cohort > 0 else 0.0,
+            "warnings": [],
+            "recommendations": [],
+            "time_period": query_intent.get("time_period", {}),
+            "executed_at": datetime.now().isoformat(),
+            "generated_sql": synthesis.sql,
+            "filter_summary": synthesis.explanation,
+            "execution_time_ms": execution_time_ms,
+            "used_join_query": False,
+        }
+
+    @staticmethod
+    def _extract_scalar_count(rows: List[Dict[str, Any]]) -> int:
+        """Tracer supports single-count results only: exactly one row with one
+        numeric value. Anything else raises — never a fabricated number (#76).
+        Breakdown (GROUP BY) result mapping lands with the UI work in #97.
+        """
+        if len(rows) != 1 or len(rows[0]) != 1:
+            raise ValueError(
+                f"synthesized query returned a non-scalar result "
+                f"({len(rows)} rows x {len(rows[0]) if rows else 0} columns); "
+                f"only single-count queries are supported in the #91 tracer"
+            )
+        value = next(iter(rows[0].values()))
+        if not isinstance(value, int):
+            raise ValueError(
+                f"synthesized query returned a non-scalar result: expected an integer "
+                f"count, got {type(value).__name__} ({value!r})"
+            )
+        return value
 
     async def _execute_count_query(self, view_name: str, search_params: Dict[str, Any]) -> int:
         """

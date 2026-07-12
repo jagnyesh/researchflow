@@ -399,7 +399,11 @@ async def handle_query(user_input: str):
 
         st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
         feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
-            query_intent.__dict__ if hasattr(query_intent, "__dict__") else query_intent
+            query_intent.__dict__ if hasattr(query_intent, "__dict__") else query_intent,
+            # Sprint 6.7 #91: raw NL passes through so the synthesis path
+            # (USE_LLM_SQL_SYNTHESIS=true) sees the researcher's actual words,
+            # not the lossy intent dict. No-op while the flag is off.
+            natural_language_query=user_input,
         )
         st.write(f"✅ Found approximately {feasibility_data['estimated_cohort']} patients")
 
