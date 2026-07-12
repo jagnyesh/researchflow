@@ -161,6 +161,26 @@ class TestHonestFailureInvariant:
         assert "Alice Smith" not in result["reason"]
         assert "Alice Smith" not in str(result)
 
+    async def test_llm_refusal_nonjson_is_error_variant_not_a_crash(self, monkeypatch):
+        # #97 browser QA: when the model returns prose instead of JSON (e.g. it
+        # declines a row-level request), synthesize() raises SynthesisError —
+        # which must become the honest-error card, NOT an uncaught JSONDecodeError
+        # traceback on the researcher's screen.
+        from app.services.sql_synthesis import SynthesisError
+
+        fs = FeasibilityService()
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock()
+        synth = MagicMock()
+        synth.synthesize = AsyncMock(side_effect=SynthesisError("model returned prose"))
+
+        result = await _run(fs, synth, monkeypatch)
+
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
+        assert "model returned prose" in result["reason"]
+        fs.exploratory_db_client.execute_query.assert_not_called()
+
     async def test_non_scalar_result_is_error_variant_not_fabricated_zero(self, monkeypatch):
         # A breakdown/empty result (the #76 shape) must become an error
         # variant, never a rendered 0.

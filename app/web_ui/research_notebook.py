@@ -259,6 +259,52 @@ Try asking a question about patient data!"""
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 
+def _freshness_caption(feasibility_data: Dict[str, Any]) -> str:
+    """'data as of <ts>' disclosure (#97). The exploratory portal reads
+    batch-only MVs; make the staleness explicit instead of implicit. Empty
+    string when no anchor is available (e.g. legacy path or unrefreshed views)."""
+    anchor = feasibility_data.get("batch_anchor_ts")
+    if not anchor:
+        return ""
+    ts = str(anchor).replace("T", " ")[:19]  # ISO → "YYYY-MM-DD HH:MM:SS"
+    return f"📅 Data as of {ts} (batch snapshot)"
+
+
+def _render_freshness(feasibility_data: Dict[str, Any]) -> None:
+    caption = _freshness_caption(feasibility_data)
+    if caption:
+        st.caption(caption)
+
+
+def _error_card_markdown(feasibility_data: Dict[str, Any]) -> str:
+    """The honest-error variant (#96) as chat markdown — explanation + reason +
+    the rejected SQL, NEVER a fabricated cohort count."""
+    explanation = feasibility_data.get("explanation") or "The query could not be run."
+    reason = feasibility_data.get("reason", "unknown reason")
+    rejected_sql = feasibility_data.get("rejected_sql", "")
+    parts = [
+        "## ⚠️ Query could not be run",
+        "",
+        f"**What was attempted:** {explanation}",
+        "",
+        f"**Why it was rejected:** {reason}",
+    ]
+    if rejected_sql:
+        parts += ["", "**Rejected SQL:**", "```sql", rejected_sql, "```"]
+    parts += ["", "_No cohort estimate is shown — an error never renders as a count._"]
+    return "\n".join(parts)
+
+
+def _render_error_card(feasibility_data: Dict[str, Any]) -> None:
+    st.error("⚠️ Query could not be run — no cohort estimate.")
+    st.markdown(f"**What was attempted:** {feasibility_data.get('explanation', '—')}")
+    st.markdown(f"**Why it was rejected:** {feasibility_data.get('reason', 'unknown reason')}")
+    rejected_sql = feasibility_data.get("rejected_sql")
+    if rejected_sql:
+        st.markdown("**Rejected SQL:**")
+        st.code(rejected_sql, language="sql")
+
+
 def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
     """
     Format breakdown query results with total and per-dimension counts
@@ -405,7 +451,23 @@ async def handle_query(user_input: str):
             # not the lossy intent dict. No-op while the flag is off.
             natural_language_query=user_input,
         )
+        # #96/#97: the synthesis path returns an explicit error variant on
+        # validator rejection / execution failure. NEVER render a fabricated
+        # "0 patients" for an error — show the honest error card and stop.
+        if feasibility_data.get("status") == "error":
+            status.update(label="Query could not be run", state="error")
+            _render_error_card(feasibility_data)
+            st.session_state.messages.append(
+                {"role": "assistant", "content": _error_card_markdown(feasibility_data)}
+            )
+            # Clear any prior successful result so the sidebar Details tab can't
+            # show a stale cohort after a failed query.
+            st.session_state.pending_feasibility = None
+            st.session_state.conversation_state = ConversationState.INITIAL
+            return
+
         st.write(f"✅ Found approximately {feasibility_data['estimated_cohort']} patients")
+        _render_freshness(feasibility_data)
 
         status.update(label="Feasibility analysis complete!", state="complete")
 
@@ -438,6 +500,12 @@ async def handle_query(user_input: str):
 - Type **"proceed"** to submit to the Formal Portal for full data extraction
 - Or ask another question to refine your search
 """
+
+    # #97: "data as of <ts>" freshness disclosure on every result shape
+    # (scalar / breakdown / count-distinct) whenever an anchor is present.
+    freshness = _freshness_caption(feasibility_data)
+    if freshness:
+        feasibility_response = f"{feasibility_response}\n\n_{freshness}_"
 
     st.session_state.messages.append({"role": "assistant", "content": feasibility_response})
 
