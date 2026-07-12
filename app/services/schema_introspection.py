@@ -12,11 +12,12 @@ context the catalog can't provide). Missing views raise — a stale/partial
 schema block silently reintroduces drift, so failure is loud.
 """
 
+import asyncio
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, FrozenSet, Tuple
+from typing import Dict, FrozenSet, Optional, Tuple
 
 from app.services.sql_validator import ALLOWED_VIEWS
 
@@ -102,6 +103,33 @@ async def introspect_schema(
         )
         for name, cols in columns_by_view.items()
     }
+
+
+_schemas_cache: Optional[Dict[str, ViewSchema]] = None
+_cache_lock = asyncio.Lock()
+
+
+async def get_cached_schemas(db_client) -> Dict[str, ViewSchema]:
+    """Process-level cached introspection — ONE result serves both the
+    synthesis prompt and the validator's column checks (#95), so the two can
+    never diverge. Single-DB assumption: keyed on nothing. Stale after a
+    schema-changing MV rebuild until process restart (ADR 0028 deviation
+    note); failure mode is loud, not silent-wrong."""
+    global _schemas_cache
+    if _schemas_cache is None:
+        async with _cache_lock:
+            if _schemas_cache is None:
+                _schemas_cache = await introspect_schema(db_client)
+                logger.info(
+                    "sqlonfhir schema introspected and cached (%d views)",
+                    len(_schemas_cache),
+                )
+    return _schemas_cache
+
+
+def reset_schema_cache() -> None:
+    global _schemas_cache
+    _schemas_cache = None
 
 
 def render_schema_block(schemas: Dict[str, ViewSchema]) -> str:

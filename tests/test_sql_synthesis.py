@@ -36,11 +36,12 @@ CANNED_SCHEMAS = {
 
 @pytest.fixture(autouse=True)
 def _hermetic_schema():
-    """Reset the process-level prompt cache and stub introspection so unit
-    tests never need a DB."""
+    """Reset the process-level prompt cache and stub the shared introspection
+    cache (#95: one getter serves prompt AND validator) so unit tests never
+    need a DB."""
     sql_synthesis_module.reset_schema_prompt_cache()
     with patch(
-        "app.services.sql_synthesis.introspect_schema",
+        "app.services.sql_synthesis.get_cached_schemas",
         new=AsyncMock(return_value=CANNED_SCHEMAS),
     ) as mock_introspect:
         yield mock_introspect

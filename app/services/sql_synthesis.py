@@ -20,7 +20,7 @@ from langsmith import traceable
 
 from ..clients.hapi_db_client import HAPIDBClient
 from ..utils.llm_client import LLMClient
-from .schema_introspection import introspect_schema, render_schema_block
+from .schema_introspection import get_cached_schemas, render_schema_block
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,10 @@ class SQLSynthesizer:
         if _system_prompt_cache is None:
             async with _cache_lock:
                 if _system_prompt_cache is None:
-                    schemas = await introspect_schema(self.db_client)
+                    # Shared introspection cache — the SAME schemas object the
+                    # validator checks columns against (#95), so prompt and
+                    # validator can never diverge.
+                    schemas = await get_cached_schemas(self.db_client)
                     _system_prompt_cache = _build_system_prompt(render_schema_block(schemas))
                     logger.info(
                         "Schema prompt built from live introspection (%d views, %d chars)",
