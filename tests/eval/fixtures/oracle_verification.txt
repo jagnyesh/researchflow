@@ -1,0 +1,26 @@
+# Oracle verification — live HAPI :5433, full Synthea corpus (380 patients), 2026-07-12
+# Same-run oracles: counts are illustrative (compared at eval time, not asserted).
+
+gender_female                        156  gender
+gender_male                          224  gender
+total_patients                       380  count
+age_under_65                         266  age
+age_over_18                          339  age
+female_under_65                      123  gender+age
+cond_diabetes                        170  condition
+cond_hypertension                     80  condition
+female_hypertension_under_65          13  gender+age+condition
+male_over_18_diabetes                109  gender+age+condition
+med_any                              356  medication
+proc_any                             362  procedure
+lab_any                              363  lab
+lab_glucose                          215  lab
+lab_glucose_high                       6  lab-threshold
+count_distinct_labs                  156  count_distinct
+count_distinct_conditions            212  count_distinct
+female_with_medication               153  gender+medication
+diabetes_and_hypertension             61  condition+condition
+negation_without_diabetes            210  stretch-negation
+negation_no_meds                      24  stretch-negation
+temporal_procedure_after_2020        288  stretch-temporal
+temporal_med_since_2021              254  stretch-temporal
