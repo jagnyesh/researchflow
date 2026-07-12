@@ -11,6 +11,7 @@ HAPI FHIR stores resources in PostgreSQL with the following schema:
 - Search param indexes: hfj_spidx_string, hfj_spidx_date, hfj_spidx_token, etc.
 """
 
+import asyncio
 import logging
 import os
 import json
@@ -132,20 +133,19 @@ class HAPIDBClient:
 
         try:
             async with self.pool.acquire() as conn:
-                # Set timeout for this query if specified
-                if timeout:
-                    await conn.execute(f"SET statement_timeout = {int(timeout * 1000)}")
-
-                # Execute query
+                # Per-query timeout via asyncpg's native kwarg — NOT
+                # `SET statement_timeout`, which persists on the pooled
+                # connection and would silently cap the next borrower's query.
+                fetch_timeout = timeout if timeout else self.command_timeout
                 if params:
-                    rows = await conn.fetch(sql, *params)
+                    rows = await conn.fetch(sql, *params, timeout=fetch_timeout)
                 else:
-                    rows = await conn.fetch(sql)
+                    rows = await conn.fetch(sql, timeout=fetch_timeout)
 
                 # Convert to list of dicts
                 return [dict(row) for row in rows]
 
-        except asyncpg.QueryCanceledError:
+        except (asyncpg.QueryCanceledError, asyncio.TimeoutError):
             logger.error(
                 f"Query timed out after {timeout or self.command_timeout}s: {sql[:100]}..."
             )
