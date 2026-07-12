@@ -19,6 +19,7 @@ from langsmith import traceable
 
 from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
+from app.services.schema_introspection import get_cached_schemas
 from app.services.sql_synthesis import SQLSynthesizer
 from app.services.sql_validator import SQLValidationError, SQLValidator
 import os
@@ -223,22 +224,28 @@ class FeasibilityService:
     async def _execute_via_llm_synthesis(
         self, natural_language_query: str, query_intent: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Sprint 6.7 #91 tracer: synthesize -> validate -> execute.
+        """Sprint 6.7 #91+#95: synthesize -> full 8-rule validation -> execute.
 
         Validation failure raises SQLValidationError — never a fabricated 0
         (#76 lesson). #96 converts the raise into the honest-error result
-        variant; #95 extends validation to the full 8-rule set.
+        variant.
         """
         synthesizer = SQLSynthesizer(db_client=self.db_client)
         synthesis = await synthesizer.synthesize(natural_language_query)
 
-        validation = SQLValidator().validate(synthesis.sql)
+        # Schemas come from the SAME cached introspection the prompt was
+        # built from, so prompt and validator can never diverge (#95).
+        schemas = await get_cached_schemas(self.db_client)
+        validation = await SQLValidator(schemas=schemas).validate_with_explain(
+            synthesis.sql, self.db_client
+        )
         if not validation.valid:
             logger.warning("Synthesized SQL rejected by validator: %s", validation.violations)
             raise SQLValidationError(validation.violations)
 
         start_time = datetime.now()
-        rows = await self.db_client.execute_query(synthesis.sql)
+        # safe_sql (comments stripped, LIMIT capped) under a 5s statement_timeout.
+        rows = await self.db_client.execute_query(validation.safe_sql, timeout=5.0)
         execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
 
         estimated_cohort = self._extract_scalar_count(rows)
@@ -255,7 +262,8 @@ class FeasibilityService:
             "recommendations": [],
             "time_period": query_intent.get("time_period", {}),
             "executed_at": datetime.now().isoformat(),
-            "generated_sql": synthesis.sql,
+            # What actually ran (normalized safe_sql), not the raw LLM output.
+            "generated_sql": validation.safe_sql,
             "filter_summary": synthesis.explanation,
             "execution_time_ms": execution_time_ms,
             "used_join_query": False,
@@ -275,9 +283,11 @@ class FeasibilityService:
             )
         value = next(iter(rows[0].values()))
         if not isinstance(value, int):
+            # NEVER interpolate the value — a non-int here can be raw PHI (e.g.
+            # a name leaked past validation); the error must not disclose it.
             raise ValueError(
-                f"synthesized query returned a non-scalar result: expected an integer "
-                f"count, got {type(value).__name__} ({value!r})"
+                f"synthesized query returned a non-scalar result: expected an "
+                f"integer count, got {type(value).__name__}"
             )
         return value
 
