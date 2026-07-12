@@ -107,18 +107,29 @@ jobs:
 
     - name: Create materialized views
       env:
+        # materialize_views.py reads HAPI_DB_URL (not DATABASE_URL). Set it
+        # explicitly so the views are created AS hapi — the rf_readonly ALTER
+        # DEFAULT PRIVILEGES grant (#92) keys on role hapi, so this link must be
+        # explicit, not resting on the script's coincidental default.
         # hapi:hapi matches POSTGRES_PASSWORD in config/docker-compose.yml — public test fixture, not a real credential.
-        DATABASE_URL: postgresql+asyncpg://hapi:hapi@localhost:5433/hapi  # pragma: allowlist secret
+        HAPI_DB_URL: postgresql://hapi:hapi@localhost:5433/hapi  # pragma: allowlist secret
       run: |
         python scripts/materialize_views.py --create
 
-    - name: Run service-dependent pytest
+    # Deterministic: exclude requires_api_key so the job needs NO Anthropic
+    # key and never makes a live LLM call (Sprint 6.7 #93). The live-LLM
+    # integration tests (synthesis e2e, hybrid_runner LangSmith) run locally;
+    # #98's eval harness adds recorded-fixture replay so they can run here
+    # deterministically later. The rf_readonly boundary tests (#92) run here —
+    # the role is created by the initdb mount on this job's fresh volume, and
+    # ALTER DEFAULT PRIVILEGES grants SELECT on the views materialize_views
+    # creates as hapi in the step above.
+    - name: Run service-dependent pytest (no API key, no live LLM)
       env:
-        ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         DATABASE_URL: postgresql+asyncpg://hapi:hapi@localhost:5433/hapi  # pragma: allowlist secret
         REDIS_URL: redis://localhost:6379/0
       run: |
-        pytest tests/ -v -m "requires_services" --tb=short
+        pytest tests/ -v -m "requires_services and not requires_api_key" --tb=short
 
     - name: Show docker logs on failure
       if: failure()

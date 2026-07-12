@@ -12,6 +12,7 @@ pytest>=7.4.0
 pytest-asyncio>=0.21.0
 pytest-cov>=4.1.0
 fakeredis>=2.20.0  # Required by tests/test_audit_*.py and tests/conftest.py
+tiktoken>=0.7.0  # Sprint 6.7 #94: token-count assertion in test_schema_introspection (prompt clears cache threshold)
 
 # Type checking
 mypy>=1.7.0
