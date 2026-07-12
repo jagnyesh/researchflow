@@ -21,7 +21,7 @@ from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
 from app.services.schema_introspection import get_cached_schemas
 from app.services.sql_synthesis import SQLSynthesizer
-from app.services.sql_validator import SQLValidationError, SQLValidator
+from app.services.sql_validator import SQLValidator
 import os
 
 logger = logging.getLogger(__name__)
@@ -224,36 +224,73 @@ class FeasibilityService:
     async def _execute_via_llm_synthesis(
         self, natural_language_query: str, query_intent: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Sprint 6.7 #91+#95: synthesize -> full 8-rule validation -> execute.
+        """Sprint 6.7 #91+#95+#96: synthesize -> validate -> execute, with ONE
+        feedback retry on validator rejection and an honest-error variant on
+        any failure.
 
-        Validation failure raises SQLValidationError — never a fabricated 0
-        (#76 lesson). #96 converts the raise into the honest-error result
-        variant.
+        The invariant (#76 lesson): a failure NEVER returns a numeric cohort.
+        Validator rejection -> one resynthesis with the violations appended ->
+        still invalid -> error variant. Execution error -> error variant
+        immediately, no retry (a post-validation execution failure is
+        structural; retrying just burns tokens to mask it).
         """
         synthesizer = SQLSynthesizer(db_client=self.db_client)
-        synthesis = await synthesizer.synthesize(natural_language_query)
-
         # Schemas come from the SAME cached introspection the prompt was
         # built from, so prompt and validator can never diverge (#95).
         schemas = await get_cached_schemas(self.db_client)
-        validation = await SQLValidator(schemas=schemas).validate_with_explain(
-            synthesis.sql, self.db_client
-        )
+        validator = SQLValidator(schemas=schemas)
+
+        synthesis = await synthesizer.synthesize(natural_language_query)
+        validation = validator.validate(synthesis.sql)
         if not validation.valid:
-            logger.warning("Synthesized SQL rejected by validator: %s", validation.violations)
-            raise SQLValidationError(validation.violations)
+            logger.info("Synthesized SQL rejected; retrying once with feedback")
+            feedback = self._format_feedback(synthesis.sql, validation.violations)
+            synthesis = await synthesizer.synthesize(natural_language_query, feedback=feedback)
+            validation = validator.validate(synthesis.sql)
+            if not validation.valid:
+                logger.warning("Synthesized SQL rejected after retry: %s", validation.violations)
+                return self._honest_error(
+                    explanation=synthesis.explanation,
+                    rejected_sql=synthesis.sql,
+                    reason="; ".join(validation.violations),
+                    query_intent=query_intent,
+                )
 
-        start_time = datetime.now()
-        # safe_sql (comments stripped, LIMIT capped) under a 5s statement_timeout.
-        rows = await self.db_client.execute_query(validation.safe_sql, timeout=5.0)
-        execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+        # EXPLAIN dry-run (rule 8) + real execution — any DB failure here is an
+        # immediate honest error, no retry.
+        try:
+            explain = await validator.validate_with_explain(synthesis.sql, self.db_client)
+            if not explain.valid:
+                return self._honest_error(
+                    explanation=synthesis.explanation,
+                    rejected_sql=validation.safe_sql,
+                    reason="; ".join(explain.violations),
+                    query_intent=query_intent,
+                )
+            start_time = datetime.now()
+            rows = await self.db_client.execute_query(validation.safe_sql, timeout=5.0)
+            execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
+            estimated_cohort = self._extract_scalar_count(rows)
+        except Exception as e:
+            # NEVER interpolate the exception into the user-facing reason — a
+            # value-bearing Postgres error (e.g. "invalid input syntax for
+            # integer: 'Alice Smith'") would leak a raw column value into an
+            # unauthenticated UI field (#39). Type only; full detail to the log.
+            # Mirrors the _extract_scalar_count hardening (#95).
+            logger.warning("Execution of synthesized SQL failed: %s", e)
+            return self._honest_error(
+                explanation=synthesis.explanation,
+                rejected_sql=validation.safe_sql,
+                reason=f"query execution failed ({type(e).__name__})",
+                query_intent=query_intent,
+            )
 
-        estimated_cohort = self._extract_scalar_count(rows)
         logger.info(
             "LLM-synthesized query returned %s (%.1fms)", estimated_cohort, execution_time_ms
         )
 
         return {
+            "status": "ok",
             "estimated_cohort": estimated_cohort,
             "cohort_counts_by_view": {},
             "data_availability": {},
@@ -267,6 +304,30 @@ class FeasibilityService:
             "filter_summary": synthesis.explanation,
             "execution_time_ms": execution_time_ms,
             "used_join_query": False,
+        }
+
+    @staticmethod
+    def _format_feedback(rejected_sql: str, violations: List[str]) -> str:
+        bullet = "\n".join(f"- {v}" for v in violations)
+        return f"Rejected SQL:\n{rejected_sql}\n\nValidator violations:\n{bullet}"
+
+    @staticmethod
+    def _honest_error(
+        explanation: str,
+        rejected_sql: str,
+        reason: str,
+        query_intent: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """The error variant (#96). Test-enforced invariant: NO numeric
+        estimated_cohort key — a failure must never render as a cohort count
+        (the #76 lesson). #97 renders this in the notebook UI."""
+        return {
+            "status": "error",
+            "explanation": explanation,
+            "rejected_sql": rejected_sql,
+            "reason": reason,
+            "time_period": query_intent.get("time_period", {}),
+            "executed_at": datetime.now().isoformat(),
         }
 
     @staticmethod

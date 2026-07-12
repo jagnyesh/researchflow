@@ -4,9 +4,8 @@ Contract under test (ADR 0028 decision 7):
 - USE_LLM_SQL_SYNTHESIS unset/false => legacy path, synthesizer NEVER touched.
 - Flag on + natural_language_query => synthesize -> validate -> execute via
   db_client; result dict keeps the legacy shape the notebook reads.
-- Validator rejection => SQLValidationError raised and the SQL never reaches
-  db_client (tracer semantics; #96 replaces the raise with the honest-error
-  variant).
+- Validator rejection (after #96's one retry) => the honest-error variant
+  {status:"error", ...} with NO numeric cohort; the SQL never reaches db_client.
 """
 
 from contextlib import contextmanager
@@ -17,7 +16,6 @@ import pytest
 from app.services.feasibility_service import FeasibilityService
 from app.services.schema_introspection import ColumnInfo, ViewSchema
 from app.services.sql_synthesis import SynthesisResult
-from app.services.sql_validator import SQLValidationError
 
 VALID_SQL = (
     "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p "
@@ -112,24 +110,27 @@ class TestFlagOn:
         assert result["generated_sql"] == executed_sql
         assert result["filter_summary"] == "test explanation"
 
-    async def test_rejected_sql_raises_and_never_reaches_db(self, monkeypatch):
+    async def test_rejected_sql_returns_error_variant_and_never_reaches_db(self, monkeypatch):
+        # #96: a persistently-rejected payload returns the honest-error variant
+        # (after one retry) and never reaches the DB — no fabricated cohort.
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.db_client = MagicMock()
         fs.db_client.execute_query = AsyncMock()
 
         with _synthesis_path("DELETE FROM sqlonfhir.patient_demographics"):
-            with pytest.raises(SQLValidationError):
-                await fs.execute_feasibility_check(
-                    {"view_definitions": []},
-                    natural_language_query="delete everything",
-                )
+            result = await fs.execute_feasibility_check(
+                {"view_definitions": []},
+                natural_language_query="delete everything",
+            )
 
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
         fs.db_client.execute_query.assert_not_called()
 
-    async def test_breakdown_shaped_result_raises_never_a_fabricated_count(self, monkeypatch):
-        # Tracer supports single-count queries only (#97 owns breakdown
-        # rendering). A GROUP BY result must fail loudly, not int('female').
+    async def test_breakdown_shaped_result_is_error_variant_not_fabricated_count(self, monkeypatch):
+        # A GROUP BY result (non-scalar) becomes an honest error, not
+        # int('female'). #97 owns breakdown rendering.
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.db_client = MagicMock()
@@ -138,26 +139,30 @@ class TestFlagOn:
         )
 
         with _synthesis_path(VALID_SQL):
-            with pytest.raises(ValueError, match="scalar"):
-                await fs.execute_feasibility_check(
-                    {"view_definitions": []},
-                    natural_language_query="patients by gender",
-                )
+            result = await fs.execute_feasibility_check(
+                {"view_definitions": []},
+                natural_language_query="patients by gender",
+            )
 
-    async def test_empty_result_raises_never_a_fabricated_zero(self, monkeypatch):
-        # A COUNT query always returns one row; an empty result means something
-        # is wrong. Rendering 0 here is exactly the #76 failure mode.
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
+
+    async def test_empty_result_is_error_variant_not_fabricated_zero(self, monkeypatch):
+        # A COUNT query always returns one row; an empty result becomes an
+        # honest error, never a rendered 0 (the #76 failure mode).
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.db_client = MagicMock()
         fs.db_client.execute_query = AsyncMock(return_value=[])
 
         with _synthesis_path(VALID_SQL):
-            with pytest.raises(ValueError, match="scalar"):
-                await fs.execute_feasibility_check(
-                    {"view_definitions": []},
-                    natural_language_query="female patients",
-                )
+            result = await fs.execute_feasibility_check(
+                {"view_definitions": []},
+                natural_language_query="female patients",
+            )
+
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
 
     async def test_flag_on_without_nl_query_falls_back_to_legacy(self, monkeypatch):
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
@@ -244,11 +249,16 @@ class TestAdversarialSuite:
         fs.db_client = MagicMock()
         fs.db_client.execute_query = AsyncMock()
 
+        # #96: a persistently-rejected payload returns the honest-error variant
+        # (after one retry, same payload → still rejected) with NO numeric
+        # cohort, and provably never reaches db_client (the #26 assert_not_called
+        # pattern). This is the #99 gate's zero-escape leg.
         with _synthesis_path(sql):
-            with pytest.raises(SQLValidationError):
-                await fs.execute_feasibility_check(
-                    {"view_definitions": []},
-                    natural_language_query="adversarial prompt",
-                )
+            result = await fs.execute_feasibility_check(
+                {"view_definitions": []},
+                natural_language_query="adversarial prompt",
+            )
 
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
         fs.db_client.execute_query.assert_not_called()
