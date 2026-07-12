@@ -22,9 +22,11 @@ logger = logging.getLogger(__name__)
 
 SCHEMA_NAME = "sqlonfhir"
 
-# The 7 production views. #94 replaces this hardcoded set with live
-# information_schema introspection (single source of truth for validator
-# AND the synthesis prompt's schema block).
+# The 7 production views — the NAME authority (which relations are queryable
+# at all). #94 made pg_catalog introspection the COLUMN authority for the
+# synthesis prompt, consuming this set as its expected-views list; #95 wires
+# the same introspection into column-existence checks here. (pg_catalog, not
+# information_schema — the 4 custom-path MVs don't appear in the latter.)
 ALLOWED_VIEWS = frozenset(
     {
         "patient_simple",

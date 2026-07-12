@@ -229,7 +229,7 @@ class FeasibilityService:
         (#76 lesson). #96 converts the raise into the honest-error result
         variant; #95 extends validation to the full 8-rule set.
         """
-        synthesizer = SQLSynthesizer()
+        synthesizer = SQLSynthesizer(db_client=self.db_client)
         synthesis = await synthesizer.synthesize(natural_language_query)
 
         validation = SQLValidator().validate(synthesis.sql)
