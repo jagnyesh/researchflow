@@ -34,9 +34,29 @@ class FeasibilityService:
         self.api_base_url = api_base_url
         self.client = httpx.AsyncClient(timeout=30.0)
         self.join_query_builder = JoinQueryBuilder()
-        # Initialize direct database client for JOIN queries
+        # Legacy path (JoinQueryBuilder) keeps HAPI's own credentials.
         hapi_db_url = os.getenv("HAPI_DB_URL", "postgresql://hapi:hapi@localhost:5433/hapi")
         self.db_client = HAPIDBClient(hapi_db_url)
+        # Sprint 6.7 #92: the LLM-synthesis path executes through the scoped
+        # read-only rf_readonly role (SELECT on sqlonfhir only — no writes, no
+        # raw hfj_resource PHI). Falls back to HAPI_DB_URL when EXPLORATORY_DB_URL
+        # is unset so dev/test without the role still work.
+        self.exploratory_db_client = HAPIDBClient(os.getenv("EXPLORATORY_DB_URL") or hapi_db_url)
+        # Fail-closed guard: if synthesis is ON but EXPLORATORY_DB_URL is unset,
+        # synthesized SQL would run under HAPI's full-privilege creds, defeating
+        # the whole rf_readonly boundary. Hard-fail in production, warn in
+        # dev/test (mirrors the encryption-key startup gate + audit default-deny).
+        if os.getenv("USE_LLM_SQL_SYNTHESIS", "false").lower() == "true" and not os.getenv(
+            "EXPLORATORY_DB_URL"
+        ):
+            msg = (
+                "USE_LLM_SQL_SYNTHESIS is on but EXPLORATORY_DB_URL is unset — "
+                "synthesized SQL would execute under HAPI's full-privilege "
+                "credentials, defeating the rf_readonly read-only boundary (#92)."
+            )
+            if os.getenv("ENVIRONMENT", "").lower() == "production":
+                raise RuntimeError(msg)
+            logger.warning("%s Falling back to HAPI_DB_URL (dev/test only).", msg)
 
     @traceable(tags=["feasibility-service", "cohort-estimation", "portal:exploratory"])
     async def execute_feasibility_check(
@@ -234,10 +254,13 @@ class FeasibilityService:
         immediately, no retry (a post-validation execution failure is
         structural; retrying just burns tokens to mask it).
         """
-        synthesizer = SQLSynthesizer(db_client=self.db_client)
+        # #92: everything on the synthesis path — introspection, EXPLAIN, and
+        # execution — runs through the scoped read-only rf_readonly client.
+        db = self.exploratory_db_client
+        synthesizer = SQLSynthesizer(db_client=db)
         # Schemas come from the SAME cached introspection the prompt was
         # built from, so prompt and validator can never diverge (#95).
-        schemas = await get_cached_schemas(self.db_client)
+        schemas = await get_cached_schemas(db)
         validator = SQLValidator(schemas=schemas)
 
         synthesis = await synthesizer.synthesize(natural_language_query)
@@ -259,7 +282,7 @@ class FeasibilityService:
         # EXPLAIN dry-run (rule 8) + real execution — any DB failure here is an
         # immediate honest error, no retry.
         try:
-            explain = await validator.validate_with_explain(synthesis.sql, self.db_client)
+            explain = await validator.validate_with_explain(synthesis.sql, db)
             if not explain.valid:
                 return self._honest_error(
                     explanation=synthesis.explanation,
@@ -268,7 +291,7 @@ class FeasibilityService:
                     query_intent=query_intent,
                 )
             start_time = datetime.now()
-            rows = await self.db_client.execute_query(validation.safe_sql, timeout=5.0)
+            rows = await db.execute_query(validation.safe_sql, timeout=5.0)
             execution_time_ms = (datetime.now() - start_time).total_seconds() * 1000
             estimated_cohort = self._extract_scalar_count(rows)
         except Exception as e:
@@ -740,6 +763,7 @@ class FeasibilityService:
         return min(feasibility_score, 1.0)
 
     async def close(self):
-        """Close HTTP client and database client"""
+        """Close HTTP client and both database clients"""
         await self.client.aclose()
         await self.db_client.close()
+        await self.exploratory_db_client.close()

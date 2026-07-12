@@ -99,6 +99,11 @@ services:
       POSTGRES_DB: hapi
     volumes:
       - hapi_postgres_data:/var/lib/postgresql/data
+      # Sprint 6.7 #92: create the scoped read-only rf_readonly role on a fresh
+      # volume. Runs once at initdb; idempotent, so safe to re-apply manually to
+      # an existing volume. GRANT covers future sqlonfhir views via ALTER
+      # DEFAULT PRIVILEGES (they're materialized after init).
+      - ./rf_readonly_role.sql:/docker-entrypoint-initdb.d/10-rf-readonly.sql:ro
     ports:
       - "5433:5432"
     healthcheck:

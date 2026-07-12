@@ -86,8 +86,8 @@ class TestFlagOn:
     async def test_synthesized_sql_validated_executed_and_mapped(self, monkeypatch):
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock(return_value=[{"count": 13}])
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock(return_value=[{"count": 13}])
 
         with _synthesis_path(VALID_SQL) as schemas_mock:
             result = await fs.execute_feasibility_check(
@@ -98,7 +98,7 @@ class TestFlagOn:
         # The validator received the shared cached schemas (column rule armed).
         schemas_mock.assert_awaited_once()
         # Rule 8 EXPLAIN dry-run precedes the real execution.
-        calls = fs.db_client.execute_query.await_args_list
+        calls = fs.exploratory_db_client.execute_query.await_args_list
         assert len(calls) == 2
         assert calls[0].args[0].startswith("EXPLAIN ")
         # Rule 7: normalized safe_sql runs, LIMIT-capped, under a 5s timeout.
@@ -115,8 +115,8 @@ class TestFlagOn:
         # (after one retry) and never reaches the DB — no fabricated cohort.
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock()
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock()
 
         with _synthesis_path("DELETE FROM sqlonfhir.patient_demographics"):
             result = await fs.execute_feasibility_check(
@@ -126,15 +126,15 @@ class TestFlagOn:
 
         assert result["status"] == "error"
         assert "estimated_cohort" not in result
-        fs.db_client.execute_query.assert_not_called()
+        fs.exploratory_db_client.execute_query.assert_not_called()
 
     async def test_breakdown_shaped_result_is_error_variant_not_fabricated_count(self, monkeypatch):
         # A GROUP BY result (non-scalar) becomes an honest error, not
         # int('female'). #97 owns breakdown rendering.
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock(
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock(
             return_value=[{"gender": "female", "count": 5}, {"gender": "male", "count": 3}]
         )
 
@@ -152,8 +152,8 @@ class TestFlagOn:
         # honest error, never a rendered 0 (the #76 failure mode).
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock(return_value=[])
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock(return_value=[])
 
         with _synthesis_path(VALID_SQL):
             result = await fs.execute_feasibility_check(
@@ -246,8 +246,8 @@ class TestAdversarialSuite:
     async def test_payload_rejected_and_never_reaches_db(self, monkeypatch, sql):
         monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock()
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock()
 
         # #96: a persistently-rejected payload returns the honest-error variant
         # (after one retry, same payload → still rejected) with NO numeric
@@ -261,4 +261,4 @@ class TestAdversarialSuite:
 
         assert result["status"] == "error"
         assert "estimated_cohort" not in result
-        fs.db_client.execute_query.assert_not_called()
+        fs.exploratory_db_client.execute_query.assert_not_called()

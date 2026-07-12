@@ -65,8 +65,8 @@ async def _run(fs, synthesizer, monkeypatch, nl="any query"):
 class TestRetryThenSucceed:
     async def test_rejection_retries_once_with_feedback_then_succeeds(self, monkeypatch):
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock(return_value=[{"count": 21}])
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock(return_value=[{"count": 21}])
         synth = _sequenced_synthesizer(
             SynthesisResult(sql=INVALID_SQL, explanation="bad"),
             SynthesisResult(sql=VALID_SQL, explanation="good"),
@@ -87,8 +87,8 @@ class TestRetryThenSucceed:
 class TestHonestFailureInvariant:
     async def test_double_rejection_returns_error_variant_no_cohort(self, monkeypatch):
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock()
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock()
         synth = _sequenced_synthesizer(
             SynthesisResult(sql=INVALID_SQL, explanation="attempt 1"),
             SynthesisResult(sql=INVALID_SQL, explanation="attempt 2"),
@@ -103,14 +103,14 @@ class TestHonestFailureInvariant:
         assert "aggregate" in result["reason"].lower()
         # Exactly one retry (2 synth calls); the SQL never reached the DB.
         assert synth.synthesize.await_count == 2
-        fs.db_client.execute_query.assert_not_called()
+        fs.exploratory_db_client.execute_query.assert_not_called()
 
     async def test_at_most_one_retry(self, monkeypatch):
         # Even if the model would keep failing, synthesize is called at most
         # twice — no unbounded retry loop.
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock()
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock()
         synth = _sequenced_synthesizer(
             SynthesisResult(sql=INVALID_SQL, explanation="1"),
             SynthesisResult(sql=INVALID_SQL, explanation="2"),
@@ -123,9 +123,9 @@ class TestHonestFailureInvariant:
 
     async def test_execution_error_returns_error_variant_immediately_no_retry(self, monkeypatch):
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
+        fs.exploratory_db_client = MagicMock()
         # EXPLAIN dry-run succeeds; the real execution raises.
-        fs.db_client.execute_query = AsyncMock(
+        fs.exploratory_db_client.execute_query = AsyncMock(
             side_effect=[[{"QUERY PLAN": "Aggregate"}], Exception("connection reset")]
         )
         synth = _sequenced_synthesizer(
@@ -146,9 +146,9 @@ class TestHonestFailureInvariant:
         # reason must carry only the exception TYPE, never the value — #39 keeps
         # this UI field unauthenticated.
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
+        fs.exploratory_db_client = MagicMock()
         leaked = 'invalid input syntax for type integer: "Alice Smith"'
-        fs.db_client.execute_query = AsyncMock(
+        fs.exploratory_db_client.execute_query = AsyncMock(
             side_effect=[[{"QUERY PLAN": "Aggregate"}], Exception(leaked)]
         )
         synth = _sequenced_synthesizer(
@@ -165,8 +165,8 @@ class TestHonestFailureInvariant:
         # A breakdown/empty result (the #76 shape) must become an error
         # variant, never a rendered 0.
         fs = FeasibilityService()
-        fs.db_client = MagicMock()
-        fs.db_client.execute_query = AsyncMock(
+        fs.exploratory_db_client = MagicMock()
+        fs.exploratory_db_client.execute_query = AsyncMock(
             side_effect=[[{"QUERY PLAN": "Aggregate"}], []]  # EXPLAIN ok, then empty
         )
         synth = _sequenced_synthesizer(
