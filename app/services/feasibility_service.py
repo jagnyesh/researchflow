@@ -20,7 +20,7 @@ from langsmith import traceable
 from app.sql_on_fhir.join_query_builder import JoinQueryBuilder
 from app.clients.hapi_db_client import HAPIDBClient
 from app.services.schema_introspection import get_cached_schemas
-from app.services.sql_synthesis import SQLSynthesizer
+from app.services.sql_synthesis import SQLSynthesizer, SynthesisError
 from app.services.sql_validator import SQLValidator
 import os
 
@@ -258,26 +258,53 @@ class FeasibilityService:
         # execution — runs through the scoped read-only rf_readonly client.
         db = self.exploratory_db_client
         synthesizer = SQLSynthesizer(db_client=db)
-        # Schemas come from the SAME cached introspection the prompt was
-        # built from, so prompt and validator can never diverge (#95).
-        schemas = await get_cached_schemas(db)
-        validator = SQLValidator(schemas=schemas)
 
-        synthesis = await synthesizer.synthesize(natural_language_query)
-        validation = validator.validate(synthesis.sql)
-        if not validation.valid:
-            logger.info("Synthesized SQL rejected; retrying once with feedback")
-            feedback = self._format_feedback(synthesis.sql, validation.violations)
-            synthesis = await synthesizer.synthesize(natural_language_query, feedback=feedback)
+        # The synthesis stage (introspection + one or two LLM calls) can fail
+        # in ways that aren't validator rejections: the model declines / returns
+        # non-JSON (SynthesisError), the LLM API errors, or introspection fails.
+        # ALL of these become the honest-error card, never an uncaught traceback
+        # on the researcher's screen (#97; #96 review Finding 3).
+        try:
+            # Schemas come from the SAME cached introspection the prompt was
+            # built from, so prompt and validator can never diverge (#95).
+            schemas = await get_cached_schemas(db)
+            validator = SQLValidator(schemas=schemas)
+
+            synthesis = await synthesizer.synthesize(natural_language_query)
             validation = validator.validate(synthesis.sql)
             if not validation.valid:
-                logger.warning("Synthesized SQL rejected after retry: %s", validation.violations)
-                return self._honest_error(
-                    explanation=synthesis.explanation,
-                    rejected_sql=synthesis.sql,
-                    reason="; ".join(validation.violations),
-                    query_intent=query_intent,
-                )
+                logger.info("Synthesized SQL rejected; retrying once with feedback")
+                feedback = self._format_feedback(synthesis.sql, validation.violations)
+                synthesis = await synthesizer.synthesize(natural_language_query, feedback=feedback)
+                validation = validator.validate(synthesis.sql)
+                if not validation.valid:
+                    logger.warning(
+                        "Synthesized SQL rejected after retry: %s", validation.violations
+                    )
+                    return self._honest_error(
+                        explanation=synthesis.explanation,
+                        rejected_sql=synthesis.sql,
+                        reason="; ".join(validation.violations),
+                        query_intent=query_intent,
+                    )
+        except SynthesisError as e:
+            logger.info("Synthesis produced no usable SQL: %s", e)
+            return self._honest_error(
+                explanation="The model could not turn this request into a valid query.",
+                rejected_sql="",
+                reason=str(e),
+                query_intent=query_intent,
+            )
+        except Exception as e:
+            # exc_info so a masked programming error (e.g. API drift) stays
+            # discoverable in logs even though the user sees a generic card.
+            logger.warning("Synthesis stage failed unexpectedly: %s", e, exc_info=True)
+            return self._honest_error(
+                explanation="This request could not be processed.",
+                rejected_sql="",
+                reason=f"synthesis stage failed ({type(e).__name__})",
+                query_intent=query_intent,
+            )
 
         # EXPLAIN dry-run (rule 8) + real execution — any DB failure here is an
         # immediate honest error, no retry.
@@ -312,6 +339,11 @@ class FeasibilityService:
             "LLM-synthesized query returned %s (%.1fms)", estimated_cohort, execution_time_ms
         )
 
+        # #97: disclose data freshness. The exploratory portal reads batch-only
+        # MVs; surface the citation anchor (MAX refreshed_at across the views
+        # this query touched) so "data as of <ts>" is explicit, not implicit.
+        batch_anchor_ts = await self._batch_anchor_for(validation.touched_views)
+
         return {
             "status": "ok",
             "estimated_cohort": estimated_cohort,
@@ -327,7 +359,24 @@ class FeasibilityService:
             "filter_summary": synthesis.explanation,
             "execution_time_ms": execution_time_ms,
             "used_join_query": False,
+            # "data as of" freshness disclosure (ISO string, or None if the
+            # touched views have no refresh record).
+            "batch_anchor_ts": batch_anchor_ts.isoformat() if batch_anchor_ts else None,
         }
+
+    async def _batch_anchor_for(self, view_names: List[str]):
+        """MAX(refreshed_at) across the touched views, via the existing Sprint
+        6.5 HybridRunner helper (reused, not re-implemented). Best-effort: a
+        missing metadata table or empty result yields None rather than failing
+        the whole query — freshness disclosure must never block a valid count."""
+        try:
+            from app.sql_on_fhir.runner.hybrid_runner import HybridRunner
+
+            runner = HybridRunner(db_client=self.exploratory_db_client)
+            return await runner.get_batch_anchor_ts_for_views(view_names)
+        except Exception as e:
+            logger.warning("Could not resolve batch_anchor_ts for %s: %s", view_names, e)
+            return None
 
     @staticmethod
     def _format_feedback(rejected_sql: str, violations: List[str]) -> str:

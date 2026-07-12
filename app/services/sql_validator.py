@@ -160,6 +160,9 @@ class ValidationResult:
     # injected when absent. Callers execute THIS, never the raw LLM output.
     # None whenever valid is False.
     safe_sql: "str | None" = None
+    # The sqlonfhir views this query reads — feeds get_batch_anchor_ts_for_views
+    # for the "data as of <ts>" disclosure (#97). Empty when invalid.
+    touched_views: List[str] = field(default_factory=list)
 
 
 class SQLValidationError(Exception):
@@ -249,6 +252,14 @@ class SQLValidator:
             logger.info("SQL validation rejected query: %s", violations)
             return ValidationResult(valid=False, violations=violations)
 
+        touched_views = sorted(
+            {
+                t.name
+                for t in stmt.find_all(exp.Table)
+                if t.db == SCHEMA_NAME and t.name in ALLOWED_VIEWS
+            }
+        )
+
         # Rule 7: normalize — comments dropped in the re-render; cap rows at
         # <= _INJECTED_LIMIT (an attacker-supplied larger LIMIT is clamped, not
         # preserved — it's the only bound on breakdown row counts).
@@ -257,6 +268,7 @@ class SQLValidator:
             valid=True,
             violations=[],
             safe_sql=stmt.sql(dialect="postgres", comments=False),
+            touched_views=touched_views,
         )
 
     @staticmethod

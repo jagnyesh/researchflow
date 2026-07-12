@@ -31,6 +31,12 @@ logger = logging.getLogger(__name__)
 SYNTHESIS_MODEL = "claude-sonnet-4-6"
 
 
+class SynthesisError(Exception):
+    """The LLM did not return a usable {sql, explanation} JSON object — a
+    refusal or malformed response, not a crash. The caller renders the honest
+    error card (#97)."""
+
+
 @dataclass
 class SynthesisResult:
     sql: str
@@ -151,8 +157,19 @@ class SQLSynthesizer:
             system=system_prompt,
             temperature=0.0,
         )
-        data = json.loads(_strip_markdown_fences(response))
-        result = SynthesisResult(sql=data["sql"], explanation=data["explanation"])
+        # The model may return prose instead of JSON — e.g. it declines a
+        # row-level PHI request, or emits a malformed object. That's a failure
+        # to produce SQL, NOT a crash: raise a clean domain error so the caller
+        # renders the honest-error card (#97; the raw JSONDecodeError otherwise
+        # crashes the portal with a traceback).
+        try:
+            data = json.loads(_strip_markdown_fences(response))
+            result = SynthesisResult(sql=data["sql"], explanation=data["explanation"])
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.warning("LLM did not return usable synthesis JSON: %s", e)
+            raise SynthesisError(
+                "The model did not return a valid SQL query for this request."
+            ) from e
         logger.info("Synthesized SQL for query %r: %s", natural_language_query, result.sql)
         return result
 
