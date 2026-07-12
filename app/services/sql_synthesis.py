@@ -134,10 +134,19 @@ class SQLSynthesizer:
         return _system_prompt_cache
 
     @traceable(name="sql_synthesis", tags=["sql-synthesis", "portal:exploratory"])
-    async def synthesize(self, natural_language_query: str) -> SynthesisResult:
+    async def synthesize(
+        self, natural_language_query: str, feedback: Optional[str] = None
+    ) -> SynthesisResult:
+        """`feedback` (#96): the prior attempt's rejected SQL + validator
+        violations, appended so the retry sees the specific rule it broke."""
         system_prompt = await self._get_system_prompt()
+        prompt = f"Write the SQL for this research question: {natural_language_query}"
+        if feedback:
+            prompt += (
+                f"\n\nYour previous attempt was REJECTED by the validator. Fix it:\n{feedback}"
+            )
         response = await self.llm_client.complete(
-            prompt=f"Write the SQL for this research question: {natural_language_query}",
+            prompt=prompt,
             model=SYNTHESIS_MODEL,
             system=system_prompt,
             temperature=0.0,
