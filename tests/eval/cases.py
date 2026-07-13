@@ -168,11 +168,14 @@ _SCORED: List[EvalCase] = [
         "SELECT COUNT(DISTINCT code_display) FROM sqlonfhir.observation_labs",
     ),
     EvalCase(
-        "count_distinct_conditions",
+        "count_distinct_condition_texts",
         "count_distinct",
         "scored",
-        "How many distinct condition types are recorded?",
-        "SELECT COUNT(DISTINCT code_text) FROM sqlonfhir.condition_simple",
+        # "distinct condition types" was ambiguous (codes vs text); the model
+        # reasonably read it as distinct codes. Pin it to the text descriptions
+        # so the case measures synthesis, not question interpretation (#110).
+        "How many distinct condition code-text descriptions appear?",
+        "SELECT COUNT(DISTINCT NULLIF(code_text, '')) FROM sqlonfhir.condition_simple",
     ),
     EvalCase(
         "female_with_medication",
