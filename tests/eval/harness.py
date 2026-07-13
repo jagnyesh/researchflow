@@ -229,7 +229,7 @@ async def run_eval(db, *, mode: str, model: str = "claude-sonnet-4-6") -> Dict:
     synthesizer = None
     fixtures: Dict[str, Optional[str]] = {}
     if mode == "record":
-        synthesizer = SQLSynthesizer(db_client=db)
+        synthesizer = SQLSynthesizer(db_client=db, model=model)
     else:
         path = fixture_path(model)
         fixtures = json.loads(path.read_text()) if path.exists() else {}

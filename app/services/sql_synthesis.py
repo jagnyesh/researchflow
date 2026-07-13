@@ -115,12 +115,16 @@ class SQLSynthesizer:
         self,
         llm_client: Optional[LLMClient] = None,
         db_client: Optional[HAPIDBClient] = None,
+        model: str = SYNTHESIS_MODEL,
     ):
         self.llm_client = llm_client or LLMClient()
         # HAPIDBClient's own default already reads HAPI_DB_URL. Single-DB
         # assumption: the process-level prompt cache is keyed on nothing, so
         # all synthesizers in a process must point at the same database.
         self.db_client = db_client or HAPIDBClient()
+        # Overridable so #98's eval harness / #99's gate can benchmark a
+        # different model (e.g. Opus) through the identical prompt + validator.
+        self.model = model
 
     async def _get_system_prompt(self) -> str:
         global _system_prompt_cache
@@ -153,7 +157,7 @@ class SQLSynthesizer:
             )
         response = await self.llm_client.complete(
             prompt=prompt,
-            model=SYNTHESIS_MODEL,
+            model=self.model,
             system=system_prompt,
             temperature=0.0,
         )
