@@ -513,13 +513,18 @@ def test_langsmith_schema_contract_input_includes_cache_read():
 
 
 def test_band_ceilings_pinned_to_sprint_8_3_derivation():
-    """Ceiling values pinned to measured-median × 1.3 (Sprint 8.3 derivation).
+    """Ceiling values pinned to measured-median × 1.3.
 
-    Source measurements (2026-05-14, post-Sprint-8.4 corrected aggregator,
-    manual walks verified to ±0.01%):
+    Source measurements (post-Sprint-8.4 corrected aggregator, manual LLM-leaf
+    sum verified to ±0.01%):
 
-        Formal:      median $0.007754 across 30 threads × 1.3 = $0.010080
-        Exploratory: median $0.003540 across 30 root traces × 1.3 = $0.004602
+        Formal (2026-05-14):      median $0.007754 across 30 threads × 1.3 = $0.010080
+        Exploratory (2026-07-12): median $0.003586 across 30 root traces × 1.3 = $0.004661
+
+    Exploratory was re-derived at Sprint 6.7 close (#101): the path changed from
+    QueryInterpreter (median $0.003540, cache_hit 0%) to the LLM-synthesis path
+    (median $0.003586, cache_hit 95% — the schema block clears the caching
+    threshold). See ADR 0028 Close § ceiling.
 
     If you change either constant, follow this protocol:
 
@@ -541,7 +546,7 @@ def test_band_ceilings_pinned_to_sprint_8_3_derivation():
         f"FORMAL_BAND_CEILING_USD changed from 0.010080 to {FORMAL_BAND_CEILING_USD}. "
         f"See test docstring for the re-derivation protocol."
     )
-    assert EXPLORATORY_BAND_CEILING_USD == pytest.approx(0.004602, abs=1e-6), (
-        f"EXPLORATORY_BAND_CEILING_USD changed from 0.004602 to {EXPLORATORY_BAND_CEILING_USD}. "
+    assert EXPLORATORY_BAND_CEILING_USD == pytest.approx(0.004661, abs=1e-6), (
+        f"EXPLORATORY_BAND_CEILING_USD changed from 0.004661 to {EXPLORATORY_BAND_CEILING_USD}. "
         f"See test docstring for the re-derivation protocol."
     )

@@ -57,13 +57,13 @@ decisive.
 
 ## CI gate vs headline number (read before over-reading a green CI run)
 
-The 95.7% is a **record-time, full-corpus** number. `test_eval_replay` in CI runs the same
-comparison against the small seed fixture — where several cases collapse to degenerate
-`0 == 0` agreement — so a green CI run confirms "the recorded SQL still validates, executes,
-and agrees with its oracle," **not** a re-measurement of headline accuracy. The gate is 90%
-and we're at 100% on the full corpus, so there is real headroom — but a couple of
+The 100% (23/23) headline is a **record-time, full-corpus** number. `test_eval_replay` in CI
+runs the same comparison against the small seed fixture — where several cases collapse to
+degenerate `0 == 0` agreement — so a green CI run confirms "the recorded SQL still validates,
+executes, and agrees with its oracle," **not** a re-measurement of headline accuracy. The gate
+is 90% and we're at 100% on the full corpus, so there is real headroom — but a couple of
 synth-vs-oracle equivalences are seed-fragile (e.g.
 `lab_glucose_high`'s synthesized SQL adds a `value_unit` filter the oracle lacks; they agree
-only because every glucose>125 here is mg/dL). #99's formal gate run should re-record on a
-representative corpus, not rely on the seed replay alone.
+only because every glucose>125 here is mg/dL). The #99 gate run re-recorded on the full local
+corpus (`scripts/sprint_6_7_gate.py`), not the seed replay alone.
 - **adversarial** (8) — PHI-extraction / injection prompts; scored as escape count.

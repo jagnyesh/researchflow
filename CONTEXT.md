@@ -1,10 +1,22 @@
 # ResearchFlow — Current State
 
-**Sprint:** 6.7 active (grilled 2026-07-11) — exploratory portal LLM SQL synthesis behind a default-deny validator. Retires JoinQueryBuilder + QueryInterpreter's synthesis role; closes #76; resolves the Sprint 8.6 caching candidate. Eight decisions locked pre-implementation in [ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md). First sprint run under the new per-issue-branch continuous-merge workflow (`docs/DAILY_DEV_WORKFLOW.md`) — no sprint feature branch; one branch/PR per issue. Sprint 6.5b (#71) queued behind it, to be re-scoped at 6.7 close (its feasibility_service half shrinks).
-**Branch:** main; per-issue branches `feat/<issue>-<slug>` under the new workflow.
-**Recently shipped:** Sprint 6.5 SHIPPED 2026-05-17 as squash PR #78 (`d457fe8`) — `HybridRunner` now has its first production caller (`phenotype_agent`) with three-mode `FreshnessAnnotation` routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION). 8/8 gate assertions GREEN; ADR 0027. Sprint 7.2 SHIPPED 2026-05-17 (23 commits) — A2A FSM retired, LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08.
-**Overall progress:** Sprint 6.5 SHIPPED 2026-05-17, Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~20/22 sprints shipped.** A2A FSM permanently retired; HybridRunner has its first production caller.
-**Last updated:** 2026-05-17
+**Sprint:** 6.7 SHIPPED 2026-07-12 — exploratory portal LLM SQL synthesis behind a default-deny validator. The LLM now writes the exploratory SQL directly (NL → `{sql, explanation}`), gated by an 8-rule default-deny `SQLValidator` (aggregate-only, zero adversarial escapes), executed under the read-only `rf_readonly` role. Retired `JoinQueryBuilder` + `QueryInterpreter` (−2,643 LOC, #100); closed #76 at the source; resolved the Sprint 8.6 caching candidate (exploratory `cache_hit_rate` 0%→95%). Eight grilled decisions all held; see [ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md) (status: shipped) for the slice ledger, gate evidence, ceiling re-derivation, and retro. First sprint under the per-issue-branch continuous-merge workflow — 11 slices, one branch/PR each.
+**Branch:** main; per-issue branches `feat/<issue>-<slug>` under the continuous-merge workflow.
+**Recently shipped:** Sprint 6.7 SHIPPED 2026-07-12 (11 slices #91–#101) — exploratory LLM SQL synthesis; model = Sonnet 4.6 (gate 100% accuracy, 0/8 escapes); new exploratory ceiling $0.004661. Sprint 6.5 SHIPPED 2026-05-17 as `d457fe8` — `HybridRunner` first production caller (`phenotype_agent`), three-mode `FreshnessAnnotation` routing; ADR 0027. Sprint 7.2 SHIPPED 2026-05-17 — A2A FSM retired, LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08.
+**Overall progress:** Sprint 6.7 SHIPPED 2026-07-12, Sprint 6.5 SHIPPED 2026-05-17, Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~21/22 sprints shipped.** The exploratory portal's LLM-writes-SQL posture is live behind the validator; the formal portal keeps rule-based `SQLGenerator` + human SQL review (unchanged).
+**Last updated:** 2026-07-12
+
+## Sprint 6.7 SHIPPED (2026-07-12) — exploratory portal LLM SQL synthesis
+
+11 per-issue slices (#91–#101) under the continuous-merge workflow. NL → single LLM call → `{sql, explanation}` → 8-rule default-deny `SQLValidator` (sqlglot AST; aggregate-only + non-identifying dimension allowlist; live pg_catalog introspection as the single schema source) → execute under the scoped read-only `rf_readonly` role → honest-failure on any error (never a fabricated cohort) → "data as of `<batch_anchor_ts>`" freshness disclosure. See [ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md) for the full close.
+
+| Dimension | Result |
+|---|---|
+| Gate (pre-committed, ADR 0028 decision 6) | Sonnet 4.6 **23/23 = 100%** scored, **0/8** adversarial escapes; Opus 4.8 91.3% / 0 escapes. Model rule → Sonnet. `logs/sprint_6_7_gate.jsonl` |
+| Validator hardening | six adversarial review passes on #95 → zero single-query PHI escape; allowlist-shape defenses survived every laundering attempt |
+| Deletion (#100) | −2,643 LOC: `JoinQueryBuilder` + `QueryInterpreter` + `FeasibilityService` four-way dispatch retired; `USE_LLM_SQL_SYNTHESIS` fully retired; closes #76 |
+| Exploratory cost ceiling | manual-verified median **$0.003586** → ceiling **$0.004661** (× 1.3); **cache_hit_rate 0%→95%** closes the Sprint 8.6 candidate (schema block clears the caching threshold) |
+| Carried forward | #116 (retired-model landmine in `langchain_agents.py`), #71 (re-scoped/close-recommended), #39 (dashboard auth, unchanged), small-cell suppression (deferred) |
 
 ## Sprint 6.5 SHIPPED (2026-05-17 as `d457fe8`) — Lambda differential freshness routing
 

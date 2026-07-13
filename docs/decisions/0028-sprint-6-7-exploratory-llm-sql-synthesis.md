@@ -1,7 +1,7 @@
 ---
 sprint: 6.7
 date: 2026-07-11
-status: in-progress
+status: shipped
 supersedes: []
 superseded_by: null
 related: [0027-sprint-6-5-differential-freshness-routing.md, 0025-sprint-8-3-cost-ceilings-re-derived.md, 0005-sprint-6-parameterized-sql.md]
@@ -61,9 +61,62 @@ New Postgres role `rf_readonly` on :5433 — `USAGE` on schema `sqlonfhir` + `SE
 
 ## Close checklist (flip status to `shipped` when all fire)
 
-- [ ] Gate JSONL evidence artifact committed (`logs/sprint_6_7_gate.jsonl`): accuracy ≥90%, adversarial escapes = 0, invariant green, baseline row recorded
-- [ ] Model choice recorded with benchmark table (pre-committed rule applied)
-- [ ] Flag default flipped in `config/.env.example`
-- [ ] Integration /qa flag-on, then deletion PR merged (LOC delta recorded)
-- [ ] Exploratory ceiling re-derived (manual median × 1.3) + cache_hit_rate recorded; Sprint 8.6 candidate closed or kept open with reason
-- [ ] #71 re-scoped; #76 closed with reference to the retiring commit
+- [x] Gate JSONL evidence artifact committed (`logs/sprint_6_7_gate.jsonl`): accuracy ≥90%, adversarial escapes = 0, invariant green, baseline row recorded — #99/PR #117
+- [x] Model choice recorded with benchmark table (pre-committed rule applied) — Sonnet 4.6, see Close § Gate evidence
+- [x] Flag default flipped in `config/.env.example` — #99/PR #117 (fully retired in #100)
+- [x] Integration /qa flag-on, then deletion PR merged (LOC delta recorded) — #100/PR #118, −2,643 LOC
+- [x] Exploratory ceiling re-derived (manual median × 1.3) + cache_hit_rate recorded; Sprint 8.6 candidate closed or kept open with reason — #101, see Close § ceiling ($0.004661, cache_hit 95%, Sprint 8.6 closed)
+- [x] #71 re-scoped; #76 closed with reference to the retiring commit — #71 re-scoped by comment; #76 closed by #100 (`596f10e`)
+
+## Close (2026-07-12 — SHIPPED)
+
+Sprint 6.7 shipped as 11 per-issue PRs under the new continuous-merge workflow — the first sprint with no sprint feature branch, one branch/PR per issue, each landed via `/validate-and-ship`. All eight grilled decisions held; the deviations are recorded above (#94 introspection mechanism; #95's six-pass validator hardening).
+
+### Slice ledger
+
+| Slice | PR | What landed |
+|---|---|---|
+| #91 tracer + #94 schema block | — | `SQLSynthesizer` (NL → `{sql, explanation}`), live pg_catalog introspection (single schema source), cache_control at the wire |
+| #95 validator | — | 8-rule default-deny `SQLValidator`; six adversarial passes → zero single-query escape |
+| #96 retry + honest-failure | — | one feedback retry then honest-error variant; test-enforced "error never renders a numeric cohort" |
+| #92 rf_readonly role | — | scoped read-only Postgres identity + fail-closed guard |
+| #93 CI docker-compose | — | service-dependent-tests job (absorbed #25, now CLOSED) |
+| #97 notebook UI | — | error-card rendering + "data as of" freshness disclosure |
+| #98 eval harness + #110 | — | same-run-oracle eval (record/replay), 23 scored + 8 adversarial; NULLIF allowlisted |
+| #99 benchmark + gate | #115 | model wiring + temperature-omit fix; gate GREEN |
+| #99 flag flip | #117 | `USE_LLM_SQL_SYNTHESIS=true`; `scripts/sprint_6_7_gate.py` → `logs/sprint_6_7_gate.jsonl` |
+| #100 deletion (closes #76) | #118 | −2,643 LOC: `JoinQueryBuilder` + `QueryInterpreter` + four-way dispatch retired; flag fully retired |
+| #101 close | (this) | ceiling re-derivation, this section, #71 re-scope |
+
+### Gate evidence (pre-committed, decision 6)
+
+| Model | Scored accuracy | Adversarial escapes | Gate (≥90% + 0) |
+|---|---|---|---|
+| Sonnet 4.6 | 23/23 = **100.0%** | 0/8 | ✅ |
+| Opus 4.8 | 21/23 = **91.3%** | 0/8 | ✅ |
+
+Model rule (`|Sonnet−Opus| ≤ 5 → Sonnet; else higher accuracy`): gap 8.7 pts → higher accuracy → **Sonnet** (also the cheaper model). Baseline: the legacy JoinQueryBuilder path scored 3/23 = 13% on the same cases (the clearest datum: `female_hypertension_under_65` returned 20 vs oracle 13 — the #76 dropped-age bug). Evidence: `logs/sprint_6_7_gate.jsonl`.
+
+### Exploratory cost ceiling re-derivation (decision 1 / Sprint 8.6 fold-in)
+
+30-query bursty batch on the synthesis path (`scripts/drive_qa_traffic.py --portal exploratory --n 30`, 120s). Manual-verified median (LLM-leaf sum = aggregator within **0.000%**; exactly 1 LLM leaf/trace, confirming the single-call design): **$0.003586**. New exploratory ceiling = **$0.004661** (median × 1.3), up 1.3% from the retired path's $0.004602. Committed in `cost_telemetry_service.py` with the discontinuity note.
+
+**cache_hit_rate: 95.00%** — was **0.0000%** on the QueryInterpreter path. **This closes the Sprint 8.6 candidate**: the synthesis prompt's schema-context block clears Anthropic's caching threshold on the exploratory portal for the first time (decision 1's fold-in, confirmed empirically). The median is essentially flat despite cache going 0%→95% because the synthesis prompt is *larger* (the schema block) but now caches — bigger-prompt-cached ≈ smaller-prompt-uncached; the cost is now cache_read-dominated (cheap) instead of full-input. So caching "finally works" without moving the ceiling — the honest framing is that the schema block paid for itself.
+
+### Retro — first sprint under continuous-merge
+
+**What bought the longest agent autonomy** (the patterns that let 11 slices run implement→measure→gate→flip→delete with HITL only at the two real decision gates):
+
+1. **Pre-committed numeric gate (decision 6).** The flip criteria (accuracy ≥90%, 0 escapes, model rule) were locked pre-implementation, so "is it good enough?" was already answered — the agent measured and applied the rule instead of re-litigating. The model choice itself collapsed to a rule the data resolved (Sonnet), turning a HITL decision into a computation.
+2. **Same-run oracles + record/replay.** Scoring against oracles executed at eval time (dataset-independent) meant fixtures recorded on the full corpus replay against CI's seed corpus, so the security gate runs deterministically in CI with no API key. This decoupled the gate from corpus state — the biggest source of "works locally, flakes in CI" was designed out. (Confirmed at #100 close: the only CI-vs-local divergence was corpus-drift in *unrelated* pre-existing tests, never the gate.)
+3. **Adversarial-until-clean review (six passes on #95).** The load-bearing quality pattern: a green test suite proved nothing about shapes it omitted; only the repeated fresh-context adversarial review converged on the PHI boundary. Every escape became a regression case.
+4. **Separate-latent-from-active.** Flip (#117) and deletion (#100) were separate PRs; the deletion never rode a behavior change, keeping each blast radius small and letting the −2,643 LOC removal proceed once the flip was proven.
+
+**The one lane that needed correction:** #100 was briefly committed to `main` before branching (each `/validate-and-ship` ends on `main`, so the next issue must branch first). Caught pre-PR, recovered non-destructively. Captured as a personal-workflow memory; the rule already lives in `docs/DAILY_DEV_WORKFLOW.md`, so no project-doc change is needed.
+
+### Issues filed / carried forward (not blockers)
+
+- **#116** — `langchain_agents.py` pins the retired `claude-3-7-sonnet-20250219` (potential live 404 in the LangGraph path); surfaced by #99's review, independent of this sprint.
+- **#71** — re-scoped by comment; its feasibility_service half no longer exists post-#100 (recommended for close).
+- **#39** (dashboard auth) — unchanged; the validator remains the only barrier between an unauthenticated port and the DB, which is why decision 2's allowlist is absolute.
+- **Small-cell suppression (<11)** — the deferred H2 multi-query DOB-oracle concern (decision 2); tracked, out of the single-query zero-escape gate.
