@@ -32,6 +32,13 @@ CRITICAL_TASK_TYPES = ["requirements", "phenotype", "medical", "sql_generation"]
 # Task types that can use secondary providers
 NON_CRITICAL_TASK_TYPES = ["calendar", "delivery", "notification", "scheduling"]
 
+# The Claude model this client routes to (critical tasks, anthropic-secondary, and
+# the fallback path). #116: was "claude-3-7-sonnet-20250219", RETIRED 2026-02-19 —
+# it 404'd live on the calendar/delivery agent paths (secondary=ollama down →
+# Claude fallback → 404). claude_client is an LLMClient, which handles the
+# temperature-omit boundary for this model automatically (#115).
+CLAUDE_MODEL = "claude-sonnet-4-6"
+
 
 class MultiLLMClient:
     """
@@ -127,11 +134,11 @@ class MultiLLMClient:
         """
         # Critical tasks always use Claude
         if task_type in CRITICAL_TASK_TYPES:
-            return "anthropic:claude-3-7-sonnet-20250219"
+            return f"anthropic:{CLAUDE_MODEL}"
 
         # Non-critical tasks use secondary provider
         if self.secondary_provider == "anthropic":
-            return "anthropic:claude-3-7-sonnet-20250219"
+            return f"anthropic:{CLAUDE_MODEL}"
         elif self.secondary_provider == "openai":
             model = self.secondary_model or "gpt-4o"
             return f"openai:{model}"
@@ -140,7 +147,7 @@ class MultiLLMClient:
             return f"ollama:{model}"
         else:
             logger.warning(f"Unknown provider {self.secondary_provider}, using Claude")
-            return "anthropic:claude-3-7-sonnet-20250219"
+            return f"anthropic:{CLAUDE_MODEL}"
 
     @traceable(name="MultiLLMClient.complete")
     async def complete(
@@ -180,7 +187,7 @@ class MultiLLMClient:
             logger.debug(f"Using Claude for task_type={task_type}")
             return await self.claude_client.complete(
                 prompt=prompt,
-                model=model or "claude-3-7-sonnet-20250219",
+                model=model or CLAUDE_MODEL,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 system=system,
@@ -212,7 +219,7 @@ class MultiLLMClient:
                 logger.warning(f"Falling back to Claude for task_type={task_type}")
                 return await self.claude_client.complete(
                     prompt=prompt,
-                    model="claude-3-7-sonnet-20250219",
+                    model=CLAUDE_MODEL,
                     max_tokens=max_tokens,
                     temperature=temperature,
                     system=system,
@@ -246,7 +253,7 @@ class MultiLLMClient:
             return await self.claude_client.extract_structured_json(
                 prompt=prompt,
                 schema_description=schema_description,
-                model=model or "claude-3-7-sonnet-20250219",
+                model=model or CLAUDE_MODEL,
                 system=system,
             )
 
