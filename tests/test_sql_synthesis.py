@@ -98,6 +98,22 @@ class TestSynthesize:
         assert "female patients with hypertension under 65" in kwargs["prompt"]
         assert "sqlonfhir" in kwargs["system"]
 
+    async def test_model_override_reaches_the_llm_call(self):
+        # #99: the eval/benchmark can select a model (Opus) — it must reach the
+        # actual LLM call, not just the fixture filename.
+        client = _client_returning(json.dumps({"sql": "SELECT 1", "explanation": "x"}))
+
+        await SQLSynthesizer(llm_client=client, model="claude-opus-4-8").synthesize("q")
+
+        assert client.complete.await_args.kwargs["model"] == "claude-opus-4-8"
+
+    async def test_default_model_is_sonnet(self):
+        client = _client_returning(json.dumps({"sql": "SELECT 1", "explanation": "x"}))
+
+        await SQLSynthesizer(llm_client=client).synthesize("q")
+
+        assert client.complete.await_args.kwargs["model"] == "claude-sonnet-4-6"
+
 
 class TestIntrospectedSchemaBlock:
     async def test_system_prompt_contains_introspected_columns(self, _hermetic_schema):
