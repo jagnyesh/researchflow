@@ -23,14 +23,14 @@ RF_READONLY_URL = os.getenv(
 
 
 class TestFailClosedGuard:
-    """#92 review ESCALATE-1: synthesis ON + EXPLORATORY_DB_URL unset would run
-    synthesized SQL under HAPI's full-privilege creds, defeating the boundary.
-    Hard-fail in production, warn in dev."""
+    """#92 review ESCALATE-1 (unconditional after #100 — synthesis is the only
+    path): EXPLORATORY_DB_URL unset would run synthesized SQL under HAPI's
+    full-privilege creds, defeating the boundary. Hard-fail in production, warn
+    in dev."""
 
-    def test_production_hard_fails_when_url_unset_and_flag_on(self, monkeypatch):
+    def test_production_hard_fails_when_url_unset(self, monkeypatch):
         from app.services.feasibility_service import FeasibilityService
 
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
         monkeypatch.setenv("ENVIRONMENT", "production")
 
@@ -40,7 +40,6 @@ class TestFailClosedGuard:
     def test_dev_warns_but_does_not_fail(self, monkeypatch):
         from app.services.feasibility_service import FeasibilityService
 
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
         monkeypatch.delenv("ENVIRONMENT", raising=False)
 
@@ -48,14 +47,13 @@ class TestFailClosedGuard:
         fs = FeasibilityService()
         assert fs.exploratory_db_client is not None
 
-    def test_flag_off_never_guards(self, monkeypatch):
+    def test_url_set_never_guards(self, monkeypatch):
         from app.services.feasibility_service import FeasibilityService
 
-        monkeypatch.delenv("USE_LLM_SQL_SYNTHESIS", raising=False)
-        monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
+        monkeypatch.setenv("EXPLORATORY_DB_URL", RF_READONLY_URL)
         monkeypatch.setenv("ENVIRONMENT", "production")
 
-        # Flag off in prod with no URL must NOT fail — synthesis path is inert.
+        # URL present in prod must NOT fail — the boundary is configured.
         FeasibilityService()
 
 

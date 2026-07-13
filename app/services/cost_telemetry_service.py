@@ -49,7 +49,7 @@ logger = logging.getLogger(__name__)
 
 _PRICING_USD_PER_1M: Dict[str, Dict[str, float]] = {
     # Sonnet family — used by the formal portal agents (requirements, phenotype,
-    # delivery, etc.) and as the Sonnet fallback in QueryInterpreter.
+    # delivery, etc.) and by the exploratory SQL synthesizer (SQLSynthesizer).
     "claude-sonnet-4-6": {
         "input": 3.00,
         "output": 15.00,
@@ -62,7 +62,7 @@ _PRICING_USD_PER_1M: Dict[str, Dict[str, float]] = {
         "cache_read": 0.30,
         "cache_creation": 3.75,
     },
-    # Haiku family — used by concept extraction + QueryInterpreter primary path.
+    # Haiku family — used by concept extraction.
     "claude-haiku-4-5-20251001": {
         "input": 1.00,
         "output": 5.00,
@@ -103,8 +103,9 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"  # If a run has no model metadata, assume S
 #   Formal:      median $0.007754 across 30 threads, cache_hit_rate 94.88%
 #   Exploratory: median $0.003540 across 30 root traces, cache_hit_rate 0.0000%
 #                (zero cache hit on exploratory is a real finding — same
-#                below-threshold issue Sprint 8.2 fixed for formal but not yet
-#                applied to QueryInterpreter; filed as Sprint 8.6 candidate.)
+#                below-threshold issue Sprint 8.2 fixed for formal; the Sprint
+#                6.7 synthesizer's schema-context prompt block addresses it for
+#                the exploratory path.)
 FORMAL_BAND_CEILING_USD = 0.010080  # $0.007754 measured × 1.3
 EXPLORATORY_BAND_CEILING_USD = 0.004602  # $0.003540 measured × 1.3
 
@@ -181,9 +182,9 @@ class CostTelemetryService:
         Aggregation is per ROOT TRACE (not per thread like formal). LangSmith
         propagates child-run usage_metadata up to the root, so each root's
         input_tokens/output_tokens already represents the whole trace tree's
-        cost — no descendant walking needed. The QueryInterpreter's Sonnet
-        fallback path (Optimization 8 hybrid strategy) shows up as a child run
-        whose tokens roll up into the root's aggregated counts.
+        cost — no descendant walking needed. The exploratory synthesizer's
+        Sonnet call shows up as a child run whose tokens roll up into the
+        root's aggregated counts.
         """
         roots = await asyncio.to_thread(
             self._fetch_root_runs_by_tag,

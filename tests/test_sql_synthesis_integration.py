@@ -1,10 +1,11 @@
-"""Sprint 6.7 #91 — flag-on end-to-end: NL -> LLM SQL -> validator -> live HAPI.
+"""Sprint 6.7 #91 — end-to-end: NL -> LLM SQL -> validator -> live HAPI.
 
 Drives the #76 repro ("Female patients with hypertension under 65") through the
 real synthesis path and compares against a SAME-RUN hand-written oracle (the
 mv_row_count_oracles.sql pattern — dataset-size-independent, no pinned counts).
-The legacy path returns 0 for this exact query (#76: stale p.dob + swallowed
-exception); a non-zero oracle-matching count is the tracer's proof of life.
+The retired legacy path returned 0 for this exact query (#76: stale p.dob +
+swallowed exception); a non-zero oracle-matching count is the tracer's proof of
+life.
 
 Gated: requires the docker-compose stack (HAPI Postgres :5433 with materialized
 views) and a real ANTHROPIC_API_KEY. #98's eval harness generalizes this single
@@ -38,8 +39,7 @@ ORACLE_SQL = """
 @pytest.mark.requires_api_key
 @pytest.mark.skipif(not os.getenv("ANTHROPIC_API_KEY"), reason="needs real ANTHROPIC_API_KEY")
 class TestSynthesisEndToEnd:
-    async def test_hypertension_under_65_matches_same_run_oracle(self, monkeypatch):
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
+    async def test_hypertension_under_65_matches_same_run_oracle(self):
         fs = FeasibilityService()
 
         result = await fs.execute_feasibility_check(
@@ -47,7 +47,9 @@ class TestSynthesisEndToEnd:
             natural_language_query="Female patients with hypertension under 65",
         )
 
-        oracle_rows = await fs.db_client.execute_query(ORACLE_SQL)
+        # #100: synthesis is the only path; the oracle runs through the same
+        # read-only client the synthesized query used.
+        oracle_rows = await fs.exploratory_db_client.execute_query(ORACLE_SQL)
         oracle_count = int(list(oracle_rows[0].values())[0])
 
         assert (

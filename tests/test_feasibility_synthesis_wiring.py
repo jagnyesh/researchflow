@@ -1,9 +1,10 @@
 """Sprint 6.7 #91 — FeasibilityService wiring for LLM SQL synthesis.
 
-Contract under test (ADR 0028 decision 7):
-- USE_LLM_SQL_SYNTHESIS unset/false => legacy path, synthesizer NEVER touched.
-- Flag on + natural_language_query => synthesize -> validate -> execute via
-  db_client; result dict keeps the legacy shape the notebook reads.
+Contract under test (ADR 0028; the legacy path was retired in #100, so synthesis
+is now the only path):
+- natural_language_query => synthesize -> validate -> execute via the read-only
+  exploratory client; result dict keeps the shape the notebook reads.
+- Missing natural_language_query => the honest-error variant (no legacy fallback).
 - Validator rejection (after #96's one retry) => the honest-error variant
   {status:"error", ...} with NO numeric cohort; the SQL never reaches db_client.
 """
@@ -65,26 +66,8 @@ def _synthesis_path(sql: str):
             yield schemas_mock
 
 
-class TestFlagOff:
-    async def test_legacy_path_untouched_and_synthesizer_never_called(self, monkeypatch):
-        monkeypatch.delenv("USE_LLM_SQL_SYNTHESIS", raising=False)
-        fs = FeasibilityService()
-        fs._execute_count_query = AsyncMock(return_value=42)
-        fs._calculate_data_availability = AsyncMock(return_value={})
-
-        with patch("app.services.feasibility_service.SQLSynthesizer") as synth_cls:
-            result = await fs.execute_feasibility_check(
-                {"view_definitions": ["patient_demographics"], "search_params": {}},
-                natural_language_query="how many patients?",
-            )
-
-        synth_cls.assert_not_called()
-        assert result["estimated_cohort"] == 42
-
-
-class TestFlagOn:
+class TestSynthesis:
     async def test_synthesized_sql_validated_executed_and_mapped(self, monkeypatch):
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
         fs.exploratory_db_client.execute_query = AsyncMock(return_value=[{"count": 13}])
@@ -113,7 +96,6 @@ class TestFlagOn:
     async def test_rejected_sql_returns_error_variant_and_never_reaches_db(self, monkeypatch):
         # #96: a persistently-rejected payload returns the honest-error variant
         # (after one retry) and never reaches the DB — no fabricated cohort.
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
         fs.exploratory_db_client.execute_query = AsyncMock()
@@ -131,7 +113,6 @@ class TestFlagOn:
     async def test_breakdown_shaped_result_is_error_variant_not_fabricated_count(self, monkeypatch):
         # A GROUP BY result (non-scalar) becomes an honest error, not
         # int('female'). #97 owns breakdown rendering.
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
         fs.exploratory_db_client.execute_query = AsyncMock(
@@ -150,7 +131,6 @@ class TestFlagOn:
     async def test_empty_result_is_error_variant_not_fabricated_zero(self, monkeypatch):
         # A COUNT query always returns one row; an empty result becomes an
         # honest error, never a rendered 0 (the #76 failure mode).
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
         fs.exploratory_db_client.execute_query = AsyncMock(return_value=[])
@@ -164,11 +144,10 @@ class TestFlagOn:
         assert result["status"] == "error"
         assert "estimated_cohort" not in result
 
-    async def test_flag_on_without_nl_query_falls_back_to_legacy(self, monkeypatch):
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
+    async def test_missing_nl_query_returns_error_variant_no_legacy_fallback(self, monkeypatch):
+        # #100: the legacy path is gone. An absent NL query must return the
+        # honest-error variant (no fabricated cohort) — never touch the LLM.
         fs = FeasibilityService()
-        fs._execute_count_query = AsyncMock(return_value=7)
-        fs._calculate_data_availability = AsyncMock(return_value={})
 
         with patch("app.services.feasibility_service.SQLSynthesizer") as synth_cls:
             result = await fs.execute_feasibility_check(
@@ -176,7 +155,8 @@ class TestFlagOn:
             )
 
         synth_cls.assert_not_called()
-        assert result["estimated_cohort"] == 7
+        assert result["status"] == "error"
+        assert "estimated_cohort" not in result
 
 
 ADVERSARIAL_SQL = [
@@ -244,7 +224,6 @@ class TestAdversarialSuite:
 
     @pytest.mark.parametrize("sql", ADVERSARIAL_SQL)
     async def test_payload_rejected_and_never_reaches_db(self, monkeypatch, sql):
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
         fs.exploratory_db_client.execute_query = AsyncMock()

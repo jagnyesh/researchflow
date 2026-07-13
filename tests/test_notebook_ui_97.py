@@ -50,7 +50,6 @@ class TestValidatorTouchedViews:
 
 class TestServiceAnchorWiring:
     async def test_success_variant_includes_batch_anchor_ts(self, monkeypatch):
-        monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
         monkeypatch.setenv("EXPLORATORY_DB_URL", "postgresql://rf_readonly:x@localhost:5433/hapi")
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()

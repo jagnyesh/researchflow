@@ -16,7 +16,6 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from app.utils.llm_client import LLMClient
-from app.services.query_interpreter import QueryInterpreter
 
 
 class TestPromptCachingEnabled:
@@ -134,42 +133,6 @@ class TestPromptCachingEnabled:
 
             # Verify complete was called (which has caching enabled)
             assert mock_complete.called
-
-    @pytest.mark.asyncio
-    async def test_query_interpreter_uses_cached_system_prompt(self):
-        """Verify QueryInterpreter uses cached system prompt"""
-        interpreter = QueryInterpreter()
-
-        # Mock extract_structured_json to verify system prompt is passed
-        with patch.object(
-            interpreter.llm_client, "extract_structured_json", new=AsyncMock()
-        ) as mock_extract:
-            mock_extract.return_value = {
-                "query_type": "count",
-                "resources": ["Patient"],
-                "filters": {"gender": "male"},
-                "view_definitions": ["patient_demographics"],
-                "explanation": "Count male patients",
-                "group_by": [],
-                "aggregation_type": "count",
-            }
-
-            await interpreter.interpret_query("How many male patients?")
-
-            # Verify extract_structured_json was called with system prompt
-            assert mock_extract.called
-            call_kwargs = mock_extract.call_args[1]
-            assert "system" in call_kwargs
-            system_prompt = call_kwargs["system"]
-
-            # Verify system prompt carries the core schema content.
-            # Sprint 8 Optimization 7 condensed the prompt 1200→700 tokens
-            # (per archive doc), dropping the "Available " prefix. The
-            # assertion now checks the structural anchors that survived the
-            # rewrite.
-            assert "ViewDefinitions:" in system_prompt
-            assert "Common Conditions" in system_prompt
-            assert "patient_demographics" in system_prompt
 
 
 class TestPromptCachingWireLevel:
@@ -291,33 +254,6 @@ class TestPromptCachingIntegration:
 
         # NOTE: Actual cache hit verification must be done via LangSmith dashboard
         # Expected: Input tokens for system prompt should be marked as "cache read"
-
-    @pytest.mark.asyncio
-    @pytest.mark.integration
-    async def test_query_interpreter_cache_hit(self):
-        """
-        Verify QueryInterpreter benefits from caching on repeated queries
-
-        The large system prompt (~1,200 tokens) should be cached after first call.
-        """
-        interpreter = QueryInterpreter()
-
-        if not interpreter.llm_client.client:
-            pytest.skip("ANTHROPIC_API_KEY not set - skipping integration test")
-
-        # First query - cold cache
-        intent1 = await interpreter.interpret_query("How many patients?")
-        assert intent1.query_type in ["count", "list"]
-
-        # Second query - warm cache (system prompt cached)
-        intent2 = await interpreter.interpret_query("How many male patients?")
-        assert intent2.query_type in ["count", "list"]
-
-        # Verify gender filter detected
-        if "gender" in intent2.search_params:
-            assert intent2.search_params["gender"] == "male"
-
-        # NOTE: Check LangSmith for cache hits on the ~1,200 token system prompt
 
 
 class TestCostValidation:
@@ -462,32 +398,6 @@ class TestBackwardCompatibility:
             assert "completeness_score" in result
             assert "ready_for_submission" in result
 
-    @pytest.mark.asyncio
-    async def test_query_interpreter_still_works(self):
-        """Verify QueryInterpreter produces valid output with caching"""
-        interpreter = QueryInterpreter()
-
-        # Mock to avoid real API call
-        with patch.object(
-            interpreter.llm_client, "extract_structured_json", new=AsyncMock()
-        ) as mock_extract:
-            mock_extract.return_value = {
-                "query_type": "list",
-                "resources": ["Patient", "Condition"],
-                "filters": {"gender": "female", "age_max": 30},
-                "view_definitions": ["patient_demographics", "condition_simple"],
-                "explanation": "List female patients under 30 with diabetes",
-            }
-
-            intent = await interpreter.interpret_query(
-                "Show me female patients under 30 with diabetes"
-            )
-
-            # Verify QueryIntent structure unchanged
-            assert intent.query_type == "list"
-            assert "Patient" in intent.resources
-            assert "patient_demographics" in intent.view_definitions
-
 
 @pytest.mark.asyncio
 @pytest.mark.requires_api_key
@@ -525,32 +435,3 @@ async def test_end_to_end_formal_portal_workflow():
     # Verify concepts extracted
     assert "concepts" in concepts_result
     assert len(concepts_result["concepts"]) > 0
-
-
-@pytest.mark.asyncio
-async def test_end_to_end_exploratory_portal_workflow():
-    """
-    End-to-end test: Exploratory portal query with caching
-
-    Simulates multiple queries in a session (cache warm-up scenario)
-    """
-    interpreter = QueryInterpreter()
-
-    if not interpreter.llm_client.client:
-        pytest.skip("ANTHROPIC_API_KEY not set - skipping E2E test")
-
-    # Query 1: Initial query (cold cache)
-    intent1 = await interpreter.interpret_query("How many patients do we have?")
-    assert intent1.query_type in ["count", "list"]
-
-    # Query 2: Similar query (warm cache - system prompt cached)
-    intent2 = await interpreter.interpret_query("How many male patients?")
-    assert intent2.query_type in ["count", "list"]
-
-    # Query 3: Complex query (warm cache - system prompt still cached)
-    intent3 = await interpreter.interpret_query("Show me diabetic patients broken down by gender")
-    assert intent3.query_type in ["count", "aggregate", "list"]
-
-    # Verify breakdown detection
-    if intent3.group_by:
-        assert "gender" in intent3.group_by
