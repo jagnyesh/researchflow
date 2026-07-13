@@ -1,7 +1,7 @@
 """Drive synthetic traffic through both portals for Sprint 8.1 cost-telemetry gate.
 
 Calls LangGraphRequestFacade.process_new_request (formal) and
-QueryInterpreter/FeasibilityService directly (exploratory). No browser —
+FeasibilityService directly (exploratory, LLM SQL synthesis). No browser —
 the @traceable decorators sit on the same call path, so LangSmith traces
 are identical to manually driving through Streamlit.
 
@@ -147,18 +147,15 @@ async def drive_formal(start: int, n: int) -> list[dict]:
 
 async def drive_exploratory(start: int, n: int) -> list[dict]:
     from app.services.feasibility_service import FeasibilityService
-    from app.services.query_interpreter import QueryInterpreter
 
-    qi = QueryInterpreter()
     fs = FeasibilityService()
     out: list[dict] = []
     for i in range(start, start + n):
         query = make_exploratory_query(i)
         t0 = time.monotonic()
         try:
-            intent = await qi.interpret_query(query)
-            intent_dict = intent.__dict__ if hasattr(intent, "__dict__") else intent
-            data = await fs.execute_feasibility_check(intent_dict)
+            # #100: raw NL drives the synthesis path (no QueryInterpreter pre-parse).
+            data = await fs.execute_feasibility_check({}, natural_language_query=query)
             # Match research_notebook.py pattern: close+recreate per call
             try:
                 await fs.close()

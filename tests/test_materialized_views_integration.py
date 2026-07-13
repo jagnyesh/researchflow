@@ -279,7 +279,7 @@ async def test_count_query():
         print(f"  Execution time: {execution_time_ms:.2f}ms")
 
         assert count > 0, "❌ Count should be > 0"
-        # 100ms matches Phase 1.6's team-wide target (see test_phase16_cohort_e2e.py).
+        # 100ms matches Phase 1.6's team-wide cohort-query latency target.
         # Previously 20ms — too tight on a busy machine (CI, docker running locally).
         assert execution_time_ms < 100, f"❌ COUNT query too slow: {execution_time_ms:.2f}ms"
 

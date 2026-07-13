@@ -5,7 +5,7 @@ pg_catalog, NOT information_schema: the 4 custom-path MVs (relkind='m') do not
 appear in information_schema.columns — discovered during #91 (PR #102).
 
 Kills the #76 drift class: no more hand-maintained schema copies
-(QueryInterpreter.AVAILABLE_VIEW_DEFINITIONS, #91's stub block).
+(the retired QueryInterpreter's AVAILABLE_VIEW_DEFINITIONS stub block).
 """
 
 import pytest

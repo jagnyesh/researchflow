@@ -35,7 +35,7 @@ FORMAL_SITES = [
 
 EXPLORATORY_SITES = [
     "app/services/feasibility_service.py",
-    "app/services/query_interpreter.py",  # interpret_query needs @traceable added
+    "app/services/sql_synthesis.py",  # #100: the synthesizer replaced QueryInterpreter
 ]
 
 
@@ -58,20 +58,4 @@ def test_exploratory_site_has_portal_tag(file_path):
         f"{file_path}: source is missing the 'portal:exploratory' tag string. "
         f"Add it to the @traceable decorator's tags list (or add the "
         f"decorator itself if absent). See Sprint 8.1 ADR in DECISIONS.md."
-    )
-
-
-def test_query_interpreter_has_traceable_decorator():
-    """query_interpreter.interpret_query gains an @traceable in this issue.
-
-    Before #29, only MultiLLMClient.complete (called via self.llm_client) was
-    traced, but that wrapper is portal-agnostic. We need a root-level
-    @traceable on interpret_query so cost-telemetry can find exploratory
-    queries by tag and aggregate child runs into the query's total cost.
-    """
-    content = (REPO_ROOT / "app/services/query_interpreter.py").read_text()
-    assert "@traceable" in content, (
-        "app/services/query_interpreter.py: no @traceable decorator found. "
-        "Sprint 8.1 #29 adds one to interpret_query with the "
-        "'portal:exploratory' tag."
     )

@@ -20,7 +20,6 @@ from datetime import datetime
 # Import the services that research_notebook.py uses
 from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
-from app.services.query_interpreter import QueryInterpreter
 
 
 # ============================================================================
@@ -48,14 +47,6 @@ def mock_feasibility_service():
     service = Mock(spec=FeasibilityService)
     service.execute_feasibility_check = AsyncMock()
     return service
-
-
-@pytest.fixture
-def mock_query_interpreter():
-    """Mock QueryInterpreter"""
-    interpreter = Mock(spec=QueryInterpreter)
-    interpreter.interpret_query = AsyncMock()
-    return interpreter
 
 
 @pytest.fixture
@@ -88,7 +79,7 @@ def mock_httpx_client():
 
 @pytest.fixture
 def sample_query_intent():
-    """Sample query intent returned by QueryInterpreter"""
+    """Sample query-intent dict (legacy shape; retained for the formal-submit test)"""
     return {
         "inclusion_criteria": ["Diabetes mellitus type 2", "Age >= 18"],
         "exclusion_criteria": ["Pregnant"],
@@ -124,7 +115,6 @@ def sample_feasibility_data():
 @pytest.mark.ui
 async def test_chat_query_submission(
     mock_conversation_manager,
-    mock_query_interpreter,
     mock_feasibility_service,
     sample_query_intent,
     sample_feasibility_data,
@@ -135,19 +125,15 @@ async def test_chat_query_submission(
     Workflow:
     1. User submits natural language query
     2. Intent detected as QUERY
-    3. Query interpreted by LLM
-    4. Feasibility check executed
-    5. Results displayed
-    6. Conversation state updated to AWAITING_CONFIRMATION
+    3. Feasibility check executed (#100: NL → synthesis, no interpret step)
+    4. Results displayed
+    5. Conversation state updated to AWAITING_CONFIRMATION
     """
     # Setup
     user_query = "How many patients with diabetes and HbA1c > 8%?"
 
     # Mock intent detection
     mock_conversation_manager.detect_intent.return_value = UserIntent.QUERY
-
-    # Mock query interpretation
-    mock_query_interpreter.interpret_query.return_value = sample_query_intent
 
     # Mock feasibility execution
     mock_feasibility_service.execute_feasibility_check.return_value = sample_feasibility_data
@@ -169,7 +155,6 @@ Would you like to submit a formal data request?
         "messages": [],
         "conversation_manager": mock_conversation_manager,
         "feasibility_service": mock_feasibility_service,
-        "query_interpreter": mock_query_interpreter,
         "conversation_state": ConversationState.INITIAL,
         "pending_feasibility": None,
         "last_query_intent": None,
@@ -179,14 +164,13 @@ Would you like to submit a formal data request?
     intent = mock_conversation_manager.detect_intent(user_query)
     assert intent == UserIntent.QUERY, "Intent should be detected as QUERY"
 
-    # Execute: Interpret query
-    query_intent = await mock_query_interpreter.interpret_query(user_query)
-    assert query_intent == sample_query_intent, "Query intent should be extracted"
-    assert "inclusion_criteria" in query_intent
-    assert "data_elements" in query_intent
+    # #100: no interpret step — the raw NL goes straight to the synthesis path.
+    query_intent = {}
 
-    # Execute: Feasibility check
-    feasibility_data = await mock_feasibility_service.execute_feasibility_check(query_intent)
+    # Execute: Feasibility check (NL synthesized inside execute_feasibility_check)
+    feasibility_data = await mock_feasibility_service.execute_feasibility_check(
+        query_intent, natural_language_query=user_query
+    )
     assert feasibility_data["estimated_cohort"] == 347
     assert feasibility_data["feasibility_score"] == 0.87
 

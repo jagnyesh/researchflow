@@ -71,7 +71,6 @@ assert_encryption_key_present_if_production()
 
 from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
-from app.services.query_interpreter import QueryInterpreter
 from app.components.approval_tracker import ApprovalTracker
 
 
@@ -154,9 +153,6 @@ def initialize_session_state():
 
     if "feasibility_service" not in st.session_state:
         st.session_state.feasibility_service = FeasibilityService()
-
-    if "query_interpreter" not in st.session_state:
-        st.session_state.query_interpreter = QueryInterpreter()
 
     if "approval_tracker" not in st.session_state:
         st.session_state.approval_tracker = ApprovalTracker()
@@ -305,119 +301,6 @@ def _render_error_card(feasibility_data: Dict[str, Any]) -> None:
         st.code(rejected_sql, language="sql")
 
 
-def format_breakdown_response(feasibility_data: Dict[str, Any]) -> str:
-    """
-    Format breakdown query results with total and per-dimension counts
-
-    Args:
-        feasibility_data: Feasibility data with breakdown_results
-
-    Returns:
-        Formatted markdown string
-    """
-    total_count = feasibility_data["estimated_cohort"]
-    breakdown_results = feasibility_data.get("breakdown_results", [])
-    group_by_dimensions = feasibility_data.get("group_by_dimensions", [])
-
-    # Start with header
-    response_parts = [
-        "## Feasibility Analysis (Breakdown)",
-        "",
-        f"**Total Cohort Size**: {total_count} patients",
-        "",
-    ]
-
-    # Add breakdown by dimensions
-    if breakdown_results:
-        # Format dimension names
-        dimension_label = " and ".join(
-            [dim.title().replace("_", " ") for dim in group_by_dimensions]
-        )
-        response_parts.append(f"**Breakdown by {dimension_label}**:")
-        response_parts.append("")
-
-        # Add each dimension result
-        for result in breakdown_results:
-            dimensions = result.get("dimensions", {})
-            count = result.get("count", 0)
-            percentage = result.get("percentage", 0)
-
-            # Format dimension values
-            dim_values = []
-            for dim_name, dim_value in dimensions.items():
-                if dim_value is not None:
-                    # Capitalize and format dimension value
-                    formatted_value = (
-                        str(dim_value).title() if isinstance(dim_value, str) else str(dim_value)
-                    )
-                    dim_values.append(f"{dim_name.replace('_', ' ').title()}: {formatted_value}")
-
-            dim_label = ", ".join(dim_values) if dim_values else "Unknown"
-            response_parts.append(f"- **{dim_label}**: {count} patients ({percentage}%)")
-
-        response_parts.append("")
-
-    # Add status indicator
-    if total_count >= 30:
-        response_parts.append("✅ This appears to be a good cohort size for your study.")
-    else:
-        response_parts.append("⚠️ Small cohort size - consider broadening criteria.")
-
-    response_parts.append("")
-    response_parts.append("**Next Steps:**")
-    response_parts.append(
-        '- Type **"proceed"** to submit to the Formal Portal for full data extraction'
-    )
-    response_parts.append("- Or ask another question to refine your search")
-
-    return "\n".join(response_parts)
-
-
-def format_count_distinct_response(feasibility_data: Dict[str, Any]) -> str:
-    """
-    Format count distinct query results
-
-    Args:
-        feasibility_data: Feasibility data with count_distinct results
-
-    Returns:
-        Formatted markdown string
-    """
-    distinct_count = feasibility_data["estimated_cohort"]
-    resource_type = feasibility_data.get("resource_type", "resources")
-    distinct_column = feasibility_data.get("distinct_column", "unknown")
-
-    # Start with header
-    response_parts = [
-        "## Count Distinct Results",
-        "",
-        f"**Found {distinct_count} distinct {resource_type}** in the database",
-        "",
-    ]
-
-    # Add technical details
-    response_parts.append(f"*Counted unique values in column: `{distinct_column}`*")
-    response_parts.append("")
-
-    # Add warnings if present
-    warnings = feasibility_data.get("warnings", [])
-    if warnings:
-        response_parts.append("### ⚠️ Notes:")
-        for warning in warnings:
-            response_parts.append(f"- {warning['message']}")
-        response_parts.append("")
-
-    # Add status indicator
-    if distinct_count == 0:
-        response_parts.append("❌ No distinct values found - try broadening your search criteria.")
-    elif distinct_count < 5:
-        response_parts.append("⚠️ Very few distinct values found.")
-    else:
-        response_parts.append("✅ Results found successfully.")
-
-    return "\n".join(response_parts)
-
-
 async def handle_query(user_input: str):
     """
     Handle research query
@@ -428,12 +311,14 @@ async def handle_query(user_input: str):
     """
     # Show status
     with st.status("Processing your query...", expanded=True) as status:
-        # Step 1: Interpret query using LLM
+        # #100: the synthesis path reads the raw NL directly (NL -> LLM SQL ->
+        # validate -> execute inside execute_feasibility_check). The legacy
+        # QueryInterpreter/QueryIntent pre-parse was retired; query_intent is
+        # kept only as a vestigial carrier (no UI source for time_period → {}).
         st.write("🔍 Analyzing your research question...")
-        query_intent = await st.session_state.query_interpreter.interpret_query(user_input)
-        st.write(f"✅ Identified criteria and data elements")
+        query_intent = {}
 
-        # Step 2: Execute feasibility check (SQL-on-FHIR COUNT queries)
+        # Step 2: Execute feasibility check (LLM-synthesized COUNT query)
         # IMPORTANT: Close old connection pool before query to avoid event loop conflicts
         try:
             await st.session_state.feasibility_service.close()
@@ -445,10 +330,9 @@ async def handle_query(user_input: str):
 
         st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
         feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
-            query_intent.__dict__ if hasattr(query_intent, "__dict__") else query_intent,
-            # Sprint 6.7 #91: raw NL passes through so the synthesis path
-            # (USE_LLM_SQL_SYNTHESIS=true) sees the researcher's actual words,
-            # not the lossy intent dict. No-op while the flag is off.
+            query_intent,
+            # #100: raw NL is the synthesis input — the researcher's actual words,
+            # not a lossy intent dict.
             natural_language_query=user_input,
         )
         # #96/#97: the synthesis path returns an explicit error variant on
@@ -475,21 +359,11 @@ async def handle_query(user_input: str):
     st.session_state.pending_feasibility = feasibility_data
     st.session_state.last_query_intent = query_intent
 
-    # Check if this is a count_distinct query
-    is_count_distinct = feasibility_data.get("is_count_distinct_query", False)
-    # Check if this is a breakdown query
-    is_breakdown = feasibility_data.get("is_breakdown_query", False)
-
-    if is_count_distinct:
-        # Format count_distinct response
-        feasibility_response = format_count_distinct_response(feasibility_data)
-    elif is_breakdown:
-        # Format breakdown response
-        feasibility_response = format_breakdown_response(feasibility_data)
-    else:
-        # Format and show feasibility response with portal routing
-        cohort_size = feasibility_data["estimated_cohort"]
-        feasibility_response = f"""
+    # #100: the synthesis path returns a single scalar count (or the honest-error
+    # variant, handled above). Breakdown / count-distinct result shapes belonged
+    # to the retired legacy path and are never produced now.
+    cohort_size = feasibility_data["estimated_cohort"]
+    feasibility_response = f"""
 ## Feasibility Analysis
 
 **Estimated Cohort Size**: {cohort_size} patients
@@ -702,7 +576,7 @@ def main():
             st.markdown(content)
 
             # Display SQL expander INSIDE the chat bubble if this is the last message and we have feasibility data
-            # IMPORTANT: This shows the ACTUAL SQL executed by the backend (JoinQueryBuilder)
+            # IMPORTANT: This shows the ACTUAL SQL executed by the backend (LLM-synthesized)
             # - Uses sqlonfhir schema (e.g., FROM sqlonfhir.patient_demographics)
             # - Can be copy-pasted and run directly in database tool
             # - Never shows LLM-generated "friendly" SQL

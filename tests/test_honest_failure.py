@@ -55,7 +55,6 @@ def _synthesis_path(synthesizer: MagicMock):
 
 
 async def _run(fs, synthesizer, monkeypatch, nl="any query"):
-    monkeypatch.setenv("USE_LLM_SQL_SYNTHESIS", "true")
     with _synthesis_path(synthesizer):
         return await fs.execute_feasibility_check(
             {"view_definitions": []}, natural_language_query=nl
