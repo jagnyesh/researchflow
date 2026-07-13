@@ -9,9 +9,7 @@ Status: Experimental / Proof of Concept
 Purpose: Evaluate if LangChain/LangGraph provides advantages over custom solution
 
 Key Components:
-- langgraph_workflow.py: State machine using LangGraph StateGraph
-- langchain_agents.py: Agent adapters using LangChain AgentExecutor
-- comparison.md: Evaluation findings vs custom orchestrator
+- langgraph_workflow.py: State machine using LangGraph StateGraph (production)
 """
 
 __all__ = []
