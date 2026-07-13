@@ -26,9 +26,16 @@ info() { echo "  $*"; }
 repo_root()    { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repo"; }
 repo_name()    { basename "$(repo_root)"; }
 default_branch() {
-  git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's@^origin/@@' \
-    || { git show-ref --verify -q refs/heads/main && echo main; } \
-    || echo master
+  # symbolic-ref prints nothing on failure (unlike rev-parse, which prints the
+  # literal 'origin/HEAD' to stdout and would leak a bad ref under pipefail).
+  local b
+  if b="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)" && [ -n "$b" ]; then
+    echo "${b#origin/}"
+  elif git show-ref --verify -q refs/heads/main; then
+    echo main
+  else
+    echo master
+  fi
 }
 
 # Directory a lane's worktree lives in: sibling of the repo, <repo>-<issue>.
@@ -37,12 +44,19 @@ lane_dir() {
   echo "$(dirname "$(repo_root)")/$(repo_name)-${issue}"
 }
 
-# Count active lane worktrees (registered worktrees other than the main root).
-# awk (not grep|wc) so an empty result exits 0 under `set -e`, not non-zero.
+# Count active lane worktrees: only sibling dirs matching <repo>-<issue>, so an
+# unrelated worktree (e.g. a .claude/worktrees/ one) doesn't inflate the WIP.
+# substr over the whole line (not $2) tolerates spaces in the path; awk exits 0
+# on no-match so `set -e` doesn't kill a bare assignment.
 active_lane_count() {
-  local main; main="$(repo_root)"
+  local prefix; prefix="$(dirname "$(repo_root)")/$(repo_name)-"
   git worktree list --porcelain \
-    | awk -v m="$main" '/^worktree /{ if ($2 != m) c++ } END{ print c+0 }'
+    | awk -v p="$prefix" '
+        index($0, "worktree ") == 1 {
+          path = substr($0, 10)
+          if (index(path, p) == 1 && substr(path, length(p) + 1) ~ /^[0-9]+$/) c++
+        }
+        END { print c + 0 }'
 }
 
 tmux_has_session() { tmux has-session -t "$TMUX_SESSION" 2>/dev/null; }
@@ -147,8 +161,13 @@ cmd_close() {
   fi
 
   if [ "$del_branch" -eq 1 ] && [ -n "$branch" ]; then
-    git -C "$main" branch -D "$branch" 2>/dev/null && info "deleted branch $branch" \
-      || info "could not delete branch $branch (unmerged? use git branch -D manually)"
+    # -d refuses an unmerged branch (data-loss guard); --force escalates to -D.
+    local delflag="-d"; [ "$force" -eq 1 ] && delflag="-D"
+    if git -C "$main" branch "$delflag" "$branch" 2>/dev/null; then
+      info "deleted branch $branch"
+    else
+      info "branch $branch kept (unmerged — pass --force to force-delete, or: git branch -D $branch)"
+    fi
   fi
 }
 
