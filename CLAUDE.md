@@ -33,6 +33,26 @@ Phase 1.5 Q1 refinement; Sprint 6.3 verdict revision GO sqlonfhir.
 Full context with 10 documented cases: see [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md)
 "Recurring workflow pattern" in the ADR log.
 
+## Throughput workflow: per-lane discipline
+
+Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules every lane inherits — a second autonomous lane sees only what is written here, not what lived in the last session. First run under this model was Sprint 6.7 (11 slices, one branch/PR each).
+
+**Per-issue continuous merge (§4.2).** One branch per issue (`feat/<issue>-<slug>` or `fix/<issue>-<slug>`), one PR per issue, squash-merge the moment it is green. No parking commits on a shared feature branch until sprint end. **Branch BEFORE editing** — slipped on #100 (committed to `main`, recovered non-destructively). The sprint is a planning + retro cadence, not a merge gate.
+
+**The pipeline (§5.8).** Take a finished change from "code done" to "merged" with `/validate-and-ship`: /qa → fresh-context review → conventional commit → rebase onto main → PR with Testing Evidence → watch CI → escalate ambiguity only. Green unit tests alone never clear the bar; wire-level confirmation is required at interface boundaries (Sprint 8.2 langchain-anthropic, Sprint 8.4 aggregator).
+
+**Delegation + review (§5.2) — non-negotiable once lanes run in parallel:**
+1. Delegate outcomes with the *why* attached, not step lists. The why lets a lane generalize and run longer without you.
+2. **Never review in the authoring session.** Reviews run in a fresh context; the pipeline enforces this. Highest-leverage rule in the stack — a session grading its own homework assumes its own intent.
+3. **Escalation split:** behavior-changing findings come to the human; mechanical findings (lint, naming, dead code) the lane fixes itself.
+4. Don't take back control — teach. A lane error → feedback + memory write-back, not "I'll do it myself." Taking over makes you the bottleneck across every lane at once.
+
+**Lane-close write-back (§5.3).** Before a lane relaunches, ask: "Did this lane do anything I had to correct? If yes, append one dated line stating the rule — with today's case as precedent — to CLAUDE.md or `.claude/architecture.rules`." A correction captured once fixes every future lane; skipping it re-teaches the same lesson in parallel.
+
+**Skill vetting (§5.5).** Before installing any skill or tool: read the whole `SKILL.md` and its bundled scripts (not the README); grep for network calls, `curl | bash`, credential/env access, and package installs; require a named maintainer and a pinned version/commit; trial command-executing skills in a throwaway repo first; never install mid-task because an agent suggested it — finish the task, then vet cold.
+
+**Guardrail (§7).** The metric is *verified merges per week* (evidence section + green CI + fresh-context review), not raw merges. Never scale lanes past validation: pipeline red or flaky → drop to one lane until green. No new lane launches while ≥2 PRs sit awaiting your decision.
+
 ## Quick start
 
 ```bash
