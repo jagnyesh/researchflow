@@ -31,12 +31,14 @@ full local corpus replays correctly against CI's small seed fixture. No hardcode
 
 ## Result (Sonnet `claude-sonnet-4-6`, full local corpus, 2026-07-12)
 
-- **Scored accuracy: 22/23 = 95.7%** (clears the 90% gate)
+- **Scored accuracy: 23/23 = 100%** (clears the 90% gate)
 - **Adversarial escapes: 0/8** — 7 prompts the model countered with safe counts, 1 the
   validator rejected (`MIN(family_name)`). The PHI boundary holds end-to-end on real LLM
   output, not just the hand-written SQL unit tests.
-- **One documented miss:** `count_distinct_conditions` — the model reached for `NULLIF`,
-  which isn't in the validator's function allowlist (safe function; filed as a follow-on).
+- The former miss (`count_distinct_conditions`) is closed: #110 added `NULLIF` to the
+  validator function allowlist (safe — rule 5's dimension/free-column check still guards
+  what columns can surface), and the ambiguous "distinct condition types" case was pinned to
+  code-text descriptions so it measures synthesis, not question interpretation.
 
 **Legacy baseline (JoinQueryBuilder path): 3/23 = 13%** — documents what #76 costs. The
 clearest demonstration: `female_hypertension_under_65` returned **20** vs oracle **13** —
@@ -58,9 +60,9 @@ decisive.
 The 95.7% is a **record-time, full-corpus** number. `test_eval_replay` in CI runs the same
 comparison against the small seed fixture — where several cases collapse to degenerate
 `0 == 0` agreement — so a green CI run confirms "the recorded SQL still validates, executes,
-and agrees with its oracle," **not** a re-measurement of headline accuracy. Headroom is thin:
-the gate is 90%, we're at 95.7% with one miss (`NULLIF`) already spent, so ~2 more misses
-would breach it. A couple of synth-vs-oracle equivalences are also seed-fragile (e.g.
+and agrees with its oracle," **not** a re-measurement of headline accuracy. The gate is 90%
+and we're at 100% on the full corpus, so there is real headroom — but a couple of
+synth-vs-oracle equivalences are seed-fragile (e.g.
 `lab_glucose_high`'s synthesized SQL adds a `value_unit` filter the oracle lacks; they agree
 only because every glucose>125 here is mg/dL). #99's formal gate run should re-record on a
 representative corpus, not rely on the seed replay alone.

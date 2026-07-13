@@ -100,6 +100,11 @@ _ALLOWED_FUNC_CLASSES = tuple(
         exp.If,
         exp.Extract,
         exp.Coalesce,
+        # NULLIF (#110): safe scalar — returns one of its args unchanged. It
+        # can't surface a restricted column because rule 5 (dimension allowlist
+        # + free-column check) still guards output/dimension positions; here it
+        # only unblocks the common COUNT(DISTINCT NULLIF(col, '')) idiom.
+        exp.Nullif,
         exp.Lower,
         exp.Upper,
         exp.Trim,

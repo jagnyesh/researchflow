@@ -599,6 +599,35 @@ class TestColumnExistence:
         assert result.valid is True
 
 
+class TestNullifAllowlist:
+    """#110 — the #98 eval's one miss: the model reaches for NULLIF (safe) to
+    exclude empty strings. Add it to the function allowlist. It stays safe
+    because rule 5 (aggregate-only + dimension allowlist) independently guards
+    what columns can surface — NULLIF over an identifying column in output
+    position must still reject."""
+
+    def test_accepts_nullif_inside_count_distinct(self):
+        result = SQLValidator(schemas=CANNED_SCHEMAS).validate(
+            "SELECT COUNT(DISTINCT NULLIF(code_text, '')) FROM sqlonfhir.condition_simple"
+        )
+        assert result.valid is True, result.violations
+
+    def test_rejects_nullif_over_identifying_column_in_output(self):
+        # NULLIF(family_name, 'x') returns a raw name; allowlisting the function
+        # must NOT let it surface — rule 5's free-column check catches it.
+        result = SQLValidator(schemas=CANNED_SCHEMAS).validate(
+            "SELECT NULLIF(family_name, 'x') FROM sqlonfhir.patient_demographics"
+        )
+        assert result.valid is False
+
+    def test_rejects_nullif_over_identifying_dimension(self):
+        result = SQLValidator(schemas=CANNED_SCHEMAS).validate(
+            "SELECT NULLIF(family_name, ''), COUNT(*) FROM sqlonfhir.patient_demographics "
+            "GROUP BY NULLIF(family_name, '')"
+        )
+        assert result.valid is False
+
+
 class TestFunctionAllowlist:
     """Rule 6 (#95) — deny-unknown function posture. pg_sleep DoS and
     pg_read_file exfil pass the tracer validator (no FROM clause -> table
