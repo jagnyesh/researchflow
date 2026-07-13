@@ -142,6 +142,63 @@ class TestModelIdentifierSelection:
 
 
 @pytest.mark.asyncio
+class TestNoRetiredModelReachesTheWire:
+    """#116 regression: the retired claude-3-7-sonnet-20250219 (404 since
+    2026-02-19) must never be the model the Claude client is asked for. It was
+    the default at every anthropic route AND the fallback path — the calendar/
+    delivery agents 404'd live (secondary=ollama down → Claude fallback → 404).
+    Asserts at the wire (the model kwarg reaching claude_client), not the wrapper.
+    """
+
+    RETIRED = "claude-3-7-sonnet-20250219"
+
+    def test_constant_is_not_the_retired_model(self):
+        from app.utils.multi_llm_client import CLAUDE_MODEL
+
+        assert CLAUDE_MODEL != self.RETIRED
+        assert "3-7-sonnet" not in CLAUDE_MODEL
+
+    def test_model_identifier_never_returns_the_retired_model(self):
+        with patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "k", "SECONDARY_LLM_PROVIDER": "anthropic"}
+        ):
+            client = MultiLLMClient()
+            for task_type in CRITICAL_TASK_TYPES + NON_CRITICAL_TASK_TYPES:
+                assert self.RETIRED not in client._get_model_identifier(task_type)
+
+    async def test_direct_claude_path_uses_current_model(self):
+        from app.utils.multi_llm_client import CLAUDE_MODEL
+
+        with patch.dict(
+            os.environ, {"ANTHROPIC_API_KEY": "k", "SECONDARY_LLM_PROVIDER": "anthropic"}
+        ):
+            client = MultiLLMClient()
+            client.claude_client.complete = AsyncMock(return_value="ok")
+            await client.complete(prompt="p", task_type="calendar")
+            model = client.claude_client.complete.await_args.kwargs["model"]
+            assert model == CLAUDE_MODEL
+            assert model != self.RETIRED
+
+    @patch("app.utils.multi_llm_client.aisuite")
+    async def test_fallback_path_uses_current_model_not_retired(self, mock_aisuite):
+        # The exact bug path: secondary provider errors → fallback to Claude.
+        from app.utils.multi_llm_client import CLAUDE_MODEL
+
+        mock_instance = Mock()
+        mock_instance.chat.completions.create = Mock(side_effect=Exception("secondary down"))
+        mock_aisuite.Client.return_value = mock_instance
+        with patch.dict(
+            os.environ,
+            {"ANTHROPIC_API_KEY": "k", "SECONDARY_LLM_PROVIDER": "openai", "OPENAI_API_KEY": "k"},
+        ):
+            client = MultiLLMClient()
+            client.claude_client.complete = AsyncMock(return_value="fallback ok")
+            await client.complete(prompt="p", task_type="calendar")
+            model = client.claude_client.complete.await_args.kwargs["model"]
+            assert model == CLAUDE_MODEL
+            assert model != self.RETIRED
+
+
 class TestCompleteMethod:
     """Test the complete() method with different configurations"""
 
