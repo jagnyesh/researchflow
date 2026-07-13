@@ -43,6 +43,57 @@ _ANTHROPIC_CACHE_THRESHOLDS = {
 
 
 # ---------------------------------------------------------------------------
+# Sampling-parameter support by model.
+#
+# Opus 4.7+, Sonnet 5, and Fable 5 REMOVED the sampling params (temperature,
+# top_p, top_k): sending any value — including 0.0 — returns
+# 400 "`temperature` is deprecated for this model." There is no temperature-0
+# equivalent; determinism is not a tunable knob on these models. Older models
+# (Sonnet 4.6, Haiku 4.5, and earlier) still accept temperature.
+#
+# We therefore OMIT temperature entirely for these models rather than pass a
+# value the API rejects. Surfaced by #99's Opus-vs-Sonnet benchmark 2026-07-12.
+# ---------------------------------------------------------------------------
+
+# Family prefixes, not exact ids: a future date-suffixed form (e.g.
+# "claude-opus-4-8-20260101") must be classified the same as the bare id. The
+# stems are chosen so they do NOT catch temperature-ACCEPTING neighbours —
+# "claude-opus-4-6"/"claude-sonnet-4-6" still take temperature and share no
+# prefix with these.
+_MODELS_WITHOUT_SAMPLING_PARAMS = (
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-5",
+    "claude-fable-5",
+    "claude-mythos-5",
+)
+
+
+def _accepts_temperature(model: str) -> bool:
+    """False for models that 400 on any ``temperature`` value (Opus 4.7+,
+    Sonnet 5, Fable 5). For those, omit the param — there is no temperature-0
+    equivalent to substitute."""
+    return not model.startswith(_MODELS_WITHOUT_SAMPLING_PARAMS)
+
+
+def _chat_anthropic_kwargs(
+    *, model: str, api_key: str, temperature: float, max_tokens: int
+) -> Dict[str, Any]:
+    """Build ChatAnthropic kwargs, omitting ``temperature`` for models that
+    reject it. The single boundary for the Anthropic sampling-param quirk for
+    LLMClient callers (SQLSynthesizer, the eval harness) — they pass
+    temperature=0.0 uniformly regardless of which model the call targets."""
+    kwargs: Dict[str, Any] = {
+        "model": model,
+        "anthropic_api_key": api_key,
+        "max_tokens": max_tokens,
+    }
+    if _accepts_temperature(model):
+        kwargs["temperature"] = temperature
+    return kwargs
+
+
+# ---------------------------------------------------------------------------
 # Module-level system prompts (Sprint 8.2 Task 2)
 #
 # These are intentionally substantial so they cross the per-model thresholds
@@ -474,7 +525,12 @@ class LLMClient:
             # - LANGCHAIN_API_KEY is set
             # - LANGCHAIN_PROJECT is set
             self.client = ChatAnthropic(
-                model=self.model, anthropic_api_key=self.api_key, temperature=0.7, max_tokens=4096
+                **_chat_anthropic_kwargs(
+                    model=self.model,
+                    api_key=self.api_key,
+                    temperature=0.7,
+                    max_tokens=4096,
+                )
             )
             logger.info(
                 f"LLM client initialized with model={self.model} (LangSmith tracing enabled)"
@@ -508,22 +564,18 @@ class LLMClient:
             return self._dummy_response(prompt)
 
         try:
-            # Create a new client instance if model/params differ from default
-            if model and model != self.model:
-                client = ChatAnthropic(
-                    model=model,
-                    anthropic_api_key=self.api_key,
+            # Create a new client instance if model/params differ from default.
+            # _chat_anthropic_kwargs omits temperature for models that reject it
+            # (Opus 4.7+, Sonnet 5, Fable 5) so the same call works across models.
+            target_model = model if (model and model != self.model) else self.model
+            client = ChatAnthropic(
+                **_chat_anthropic_kwargs(
+                    model=target_model,
+                    api_key=self.api_key,
                     temperature=temperature,
                     max_tokens=max_tokens,
                 )
-            else:
-                # Update params on existing client
-                client = ChatAnthropic(
-                    model=self.model,
-                    anthropic_api_key=self.api_key,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
+            )
 
             # Build messages in LangChain format.
             #
