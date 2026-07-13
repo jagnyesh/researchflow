@@ -98,16 +98,22 @@ _DEFAULT_MODEL = "claude-sonnet-4-6"  # If a run has no model metadata, assume S
 # ceilings below are calibrated for bursty patterns; sparse-traffic
 # measurement is filed as a Sprint 8.5+ candidate in BACKLOG.md.
 #
-# Source measurements (2026-05-14, post-Sprint-8.4 corrected aggregator,
-# verified by manual trace-tree walk within 0.01%):
-#   Formal:      median $0.007754 across 30 threads, cache_hit_rate 94.88%
-#   Exploratory: median $0.003540 across 30 root traces, cache_hit_rate 0.0000%
-#                (zero cache hit on exploratory is a real finding — same
-#                below-threshold issue Sprint 8.2 fixed for formal; the Sprint
-#                6.7 synthesizer's schema-context prompt block addresses it for
-#                the exploratory path.)
+# Source measurements (post-Sprint-8.4 corrected aggregator, verified by manual
+# LLM-leaf sum within 0.01%):
+#   Formal (2026-05-14):      median $0.007754 across 30 threads, cache_hit_rate 94.88%
+#   Exploratory (2026-07-12): median $0.003586 across 30 root traces, cache_hit_rate 95.00%
+#
+# DISCONTINUITY — the exploratory number changed PATH at Sprint 6.7 #100. Before:
+# the QueryInterpreter path, median $0.003540, cache_hit_rate 0.0000% (the
+# below-threshold prompt Sprint 8.6 flagged). After: the LLM-synthesis path
+# (SQLSynthesizer), median $0.003586, cache_hit_rate 95.00% — the schema-context
+# prompt block finally clears Anthropic's caching threshold, closing the Sprint
+# 8.6 candidate. The median is essentially flat (+1.3%) DESPITE cache going
+# 0%→95%, because the synthesis prompt is larger (the schema block) but now
+# caches: bigger-prompt-cached ≈ smaller-prompt-uncached. The ceiling barely
+# moves; the cost is now cache_read-dominated (cheap) instead of full-input.
 FORMAL_BAND_CEILING_USD = 0.010080  # $0.007754 measured × 1.3
-EXPLORATORY_BAND_CEILING_USD = 0.004602  # $0.003540 measured × 1.3
+EXPLORATORY_BAND_CEILING_USD = 0.004661  # $0.003586 measured × 1.3 (Sprint 6.7 synthesis path)
 
 
 # ---------------------------------------------------------------------------

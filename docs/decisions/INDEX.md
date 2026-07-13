@@ -6,7 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
-- **0028** — [Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md) (2026-07-11, **in-progress**)
+- **0028** — [Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md) (2026-07-11, shipped)
 - **0027** — [Sprint 6.5: Lambda architecture differential freshness routing](0027-sprint-6-5-differential-freshness-routing.md) (2026-05-17, shipped)
 - **0026** — [Sprint 6.4: sqlonfhir integration](0026-sprint-6-4-sqlonfhir-integration.md) (2026-05-15, shipped)
 - **0024** — [Sprint 7.2: A2A FSM → LangGraph close-out](0024-sprint-7-2-a2a-fsm-closeout.md) (2026-05-15, **in-progress**)
