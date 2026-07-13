@@ -242,7 +242,9 @@ git worktree list
 git worktree remove ../rf-issue82     # after the PR merges
 ```
 
-That setup friction (env, deps, sync-to-main, reuse) is exactly what Kun's `treehouse` automates with a pool of pre-warmed worktrees. Adopt it at Stage 3, when you're opening lanes daily and the manual steps are what you feel. Until then, plain `git worktree` is fine at two lanes.
+`scripts/lane.sh` wraps this: `open <issue>` (worktree + branch off `origin/main` + `.env` copy + `uv` dep-sync + named tmux window), `close <issue>`, `list`. It enforces the §7 WIP=2 guardrail — the third concurrent lane is refused without `--force`.
+
+That setup friction (env, deps, sync-to-main, reuse) is exactly what Kun's `treehouse` automates with a pool of pre-warmed worktrees. Adopt it at Stage 3, when you're opening lanes daily and the manual steps are what you feel. Until then, `scripts/lane.sh` over plain `git worktree` is fine at two lanes.
 
 ### 5.8 The composite pipeline — your `no-mistakes`
 
