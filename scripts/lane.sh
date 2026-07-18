@@ -104,11 +104,20 @@ cmd_open() {
 
   if [ "$do_deps" -eq 1 ]; then
     if command -v uv >/dev/null 2>&1; then
-      info "creating venv + syncing deps (uv pip sync config/requirements.lock)…"
-      ( cd "$dir" && uv venv --quiet && uv pip sync config/requirements.lock ) || die "dep sync failed in $dir"
-      info "deps synced"
+      info "creating venv + syncing deps (isolated to the lane's own .venv)…"
+      # Isolate to the worktree's venv. A shell profile may export VIRTUAL_ENV
+      # or CONDA_PREFIX (an already-activated env); a bare `uv pip sync` honors
+      # those over ./.venv and would DESTRUCTIVELY rewrite that shared env.
+      # `--python "$dir/.venv/bin/python"` is LOAD-BEARING: it is authoritative
+      # over both VIRTUAL_ENV and CONDA_PREFIX — do NOT drop it (that reopens the
+      # hijack for conda users). `unset VIRTUAL_ENV` is belt-and-suspenders and
+      # also silences uv's env-mismatch warning.
+      ( cd "$dir" && unset VIRTUAL_ENV && uv venv --quiet \
+          && uv pip sync --python "$dir/.venv/bin/python" config/requirements.lock ) \
+        || die "dep sync failed in $dir"
+      info "deps synced into $dir/.venv"
     else
-      info "uv not found — skipping dep sync; run 'uv venv && uv pip sync config/requirements.lock' in $dir"
+      info "uv not found — skipping dep sync; in $dir run: uv venv && uv pip sync --python .venv/bin/python config/requirements.lock"
     fi
   else
     info "--no-deps: skipped venv + dep sync"
