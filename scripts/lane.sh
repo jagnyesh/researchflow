@@ -108,16 +108,27 @@ cmd_open() {
       # Isolate to the worktree's venv. A shell profile may export VIRTUAL_ENV
       # or CONDA_PREFIX (an already-activated env); a bare `uv pip sync` honors
       # those over ./.venv and would DESTRUCTIVELY rewrite that shared env.
-      # `--python "$dir/.venv/bin/python"` is LOAD-BEARING: it is authoritative
-      # over both VIRTUAL_ENV and CONDA_PREFIX — do NOT drop it (that reopens the
-      # hijack for conda users). `unset VIRTUAL_ENV` is belt-and-suspenders and
-      # also silences uv's env-mismatch warning.
+      # `--python "$py"` is LOAD-BEARING: it is authoritative over both
+      # VIRTUAL_ENV and CONDA_PREFIX — do NOT drop it (that reopens the hijack
+      # for conda users). `unset VIRTUAL_ENV` is belt-and-suspenders and also
+      # silences uv's env-mismatch warning.
+      # requirements.lock is the exact runtime env (synced); requirements-dev.txt
+      # (pytest, fakeredis, …) is layered on top with `install` so a lane can run
+      # tests out of the box. `sync` first pins runtime versions; `install` is
+      # additive and won't remove them. `-c requirements.lock` constrains the dev
+      # layer to those pins, so a dev floor above a lock pin hard-errors (→ die)
+      # instead of silently drifting the runtime env. The `[ ! -f ] ||` guard
+      # keeps a repo without a dev file from failing the chain into `die`.
+      local py="$dir/.venv/bin/python"
       ( cd "$dir" && unset VIRTUAL_ENV && uv venv --quiet \
-          && uv pip sync --python "$dir/.venv/bin/python" config/requirements.lock ) \
+          && uv pip sync --python "$py" config/requirements.lock \
+          && { [ ! -f config/requirements-dev.txt ] \
+                 || uv pip install --quiet --python "$py" \
+                      -c config/requirements.lock -r config/requirements-dev.txt ; } ) \
         || die "dep sync failed in $dir"
-      info "deps synced into $dir/.venv"
+      info "deps synced into $dir/.venv (runtime + dev/test)"
     else
-      info "uv not found — skipping dep sync; in $dir run: uv venv && uv pip sync --python .venv/bin/python config/requirements.lock"
+      info "uv not found — skipping dep sync; in $dir run: uv venv && uv pip sync --python .venv/bin/python config/requirements.lock && uv pip install --python .venv/bin/python -c config/requirements.lock -r config/requirements-dev.txt"
     fi
   else
     info "--no-deps: skipped venv + dep sync"
