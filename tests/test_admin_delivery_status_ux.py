@@ -162,3 +162,43 @@ def test_non_200_returns_not_delivered_without_error():
 
     assert result == {"delivered": False, "files": []}
     st_mock.error.assert_not_called()
+
+
+# --------------------------------------------------------------------------- #
+# show_download_section: error states must NOT stack a "not yet delivered" box  #
+# on top of the friendly error already rendered by check_delivery_status (#77). #
+# --------------------------------------------------------------------------- #
+
+
+def _info_messages(st_mock) -> list:
+    return [c.args[0] for c in st_mock.info.call_args_list if c.args]
+
+
+@pytest.mark.parametrize("status", ["backend_unreachable", "timeout", "unknown"])
+def test_download_section_suppresses_not_delivered_box_for_error_states(status):
+    with (
+        _capture_st() as st_mock,
+        patch.object(dashboard, "check_delivery_status", return_value={"status": status}),
+    ):
+        dashboard.show_download_section(REQUEST_ID)
+
+    # The friendly error was already shown by check_delivery_status; the section
+    # must NOT also print the misleading "Data not yet delivered / Current status".
+    assert not any(
+        "Data not yet delivered" in m for m in _info_messages(st_mock)
+    ), f"error state {status!r} should not stack a 'not yet delivered' box"
+
+
+def test_download_section_still_shows_not_delivered_for_genuine_pending():
+    # Legit pending path (non-200 → no 'status' key) keeps the informational box.
+    with (
+        _capture_st() as st_mock,
+        patch.object(
+            dashboard, "check_delivery_status", return_value={"delivered": False, "files": []}
+        ),
+    ):
+        dashboard.show_download_section(REQUEST_ID)
+
+    assert any(
+        "Data not yet delivered" in m for m in _info_messages(st_mock)
+    ), "genuine pending delivery should still surface the status box"

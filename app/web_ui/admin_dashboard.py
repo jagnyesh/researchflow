@@ -903,6 +903,11 @@ def show_download_section(request_id: str):
             st.json(delivery_info["qa_report_summary"])
 
     else:
+        # check_delivery_status() already surfaced a researcher-readable st.error
+        # for these connectivity/error states (#77); don't stack a misleading
+        # "Data not yet delivered. Current status: Unknown" box beneath it.
+        if delivery_info.get("status") in {"backend_unreachable", "timeout", "unknown"}:
+            return
         current_state = delivery_info.get("current_state", "unknown")
         st.info(
             f"Data not yet delivered. Current status: {current_state.replace('_', ' ').title()}"
