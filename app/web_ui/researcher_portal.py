@@ -535,6 +535,14 @@ def main():
 
                             if st.button("View Details", key=f"view_{req_id}"):
                                 st.session_state.modal_request = req_id
+                                # Issue #35: also select this request so the
+                                # "📋 Request Details" tab (and its download UI)
+                                # resolves for a returning researcher who never
+                                # submitted in this browser session. Previously
+                                # only new-request submission set selected_request,
+                                # so the modal's "go to Request Details tab" hint
+                                # was a dead pointer after a page refresh.
+                                st.session_state.selected_request = req_id
                                 # Remove from "just submitted" set after viewing
                                 if req_id in just_submitted_ids:
                                     st.session_state.user_requests.remove(req_id)
