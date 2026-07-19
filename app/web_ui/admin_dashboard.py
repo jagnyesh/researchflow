@@ -104,18 +104,46 @@ def check_delivery_status(request_id: str) -> dict:
         - cohort_size: int
         - delivery_location: str
     """
+    api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
     try:
         # Call delivery API endpoint
-        api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
         response = httpx.get(f"{api_url}/research/{request_id}/delivery", timeout=10.0)
 
         if response.status_code == 200:
             return response.json()
         else:
             return {"delivered": False, "files": []}
+    except httpx.ConnectError as e:
+        # Backend on :8000 is down. Lead with the recovery action a researcher can
+        # take; demote the errno to a parenthetical for whoever debugs it (#77).
+        logger.exception("Delivery-status check could not reach the API backend")
+        st.error(
+            f"⚠️ Can't reach the ResearchFlow API server at {api_url}. "
+            "The backend service is likely stopped — ask the platform team to "
+            "start it (or run `make run`), then refresh this page. "
+            f"(Technical: {type(e).__name__} — connection refused on the API port.)"
+        )
+        return {"status": "backend_unreachable"}
+    except httpx.TimeoutException as e:
+        # Reachable but slow — distinct from "down". Retry framing, not "contact us".
+        logger.warning("Delivery-status check timed out against %s", api_url)
+        st.error(
+            f"⚠️ The API server at {api_url} is reachable but didn't respond within 10s. "
+            "It may be under load — wait ~30 seconds and refresh to retry. "
+            f"(Technical: {type(e).__name__}.)"
+        )
+        return {"status": "timeout"}
     except Exception as e:
-        st.error(f"Error checking delivery status: {str(e)}")
-        return {"delivered": False, "files": []}
+        # Genuine delivery problem (not a connectivity class). Give an actionable,
+        # quotable support code and truncate the raw exception so the leading line
+        # stays researcher-readable (#77).
+        logger.exception("Delivery-status check failed unexpectedly")
+        st.error(
+            "⚠️ Couldn't check delivery status right now. Please retry; if it "
+            f"keeps happening, contact platform support with code DELIV-{request_id}. "
+            f"(Technical detail: {str(e)[:200]})"
+        )
+        return {"status": "unknown"}
 
 
 def download_file(request_id: str, filename: str = None):
@@ -875,6 +903,11 @@ def show_download_section(request_id: str):
             st.json(delivery_info["qa_report_summary"])
 
     else:
+        # check_delivery_status() already surfaced a researcher-readable st.error
+        # for these connectivity/error states (#77); don't stack a misleading
+        # "Data not yet delivered. Current status: Unknown" box beneath it.
+        if delivery_info.get("status") in {"backend_unreachable", "timeout", "unknown"}:
+            return
         current_state = delivery_info.get("current_state", "unknown")
         st.info(
             f"Data not yet delivered. Current status: {current_state.replace('_', ' ').title()}"
