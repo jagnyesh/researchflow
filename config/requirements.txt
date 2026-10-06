@@ -1,7 +1,7 @@
 fastapi
 uvicorn[standard]==0.22.0
 httpx
-sqlalchemy[asyncio]
+sqlalchemy[asyncio]>=2.0,<2.1  # cap <2.1: sqlalchemy-utils 0.42.1 (latest, no newer release) imports the public attributes.ScalarAttributeImpl, which SQLAlchemy 2.1 privatized to _ScalarAttributeImpl — floats broke CI 2026-10-06
 sqlalchemy-utils>=0.41  # Sprint 6.1 Phase 3b: column-level encryption (StringEncryptedType + FernetEngine)
 asyncpg==0.28.0
 aiosqlite>=0.20  # Required by langgraph-checkpoint-sqlite
