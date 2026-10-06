@@ -1,6 +1,6 @@
 ---
 name: validate-and-ship
-description: One-invocation pipeline from "code done on a feature branch" to "PR open with evidence, CI watched, merged on green." Runs tests → fresh-context review → conventional commit(s) → rebase → PR with Testing Evidence → SHA-bound attestation → watch CI → attested merge (human merges behavior-touching; standing-rule self-merge for docs/harness only). Use after /tdd finishes an issue, or when the user says "ship this", "validate and ship", "run the pipeline", or "take it from here". Distilled from Sprint 6.7's per-issue continuous-merge workflow (docs/DAILY_DEV_WORKFLOW.md §5.8).
+description: One-invocation pipeline from "code done on a feature branch" to "PR open with evidence, CI watched, merged on green." Runs tests → fresh-context review → conventional commit(s) → rebase → PR with Testing Evidence → SHA-bound attestation → watch CI → attested merge (human merges behavior-touching; standing-rule self-merge for docs/harness only). Use after /tdd finishes an issue, or when the user says "ship this", "validate and ship", "run the pipeline", or "take it from here". Distilled from Sprint 6.7's per-issue continuous-merge workflow (docs/DAILY_DEV_WORKFLOW.md §5.8), which ran serially, before any lane tooling — this pipeline is the continuous-merge discipline, not parallelism.
 ---
 
 # validate-and-ship
