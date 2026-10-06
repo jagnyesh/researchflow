@@ -56,7 +56,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r config/requirements.txt
+          pip install -r config/requirements.lock
           pip install safety
 
       - name: Run Safety check
