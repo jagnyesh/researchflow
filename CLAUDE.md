@@ -35,7 +35,7 @@ Full context with 10 documented cases: see [ADR 0000](docs/decisions/0000-meta-r
 
 ## Throughput workflow: per-lane discipline
 
-Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules every lane inherits — a second autonomous lane sees only what is written here, not what lived in the last session. First run under this model was Sprint 6.7 (11 slices, one branch/PR each).
+Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules every lane inherits — a second autonomous lane sees only what is written here, not what lived in the last session. First run under this model was Sprint 6.7 (11 slices, one branch/PR each) — run serially, before the `scripts/lane.sh` harness existed; it proved continuous per-issue merge, not parallel lanes.
 
 **Per-issue continuous merge (§4.2).** One branch per issue (`feat/<issue>-<slug>` or `fix/<issue>-<slug>`), one PR per issue, attested squash-merge the moment it is green — by the merge actor the §5.8 rule below defines (human for behavior-touching PRs). No parking commits on a shared feature branch until sprint end. **Branch BEFORE editing** — slipped on #100 (committed to `main`, recovered non-destructively). The sprint is a planning + retro cadence, not a merge gate.
 
