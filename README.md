@@ -478,7 +478,6 @@ pytest tests/e2e/
 
 ### Architecture Analysis
 
-- 🏛️ **[Lambda Architecture Comparison](docs/HealthLakeVsResearchFlowComparison.md)** — Complete implementation analysis
 - 🧪 **[Testing Guide](docs/SQL_ON_FHIR_TESTING_GUIDE.md)** — Test data setup and execution
 
 ### Design Decisions (ADR log)
