@@ -18,18 +18,18 @@ This doc's claims are only as good as the repo's own numbers. Before adding a la
 
 ## 1. The spine: one risk classifier drives everything
 
-The single structural idea in v2. A change's **risk tier** — decided by the paths it touches — sets its planning weight, its protected files, whether it hits the eval gate, and who merges it. This extends the merge-by-class path rule you already run; it does not invent a parallel system, but the high-risk path set below is genuinely new and domain-specific, so it earns real judgment, not a copy-paste.
+The single structural idea in this edition. A change's **risk tier** — decided by the paths it touches — sets its planning weight, its protected files, whether it hits the eval gate, and who merges it. This extends the merge-by-class path rule you already run; it does not invent a parallel system, but the high-risk path set below is genuinely new and domain-specific, so it earns real judgment, not a copy-paste.
 
 | Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files |
 |---|---|---|---|---|---|
-| **High** | PHI boundary / `SQLValidator` (aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required** | Locked |
+| **High** | PHI boundary / `SQLValidator` (aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked |
 | **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a |
 | **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, workflow docs) | The issue body **is** the intent — no extra artifact | Standing-rule **self-merge** (`Merged-By` trailer, SHA-bound attestation) | no | n/a |
 
 Three consequences this settles:
 
 - **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the course's/Nadeem's "let the model make reasonable assumptions" is exactly what you refuse *here*. Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
-- **Blast radius, not autonomy duration, is the justification.** v1 argued plan depth from "autonomy duration" (contested, and refuted by the 2026 plan-mode discourse). v2 argues it from blast radius and auditability — which actually holds in a clinical/regulatory codebase and is the defense v1 never made.
+- **Blast radius, not autonomy duration, is the justification.** The Throughput Edition argued plan depth from "autonomy duration" (contested, and refuted by the 2026 plan-mode discourse). This edition argues it from blast radius and auditability — which actually holds in a clinical/regulatory codebase and is the defense that edition never made.
 - **Golden files are the real test-integrity surface** — not all of `tests/**`. See §7.
 
 ---
@@ -115,7 +115,7 @@ One invocation, "code done" → "merged or escalated":
 
 The gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (TODOS already records one integration job that was silently a no-op).
 
-**Attestation reconciliation:** the CI reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For low, the CI verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance v1 got right intact.
+**Attestation reconciliation:** the CI reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For low, the CI verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance the Throughput Edition got right intact.
 
 ### 5.3 Delegation + memory (unchanged principles)
 
@@ -125,7 +125,7 @@ Delegate outcomes with the *why*. Never review in the authoring session (now mec
 
 ## 6. The metric is yours, measured — not a borrowed stat
 
-v1 leaned on an external, uncorroborated "68% of agent changes carried bugs." v2 deletes it and measures the equivalent **here**:
+The Throughput Edition leaned on an external, uncorroborated "68% of agent changes carried bugs." This edition deletes it and measures the equivalent **here**:
 
 - **Catch-rate log:** tag what the fresh-context review catches before merge.
 - **Escape-rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
@@ -153,7 +153,7 @@ The sharpest rules were social; mechanize them — but **every new mechanism is 
 
 - **Test integrity — protect golden files, not all `tests/**`.** The high-value targets are `tests/fixtures/transpiler_expected_outputs.py` and the gate `.jsonl` sets (`logs/sprint_*_gate.jsonl`). "Regenerate expected outputs to match" is exactly how a #76-style silent bug passes. Rule (works under `/tdd`, where the agent writes the tests): **tests are committed before implementation and locked from then until the task ends.** Enforce with the lightest equivalent — a CI diff check on the golden paths over a PreToolUse hook if the CI check suffices.
 - **Fresh-context review is a CI check** (§5 step 2), one consolidated verdict.
-- **Drift at its source.** Status claims — node counts, test counts, "shipped" markers — are **generated or checked by a script**, never hand-typed into CLAUDE.md / CONTEXT.md / issues. (v1's "23-state vs 17-nodes" and "12 vs 1 integration tests" were status drift, not design-doc drift — lighter planning would not have prevented them; generated counts would.) Design docs and ADRs are stamped **point-in-time** so nobody reads them as current state.
+- **Drift at its source.** Status claims — node counts, test counts, "shipped" markers — are **generated or checked by a script**, never hand-typed into CLAUDE.md / CONTEXT.md / issues. (The Throughput Edition's "23-state vs 17-nodes" and "12 vs 1 integration tests" were status drift, not design-doc drift — lighter planning would not have prevented them; generated counts would.) Design docs and ADRs are stamped **point-in-time** so nobody reads them as current state.
 
 ---
 
@@ -185,7 +185,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 
 - **Editor/terminal migration (Neovim/WezTerm):** downstream of muscle memory, not the source of speed. Skip.
 - **Production Maintain loop (course Stage 6):** there is **no production deployment yet**, so the prod-anomaly→replan loop doesn't apply literally. The version that *does*: post-merge signals you already have — nightly CI failures, eval regressions, cost/drift telemetry (#151), LangSmith traces — **auto-file issues into the queue**. Build that, not the prod loop.
-- **The planning stance is a position, not a law.** The 2026 plan-mode discourse (Nadeem's "plan mode is dead"; instil's "spec-driven dead, long live plan mode") is ~a handful of posts over a month, mostly about general work where output is cheap to check — not a consensus, and not obviously transferable to PHI/cohort work. v2's risk tiering is the hedge: it refuses heavy artifacts where they'd only drift (low/medium) and keeps them where blast radius is real (high). If your measured catch-rate (§6) ever shows high-tier grilling isn't catching more than medium-tier intent blocks, revisit this.
+- **The planning stance is a position, not a law.** The 2026 plan-mode discourse (Nadeem's "plan mode is dead"; instil's "spec-driven dead, long live plan mode") is ~a handful of posts over a month, mostly about general work where output is cheap to check — not a consensus, and not obviously transferable to PHI/cohort work. This edition's risk tiering is the hedge: it refuses heavy artifacts where they'd only drift (low/medium) and keeps them where blast radius is real (high). If your measured catch-rate (§6) ever shows high-tier grilling isn't catching more than medium-tier intent blocks, revisit this.
 
 ---
 
