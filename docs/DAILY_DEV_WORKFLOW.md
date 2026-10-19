@@ -28,9 +28,21 @@ The single structural idea in this edition. A change's **risk tier** — decided
 
 Three consequences this settles:
 
-- **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the course's/Nadeem's "let the model make reasonable assumptions" is exactly what you refuse *here*. Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
+- **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the 2026 plan-mode discourse's "let the model make reasonable assumptions" posture (Nadeem) is exactly what you refuse *here*, while the course itself prescribes the opposite for risky work ("interrogate the plan: what could it break, which step is riskiest, what did Claude rule out"). Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
 - **Blast radius, not autonomy duration, is the justification.** The Throughput Edition argued plan depth from "autonomy duration" (contested, and refuted by the 2026 plan-mode discourse). This edition argues it from blast radius and auditability — which actually holds in a clinical/regulatory codebase and is the defense that edition never made.
 - **Golden files are the real test-integrity surface** — not all of `tests/**`. See §7.
+
+**Where the playbook's artifact chain actually lives.** This doc commits no `intent.md`/`spec.md`/`plan.md` — a deliberate substrate choice, not an omission. The chain runs, routed through the issue tracker and the ADR log, which drift less than committed spec files in a solo repo:
+
+| Playbook artifact | Role | Here | Lives in |
+|---|---|---|---|
+| `intent.md` | capture problem / why / constraints | `/to-prd` | GitHub issue (`needs-triage`) — the skill forbids file paths to avoid staleness |
+| `spec.md` | requirements + design | `/spec` | GitHub issue — closed on merge |
+| `plan.md` | files / order / risks / proof | `/tdd` + plan mode | in-session; high-risk persists as a design doc → ADR |
+| — *(ongoing)* | the durable "why" | ADRs via `/grill-with-docs` | `docs/decisions/` — committed, point-in-time stamped |
+| — *(state)* | current truth | `CONTEXT.md` | committed |
+
+The one playbook practice this substrate would otherwise drop — *"check the diff against the committed plan"* — is restored as a review step, not a file (§5).
 
 ---
 
@@ -98,7 +110,7 @@ PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (revi
 One invocation, "code done" → "merged or escalated":
 
 1. `/qa` on the change.
-2. **Fresh-context review as a CI check** (§7) — a clean reviewer, non-interactive, posting **one consolidated verdict** (never a comment stream; that spends the §10 bandwidth it's meant to save).
+2. **Fresh-context review as a CI check** (§7) — a clean reviewer, non-interactive, posting **one consolidated verdict** (never a comment stream; that spends the §10 bandwidth it's meant to save). For **high-tier** changes the reviewer also asserts the diff matches the approved design doc / ADR, and that any departure is recorded in this PR — the playbook's plan-vs-reality discipline (check the diff against the committed plan; when it departs, update the plan in the same commit), applied to the ADR instead of a `plan.md`.
 3. Apply mechanical fixes; **escalate behavior-changing findings** to the human.
 4. Conventional commit on the issue branch; rebase onto latest `main`.
 5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
