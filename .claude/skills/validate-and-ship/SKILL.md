@@ -1,6 +1,6 @@
 ---
 name: validate-and-ship
-description: One-invocation pipeline from "code done on a feature branch" to "PR open with evidence, CI watched, merged on green." Runs tests → fresh-context review → conventional commit(s) → rebase → PR with Testing Evidence → SHA-bound attestation → watch CI → attested merge (human merges behavior-touching; standing-rule self-merge for docs/harness only). Use after /tdd finishes an issue, or when the user says "ship this", "validate and ship", "run the pipeline", or "take it from here". Distilled from Sprint 6.7's per-issue continuous-merge workflow (docs/DAILY_DEV_WORKFLOW.md §5), which ran serially, before any lane tooling — this pipeline is the continuous-merge discipline, not parallelism.
+description: One-invocation pipeline from "code done on a feature branch" to "PR open with evidence, CI watched, merged on green." Runs tests → fresh-context review → conventional commit(s) → rebase → PR with Testing Evidence → SHA-bound attestation → watch CI → attested merge (human merges behavior-touching; standing-rule self-merge for docs/harness only). Use after /tdd finishes an issue, or when the user says "ship this", "validate and ship", "run the pipeline", or "take it from here".
 ---
 
 # validate-and-ship
@@ -26,7 +26,7 @@ Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: fals
 - Any fix applied after the review is only covered by a fresh attestation (Step 7 staleness rule); a fix that changes behavior goes back through Step 2 before it can be attested.
 
 ### 4. Conventional commit(s)
-Separate latent/defensive fixes from the active change — separate commit minimum (a shared-code bug the feature merely surfaces is its own commit). Message body via a scratchpad file + `git commit -F <file>`: **the Bash approval hook rejects multi-line strings passed inline to `-m`** (control-character guard). End messages with the `Co-Authored-By: Claude Fable 5` trailer.
+Separate latent/defensive fixes from the active change — separate commit minimum (a shared-code bug the feature merely surfaces is its own commit). Message body via a scratchpad file + `git commit -F <file>`: **the Bash approval hook rejects multi-line strings passed inline to `-m`** (control-character guard). End messages with the `Co-Authored-By` trailer the session's attribution instructions specify.
 
 Stage files **explicitly by path** — never `git add -A` (it sweeps in untracked `.pptx`, checkpoint db files, `.lean-ctx/`). Expect the pre-commit hook to reformat files and abort the first commit (HEAD unchanged, files show `MM`); when that happens, re-stage the exact paths (plus `.secrets.baseline` if the detect-secrets hook touched it) and re-commit. Confirm the commit landed with `git log --oneline -1`.
 
