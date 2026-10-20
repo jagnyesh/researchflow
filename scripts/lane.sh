@@ -1,11 +1,11 @@
 #!/bin/bash
-# lane.sh — parallel-lane harness for the throughput workflow.
+# lane.sh — parallel-lane harness for the workflow doc's multi-lane mode (§3 Stage 2+).
 #
-# Automates docs/DAILY_DEV_WORKFLOW.md §5.7 (worktree add + env copy + dep sync)
-# and §5.6 (tmux window per lane), with the §7 WIP=2 guardrail enforced.
+# Automates docs/DAILY_DEV_WORKFLOW.md §3 Stage 2 (worktree add + env copy + dep sync)
+# and the multi-lane day shape (§4.2: one agent/tmux window per lane), with the §10 WIP=2 guardrail enforced.
 #
 # A "lane" is a git worktree on its own per-issue branch, running an agent in
-# its own tmux window. One branch per issue, one PR per issue (§4.2).
+# its own tmux window. One branch per issue, one PR per issue (§2).
 #
 #   scripts/lane.sh open  <issue> [--type feat|fix] [--slug <slug>] [--no-deps] [--force]
 #   scripts/lane.sh close <issue> [--force] [--delete-branch]
@@ -79,7 +79,7 @@ cmd_open() {
 
   local count; count="$(active_lane_count)"
   if [ "$count" -ge "$WIP_LIMIT" ] && [ "$force" -eq 0 ]; then
-    die "WIP limit reached ($count/$WIP_LIMIT active lanes). Close a lane first, or --force (see §7: never scale past validation)."
+    die "WIP limit reached ($count/$WIP_LIMIT active lanes). Close a lane first, or --force (see §10: never scale past validation)."
   fi
 
   local branch dir base main env_src

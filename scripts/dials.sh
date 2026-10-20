@@ -1,5 +1,5 @@
 #!/bin/bash
-# dials.sh — the two §7 throughput dials, computed from merged PRs:
+# dials.sh — the two §10 throughput dials, computed from merged PRs:
 #   open→green  (PR created → last pre-merge check green) = pipeline health
 #   green→merge (last check green → merge)                = human latency
 # Grouped by merge day (session proxy — this repo's cadence is per-session,

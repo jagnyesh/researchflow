@@ -1,327 +1,227 @@
-# Daily Agentic Development Workflow — Throughput Edition
+# Daily Agentic Development Workflow — Risk-Tiered Edition
 
-**Recast for:** everyday coding, optimized for raw throughput — verified changes merged per week.
-**Synthesis of:** the existing Pocock/gstack three-scale loop × Kun Chen's agentic engineering method (ex-L8 Meta/Microsoft/Atlassian, led Rovo Dev).
-**Applies to:** ResearchFlow and any future repo. Suggested home: commit as `docs/WORKFLOW.md` so agents can read it too.
-**Source for Kun's method:** his ByteByteGo guest post and YouTube walkthrough (June 2026). All descriptions paraphrased.
-
----
-
-## 1. Verdict up front
-
-Your foundation is already sound. It matches Kun's on agent onboarding, planning discipline, and validation philosophy — his "force end-to-end evidence, never trust green unit tests alone" principle is the same lesson you extracted from the langchain-anthropic silent-transmission bug and the aggregator double-charge bug. The foundation doesn't change. What changes is the shape built on top of it.
-
-Converting that foundation into throughput takes three moves — but they are **not** equal, and they are **not** a package. The first two are the win and stand alone; the third is an optional, conditional increment:
-
-1. **Validation becomes one autonomous pipeline, not a hand-run chain.** Today /qa, /review, and /ship are separate manual invocations. Kun's throughput exists because `no-mistakes` runs the whole validate→rebase→review→test→PR→CI sequence without him. You have the equivalent now (`/validate-and-ship`, §5.8). This is the highest-leverage piece and it needed nothing parallel to deliver.
-2. **Merging goes continuous.** The old model — commits accumulate on a feature branch, one PR at sprint end — dies here. New model: **one branch per issue, one PR per issue, merged the moment it's green** — by the merge actor the attestation rules define (human for behavior-touching PRs, standing-rule self-merge for docs/harness only). The sprint survives as a planning and retro cadence, not a merge gate. **Proven, serially:** Sprint 6.7's 11 slices all shipped this way, one after another in a single day, before any lane tooling existed. Continuous per-issue merge does not require parallelism.
-3. **Work *optionally* runs in parallel lanes.** Separate checkouts, each an agent pulling from a planned queue (§5.6, §5.7). This is the one move that is conditional, not foundational — it pays **only when you are throughput-bound** (a deep queue of independent, well-specified issues where merge-rate, not planning or deciding, is the constraint). Treat it as reactive, not a destination (§3).
-
-Two sequencing truths, both engineering logic rather than caution:
-
-- **Pipeline before parallelism.** Kun runs 5–10 lanes only because his pipeline autonomously reviews, produces E2E evidence, and babysits CI — his own telemetry caught bugs in 68% of agent changes before they reached him. Parallel lanes without that net just merge bugs faster. The ramp in §3 sequences the build-out so each stage earns the next.
-- **The ceiling is your review bandwidth, and it is model-independent.** More capable models raise both lane autonomy (each lane runs longer, finishes more per handoff — cheaper to supervise) *and* output rate (more to review per unit wall-clock). Those cancel at the bottleneck: the number of streams one person can review properly. Newer models push *harder* against that ceiling; they do not raise it. That is why parallelism is a throughput lever, never a capability upgrade — and why the §7 guardrails matter more as models improve, not less.
+**Status:** current workflow doc — supersedes the prior *Throughput Edition* (pre-2026-10 version lives in git history). One workflow doc only, by design (two is drift).
+**Recast for:** everyday coding on ResearchFlow, optimized for *verified* merges per week.
+**What changed from the prior (Throughput) edition:** planning weight is now **conditional on risk**, not uniform; the social rules (fresh-context review, test integrity) get **mechanical enforcement**; the uncorroborated external "68%" stat is **replaced by a metric you measure here**; parallelism is marked **never-yet-exercised in this repo**; sourcing leans on the primary Anthropic *AI-Native SDLC* course rather than an unverifiable secondary synthesis.
 
 ---
 
-## 2. Pillar-by-pillar comparison
+## 0. Measure before you theorize
 
-| Pillar | Kun's implementation | Your current system | Verdict |
+This doc's claims are only as good as the repo's own numbers. Before adding a lane, a gate, or a rule, pull the real data:
+
+- `scripts/dials.sh` — open→green (pipeline health) and green→merge (merge-gate latency), per merge day.
+- Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target. Not started yet; begin it before trusting any claim that leans on it.
+- Honest baseline, recorded here so nobody mistakes aspiration for practice: **parallel lanes have never run in this repo.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. Everything in §4 about multiple lanes is therefore design intent, not observed steady-state. Treat §4 as untested until the §3 trigger actually fires and you log a week of it.
+
+---
+
+## 1. The spine: one risk classifier drives everything
+
+The single structural idea in this edition. A change's **risk tier** — decided by the paths it touches — sets its planning weight, its protected files, whether it hits the eval gate, and who merges it. This extends the merge-by-class path rule you already run; it does not invent a parallel system, but the high-risk path set below is genuinely new and domain-specific, so it earns real judgment, not a copy-paste.
+
+| Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files |
+|---|---|---|---|---|---|
+| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) |
+| **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a |
+| **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a |
+
+Planning weight and merge actor are separate axes: a test-only change plans like Low but merges like Medium. The canonical merge rule is CLAUDE.md's *Merge actor* section and `/validate-and-ship` Step 8; this table must not diverge from them.
+
+Three consequences this settles:
+
+- **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the 2026 plan-mode discourse's "let the model make reasonable assumptions" posture (Nadeem) is exactly what you refuse *here*, while the course itself prescribes the opposite for risky work ("Interrogate the plan by asking what the change could break, which step is most risky, and what other options Claude chose not to do."). Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
+- **Blast radius, not autonomy duration, is the justification.** The Throughput Edition argued plan depth from "autonomy duration" (contested, and refuted by the 2026 plan-mode discourse). This edition argues it from blast radius and auditability — which actually holds in a clinical/regulatory codebase and is the defense that edition never made.
+- **Golden files are the real test-integrity surface** — not all of `tests/**`. See §7.
+
+**Where the playbook's artifact chain actually lives.** This doc commits no `intent.md`/`spec.md`/`plan.md` — a deliberate substrate choice, not an omission. The chain runs, routed through the issue tracker and the ADR log, which drift less than committed spec files in a solo repo:
+
+| Playbook artifact | Role | Here | Lives in |
 |---|---|---|---|
-| **Environment** | WezTerm + tmux + Neovim, fully keyboard-driven; agent-agnostic harnesses | Claude Code in terminal; existing editor | Keep your editor. **tmux is one substrate, not core** — reach for native `claude --worktree` + background agents first; tmux earns its keep only when you want persistent, human-attendable sessions as a glance-dashboard (§5.6). |
-| **Agent onboarding** | CLAUDE.md/AGENTS.md memory files; teach the agent by writing corrections into memory; hard warning against unvetted skills | CLAUDE.md with @-imported living docs, skill-routing table, operating-discipline section with documented precedents | At or above parity. Formalize the write-back trigger (§5.3) and the vetting checklist (§5.5). At multiple lanes, memory quality is what keeps every lane aligned. |
-| **Ergonomics** | Voice input (OpenSuperWhisper, local Whisper, hotkey); outcome-based delegation; never take back control | Typed prompts; /grill-me | **Adopt voice (§5.1).** At queue-planning volume, dictation is the difference between thin plans and deep ones. |
-| **Planning** | Lavish Editor interactive plan artifacts; plan quality determines how long the agent runs autonomously | /grill-with-docs → design doc → /plan-eng-review → /to-issues | Functional parity — and now **the throughput lever**. Autonomy duration per lane is set entirely by plan depth. Batch-plan to keep the queue ahead of the lanes (§4.3). |
-| **Validation** | `no-mistakes`: conventional commit, rebase, fresh-context peer review, forced E2E evidence, docs/lint, PR, CI babysit — fully autonomous, escalates only ambiguity | /qa + /review + /ship as separate manual steps; pre-commit hooks; security CI; test CI landing via issue #25 | **Build the composite pipeline (§5.8).** #25 PR-A graduates from "planned" to **the critical path** — it's the CI leg of your pipeline. |
-| **Parallelism** | `treehouse` manages a pool of pre-warmed worktrees; 5–10 tasks in tmux windows with agent status in tab titles | Serial, single session | **Optional, trigger-gated (§3).** First reach: native subagent / `Workflow` / background-task fan-out — no new rig. Plain `git worktree` / `lane.sh` when you want the WIP guard + dep-sync + tmux dashboard bundled; treehouse only if you're opening lanes daily. |
-| **Long-running tasks** | `gnhf` ("good night, have fun"): decomposes a huge task, fresh context per step seeded with prior learnings, auto-rollback, token budget, leaves branch + notes.md | None | **Adopt the pattern, not the external tool (§5.9).** Native background `Agent` tasks + the `Workflow` tool (token budget, fresh-context-per-step) + cloud agents now cover the gnhf shape; `gnhf`-the-binary would fail your own §5.5 vetting bar. |
-| **Remote control** | Tailscale + SSH + mosh + tmux attach from phone | None | Optional, later. Becomes genuinely useful at 3+ lanes, when an away-from-desk block stalls real work (§6). |
+| `intent.md` | capture problem / why / constraints | `/to-prd` | GitHub issue (`needs-triage`) — the skill forbids file paths to avoid staleness |
+| `spec.md` | requirements + design | `/spec` | GitHub issue — closed on merge |
+| `plan.md` | files / order / risks / proof | `/tdd` + plan mode | in-session; high-risk persists as a design doc → ADR |
+| — *(ongoing)* | the durable "why" | ADRs via `/grill-with-docs` | `docs/decisions/` — committed, point-in-time stamped |
+| — *(state)* | current truth | `CONTEXT.md` | committed |
+
+The one playbook practice this substrate would otherwise drop — checking the eventual diff against the committed plan — is restored as a review step, not a file (§5).
 
 ---
 
-## 3. The ramp
+## 2. The evergreen core (proven; unchanged)
 
-Each stage has an exit criterion. Don't skip stages — every one exists to keep the next from multiplying unverified output.
+These two moves are the win, and Sprint 6.7 proved them — serially, no parallelism required:
 
-**Read the ramp as two halves.** Stages 0–1 (the pipeline + continuous merge) are the value, and for you they are **done** — proven across Sprint 6.7. Stages 2–3 (parallelism) are **optional and trigger-gated**, not a climb you owe anyone. Don't advance for its own sake; advance only when the Stage-2 trigger below actually fires.
+1. **Validation is one autonomous pipeline** (`/validate-and-ship`, §5), not a hand-run `/qa` + `/review` + `/ship` chain.
+2. **Merging is continuous** — one branch per issue, one PR per issue, merged the moment it's green by the tier's merge actor. The sprint is a planning + retro cadence, not a merge gate.
 
-**Stage 0 — Foundations (this week, ~2 hours setup + in-flight work)**
-- Voice input (§5.1), fresh-context review rule (§5.2), memory write-back (§5.3), evidence-PR template (§5.4), vetting checklist (§5.5). tmux basics (§5.6) are optional — pick them up only if you adopt that substrate.
-- Push #25 PR-A (docker-compose test CI) to green. This is now the critical path, not background work.
-- *Exit criterion:* CI runs real tests on every PR; you've run one full issue through the loop with a fresh-context review.
+The binding constraint on everything else is **how many review streams one person can sustain**, and it is **model-independent**: faster models produce more to review, not more attention to review it with. (Anthropic *AI-Native SDLC* course: *"The practical ceiling is how many streams one person can review properly, so add sessions only while review is keeping up."*)
 
-**Stage 1 — The pipeline (next 1–2 sprints)**
-- Build the composite `/validate-and-ship` chain (§5.8): one invocation from "code done" to "PR open with evidence, CI watched, ambiguity escalated."
-- Switch to per-issue branches and continuous merge (§4.2).
-- *Exit criterion:* three consecutive issues merged where your only involvement after handoff was decisions the pipeline escalated.
+---
 
-**Stage 2 — Two lanes (optional; enter only when the trigger fires)**
-- *Trigger to advance:* you are genuinely blocked — a lane is mid-run on a long autonomous task **and** a second independent, well-specified issue is ready to hand off **and** review is keeping up. If any clause is false, a second lane adds review load without adding throughput (negative throughput; see §7). Planning-bound or decision-bound ≠ throughput-bound.
-- *Substrate, in order of reach:* native worktree isolation (`claude --worktree <name>` / the harness's EnterWorktree) first — it's the lightest; `scripts/lane.sh` when you want the WIP guard + dep-sync + tmux dashboard bundled (§5.7). WIP limit: 2.
-- *Exit criterion:* a week at two lanes where escalations stayed manageable and no PR sat waiting on you for more than a day.
+## 3. The ramp (parallelism is optional and, here, unproven)
 
-**Stage 3 — Scale (only if Stage 2 ever became routine)**
-- 3–5 lanes; reach for native worktree isolation + background/cloud agents before any external worktree-pool tool. `treehouse` only if churn is daily *and* it clears §5.5 — and native capability makes that largely moot.
-- Overnight bulk runs for evaluator-scored or fully-planned tasks via the native substrate (§5.9), not an external `gnhf` install.
-- *Exit criterion:* none — this is cruising altitude. Scale lanes only while §7's guardrails hold.
+**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated and have never fired in this repo** — do not climb for its own sake.
+
+**Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
+
+**Stage 1 — The pipeline.** `/validate-and-ship` end to end; per-issue branches; continuous merge. *Exit:* three consecutive issues where your only post-handoff involvement was escalated decisions.
+
+**Stage 2 — Two lanes (only when the trigger fires).** *Trigger:* a lane is mid-run on a long autonomous task **and** a second independent, well-specified issue is ready **and** review is keeping up. If any clause is false, a second lane is negative throughput (§10). *Substrate, lightest first:* native `claude --worktree <name>` → `scripts/lane.sh` (WIP guard + dep-sync) → raw `git worktree`. WIP = 2. *Exit:* one logged week where no PR waited on you > 1 day.
+
+**Stage 3 — Scale.** 3–5 lanes; native worktrees + background/cloud agents before any external pool tool. No external worktree-pool or "overnight" binary unless it clears §9. *Exit:* none — cruising altitude, only while §10 holds.
 
 ---
 
 ## 4. The daily workflow
 
-### 4.0 Day shape (throughput mode)
-
-> This multi-lane "manager of an always-on team" shape is the **optional Stage-2+ steady state**, not the baseline. The single-lane issue loop (§4.2) is your current mode and is complete on its own — it ships verified work without any of the parallelism below. Adopt this shape only after the §3 Stage-2 trigger fires.
+### 4.1 Single-lane issue loop (the current, complete mode)
 
 ```
-Block 1 — PLAN (60–90 min, first)
-  Grill and refine plans; convert BACKLOG items into ready-for-agent
-  issues. Plan depth here sets autonomy duration everywhere else.
-  Target queue depth: lanes × 2.
-
-Block 2 — LAUNCH
-  One agent per lane. Each lane: pick issue → hand off the plan →
-  agent runs. You leave.
-
-Block 3 — MANAGE (rest of day, interrupt-driven)
-  Watch lane statuses. Answer escalations. Review evidence, not
-  diffs. Merge green PRs. Relaunch idle lanes from the queue.
-
-Day end — WRITE-BACK (§4.6)
-  Memory updates, CONTEXT.md, optionally queue an overnight task.
+branch per issue           → fix/<issue> or feat/<issue>  (branch BEFORE editing)
+classify (§1)              → tier sets planning weight + merge actor + gate
+plan to tier               → low: none · medium: PR intent block · high: grill→design→ADR
+/tdd                       → tests committed BEFORE implementation, then LOCKED (§7)
+/diagnose                  → if stuck >20 min; wire-level empirical confirmation first
+/validate-and-ship (§5)    → qa → fresh-context review → commit → rebase → PR w/
+                             evidence → SHA-bound attestation → CI (+ eval gate when built,
+                             if LLM-touching) → merge by tier
+merge                      → human, except docs-only / harness-internal low (§1)
+write-back                 → any correction this change needed → one dated line in
+                             CLAUDE.md before the next issue
 ```
 
-The identity shift this encodes, in Kun's framing: you stop being the engineer on one task and become the manager of a small always-on team. Your job is plans in, decisions back, merges out.
+### 4.2 Multi-lane day shape — ASPIRATIONAL (never exercised here)
 
-### 4.1 Session start ritual (≤5 min)
+> Adopt only after the §3 Stage-2 trigger fires and you've logged it. Until then this is design intent, not your workflow.
 
-```bash
-tmux attach -t researchflow || tmux new -s researchflow
-git status && git pull
-```
+PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
 
-1. Skim `CONTEXT.md` — confirm queue state and any overnight results.
-2. Launch Claude Code per lane. CLAUDE.md auto-loads the living docs.
-3. Resuming a lane mid-issue: `/context-restore`.
-4. Dictate lane objectives by voice — outcome + why, not a step list.
+### 4.3 Sprint start = queue-fill cadence
 
-### 4.2 The issue loop (Scale 1 — one lane, one issue)
+`/grill-with-docs` → design doc (**for high-risk deliverables**) → `/to-issues` → 5–10 vertical slices labeled `ready-for-agent`, **each pre-classified by tier**. Plan quality still buys autonomy — but spend it where blast radius warrants, not uniformly.
 
-```
-git worktree / checkout    → new branch per issue: fix/<issue> or feat/<issue>
-/grill-me                  → align on outcome (skip only if the plan from
-                             Block 1 is already crisp)
-/tdd                       → red, green, refactor
-/diagnose                  → if stuck >20 min; wire-level empirical
-                             confirmation BEFORE scoping fixes (keep this rule)
-/validate-and-ship (§5.8)  → the pipeline takes it from here:
-                             /qa → fresh-context review → conventional commit
-                             → rebase onto main → push → PR with Testing
-                             Evidence → SHA-bound attestation comment
-                             → watch CI → escalate ambiguity only
-attested merge on green    → human merges behavior-touching PRs; docs/harness
-                             self-merge under standing rule (Merged-By trailer);
-                             squash-merge --match-head-commit, delete branch
-memory write-back          → any correction this lane needed → one dated
-                             line in CLAUDE.md before the lane relaunches
-```
+### 4.4 Sprint end = quality + learning event
 
-**What changed from the old flow:** no more parking commits on a shared feature branch until sprint end. Every issue is its own branch and its own PR, merged the moment the pipeline and CI say green — by the merge actor rule (human for behavior-touching PRs; docs/harness self-merge under the standing rule). Small PRs merge faster, conflict less, and are the only model that works once lanes run in parallel.
-
-### 4.3 Sprint start → becomes the queue-fill cadence
-
-```
-/grill-with-docs   → align on the sprint's deliverable, write/refresh design doc
-/to-issues         → break into 5–10 vertical slices, labeled ready-for-agent
-```
-
-Same skills as before, new job: the sprint plan is now a **queue** the lanes drain continuously, not a batch that ships at once. Mantra stands: plan quality = autonomy duration. A one-line prompt buys minutes of lane autonomy; a grilled design doc buys hours. Refill mid-sprint in Block 1 whenever queue depth drops below lanes × 2.
-
-### 4.4 Sprint end (Scale 2 — lighter now)
-
-```
-/improve-codebase-architecture   → entropy pass across everything merged
-/qa                              → full end-to-end sweep of the integrated system
-/retro (15 min)                  → what worked, what to change; append the
-                                   sprint ADR to DECISIONS.md
-```
-
-Merging already happened continuously, so sprint end stops being a shipping event and becomes a **quality-and-learning event**: integration-level QA (per-issue pipelines verify slices; this verifies the whole), entropy cleanup, and the retro that tunes the next sprint's plans. /retro matters more at throughput, not less — it's where you find which plan patterns bought the longest autonomy.
-
-### 4.5 Release (Scale 3 — unchanged)
-
-```bash
-git checkout main && git pull
-git tag -a v1.0 -m "v1.0 — <milestone>"
-git push origin v1.0
-gh release create v1.0 --notes-file RELEASE_NOTES.md
-```
-
-### 4.6 Day end ritual (≤10 min)
-
-1. Update `CONTEXT.md` — queue state, lane states, overnight expectations.
-2. Memory write-back for any lane corrections not yet captured.
-3. If a bulk task qualifies (§5.9), queue the overnight run with a token budget.
-4. Detach tmux. Lanes with running pipelines keep going.
+`/improve-codebase-architecture` (entropy pass) → `/qa` (integration-level) → `/retro` (15 min, append ADR). Merging already happened continuously; sprint end verifies the *whole*, not slices.
 
 ---
 
-## 5. Practices in detail
+## 5. The composite pipeline — `/validate-and-ship`
 
-### 5.1 Voice input
+One invocation, "code done" → "merged or escalated":
 
-Why: you talk several times faster than you type, and the cost of including context ("here's *why* I want this") drops to near zero. At throughput, your main output is plans and lane instructions — pure dictation territory. Kun wrote his entire post mostly by voice.
+1. `/qa` on the change.
+2. **Fresh-context review** — a clean reviewer subagent spawned by `/validate-and-ship`, never the authoring session, posting **one consolidated verdict** (never a comment stream; that spends the §10 bandwidth it's meant to save). Running it as a non-interactive CI check is target state (§7); no workflow in `.github/workflows/` runs it yet. For **high-tier** changes the reviewer also asserts the diff matches the approved design doc / ADR, and that any departure is recorded in this PR — the playbook's plan-vs-reality discipline (check the diff against the committed plan; when it departs, update the plan in the same commit), applied to the ADR instead of a `plan.md`.
+3. Apply mechanical fixes; **escalate behavior-changing findings** to the human.
+4. Conventional commit on the issue branch; rebase onto latest `main`.
+5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
+6. Post the **SHA-bound review attestation** (step 2's consolidated verdict + reviewed commit SHA == `headRefOid`).
+7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #136/#137/#142 are open) would add a run iff the change is LLM-touching (trigger list below).
+8. On green, **merge by tier** (§1): human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
 
-Setup:
-- **macOS:** OpenSuperWhisper (free, open source, runs Whisper large-v3-turbo locally, global hotkey). Alternatives: MacWhisper, superwhisper. Zero-install trial: built-in macOS dictation.
-- **Windows:** trial with built-in voice typing (`Win+H`); for local Whisper, any whisper.cpp frontend.
-- **Usage pattern:** voice for intent, context, plans, and lane objectives. Keyboard for identifiers, paths, and precise edits. Don't dictate code.
+These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently.
 
-### 5.2 Delegation and the fresh-context review rule
+**LLM-touching trigger for the eval gate** — the surfaces that actually call a model, named correctly (not the retired `query_interpreter.py`):
 
-Four principles, written into CLAUDE.md so every lane inherits them:
+- `app/services/sql_synthesis.py` (exploratory NL→SQL synthesis — #76 territory),
+- `app/agents/requirements_agent.py` (concept extraction),
+- `app/utils/llm_client.py` / `app/utils/multi_llm_client.py` and every caller — today `calendar_agent` / `delivery_agent` (via `langgraph_workflow`) and `app/services/conversation_manager.py` (`LLMClient` fallback); re-derive with `git grep -ln 'LLMClient\|MultiLLMClient\|import anthropic' app/` rather than trusting this list,
+- any prompt or model-config file.
 
-1. **Delegate outcomes, not actions, with the why attached.** Not "rename this variable" but "audit this module's naming against `.claude/architecture.rules` — we're standardizing before the next integration pass." The why lets the agent generalize and run longer without you.
-2. **Never review in the authoring session.** The session that wrote the code assumes its own intent — it's checking its own homework. Reviews run in a fresh context (the pipeline enforces this, §5.8). Highest-leverage line in Kun's whole validation stack.
-3. **Escalation split:** findings that would change product behavior come to you; mechanical findings (lint, naming, dead code) the agent fixes itself. At multiple lanes this split is what keeps you off the critical path.
-4. **Don't take back control — teach.** When a lane errs, the reflex is feedback plus a memory write-back (§5.3), not "I'll do it myself." Taking over makes you the bottleneck across every lane at once.
+When built, the gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (this repo has already had one integration job that was silently a no-op).
 
-### 5.3 Memory write-back (the compounding habit)
+**Attestation reconciliation:** the fresh-context reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For docs-only / harness-internal low, the verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance the Throughput Edition got right intact.
 
-You already run the heavyweight version — the operating-discipline section in CLAUDE.md with documented precedents. Make the trigger mechanical:
+### 5.1 Delegation + memory (unchanged principles)
 
-> **Lane-close check:** "Did this lane do anything I had to correct? If yes: append one dated line to CLAUDE.md (or architecture.rules) stating the rule, with today's case as precedent — before the lane relaunches."
+Delegate outcomes with the *why*. Never review in the authoring session (enforced by §5 step 2). Escalation split: behavior → human, mechanical → the agent. Don't take back control — teach via a dated CLAUDE.md line. **Lane-close check:** "Did this change need a correction? If yes, one dated rule-line in CLAUDE.md before the next issue."
 
-Two minutes, compounds forever, and at multiple lanes it compounds *multiplicatively*: a correction captured once fixes every future lane. Skipping it means re-teaching the same lesson in parallel.
+---
 
-### 5.4 Evidence-bearing PRs
+## 6. The metric is yours, measured — not a borrowed stat
 
-At throughput you stop reading diffs line-by-line — Kun is explicit that he rarely does. What you review instead is **evidence**. Every PR the pipeline opens carries:
+The Throughput Edition leaned on an external, uncorroborated "68% of agent changes carried bugs." This edition deletes it and measures the equivalent **here**:
+
+- **Catch-rate log:** tag what the fresh-context review catches before merge.
+- **Escape-rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
+- **Review-minutes per PR.**
+
+Together these are the **reviewer-hour** picture your own principles call the real target, and the honest evidence for the WIP limit — not a blog post. **Verified merge = evidence section + green CI (+ eval gate if LLM-touching) + consolidated fresh-context verdict.** Unverified merges are inventory of future rework; the faster the models, the faster that inventory accrues, so this matters *more* as capability rises.
+
+**Evidence-bearing PR template:**
 
 ```markdown
 ## Testing evidence
-- Commands run: `pytest tests/... -x` → 42 passed, 0 failed
-- E2E exercised: <what was driven, expected vs. observed>
-- Artifacts: <pipeline-generated by diff class — AppTest output | LangSmith trace URL / payload dump | verbatim test output; text only, no screenshots; docs-only PRs skip this section>
-- Not covered: <gaps and why they're acceptable>
+- Risk tier: <low|medium|high> — paths: <...>
+- Commands run: `pytest ... -x` → N passed / 0 failed
+- E2E exercised: <what was driven; expected vs observed>
+- Eval gate (if LLM-touching): <N cases asserted; per-domain scores>
+- Artifacts: <AppTest output | LangSmith trace URL | verbatim output; text only>
+- Not covered: <gaps and why acceptable>
 ```
-
-This is also the audit trail your domain habits already favor: every merged change carries its own proof-of-function, reviewable after the fact. Green unit tests alone don't clear the bar — your two wire-level bugs are the standing reason why.
-
-### 5.5 Skill vetting checklist
-
-Kun's sharpest warning: unvetted skills are a supply-chain and prompt-injection surface, and bloated skills silently degrade agent performance — a cost you now pay per lane. Before installing any skill:
-
-1. Read the entire SKILL.md **and any bundled scripts** — not the README.
-2. Grep for network calls, `curl | bash`, credential/env access, and package installs.
-3. Named maintainer, public repo, pin the version or commit.
-4. If it executes commands, trial it in a throwaway repo first.
-5. Re-review on every update; prune skills unused for a month (each one is context cost + attack surface in every lane).
-6. Never install a skill mid-task because an agent suggested it. Finish the task, vet it cold.
-
-Your current sources (gstack, Pocock) pass because you can name the maintainers and read the code. Keep that bar as you add tools like treehouse and gnhf — vet those the same way.
-
-### 5.6 tmux — one substrate option
-
-Reach for the native substrate first: `claude --worktree <name>` in separate terminal tabs gives you isolated parallel sessions with no extra tooling, and background `Agent` tasks / the `Workflow` tool fan work out *inside* a single session. tmux is worth it only for one thing those don't give you: persistent, human-attendable sessions that survive a closed terminal, with window names as a glance-dashboard. If that's what you want, the setup is small.
-
-```bash
-brew install tmux                     # or apt install tmux
-tmux new -s researchflow              # named session
-# Ctrl-b c        → new window (= new lane)
-# Ctrl-b ,        → rename window:  lane1:#82-running / lane2:NEEDS-INPUT
-# Ctrl-b n / p    → cycle lanes
-# Ctrl-b d        → detach; everything keeps running
-tmux attach -t researchflow           # reattach
-```
-
-Claude Code surfaces status in titles out of the box; keep window names carrying issue + state so one glance tells you which lane needs you. That visibility trick is, per Kun, what makes many lanes manageable without losing your mind. Skip the config-file rabbit hole; defaults are fine.
-
-### 5.7 Worktree lanes
-
-A worktree is a second checkout of the same repo in another directory — parallel agents without stepping on each other. The lightest way in is native: `claude --worktree <name>` (or the harness's EnterWorktree) spins up an isolated checkout with no manual plumbing. Reach for `scripts/lane.sh` when you want the WIP guard + dep-sync + tmux dashboard bundled into one command; reach for raw `git worktree` when you want to see the moving parts.
-
-```bash
-# open a lane
-git worktree add ../rf-issue82 -b fix/issue-82
-cd ../rf-issue82
-cp ../researchflow/.env .             # env doesn't follow automatically
-uv pip sync config/requirements.lock  # deps don't either
-
-# housekeeping
-git worktree list
-git worktree remove ../rf-issue82     # after the PR merges
-```
-
-`scripts/lane.sh` wraps this: `open <issue>` (worktree + branch off `origin/main` + `.env` copy + `uv` dep-sync + named tmux window), `close <issue>`, `list`. It enforces the §7 WIP=2 guardrail — the third concurrent lane is refused without `--force`.
-
-That setup friction (env, deps, sync-to-main, reuse) is what Kun's `treehouse` automates with a pool of pre-warmed worktrees. Before adopting it, note two things: native worktree isolation + `lane.sh` already remove most of that friction, and `treehouse` is an unvetted external tool that must clear §5.5 first. Defer to Stage 3, and only if you're opening lanes daily *and* the native path genuinely isn't enough. Until then, `scripts/lane.sh` over plain `git worktree` is fine at two lanes.
-
-### 5.8 The composite pipeline — your `no-mistakes`
-
-The single highest-leverage build in this document. One invocation — call it `/validate-and-ship` — that chains what you currently run by hand:
-
-1. `/qa` on the change
-2. **Fresh-context review**: spawn a clean reviewer session/subagent on the diff (this is the one legitimate early use of subagents your backlog deferred — a single reviewer in a fresh context, nothing more)
-3. Apply mechanical fixes; **escalate** behavior-changing findings to you
-4. Conventional commit on the issue branch, rebase onto latest main
-5. Push, open PR with the Testing Evidence section filled from step 1's actual output
-6. Post the SHA-bound review attestation comment (step 2's verdict + the reviewed commit SHA)
-7. Watch CI; on green, merge by class — a human merges behavior-touching PRs; docs-only/harness-internal self-merge under the standing rule with a `Merged-By` trailer and `--match-head-commit`
-
-Write it once as a skill — you already have the skill-distillation work backlogged (doc-reorg Phase 3), and this becomes its first entry. #25 PR-A is the CI leg; without real tests in CI, step 7 is theater. Kun's stat is the justification for the effort: two-thirds of agent changes carried bugs his pipeline caught before he saw them. Yours will too.
-
-### 5.9 Overnight bulk runs (the gnhf pattern)
-
-For tasks too big for one context window or too mechanical to babysit: decompose into steps, run each in a **fresh context** seeded with a shared base plus accumulated learnings (a notes.md), auto-rollback failed steps, cap the token budget, wake up to a branch with organized commits and a summary.
-
-You don't need an external tool for this anymore: native background `Agent` tasks, the `Workflow` tool (token budget, fresh-context-per-step, auto-isolated worktrees), and cloud agents implement exactly this loop in-harness — and clear §5.5 trivially because there's nothing to install. Kun's open-source `gnhf` is the pattern's origin, not a dependency. It fits three shapes of work:
-
-- **Implement a large, fully-grilled plan** end to end.
-- **Drive a measurable metric** — test coverage up, LOC down, startup latency down — with functionality pinned by the test suite.
-- **Evaluator-scored experiments** — anything where a script can grade each attempt.
-
-Your ready-made first case: regenerating transpiler expected-outputs against fresh Synthea data — mechanical, verifiable, and already on your radar as recurring work. Overnight hours are free throughput; this is how you collect them.
 
 ---
 
-## 6. Not adopted — and what would change the answer
+## 7. Mechanical enforcement (and its price)
 
-**Editor/terminal migration (Neovim, WezTerm).** Kun's setup rides on ~30 years of terminal muscle memory; the tools are downstream of that, not the source of the speed. Migrating costs weeks of throughput to gain keyboard purity you can approximate with your current editor's shortcuts. Revisit only if genuine curiosity outlives a slow month.
+The sharpest rules were social; mechanize them — but **every new mechanism is itself §9 surface + maintenance + a drift/no-op risk, so prefer the lightest enforcement that works and make each gate prove it ran.** "Simpler wins" applies to your own rig, not just the agent's.
 
-**Lavish Editor.** Your grill chain already produces deep, adversarially-reviewed plans; the interactive-HTML rendering is a nicer surface, not a deeper plan. Try it out of curiosity; adopt only if annotate-in-browser measurably beats markdown iteration for you.
-
-**Remote control (Tailscale + SSH + mosh).** Adopt at Stage 3 if lanes regularly stall waiting on decisions while you're away from the desk. At 1–2 lanes, escalations can wait until you're back.
-
----
-
-## 7. Throughput guardrails
-
-Raw throughput that merges regressions is negative throughput. The binding constraint behind all of these is one quantity — **how many streams you can review properly** — and it is **model-independent**: faster models produce more to review, not more of your attention to review it with. These keep the number honest:
-
-- **The metric: verified merges per week.** Verified = evidence section + green CI + fresh-context review. Unverified merges don't count; they're inventory of future rework — and the faster your models, the faster that inventory accrues, so this metric matters *more* as capability rises, not less.
-- **Cycle time is the second dial:** plan-handoff → merge, per issue. If it balloons, plans are too thin or the pipeline is escalating too much — fix those before adding lanes. `scripts/dials.sh` computes its two measurable sub-intervals from merged PRs — open→green (pipeline health) and green→merge (merge-gate latency) — grouped by merge day, since this repo's cadence is per-session rather than per-calendar-week.
-- **WIP limit = lanes you can actually unblock.** The ceiling is your review bandwidth, full stop. The Claude AI-native SDLC course puts it the same way: *"The practical ceiling is how many streams one person can review properly, so add sessions only while review is keeping up."* Scale to N+1 only when escalations-per-lane are low and nothing waits on you overnight.
-- **Review-debt rule:** no new lane launches while ≥2 PRs sit awaiting your decision. Draining beats queueing.
-- **Never scale past validation.** Pipeline red or flaky → drop to one lane until it's green again. Kun's 68% catch rate is the standing argument: that's the volume of bugs that reaches main the moment the net is down.
-- **Queue health:** refill in Block 1 to lanes × 2. Starving lanes means the plan block was too thin — the fix is planning depth, never skipping the grill.
-- **The memory loop is the ceiling-raiser.** Write-backs, ADRs, retros, conventional commits — the compounding practices are what make month three faster than month one. Throughput without them plateaus at whatever the agents can do unteached.
+- **Test integrity — protect golden files, not all `tests/**`.** The high-value targets are `tests/fixtures/transpiler_expected_outputs.py` and the eval case sets (`tests/eval/cases.py`, `tests/eval/fixtures/**`). The `logs/sprint_*_gate.jsonl` files are gate *evidence output* and gitignored, so no CI check can see them; protect the inputs, not the logs. "Regenerate expected outputs to match" is exactly how a #76-style silent bug passes. Rule (works under `/tdd`, where the agent writes the tests): **tests are committed before implementation and locked from then until the task ends.** Enforce with the lightest equivalent — a CI diff check on the golden paths over a PreToolUse hook if the CI check suffices.
+- **Fresh-context review as a CI check** (§5 step 2) — target state, not built: today the reviewer runs in-session via `/validate-and-ship`.
+- **Drift at its source.** Status claims — node counts, test counts, "shipped" markers — are **generated or checked by a script**, never hand-typed into CLAUDE.md / CONTEXT.md / issues. (The Throughput Edition's "23-state vs 17-nodes" and "12 vs 1 integration tests" were status drift, not design-doc drift — lighter planning would not have prevented them; generated counts would.) Design docs and ADRs are stamped **point-in-time** so nobody reads them as current state.
 
 ---
 
-## 8. Compressed cheat sheet
+## 8. Voice input
 
-| Moment | Chain | Commands / rules |
+You talk faster than you type, and the cost of attaching the *why* drops to near zero. At planning volume this is the difference between thin and deep plans. macOS: OpenSuperWhisper (local Whisper, hotkey) or built-in dictation. Voice for intent/context/plans; keyboard for identifiers, paths, code.
+
+---
+
+## 9. Skill / tool vetting (the "§5.5 bar", unchanged)
+
+*"§5.5" is this bar's legacy section number; CLAUDE.md's install-ledger entries still cite it by that name.*
+
+Before any skill or executing tool: read the whole `SKILL.md` **and** bundled scripts; grep for network calls, `curl | bash`, credential/env access, package installs; require a named maintainer + pinned version/commit; trial command-runners in a throwaway repo; never install mid-task on an agent's suggestion — finish, then vet cold. **This bar applies to the mechanisms in §7 too** — a test-lock hook or eval-gate script is tooling you must vet and maintain, not free safety.
+
+---
+
+## 10. Throughput guardrails
+
+- **Verified merges per week** (defined in §6) — the only merge count that matters.
+- **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
+- **WIP = review streams you can actually unblock.** Model-independent ceiling. Scale to N+1 only when escalations-per-lane are low and nothing waits overnight.
+- **Review-debt rule:** no new lane while ≥ 2 PRs await your decision.
+- **Never scale past validation:** pipeline red/flaky → one lane until green.
+- **Queue health:** refill to lanes × 2; starvation means the plan block was thin.
+- **The memory loop is the ceiling-raiser:** write-backs, ADRs, retros, generated status — the compounding practices are what make month three faster than month one.
+
+---
+
+## 11. Not adopted — and the honest cons
+
+- **Editor/terminal migration (Neovim/WezTerm):** downstream of muscle memory, not the source of speed. Skip.
+- **Production Maintain loop (playbook Stage 6: Maintenance):** there is **no production deployment yet**, so the prod-anomaly→replan loop doesn't apply literally. The version that *does*: post-merge signals you already have — CI failures on `main`, eval regressions, cost/drift telemetry (#151), LangSmith traces — **auto-file issues into the queue**. Build that, not the prod loop.
+- **The planning stance is a position, not a law.** The 2026 plan-mode discourse (Nadeem's "plan mode is dead"; instil's "spec-driven dead, long live plan mode") is ~a handful of posts over a month, mostly about general work where output is cheap to check — not a consensus, and not obviously transferable to PHI/cohort work. This edition's risk tiering is the hedge: it refuses heavy artifacts where they'd only drift (low/medium) and keeps them where blast radius is real (high). If your measured catch-rate (§6) ever shows high-tier grilling isn't catching more than medium-tier intent blocks, revisit this.
+
+---
+
+## 12. Cheat sheet
+
+| Moment | Chain | Rule |
 |---|---|---|
-| Day start | PLAN block first: grill + fill queue to lanes × 2 | Voice-dictate plans; /grill-with-docs, /to-issues |
-| Launch a lane (optional) | native worktree first; `lane.sh` for the bundle | `claude --worktree <name>` — or `scripts/lane.sh open <issue>` for WIP guard + dep-sync + tmux window |
-| Issue (per lane) | /grill-me → /tdd → **/validate-and-ship** | Pipeline: qa → fresh review → commit → rebase → PR + evidence → attestation → CI → merge by class |
-| Stuck >20 min | /diagnose | Wire-level empirical confirmation before scoping fixes |
-| PR green | Attested merge, delete branch, relaunch lane | Human merges behavior-touching; docs/harness self-merge under standing rule; verify attestation SHA |
-| Lane close | Memory write-back if corrected | One dated line in CLAUDE.md before relaunch |
-| Sprint start | /grill-with-docs → /to-issues | Queue-fill cadence; plan depth = autonomy duration |
-| Sprint end | /improve-codebase-architecture → /qa (integration) → **/retro** | ADR appended; find which plan patterns bought the longest autonomy |
-| Release | tag | `git tag -a`, `gh release create` |
-| Overnight | bulk run via native background/Workflow agents | Budget-capped; evaluator-scored or plan-driven only |
-| New skill/tool | Vetting checklist (§5.5) | Read everything; pin versions; never mid-task |
-| Scaling check | §7 guardrails | Escalations low + no review debt + CI green → add a lane |
+| New issue | classify (§1) → plan to tier | low: none · medium: PR intent block · high: grill→design→ADR |
+| Build | `/tdd` → **/validate-and-ship** | tests committed + locked before impl (§7) |
+| Stuck > 20 min | `/diagnose` | wire-level empirical confirmation first |
+| PR | evidence template (§6) + SHA-bound attestation | tier sets merge actor |
+| Merge | by tier | human, except docs-only / harness-internal self-merge (`--match-head-commit`) |
+| LLM-touching change | eval gate (§5) | per-domain thresholds; assert N cases ran |
+| Lane close | memory write-back if corrected | one dated CLAUDE.md line |
+| Sprint end | `/improve-codebase-architecture` → `/qa` → `/retro` | ADR appended, point-in-time stamped |
+| New skill/mechanism | §9 vetting | read everything; pin; never mid-task |
+| Scaling check | §10 | escalations low + no review debt + CI green |
+
+---
+
+*Sourcing note:* practices corroborated primarily by Anthropic's *AI-Native SDLC Playbook* (claude.com/resources/articles/the-ai-native-sdlc-playbook; quotes checked verbatim 2026-10-20) and triangulated against the 2026 plan-mode discourse. No load-bearing claim rests on an unverifiable secondary source; the one quantitative claim (§6) is measured in this repo, not imported.
