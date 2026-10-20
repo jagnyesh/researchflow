@@ -71,11 +71,11 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §5 — The composite pipeline (`/validate-and-ship`)
 
-**What it says:** one command runs qa → **fresh-context review** (a clean subagent today; a CI check is the target) → commit → rebase → PR with evidence → SHA-bound attestation → CI (plus the **eval gate** if the change is LLM-touching) → merge by tier.
+**What it says:** one command runs qa → **fresh-context review** (a clean subagent today; a CI check is the target) → commit → rebase → PR with evidence → SHA-bound attestation → CI (plus the **eval gate** for LLM-touching changes, once it's built) → merge by tier.
 
 **Two things to understand here:**
 
-- **The eval-gate trigger is path-specific.** It only fires for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py`/`multi_llm_client.py` and their callers (`calendar_agent`/`delivery_agent` via `langgraph_workflow`, `conversation_manager.py`), and any prompt/model-config file. The gate uses the #136/#137/#142 harnesses, sets per-domain thresholds, and **asserts it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
+- **The eval-gate trigger is path-specific.** The gate itself is target state (#136/#137/#142 are open). Once built, it fires only for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py`/`multi_llm_client.py` and their callers (`calendar_agent`/`delivery_agent` via `langgraph_workflow`, `conversation_manager.py`), and any prompt/model-config file. It will use the #136/#137/#142 harnesses, set per-domain thresholds, and **assert it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
 - **The reviewer feeds the attestation; it doesn't replace the human.** For High/Medium, a human still reads the one consolidated verdict and merges. For docs-only / harness-internal Low, that verdict + the SHA comment is enough to self-merge. This keeps the merge-governance intact.
 
 **How to use it:** after `/tdd`, you run one command. Your only job afterward is the decisions it escalates.

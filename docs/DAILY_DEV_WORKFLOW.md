@@ -84,8 +84,8 @@ plan to tier               → low: none · medium: PR intent block · high: gri
 /tdd                       → tests committed BEFORE implementation, then LOCKED (§7)
 /diagnose                  → if stuck >20 min; wire-level empirical confirmation first
 /validate-and-ship (§5)    → qa → fresh-context review → commit → rebase → PR w/
-                             evidence → SHA-bound attestation → CI (incl. eval gate if
-                             LLM-touching) → merge by tier
+                             evidence → SHA-bound attestation → CI (+ eval gate when built,
+                             if LLM-touching) → merge by tier
 merge                      → human, except docs-only / harness-internal low (§1)
 write-back                 → any correction this change needed → one dated line in
                              CLAUDE.md before the next issue
