@@ -30,7 +30,7 @@ Planning weight and merge actor are separate axes: a test-only change plans like
 
 Three consequences this settles:
 
-- **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the 2026 plan-mode discourse's "let the model make reasonable assumptions" posture (Nadeem) is exactly what you refuse *here*, while the course itself prescribes the opposite for risky work ("interrogate the plan: what could it break, which step is riskiest, what did Claude rule out"). Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
+- **The plan-mode debate dissolves.** "How much to write down" was never one answer. High-risk work earns the full grill→design→ADR chain because a wrong cohort definition or PHI-boundary assumption is expensive and auditable — the 2026 plan-mode discourse's "let the model make reasonable assumptions" posture (Nadeem) is exactly what you refuse *here*, while the course itself prescribes the opposite for risky work ("Interrogate the plan by asking what the change could break, which step is most risky, and what other options Claude chose not to do."). Low-risk work gets nothing but the issue body, because a persisted artifact there only drifts. Medium risk gets the course's `intent.md` content *inlined in the PR* so there's no new file to go stale.
 - **Blast radius, not autonomy duration, is the justification.** The Throughput Edition argued plan depth from "autonomy duration" (contested, and refuted by the 2026 plan-mode discourse). This edition argues it from blast radius and auditability — which actually holds in a clinical/regulatory codebase and is the defense that edition never made.
 - **Golden files are the real test-integrity surface** — not all of `tests/**`. See §7.
 
@@ -222,4 +222,4 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 
 ---
 
-*Sourcing note:* practices corroborated primarily by Anthropic's *AI-Native SDLC Playbook* (academy.claude.com) and triangulated against the 2026 plan-mode discourse. No load-bearing claim rests on an unverifiable secondary source; the one quantitative claim (§6) is measured in this repo, not imported.
+*Sourcing note:* practices corroborated primarily by Anthropic's *AI-Native SDLC Playbook* (claude.com/resources/articles/the-ai-native-sdlc-playbook; quotes checked verbatim 2026-10-20) and triangulated against the 2026 plan-mode discourse. No load-bearing claim rests on an unverifiable secondary source; the one quantitative claim (§6) is measured in this repo, not imported.
