@@ -11,7 +11,7 @@
 This doc's claims are only as good as the repo's own numbers. Before adding a lane, a gate, or a rule, pull the real data:
 
 - `scripts/dials.sh` — open→green (pipeline health) and green→merge (merge-gate latency), per merge day.
-- Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target.
+- Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target. Not started yet; begin it before trusting any claim that leans on it.
 - Honest baseline, recorded here so nobody mistakes aspiration for practice: **parallel lanes have never run in this repo.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. Everything in §4 about multiple lanes is therefore design intent, not observed steady-state. Treat §4 as untested until the §3 trigger actually fires and you log a week of it.
 
 ---
@@ -22,7 +22,7 @@ The single structural idea in this edition. A change's **risk tier** — decided
 
 | Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files |
 |---|---|---|---|---|---|
-| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked |
+| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) |
 | **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a |
 | **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a |
 
@@ -44,7 +44,7 @@ Three consequences this settles:
 | — *(ongoing)* | the durable "why" | ADRs via `/grill-with-docs` | `docs/decisions/` — committed, point-in-time stamped |
 | — *(state)* | current truth | `CONTEXT.md` | committed |
 
-The one playbook practice this substrate would otherwise drop — *"check the diff against the committed plan"* — is restored as a review step, not a file (§5).
+The one playbook practice this substrate would otherwise drop — checking the eventual diff against the committed plan — is restored as a review step, not a file (§5).
 
 ---
 
@@ -61,7 +61,7 @@ The binding constraint on everything else is **how many review streams one perso
 
 ## 3. The ramp (parallelism is optional and, here, unproven)
 
-**Stages 0–1 are done** (pipeline + continuous merge, proven across 6.7). **Stages 2–3 are trigger-gated and have never fired in this repo** — do not climb for its own sake.
+**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated and have never fired in this repo** — do not climb for its own sake.
 
 **Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
 
@@ -117,8 +117,10 @@ One invocation, "code done" → "merged or escalated":
 4. Conventional commit on the issue branch; rebase onto latest `main`.
 5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
 6. Post the **SHA-bound review attestation** (step 2's consolidated verdict + reviewed commit SHA == `headRefOid`).
-7. **Eval gate** runs iff the change is LLM-touching (trigger list below); CI runs real tests (needs the docker-compose test job live).
+7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #136/#137/#142 are open) would add a run iff the change is LLM-touching (trigger list below).
 8. On green, **merge by tier** (§1): human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
+
+These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently.
 
 **LLM-touching trigger for the eval gate** — the surfaces that actually call a model, named correctly (not the retired `query_interpreter.py`):
 
@@ -127,7 +129,7 @@ One invocation, "code done" → "merged or escalated":
 - `app/utils/llm_client.py` / `app/utils/multi_llm_client.py` and every caller — today `calendar_agent` / `delivery_agent` (via `langgraph_workflow`) and `app/services/conversation_manager.py` (`LLMClient` fallback); re-derive with `git grep -ln 'LLMClient\|MultiLLMClient\|import anthropic' app/` rather than trusting this list,
 - any prompt or model-config file.
 
-The gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (TODOS already records one integration job that was silently a no-op).
+When built, the gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (this repo has already had one integration job that was silently a no-op).
 
 **Attestation reconciliation:** the fresh-context reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For docs-only / harness-internal low, the verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance the Throughput Edition got right intact.
 
@@ -188,7 +190,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 ## 10. Throughput guardrails
 
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
-- **Cycle time** (`dials.sh`): plan-handoff → merge. Ballooning means thin plans or over-escalation — fix before adding lanes.
+- **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
 - **WIP = review streams you can actually unblock.** Model-independent ceiling. Scale to N+1 only when escalations-per-lane are low and nothing waits overnight.
 - **Review-debt rule:** no new lane while ≥ 2 PRs await your decision.
 - **Never scale past validation:** pipeline red/flaky → one lane until green.
@@ -200,7 +202,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 ## 11. Not adopted — and the honest cons
 
 - **Editor/terminal migration (Neovim/WezTerm):** downstream of muscle memory, not the source of speed. Skip.
-- **Production Maintain loop (course Stage 6):** there is **no production deployment yet**, so the prod-anomaly→replan loop doesn't apply literally. The version that *does*: post-merge signals you already have — nightly CI failures, eval regressions, cost/drift telemetry (#151), LangSmith traces — **auto-file issues into the queue**. Build that, not the prod loop.
+- **Production Maintain loop (playbook Stage 6: Maintenance):** there is **no production deployment yet**, so the prod-anomaly→replan loop doesn't apply literally. The version that *does*: post-merge signals you already have — CI failures on `main`, eval regressions, cost/drift telemetry (#151), LangSmith traces — **auto-file issues into the queue**. Build that, not the prod loop.
 - **The planning stance is a position, not a law.** The 2026 plan-mode discourse (Nadeem's "plan mode is dead"; instil's "spec-driven dead, long live plan mode") is ~a handful of posts over a month, mostly about general work where output is cheap to check — not a consensus, and not obviously transferable to PHI/cohort work. This edition's risk tiering is the hedge: it refuses heavy artifacts where they'd only drift (low/medium) and keeps them where blast radius is real (high). If your measured catch-rate (§6) ever shows high-tier grilling isn't catching more than medium-tier intent blocks, revisit this.
 
 ---

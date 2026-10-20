@@ -131,7 +131,7 @@ Touches only `docs/**` + a root `.md`. → **Low.** The issue body is the whole 
 Touches portal UI, no PHI, no SQL generation, no model call. → **Medium.** You write a **5–10 line intent block in the PR body** (what/why/constraints/non-goals) instead of a design doc. Targeted tests. **Human merges.** No eval gate (nothing LLM-touching). Moderate ceremony, no new artifact to drift.
 
 **High — "fix the synthesis prompt so `medication_display` isn't NULL" (#111).**
-Touches `app/services/sql_synthesis.py` — both cohort semantics *and* LLM-touching. → **High.** Full `grill-with-docs → design doc → ADR`. The gate `.jsonl` and any golden fixtures are **locked** (you can't quietly regenerate expected output to make it pass). The **eval gate is required** and must assert it ran N cases with per-domain thresholds. **A human merges, always.** Maximum ceremony — because a wrong cohort/medication mapping is expensive and auditable.
+Touches `app/services/sql_synthesis.py` — both cohort semantics *and* LLM-touching. → **High.** Full `grill-with-docs → design doc → ADR`. The eval case sets (`tests/eval/`) and any golden fixtures are **locked** (you can't quietly regenerate expected output to make it pass). The **eval gate is required** once it exists (#136/#137/#142 are open) and must assert it ran N cases with per-domain thresholds. **A human merges, always.** Maximum ceremony — because a wrong cohort/medication mapping is expensive and auditable.
 
 Same one-command pipeline each time; the tier dials the rigor up or down. That's the entire design.
 
@@ -141,6 +141,6 @@ Same one-command pipeline each time; the tier dials the rigor up or down. That's
 
 1. **Internalize §1.** Classifying is the habit everything else rides on.
 2. **Stage 0 foundations (§3):** evidence-PR template (§6), the vetting bar (§9), and the golden-file lock + generated-counts check (§7) — these are cheap and high-leverage.
-3. **Get CI running real tests** so `/validate-and-ship` step 7 isn't theater.
+3. **Build the eval gate** (#136/#137/#142) so LLM-touching changes have more than the replay test. CI already runs real tests, including docker compose, on every PR.
 4. **Start the catch-rate log (§6)** from day one — it's the metric that later justifies (or refuses) a second lane.
 5. **Leave parallelism alone** until §3's Stage-2 trigger is literally true.
