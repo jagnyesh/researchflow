@@ -1,5 +1,5 @@
 #!/bin/bash
-# lane.sh — parallel-lane harness for the throughput workflow.
+# lane.sh — parallel-lane harness for the workflow doc's multi-lane mode (§3 Stage 2+).
 #
 # Automates docs/DAILY_DEV_WORKFLOW.md §3 Stage 2 (worktree add + env copy + dep sync)
 # and the multi-lane day shape (§4.2: one agent/tmux window per lane), with the §10 WIP=2 guardrail enforced.

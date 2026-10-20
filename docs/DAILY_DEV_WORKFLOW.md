@@ -10,7 +10,7 @@
 
 This doc's claims are only as good as the repo's own numbers. Before adding a lane, a gate, or a rule, pull the real data:
 
-- `scripts/dials.sh` — open→green (pipeline health) and green→merge (merge-gate latency), per merge d
+- `scripts/dials.sh` — open→green (pipeline health) and green→merge (merge-gate latency), per merge day.
 - Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target.
 - Honest baseline, recorded here so nobody mistakes aspiration for practice: **parallel lanes have never run in this repo.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. Everything in §4 about multiple lanes is therefore design intent, not observed steady-state. Treat §4 as untested until the §3 trigger actually fires and you log a week of it.
 
@@ -22,9 +22,11 @@ The single structural idea in this edition. A change's **risk tier** — decided
 
 | Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files |
 |---|---|---|---|---|---|
-| **High** | PHI boundary / `SQLValidator` (aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked |
+| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked |
 | **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a |
-| **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, workflow docs) | The issue body **is** the intent — no extra artifact | Standing-rule **self-merge** (`Merged-By` trailer, SHA-bound attestation) | no | n/a |
+| **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a |
+
+Planning weight and merge actor are separate axes: a test-only change plans like Low but merges like Medium. The canonical merge rule is CLAUDE.md's *Merge actor* section and `/validate-and-ship` Step 8; this table must not diverge from them.
 
 Three consequences this settles:
 
@@ -61,7 +63,7 @@ The binding constraint on everything else is **how many review streams one perso
 
 **Stages 0–1 are done** (pipeline + continuous merge, proven across 6.7). **Stages 2–3 are trigger-gated and have never fired in this repo** — do not climb for its own sake.
 
-**Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.3-equivalent below), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
+**Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
 
 **Stage 1 — The pipeline.** `/validate-and-ship` end to end; per-issue branches; continuous merge. *Exit:* three consecutive issues where your only post-handoff involvement was escalated decisions.
 
@@ -81,10 +83,10 @@ classify (§1)              → tier sets planning weight + merge actor + gate
 plan to tier               → low: none · medium: PR intent block · high: grill→design→ADR
 /tdd                       → tests committed BEFORE implementation, then LOCKED (§7)
 /diagnose                  → if stuck >20 min; wire-level empirical confirmation first
-/validate-and-ship (§5)    → qa → fresh-context review (CI) → commit → rebase → PR w/
+/validate-and-ship (§5)    → qa → fresh-context review → commit → rebase → PR w/
                              evidence → SHA-bound attestation → CI (incl. eval gate if
                              LLM-touching) → merge by tier
-merge                      → human for high/medium; standing-rule self-merge for low
+merge                      → human, except docs-only / harness-internal low (§1)
 write-back                 → any correction this change needed → one dated line in
                              CLAUDE.md before the next issue
 ```
@@ -110,28 +112,28 @@ PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (revi
 One invocation, "code done" → "merged or escalated":
 
 1. `/qa` on the change.
-2. **Fresh-context review as a CI check** (§7) — a clean reviewer, non-interactive, posting **one consolidated verdict** (never a comment stream; that spends the §10 bandwidth it's meant to save). For **high-tier** changes the reviewer also asserts the diff matches the approved design doc / ADR, and that any departure is recorded in this PR — the playbook's plan-vs-reality discipline (check the diff against the committed plan; when it departs, update the plan in the same commit), applied to the ADR instead of a `plan.md`.
+2. **Fresh-context review** — a clean reviewer subagent spawned by `/validate-and-ship`, never the authoring session, posting **one consolidated verdict** (never a comment stream; that spends the §10 bandwidth it's meant to save). Running it as a non-interactive CI check is target state (§7); no workflow in `.github/workflows/` runs it yet. For **high-tier** changes the reviewer also asserts the diff matches the approved design doc / ADR, and that any departure is recorded in this PR — the playbook's plan-vs-reality discipline (check the diff against the committed plan; when it departs, update the plan in the same commit), applied to the ADR instead of a `plan.md`.
 3. Apply mechanical fixes; **escalate behavior-changing findings** to the human.
 4. Conventional commit on the issue branch; rebase onto latest `main`.
 5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
 6. Post the **SHA-bound review attestation** (step 2's consolidated verdict + reviewed commit SHA == `headRefOid`).
-7. **Eval gate** runs iff the change is LLM-touching (§5-trigger); CI runs real tests (needs the docker-compose test job live).
-8. On green, **merge by tier** (§1): human reads the consolidated verdict and signs for high/medium; low self-merges under the standing rule with `--match-head-commit`.
+7. **Eval gate** runs iff the change is LLM-touching (trigger list below); CI runs real tests (needs the docker-compose test job live).
+8. On green, **merge by tier** (§1): human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
 
 **LLM-touching trigger for the eval gate** — the surfaces that actually call a model, named correctly (not the retired `query_interpreter.py`):
 
 - `app/services/sql_synthesis.py` (exploratory NL→SQL synthesis — #76 territory),
 - `app/agents/requirements_agent.py` (concept extraction),
-- `app/utils/llm_client.py` / `app/utils/multi_llm_client.py` and anything calling them (incl. `calendar_agent` / `delivery_agent` via `langgraph_workflow`),
+- `app/utils/llm_client.py` / `app/utils/multi_llm_client.py` and every caller — today `calendar_agent` / `delivery_agent` (via `langgraph_workflow`) and `app/services/conversation_manager.py` (`LLMClient` fallback); re-derive with `git grep -ln 'LLMClient\|MultiLLMClient\|import anthropic' app/` rather than trusting this list,
 - any prompt or model-config file.
 
 The gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (TODOS already records one integration job that was silently a no-op).
 
-**Attestation reconciliation:** the CI reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For low, the CI verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance the Throughput Edition got right intact.
+**Attestation reconciliation:** the fresh-context reviewer *produces* the verdict; it does not *become* the merge actor. For high/medium a human still reads the consolidated verdict and merges — the attestation records a human sign-off. For docs-only / harness-internal low, the verdict + SHA-bound comment is itself sufficient to self-merge. This keeps the merge-governance the Throughput Edition got right intact.
 
-### 5.3 Delegation + memory (unchanged principles)
+### 5.1 Delegation + memory (unchanged principles)
 
-Delegate outcomes with the *why*. Never review in the authoring session (now mechanized, §7). Escalation split: behavior → human, mechanical → the agent. Don't take back control — teach via a dated CLAUDE.md line. **Lane-close check:** "Did this change need a correction? If yes, one dated rule-line in CLAUDE.md before the next issue."
+Delegate outcomes with the *why*. Never review in the authoring session (enforced by §5 step 2). Escalation split: behavior → human, mechanical → the agent. Don't take back control — teach via a dated CLAUDE.md line. **Lane-close check:** "Did this change need a correction? If yes, one dated rule-line in CLAUDE.md before the next issue."
 
 ---
 
@@ -163,8 +165,8 @@ Together these are the **reviewer-hour** picture your own principles call the re
 
 The sharpest rules were social; mechanize them — but **every new mechanism is itself §9 surface + maintenance + a drift/no-op risk, so prefer the lightest enforcement that works and make each gate prove it ran.** "Simpler wins" applies to your own rig, not just the agent's.
 
-- **Test integrity — protect golden files, not all `tests/**`.** The high-value targets are `tests/fixtures/transpiler_expected_outputs.py` and the gate `.jsonl` sets (`logs/sprint_*_gate.jsonl`). "Regenerate expected outputs to match" is exactly how a #76-style silent bug passes. Rule (works under `/tdd`, where the agent writes the tests): **tests are committed before implementation and locked from then until the task ends.** Enforce with the lightest equivalent — a CI diff check on the golden paths over a PreToolUse hook if the CI check suffices.
-- **Fresh-context review is a CI check** (§5 step 2), one consolidated verdict.
+- **Test integrity — protect golden files, not all `tests/**`.** The high-value targets are `tests/fixtures/transpiler_expected_outputs.py` and the eval case sets (`tests/eval/cases.py`, `tests/eval/fixtures/**`). The `logs/sprint_*_gate.jsonl` files are gate *evidence output* and gitignored, so no CI check can see them; protect the inputs, not the logs. "Regenerate expected outputs to match" is exactly how a #76-style silent bug passes. Rule (works under `/tdd`, where the agent writes the tests): **tests are committed before implementation and locked from then until the task ends.** Enforce with the lightest equivalent — a CI diff check on the golden paths over a PreToolUse hook if the CI check suffices.
+- **Fresh-context review as a CI check** (§5 step 2) — target state, not built: today the reviewer runs in-session via `/validate-and-ship`.
 - **Drift at its source.** Status claims — node counts, test counts, "shipped" markers — are **generated or checked by a script**, never hand-typed into CLAUDE.md / CONTEXT.md / issues. (The Throughput Edition's "23-state vs 17-nodes" and "12 vs 1 integration tests" were status drift, not design-doc drift — lighter planning would not have prevented them; generated counts would.) Design docs and ADRs are stamped **point-in-time** so nobody reads them as current state.
 
 ---
@@ -175,7 +177,9 @@ You talk faster than you type, and the cost of attaching the *why* drops to near
 
 ---
 
-## 9. Skill / tool vetting (§5.5 bar, unchanged)
+## 9. Skill / tool vetting (the "§5.5 bar", unchanged)
+
+*"§5.5" is this bar's legacy section number; CLAUDE.md's install-ledger entries still cite it by that name.*
 
 Before any skill or executing tool: read the whole `SKILL.md` **and** bundled scripts; grep for network calls, `curl | bash`, credential/env access, package installs; require a named maintainer + pinned version/commit; trial command-runners in a throwaway repo; never install mid-task on an agent's suggestion — finish, then vet cold. **This bar applies to the mechanisms in §7 too** — a test-lock hook or eval-gate script is tooling you must vet and maintain, not free safety.
 
@@ -209,7 +213,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 | Build | `/tdd` → **/validate-and-ship** | tests committed + locked before impl (§7) |
 | Stuck > 20 min | `/diagnose` | wire-level empirical confirmation first |
 | PR | evidence template (§6) + SHA-bound attestation | tier sets merge actor |
-| Merge | by tier | human for high/medium; low self-merges (`--match-head-commit`) |
+| Merge | by tier | human, except docs-only / harness-internal self-merge (`--match-head-commit`) |
 | LLM-touching change | eval gate (§5) | per-domain thresholds; assert N cases ran |
 | Lane close | memory write-back if corrected | one dated CLAUDE.md line |
 | Sprint end | `/improve-codebase-architecture` → `/qa` → `/retro` | ADR appended, point-in-time stamped |
