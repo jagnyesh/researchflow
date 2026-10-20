@@ -37,11 +37,13 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 |---|---|
 | docs, non-golden tests, pure refactors, harness files | **Low** |
 | behavior outside the sensitive paths (portal UI, non-PHI endpoints, runner plumbing, scripts) | **Medium** |
-| PHI boundary / `SQLValidator`, cohort & phenotype logic (`sql_synthesis.py`, `phenotype_agent`, `feasibility_service`, `extraction_agent`), `app/security/**`, encryption, IRB scope, golden fixtures | **High** |
+| PHI boundary (`sql_validator.py` / `SQLValidator`), cohort & phenotype logic (`sql_synthesis.py`, `phenotype_agent.py`, `feasibility_service.py`, `extraction_agent.py`), `app/security/**`, encryption, IRB scope, golden fixtures | **High** |
 
 **Why:** it's the answer to the "plan mode is dead / long live plan mode" debate. The debate had no single answer because the right amount of planning depends on blast radius. A wrong cohort definition is expensive and auditable; a typo is not. So High gets the full `grill → design doc → ADR` chain; Low gets nothing but the issue text; Medium gets a short intent block written **into the PR** (so there's no separate file to go stale).
 
 **Why it matters that it reuses an existing idea:** you already merge by class (docs self-merge vs behavior-touching → human). The risk tiers extend that same path-based thinking — but note the High path list is genuinely new and ResearchFlow-specific, so defining it is real judgment, not copy-paste.
+
+**One catch:** planning weight and merge actor are separate. Only docs-only and harness-internal Low changes self-merge; non-golden tests and refactors plan like Low but still get a human merge, and so does any PR that changes the merge policy itself.
 
 **How to use it:** first question on any issue — "which paths does this touch?" → tier → the rest of the doc is now decided for you.
 
@@ -69,12 +71,12 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §5 — The composite pipeline (`/validate-and-ship`)
 
-**What it says:** one command runs qa → **fresh-context review (in CI)** → commit → rebase → PR with evidence → SHA-bound attestation → CI (plus the **eval gate** if the change is LLM-touching) → merge by tier.
+**What it says:** one command runs qa → **fresh-context review** (a clean subagent today; a CI check is the target) → commit → rebase → PR with evidence → SHA-bound attestation → CI (plus the **eval gate** if the change is LLM-touching) → merge by tier.
 
 **Two things to understand here:**
 
-- **The eval-gate trigger is path-specific.** It only fires for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py`/`multi_llm_client.py` and their callers (`calendar_agent`/`delivery_agent` via `langgraph_workflow`), and any prompt/model-config file. The gate uses the #136/#137/#142 harnesses, sets per-domain thresholds, and **asserts it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
-- **The CI reviewer feeds the attestation; it doesn't replace the human.** For High/Medium, a human still reads the one consolidated verdict and merges. For Low, that verdict + the SHA comment is enough to self-merge. This keeps the merge-governance intact.
+- **The eval-gate trigger is path-specific.** It only fires for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py`/`multi_llm_client.py` and their callers (`calendar_agent`/`delivery_agent` via `langgraph_workflow`, `conversation_manager.py`), and any prompt/model-config file. The gate uses the #136/#137/#142 harnesses, sets per-domain thresholds, and **asserts it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
+- **The reviewer feeds the attestation; it doesn't replace the human.** For High/Medium, a human still reads the one consolidated verdict and merges. For docs-only / harness-internal Low, that verdict + the SHA comment is enough to self-merge. This keeps the merge-governance intact.
 
 **How to use it:** after `/tdd`, you run one command. Your only job afterward is the decisions it escalates.
 
@@ -90,8 +92,8 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **What it says:** turn the honor-system rules into machinery — but **every mechanism has a cost**, so use the lightest one that works and make each gate prove it ran.
 
-- **Test integrity = lock the *golden files*, not all tests.** The dangerous ones are `tests/fixtures/transpiler_expected_outputs.py` and the gate `.jsonl` sets. "Regenerate the expected output to match" is exactly how a silent bug (the #76 class) sneaks through. Rule: tests are committed **before** implementation and **locked** until the task ends (this works even under `/tdd`, where the agent writes the tests).
-- **Fresh-context review is a CI check** with one consolidated verdict.
+- **Test integrity = lock the *golden files*, not all tests.** The dangerous ones are `tests/fixtures/transpiler_expected_outputs.py` and the eval case sets in `tests/eval/` (not the `logs/sprint_*_gate.jsonl` files: those are gitignored run outputs CI can't see). "Regenerate the expected output to match" is exactly how a silent bug (the #76 class) sneaks through. Rule: tests are committed **before** implementation and **locked** until the task ends (this works even under `/tdd`, where the agent writes the tests).
+- **Fresh-context review as a CI check** with one consolidated verdict: target state, not built yet.
 - **Drift at its source:** status claims (node counts, test counts, "shipped" markers) are **generated/checked by a script**, never hand-typed. Design docs are stamped point-in-time.
 
 **Why the drift rule is phrased that way:** v1's famous errors ("23-state" when it's 17 nodes; "12 integration tests" when it's 1) were **status claims that went stale**, not design-doc problems. Lighter planning wouldn't have prevented them — generated counts would. That's the precise fix.
