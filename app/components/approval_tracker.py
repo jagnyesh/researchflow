@@ -11,6 +11,7 @@ from typing import Dict, Any, Optional
 import asyncio
 from datetime import datetime
 import logging
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class ApprovalTracker:
                 return response.json()
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to get request status: {e}")
+            log_internal_error(logger, "Failed to get request status", e)
             return None
 
     async def get_pending_approvals(self, request_id: str) -> list:
@@ -63,7 +64,7 @@ class ApprovalTracker:
                 return [a for a in approvals if a.get("status") == "pending"]
 
         except httpx.HTTPError as e:
-            logger.error(f"Failed to get pending approvals: {e}")
+            log_internal_error(logger, "Failed to get pending approvals", e)
             return []
 
     def render_approval_status(self, request_id: str, status_data: Dict[str, Any]):

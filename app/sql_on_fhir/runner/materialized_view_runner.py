@@ -33,6 +33,7 @@ from typing import Dict, Any, List, Optional
 from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -160,9 +161,9 @@ class MaterializedViewRunner:
             return rows
 
         except Exception as e:
-            logger.error(f"Query execution failed for '{view_name}': {e}")
+            log_internal_error(logger, f"Query execution failed for '{view_name}", e)
             logger.debug(f"Failed SQL:\n{sql}")
-            raise RuntimeError(f"Materialized view query failed: {e}")
+            raise RuntimeError("Materialized view query failed") from e
 
     @traceable(tags=["materialized-view-runner", "count"])
     async def execute_count(
@@ -199,8 +200,8 @@ class MaterializedViewRunner:
             return count
 
         except Exception as e:
-            logger.error(f"COUNT query failed for '{view_name}': {e}")
-            raise RuntimeError(f"COUNT query failed: {e}")
+            log_internal_error(logger, f"COUNT query failed for '{view_name}", e)
+            raise RuntimeError("COUNT query failed") from e
 
     def get_schema(self, view_definition: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -297,7 +298,7 @@ class MaterializedViewRunner:
             result = await self.db_client.execute_query(sql)
             return result[0]["exists"] if result else False
         except Exception as e:
-            logger.warning(f"Failed to check view existence: {e}")
+            log_internal_error(logger, "Failed to check view existence", e, level=logging.WARNING)
             return False
 
     def _build_query(

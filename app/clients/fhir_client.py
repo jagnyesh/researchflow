@@ -13,6 +13,7 @@ import logging
 from typing import Dict, List, Any, Optional
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +123,10 @@ class FHIRClient:
                 search_params = None
 
             except httpx.HTTPStatusError as e:
-                logger.error(f"HTTP error searching {resource_type}: {e}")
+                log_internal_error(logger, f"HTTP error searching {resource_type}", e)
                 raise
             except Exception as e:
-                logger.error(f"Error searching {resource_type}: {e}")
+                log_internal_error(logger, f"Error searching {resource_type}", e)
                 raise
 
         logger.info(f"Search complete: retrieved {len(all_resources)} {resource_type} resources")
@@ -159,10 +160,10 @@ class FHIRClient:
             return resource
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error reading {resource_type}/{resource_id}: {e}")
+            log_internal_error(logger, f"HTTP error reading {resource_type}/{resource_id}", e)
             raise
         except Exception as e:
-            logger.error(f"Error reading {resource_type}/{resource_id}: {e}")
+            log_internal_error(logger, f"Error reading {resource_type}/{resource_id}", e)
             raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -197,10 +198,10 @@ class FHIRClient:
             return created_resource
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error creating {resource_type}: {e}")
+            log_internal_error(logger, f"HTTP error creating {resource_type}", e)
             raise
         except Exception as e:
-            logger.error(f"Error creating {resource_type}: {e}")
+            log_internal_error(logger, f"Error creating {resource_type}", e)
             raise
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
@@ -236,10 +237,10 @@ class FHIRClient:
             return result_bundle
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"HTTP error executing batch: {e}")
+            log_internal_error(logger, "HTTP error executing batch", e)
             raise
         except Exception as e:
-            logger.error(f"Error executing batch: {e}")
+            log_internal_error(logger, "Error executing batch", e)
             raise
 
     async def get_metadata(self) -> Dict[str, Any]:
@@ -262,7 +263,7 @@ class FHIRClient:
             return metadata
 
         except Exception as e:
-            logger.error(f"Error fetching metadata: {e}")
+            log_internal_error(logger, "Error fetching metadata", e)
             raise
 
     async def test_connection(self) -> bool:
@@ -277,7 +278,7 @@ class FHIRClient:
             logger.info("FHIR server connection successful")
             return True
         except Exception as e:
-            logger.error(f"FHIR server connection failed: {e}")
+            log_internal_error(logger, "FHIR server connection failed", e)
             return False
 
 

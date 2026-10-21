@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 
 from app.cache.redis_client import RedisClient
 from app.clients.hapi_db_client import HAPIDBClient
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class FHIRSubscriptionService:
                 await self._poll_and_cache()
                 await asyncio.sleep(self.poll_interval_seconds)
             except Exception as e:
-                logger.error(f"[FHIRSubscriptionService] Error: {e}")
+                log_internal_error(logger, "[FHIRSubscriptionService] Error", e)
                 await asyncio.sleep(60)  # Wait 1 min before retry
 
     def stop(self):
@@ -139,7 +140,7 @@ class FHIRSubscriptionService:
                 sql, (resource_type, self.last_sync_time)
             )
         except Exception as e:
-            logger.error("Failed to fetch recent %s resources: %s", resource_type, e)
+            log_internal_error(logger, f"Failed to fetch recent {resource_type} resources", e)
             return 0
 
         cached = 0
@@ -153,7 +154,12 @@ class FHIRSubscriptionService:
             try:
                 resource_data = json.loads(raw) if isinstance(raw, str) else raw
             except (TypeError, ValueError) as e:
-                logger.warning("Failed to parse %s/%s JSON: %s", resource_type, fhir_id, e)
+                log_internal_error(
+                    logger,
+                    f"Failed to parse {resource_type}/{fhir_id} JSON",
+                    e,
+                    level=logging.WARNING,
+                )
                 continue
 
             # HAPI strips `id` from the JSON body it stores in res_text_vc — same
@@ -172,6 +178,8 @@ class FHIRSubscriptionService:
                 )
                 cached += 1
             except Exception as e:
-                logger.warning("Failed to cache %s/%s: %s", resource_type, fhir_id, e)
+                log_internal_error(
+                    logger, f"Failed to cache {resource_type}/{fhir_id}", e, level=logging.WARNING
+                )
 
         return cached

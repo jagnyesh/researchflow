@@ -8,6 +8,7 @@ values (#175, ADR 0029). Drives the real node against the real SQLite DB with
 one agent double that raises a PHI needle.
 """
 
+import ast
 import logging
 import re
 import uuid
@@ -105,24 +106,57 @@ async def test_every_agent_node_keeps_phi_out(workflow, caplog, node, agent_attr
     assert all(PHI_NEEDLE not in (e or "") for e in await _persisted_errors(request_id))
 
 
-GUARDED_DIRS = ["app/langchain_orchestrator", "app/agents"]
+# #183 widened the #181 guard to the whole package.
+GUARDED_DIRS = ["app"]
+
+# (path, enclosing function) -> why exception text may surface there. Each entry
+# is a decision, not a convenience; keep the reason honest.
+ALLOWED = {
+    ("app/services/sql_validator.py", "validate"): (
+        "parse error text is the LLM's self-correction feedback and derives from the "
+        "LLM's own SQL, not row data; changing it is LLM-touching (eval-gated, #183)"
+    ),
+    ("app/services/sql_validator.py", "validate_with_explain"): (
+        "EXPLAIN reads no rows; its error text is self-correction feedback on the "
+        "LLM's own SQL; changing it is LLM-touching (eval-gated, #183)"
+    ),
+}
+
+
+def _enclosing_functions(tree):
+    spans = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            spans.append((node.lineno, node.end_lineno, node.name))
+    return spans
+
+
+def _function_at(spans, line):
+    inner = [s for s in spans if s[0] <= line <= s[1]]
+    return min(inner, key=lambda s: s[1] - s[0])[2] if inner else "<module>"
 
 
 @pytest.mark.parametrize("rel", GUARDED_DIRS)
 def test_no_exception_text_escapes_in_workflow_code(rel):
-    """The #175 AST guard, extended to the workflow path (#181)."""
-    import ast
+    """The #175 AST guard, extended to the workflow path (#181) and app-wide (#183)."""
     from pathlib import Path
 
     from tests.test_api_error_leak import _banned_calls, _handler_leaks
 
-    root = Path(__file__).resolve().parents[1] / rel
-    violations = []
-    for path in sorted(root.rglob("*.py")):
+    repo = Path(__file__).resolve().parents[1]
+    violations, used = [], set()
+    for path in sorted((repo / rel).rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
-        violations += [f"{path.name}:{n}" for n in _handler_leaks(tree)]
-        violations += [f"{path.name}:{n} (banned call)" for n in _banned_calls(tree)]
-    assert not violations, f"{rel}: " + ", ".join(violations)
+        spans = _enclosing_functions(tree)
+        relpath = str(path.relative_to(repo))
+        for line in sorted(set(_handler_leaks(tree)) | set(_banned_calls(tree))):
+            key = (relpath, _function_at(spans, line))
+            if key in ALLOWED:
+                used.add(key)
+            else:
+                violations.append(f"{relpath}:{line} ({key[1]})")
+    assert not violations, "exception text escapes at: " + ", ".join(violations)
+    assert used == set(ALLOWED), f"stale allowlist entries: {set(ALLOWED) - used}"
 
 
 @pytest.mark.asyncio

@@ -22,6 +22,8 @@ from ..clients.hapi_db_client import HAPIDBClient
 from ..utils.llm_client import LLMClient
 from .schema_introspection import get_cached_schemas, render_schema_block
 
+from app.schemas._errors import log_internal_error
+
 logger = logging.getLogger(__name__)
 
 # Declared here so the caching-threshold test derives its bound from the model
@@ -29,6 +31,11 @@ logger = logging.getLogger(__name__)
 # sonnet 1024, haiku 4096). Switching to Haiku makes the threshold test demand
 # 4096 tokens automatically.
 SYNTHESIS_MODEL = "claude-sonnet-4-6"
+
+
+# The only SynthesisError message. A constant, so callers can show it without
+# stringifying the exception (#183).
+SYNTHESIS_FAILED_MESSAGE = "The model did not return a valid SQL query for this request."
 
 
 class SynthesisError(Exception):
@@ -170,10 +177,10 @@ class SQLSynthesizer:
             data = json.loads(_strip_markdown_fences(response))
             result = SynthesisResult(sql=data["sql"], explanation=data["explanation"])
         except (json.JSONDecodeError, KeyError, TypeError) as e:
-            logger.warning("LLM did not return usable synthesis JSON: %s", e)
-            raise SynthesisError(
-                "The model did not return a valid SQL query for this request."
-            ) from e
+            log_internal_error(
+                logger, "LLM did not return usable synthesis JSON", e, level=logging.WARNING
+            )
+            raise SynthesisError(SYNTHESIS_FAILED_MESSAGE) from e
         logger.info("Synthesized SQL for query %r: %s", natural_language_query, result.sql)
         return result
 

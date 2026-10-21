@@ -32,6 +32,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Literal, Optional
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,9 @@ class CostTelemetryService:
             )
             return list(runs_iter)
         except Exception as exc:  # langsmith API may be unavailable
-            logger.warning("LangSmith fetch failed for tag %r: %s", tag, exc)
+            log_internal_error(
+                logger, f"LangSmith fetch failed for tag {tag!r}", exc, level=logging.WARNING
+            )
             return []
 
     def _fetch_root_runs_by_tag(self, tag: str, limit: int) -> List[Any]:
@@ -241,7 +244,12 @@ class CostTelemetryService:
             )
             return list(runs_iter)
         except Exception as exc:
-            logger.warning("LangSmith root-run fetch failed for tag %r: %s", tag, exc)
+            log_internal_error(
+                logger,
+                f"LangSmith root-run fetch failed for tag {tag!r}",
+                exc,
+                level=logging.WARNING,
+            )
             return []
 
     def _summarize_threaded(

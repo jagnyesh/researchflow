@@ -21,6 +21,7 @@ nest_asyncio.apply(_streamlit_loop)
 
 # NOW safe to import modules that create database connections
 import streamlit as st
+
 import pandas as pd
 import httpx
 from datetime import datetime, timedelta
@@ -45,6 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 # stack frame — burying the misconfiguration. With this call, the dashboard
 # refuses to start and emits the same clean RuntimeError as `uvicorn`.
 from app.security.encryption_keys import assert_encryption_key_present_if_production
+from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
@@ -66,13 +68,14 @@ def run_async(coroutine):
 
 def _render_db_unreachable(exc: Exception, what: str) -> None:
     """Render a friendly error for a failed DB call. Use after catching from run_async."""
-    logger.exception("Failed to load %s", what)
+    # Type + ref only: DB driver messages can carry row values (#183).
+    ref = log_internal_error(logger, f"Failed to load {what}", exc)
     st.error(
         f"⚠️ Could not load {what} — the database isn't reachable. "
         "Check that PostgreSQL is running and DATABASE_URL is correct."
     )
     with st.expander("Error details"):
-        st.code(f"{type(exc).__name__}: {exc}")
+        st.code(f"{type(exc).__name__} (ref: {ref})")
 
 
 def get_status_badge(state: str) -> str:
@@ -116,7 +119,7 @@ def check_delivery_status(request_id: str) -> dict:
     except httpx.ConnectError as e:
         # Backend on :8000 is down. Lead with the recovery action a researcher can
         # take; demote the errno to a parenthetical for whoever debugs it (#77).
-        logger.exception("Delivery-status check could not reach the API backend")
+        log_internal_error(logger, "Delivery-status check could not reach the API backend", e)
         st.error(
             f"⚠️ Can't reach the ResearchFlow API server at {api_url}. "
             "The backend service is likely stopped — ask the platform team to "
@@ -137,11 +140,11 @@ def check_delivery_status(request_id: str) -> dict:
         # Genuine delivery problem (not a connectivity class). Give an actionable,
         # quotable support code and truncate the raw exception so the leading line
         # stays researcher-readable (#77).
-        logger.exception("Delivery-status check failed unexpectedly")
+        ref = log_internal_error(logger, "Delivery-status check failed unexpectedly", e)
         st.error(
             "⚠️ Couldn't check delivery status right now. Please retry; if it "
-            f"keeps happening, contact platform support with code DELIV-{request_id}. "
-            f"(Technical detail: {str(e)[:200]})"
+            f"keeps happening, contact platform support with code DELIV-{request_id} "
+            f"(ref: {ref})."
         )
         return {"status": "unknown"}
 
@@ -169,7 +172,8 @@ def download_file(request_id: str, filename: str = None):
             return None, None
 
     except Exception as e:
-        st.error(f"Download error: {str(e)}")
+        ref = log_internal_error(logger, "Download error", e)
+        st.error(f"Download error (ref: {ref})")
         return None, None
 
 
@@ -382,7 +386,8 @@ def show_request_details_modal(request_id: str):
         else:
             st.info("No approvals recorded yet")
     except Exception as e:
-        st.warning(f"Could not load approval history: {str(e)}")
+        ref = log_internal_error(logger, "Could not load approval history", e)
+        st.warning(f"Could not load approval history (ref: {ref})")
 
     st.markdown("---")
 
@@ -642,7 +647,8 @@ def show_preview_data_section(request_id: str, status: dict):
             st.caption("Preview data not available yet (request hasn't reached preview extraction)")
 
     except Exception as e:
-        st.warning(f"Could not load preview data: {str(e)}")
+        ref = log_internal_error(logger, "Could not load preview data", e)
+        st.warning(f"Could not load preview data (ref: {ref})")
 
 
 def show_delivery_review_section(request_id: str):
@@ -821,7 +827,8 @@ def show_delivery_review_section(request_id: str):
             st.warning("⚠️ Delivery data not found")
 
     except Exception as e:
-        st.error(f"Error loading delivery review: {str(e)}")
+        ref = log_internal_error(logger, "Error loading delivery review", e)
+        st.error(f"Error loading delivery review (ref: {ref})")
 
 
 def show_download_section(request_id: str):
@@ -1272,10 +1279,8 @@ def show_pending_approvals():
                 display_approval_card(approval, reviewer_email)
 
     except Exception as e:
-        st.error(f"Error fetching approvals: {str(e)}")
-        import traceback
-
-        st.code(traceback.format_exc())
+        ref = log_internal_error(logger, "Error fetching approvals", e)
+        st.error(f"Error fetching approvals (ref: {ref})")
 
 
 def display_approval_card(approval, reviewer_email):
@@ -1800,13 +1805,10 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
         st.rerun()
 
     except Exception as e:
-        st.error(f"Error processing approval: {str(e)}")
-        logger.error(
-            f"[Admin Dashboard] Error processing approval {approval_id}: {str(e)}", exc_info=True
+        ref = log_internal_error(
+            logger, f"[Admin Dashboard] Error processing approval {approval_id}", e
         )
-        import traceback
-
-        st.code(traceback.format_exc())
+        st.error(f"Error processing approval (ref: {ref})")
 
 
 def show_escalations():
@@ -1895,7 +1897,8 @@ def show_cost_telemetry():
         try:
             summary = run_async(service.get_formal_portal_cost_p50(n=30))
         except Exception as exc:
-            st.error(f"Failed to fetch LangSmith data: {exc}")
+            ref = log_internal_error(logger, "Failed to fetch LangSmith data", exc)
+            st.error(f"Failed to fetch LangSmith data (ref: {ref})")
             st.info(
                 "If this is offline-dev, the dashboard depends on LangSmith API; "
                 "ensure `LANGSMITH_API_KEY` is set and reachable."
@@ -1934,7 +1937,8 @@ def show_cost_telemetry():
         try:
             exp_summary = run_async(service.get_exploratory_portal_cost_p50(n=30))
         except Exception as exc:
-            st.error(f"Failed to fetch LangSmith data: {exc}")
+            ref = log_internal_error(logger, "Failed to fetch LangSmith data", exc)
+            st.error(f"Failed to fetch LangSmith data (ref: {ref})")
             return
 
         exp_badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[exp_summary.gate_status]
@@ -2090,7 +2094,8 @@ def show_materialized_views():
             except httpx.TimeoutException:
                 st.error("Refresh timed out after 120 seconds.")
             except Exception as e:
-                st.error(f"Unexpected error: {e}")
+                ref = log_internal_error(logger, "Unexpected error", e)
+                st.error(f"Unexpected error (ref: {ref})")
 
 
 def show_analytics():

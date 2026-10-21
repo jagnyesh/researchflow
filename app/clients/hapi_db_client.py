@@ -17,6 +17,7 @@ import os
 import json
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
+from app.schemas._errors import log_internal_error
 
 # Try to import asyncpg, but make it optional for Python 3.13 compatibility
 try:
@@ -86,7 +87,7 @@ class HAPIDBClient:
                     f"(pool: {self.min_pool_size}-{self.max_pool_size} connections)"
                 )
             except Exception as e:
-                logger.error(f"Failed to connect to HAPI database: {e}")
+                log_internal_error(logger, "Failed to connect to HAPI database", e)
                 raise
 
     async def close(self):
@@ -111,7 +112,7 @@ class HAPIDBClient:
                 result = await conn.fetchval("SELECT 1")
                 return result == 1
         except Exception as e:
-            logger.error(f"Connection test failed: {e}")
+            log_internal_error(logger, "Connection test failed", e)
             return False
 
     async def execute_query(
@@ -153,7 +154,7 @@ class HAPIDBClient:
                 f"Query execution exceeded {timeout or self.command_timeout} seconds"
             )
         except Exception as e:
-            logger.error(f"Query execution failed: {e}\nSQL: {sql[:200]}...")
+            log_internal_error(logger, f"Query execution failed (\nSQL: {sql[:200]}...)", e)
             raise
 
     async def execute_scalar(self, sql: str, params: Optional[List] = None) -> Any:

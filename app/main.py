@@ -35,6 +35,7 @@ from .security.tls import (
 )
 from .schemas import phi_safe_validation_handler
 from fastapi.exceptions import RequestValidationError
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,8 @@ async def lifespan(app: FastAPI):
                     "audit pipeline: recovered %d orphaned entries from prior process",
                     recovered,
                 )
-        except Exception:
-            logger.exception("audit recovery sweep failed; continuing")
+        except Exception as e:
+            log_internal_error(logger, "audit recovery sweep failed; continuing", e)
         _audit_drain_stop = asyncio.Event()
         _audit_drain_task = asyncio.create_task(
             audit_drain_loop(_audit_redis_client, _audit_drain_stop)

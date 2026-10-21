@@ -18,6 +18,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..database import get_db_session
 from ..database.models import AuditLog
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +124,7 @@ async def drain_batch(redis_client, batch_size: int = 100, block_timeout_sec: fl
             parsed.append((raw, json.loads(raw)))
         except (json.JSONDecodeError, ValueError) as exc:
             logger.warning("audit drain: invalid JSON in queue, dead-lettering")
-            await _send_to_dead_letter(redis_client, raw, repr(exc))
+            await _send_to_dead_letter(redis_client, raw, type(exc).__name__)
             await _ack(redis_client, raw)
 
     if not parsed:
@@ -148,7 +149,7 @@ async def drain_batch(redis_client, batch_size: int = 100, block_timeout_sec: fl
                 written += 1
             except IntegrityError as exc:
                 logger.warning("audit drain: row failed, dead-lettering")
-                await _send_to_dead_letter(redis_client, raw, repr(exc))
+                await _send_to_dead_letter(redis_client, raw, type(exc).__name__)
                 await _ack(redis_client, raw)
 
     if written > 0:
@@ -197,14 +198,15 @@ async def audit_drain_loop(
                 block_timeout_sec=block_timeout_sec,
             )
             attempts = 0  # reset backoff on any successful loop iteration
-        except Exception:
+        except Exception as e:
             attempts += 1
             backoff = min(60, 2**attempts)
             _drain_state["restart_count"] += 1
-            logger.exception(
-                "audit drain crashed; restart_count=%d, sleeping %.1fs",
-                _drain_state["restart_count"],
-                backoff,
+            log_internal_error(
+                logger,
+                f"audit drain crashed; restart_count={_drain_state['restart_count']}, "
+                f"sleeping {backoff:.1f}s",
+                e,
             )
             try:
                 await asyncio.wait_for(stop_event.wait(), timeout=backoff)

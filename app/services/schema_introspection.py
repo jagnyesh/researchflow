@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Dict, FrozenSet, Optional, Tuple
 
 from app.services.sql_validator import ALLOWED_VIEWS
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,12 @@ def _load_view_def_descriptions() -> Dict[str, str]:
             if data.get("name") and data.get("description"):
                 descriptions[data["name"]] = data["description"]
         except (json.JSONDecodeError, OSError) as e:
-            logger.warning("Could not read view-def %s for description: %s", path.name, e)
+            log_internal_error(
+                logger,
+                f"Could not read view-def {path.name} for description",
+                e,
+                level=logging.WARNING,
+            )
     return descriptions
 
 

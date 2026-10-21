@@ -8,6 +8,7 @@ import httpx
 import logging
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ class AnalyticsClient:
             data = response.json()
             return data.get("status") == "healthy"
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
+            log_internal_error(logger, "Health check failed", e)
             return False
 
     async def list_view_definitions(self) -> List[Dict[str, str]]:
@@ -59,7 +60,7 @@ class AnalyticsClient:
             data = response.json()
             return data.get("view_definitions", [])
         except Exception as e:
-            logger.error(f"Failed to list ViewDefinitions: {e}")
+            log_internal_error(logger, "Failed to list ViewDefinitions", e)
             return []
 
     async def execute_view_definition(
@@ -106,7 +107,7 @@ class AnalyticsClient:
             )
 
         except Exception as e:
-            logger.error(f"Failed to execute ViewDefinition '{view_name}': {e}")
+            log_internal_error(logger, f"Failed to execute ViewDefinition '{view_name}", e)
             raise
 
     async def execute_multiple_view_definitions(
@@ -135,7 +136,7 @@ class AnalyticsClient:
                 )
                 results[view_name] = result
             except Exception as e:
-                logger.error(f"Failed to execute {view_name}: {e}")
+                log_internal_error(logger, f"Failed to execute {view_name}", e)
                 # Continue with other ViewDefinitions
                 continue
 

@@ -21,7 +21,12 @@ from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
 from app.services.schema_introspection import get_cached_schemas
-from app.services.sql_synthesis import SQLSynthesizer, SynthesisError
+from app.schemas._errors import log_internal_error
+from app.services.sql_synthesis import (
+    SYNTHESIS_FAILED_MESSAGE,
+    SQLSynthesizer,
+    SynthesisError,
+)
 from app.services.sql_validator import SQLValidator
 
 logger = logging.getLogger(__name__)
@@ -129,17 +134,19 @@ class FeasibilityService:
                         query_intent=query_intent,
                     )
         except SynthesisError as e:
-            logger.info("Synthesis produced no usable SQL: %s", e)
+            log_internal_error(logger, "Synthesis produced no usable SQL", e, level=logging.INFO)
             return self._honest_error(
                 explanation="The model could not turn this request into a valid query.",
                 rejected_sql="",
-                reason=str(e),
+                reason=SYNTHESIS_FAILED_MESSAGE,
                 query_intent=query_intent,
             )
         except Exception as e:
-            # exc_info so a masked programming error (e.g. API drift) stays
-            # discoverable in logs even though the user sees a generic card.
-            logger.warning("Synthesis stage failed unexpectedly: %s", e, exc_info=True)
+            # Frames keep a masked programming error (e.g. API drift) discoverable
+            # in logs even though the user sees a generic card.
+            log_internal_error(
+                logger, "Synthesis stage failed unexpectedly", e, level=logging.WARNING
+            )
             return self._honest_error(
                 explanation="This request could not be processed.",
                 rejected_sql="",
@@ -168,7 +175,9 @@ class FeasibilityService:
             # integer: 'Alice Smith'") would leak a raw column value into an
             # unauthenticated UI field (#39). Type only; full detail to the log.
             # Mirrors the _extract_scalar_count hardening (#95).
-            logger.warning("Execution of synthesized SQL failed: %s", e)
+            log_internal_error(
+                logger, "Execution of synthesized SQL failed", e, level=logging.WARNING
+            )
             return self._honest_error(
                 explanation=synthesis.explanation,
                 rejected_sql=validation.safe_sql,
@@ -216,7 +225,12 @@ class FeasibilityService:
             runner = HybridRunner(db_client=self.exploratory_db_client)
             return await runner.get_batch_anchor_ts_for_views(view_names)
         except Exception as e:
-            logger.warning("Could not resolve batch_anchor_ts for %s: %s", view_names, e)
+            log_internal_error(
+                logger,
+                f"Could not resolve batch_anchor_ts for {view_names}",
+                e,
+                level=logging.WARNING,
+            )
             return None
 
     @staticmethod

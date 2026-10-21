@@ -165,7 +165,7 @@ class TestHonestFailureInvariant:
         # declines a row-level request), synthesize() raises SynthesisError —
         # which must become the honest-error card, NOT an uncaught JSONDecodeError
         # traceback on the researcher's screen.
-        from app.services.sql_synthesis import SynthesisError
+        from app.services.sql_synthesis import SYNTHESIS_FAILED_MESSAGE, SynthesisError
 
         fs = FeasibilityService()
         fs.exploratory_db_client = MagicMock()
@@ -177,7 +177,10 @@ class TestHonestFailureInvariant:
 
         assert result["status"] == "error"
         assert "estimated_cohort" not in result
-        assert "model returned prose" in result["reason"]
+        # The card shows the fixed synthesis-failure message, never the
+        # exception's own text (#183).
+        assert result["reason"] == SYNTHESIS_FAILED_MESSAGE
+        assert "model returned prose" not in str(result)
         fs.exploratory_db_client.execute_query.assert_not_called()
 
     async def test_non_scalar_result_is_error_variant_not_fabricated_zero(self, monkeypatch):

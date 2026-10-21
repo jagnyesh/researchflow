@@ -39,6 +39,7 @@ from app.sql_on_fhir.query_builder import create_sql_query_builder
 from app.cache.redis_client import RedisClient
 from app.sql_on_fhir.runner.speed_layer_runner import SpeedLayerRunner
 from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -238,9 +239,11 @@ class HybridRunner:
                     view_definition, search_params=search_params, max_resources=max_resources
                 )
             except Exception as e:
-                logger.warning(
-                    f"MaterializedViewRunner failed for '{view_name}': {e}. "
-                    f"Falling back to PostgresRunner"
+                log_internal_error(
+                    logger,
+                    f"MaterializedViewRunner failed for '{view_name}'; falling back to PostgresRunner",
+                    e,
+                    level=logging.WARNING,
                 )
                 # Fall back to PostgresRunner
                 postgres_runner = await self._get_postgres_runner()
@@ -296,8 +299,11 @@ class HybridRunner:
                         )
 
                 except Exception as e:
-                    logger.warning(
-                        f"Speed layer query failed for '{view_name}': {e}. Using batch only"
+                    log_internal_error(
+                        logger,
+                        f"Speed layer query failed for '{view_name} (. Using batch only)",
+                        e,
+                        level=logging.WARNING,
                     )
 
         # Sprint 6.5 cycle 5+7+8 (#69): write one metric row for FORMAL_DRAFT
@@ -337,10 +343,12 @@ class HybridRunner:
                     metric.trace_id = str(run.id)
                     run.add_metadata(metric.to_langsmith_metadata())
             except Exception as e:
-                logger.warning(
-                    f"LangSmith metadata write failed for '{view_name}': {e}. "
-                    f"Postgres metric will still be written; cross-correlation "
-                    f"missing for this call."
+                log_internal_error(
+                    logger,
+                    f"LangSmith metadata write failed for '{view_name}'; Postgres metric will "
+                    "still be written, cross-correlation missing for this call",
+                    e,
+                    level=logging.WARNING,
                 )
 
             # Postgres sink.
@@ -376,9 +384,11 @@ class HybridRunner:
                     view_definition, search_params=search_params
                 )
             except Exception as e:
-                logger.warning(
-                    f"MaterializedViewRunner COUNT failed for '{view_name}': {e}. "
-                    f"Falling back to PostgresRunner"
+                log_internal_error(
+                    logger,
+                    f"MaterializedViewRunner COUNT failed for '{view_name}'; falling back to PostgresRunner",
+                    e,
+                    level=logging.WARNING,
                 )
                 # Fall through to PostgresRunner fallback
 
@@ -520,10 +530,12 @@ class HybridRunner:
                     *metric.to_insert_params(),
                 )
         except Exception as e:
-            logger.warning(
-                f"Failed to record hybrid_runner_metric for "
-                f"{metric.view_names} mode={metric.mode.value}: {e}. "
-                f"Read path was unaffected."
+            log_internal_error(
+                logger,
+                f"Failed to record hybrid_runner_metric for {metric.view_names} "
+                f"mode={metric.mode.value}; read path was unaffected",
+                e,
+                level=logging.WARNING,
             )
 
     def get_last_executed_sql(self) -> Optional[str]:
@@ -613,7 +625,9 @@ class HybridRunner:
             return exists
 
         except Exception as e:
-            logger.warning(f"Failed to check view existence for '{view_name}': {e}")
+            log_internal_error(
+                logger, f"Failed to check view existence for '{view_name}", e, level=logging.WARNING
+            )
             # Don't cache failures
             return False
 
@@ -724,10 +738,11 @@ class HybridRunner:
                 rows = extractor._transform_resource(resource, view_definition)
                 all_rows.extend(rows)
             except Exception as e:
-                logger.warning(
-                    "Failed to extract row from cached resource id=%s: %s",
-                    resource.get("id"),
+                log_internal_error(
+                    logger,
+                    f"Failed to extract row from cached resource id={resource.get('id')}",
                     e,
+                    level=logging.WARNING,
                 )
         return all_rows
 

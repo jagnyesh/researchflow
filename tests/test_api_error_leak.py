@@ -115,7 +115,12 @@ async def test_submit_db_failure_leaks_nothing_and_keeps_audit_pair(
 
 API_DIR = Path(__file__).resolve().parents[1] / "app" / "api"
 # helper name -> positional index of its exception argument
-_HELPERS = {"internal_error": 2, "log_internal_error": 2, "failure_text": 2}
+_HELPERS = {
+    "internal_error": 2,
+    "log_internal_error": 2,
+    "failure_text": 2,
+    "_render_db_unreachable": 0,
+}
 _BANNED_CALLS = {"format_exc", "print_exc", "format_exception", "exc_info", "exception"}
 
 
@@ -169,6 +174,12 @@ def _handler_leaks(tree: ast.AST):
                 allowed.update(
                     id(a) for a in slot if isinstance(a, ast.Name) and a.id == handler.name
                 )
+            if (  # `raise X(...) from e` chains the cause without copying its text
+                isinstance(node, ast.Raise)
+                and isinstance(node.cause, ast.Name)
+                and node.cause.id == handler.name
+            ):
+                allowed.add(id(node.cause))
             if (  # type(e) carries no message
                 isinstance(node, ast.Call)
                 and isinstance(node.func, ast.Name)

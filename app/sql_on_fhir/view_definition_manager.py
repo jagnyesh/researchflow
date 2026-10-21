@@ -13,6 +13,7 @@ import os
 import logging
 from typing import Dict, Any, List, Optional
 from pathlib import Path
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ class ViewDefinitionManager:
             return view_def
 
         except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON in ViewDefinition file: {e}")
+            raise ValueError("Invalid JSON in ViewDefinition file") from e
 
     def save(self, view_definition: Dict[str, Any], name: Optional[str] = None) -> str:
         """
@@ -134,7 +135,7 @@ class ViewDefinitionManager:
             return name
 
         except Exception as e:
-            logger.error(f"Error saving ViewDefinition: {e}")
+            log_internal_error(logger, "Error saving ViewDefinition", e)
             raise
 
     def delete(self, name: str) -> bool:
@@ -163,7 +164,7 @@ class ViewDefinitionManager:
             return True
 
         except Exception as e:
-            logger.error(f"Error deleting ViewDefinition: {e}")
+            log_internal_error(logger, "Error deleting ViewDefinition", e)
             raise
 
     def list(self) -> List[str]:
@@ -193,7 +194,9 @@ class ViewDefinitionManager:
             try:
                 view_defs[name] = self.load(name)
             except Exception as e:
-                logger.warning(f"Failed to load ViewDefinition '{name}': {e}")
+                log_internal_error(
+                    logger, f"Failed to load ViewDefinition '{name}", e, level=logging.WARNING
+                )
 
         logger.info(f"Loaded {len(view_defs)} ViewDefinitions")
         return view_defs

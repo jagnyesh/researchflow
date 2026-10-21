@@ -25,6 +25,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from app.clients.hapi_db_client import HAPIDBClient
 from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column_extractor
 from app.sql_on_fhir.query_builder import create_sql_query_builder
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -138,8 +139,8 @@ class PostgresRunner:
             logger.debug(f"Generated SQL:\n{query.sql}")
 
         except Exception as e:
-            logger.error(f"Failed to build SQL query for '{view_name}': {e}")
-            raise ValueError(f"SQL generation failed: {e}")
+            log_internal_error(logger, f"Failed to build SQL query for '{view_name}", e)
+            raise ValueError("SQL generation failed") from e
 
         # Step 2: Execute SQL query
         start_time = datetime.now()
@@ -160,9 +161,9 @@ class PostgresRunner:
             )
 
         except Exception as e:
-            logger.error(f"SQL execution failed for '{view_name}': {e}")
+            log_internal_error(logger, f"SQL execution failed for '{view_name}", e)
             logger.debug(f"Failed SQL:\n{query.sql}")
-            raise RuntimeError(f"Query execution failed: {e}")
+            raise RuntimeError("Query execution failed") from e
 
         # Step 3: Store in cache
         if self.enable_cache:
@@ -191,8 +192,8 @@ class PostgresRunner:
         try:
             count_sql = self.builder.build_count_query(view_definition, search_params)
         except Exception as e:
-            logger.error(f"Failed to build COUNT query for '{view_name}': {e}")
-            raise ValueError(f"COUNT query generation failed: {e}")
+            log_internal_error(logger, f"Failed to build COUNT query for '{view_name}", e)
+            raise ValueError("COUNT query generation failed") from e
 
         # Execute
         start_time = datetime.now()
@@ -210,8 +211,8 @@ class PostgresRunner:
             return count
 
         except Exception as e:
-            logger.error(f"COUNT query execution failed for '{view_name}': {e}")
-            raise RuntimeError(f"COUNT query failed: {e}")
+            log_internal_error(logger, f"COUNT query execution failed for '{view_name}", e)
+            raise RuntimeError("COUNT query failed") from e
 
     def get_schema(self, view_definition: Dict[str, Any]) -> Dict[str, str]:
         """
