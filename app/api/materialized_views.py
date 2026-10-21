@@ -28,6 +28,8 @@ from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 
 logger = logging.getLogger(__name__)
 
+_SCRIPT_RESULT = re.compile(r"^RESULT created=(?P<created>\d+) total=(?P<total>\d+)$", re.M)
+
 router = APIRouter(prefix="/analytics/materialized-views", tags=["materialized-views"])
 
 
@@ -325,15 +327,19 @@ async def create_all_views(_admin=Depends(require_role("admin"))):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        await process.communicate()  # drain both pipes; contents deliberately discarded
+        stdout, _ = await process.communicate()  # drain both pipes
 
         if process.returncode == 0:
             logger.info("Successfully created all materialized views")
             # No script output in the response or log: it echoes HAPI_DB_URL
             # (credentials) and asyncpg error text, which can carry row values (#175).
+            # Only the digits of its RESULT line are read (#182).
+            result = _SCRIPT_RESULT.search(stdout.decode(errors="replace") if stdout else "")
             return {
                 "success": True,
                 "message": "All materialized views created successfully",
+                "views_created": int(result["created"]) if result else None,
+                "views_total": int(result["total"]) if result else None,
             }
         else:
             raise RuntimeError(f"create_materialized_views.py exited rc={process.returncode}")

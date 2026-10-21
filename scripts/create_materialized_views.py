@@ -118,7 +118,8 @@ async def create_materialized_view(conn, view_name, sql):
         return True
 
     except Exception as e:
-        print(f"  ❌ Failed: {e}\n")
+        # Type only: driver messages can carry row values (#175).
+        print(f"  ❌ Failed: {view_name} ({type(e).__name__})\n")
         return False
 
 
@@ -147,7 +148,7 @@ async def create_indexes(conn, view_name):
             )
             print(f"    ✅ Index: {idx_name}")
         except Exception as e:
-            print(f"    ⚠️  Index failed: {col} ({e})")
+            print(f"    ⚠️  Index failed: {col} ({type(e).__name__})")
 
     print()
 
@@ -211,11 +212,11 @@ async def run_referential_integrity_validation(conn):
         return report.overall_passed
 
     except ImportError as e:
-        print(f"⚠️  Warning: Could not import validation module: {e}")
+        print(f"⚠️  Warning: Could not import validation module ({type(e).__name__})")
         print(f"Skipping referential integrity validation\n")
         return True
     except Exception as e:
-        print(f"⚠️  Validation error: {e}")
+        print(f"⚠️  Validation error ({type(e).__name__})")
         print(f"Continuing despite validation failure\n")
         return False
 
@@ -244,6 +245,14 @@ async def main():
 
         # List all views
         await list_views(conn)
+
+        # A partial build is a failure: callers (the create-all API) trust the
+        # exit code, and every later view may depend on the one that failed (#182).
+        # Machine-readable; the create-all API parses only this line's digits.
+        print(f"RESULT created={success_count} total={len(VIEW_TEMPLATES)}")
+        if success_count < len(VIEW_TEMPLATES):
+            print(f"❌ FAILED: {success_count}/{len(VIEW_TEMPLATES)} views created")
+            sys.exit(1)
 
         # Run referential integrity validation (unless skipped)
         validation_passed = True
