@@ -1,5 +1,8 @@
 # Development dependencies
-# Install: pip install -r config/requirements-dev.txt
+# Install: pip install -r config/requirements.lock -r config/requirements-dev.lock
+# After editing this file, regenerate the dev lock against the runtime lock (#158):
+#   uv pip compile config/requirements-dev.txt -c config/requirements.lock --python-version 3.11 --universal -o config/requirements-dev.lock
+# Regenerate config/requirements.lock first whenever runtime deps change, then this one.
 
 # Pre-commit hooks and code quality
 pre-commit>=3.5.0
