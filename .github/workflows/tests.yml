@@ -29,7 +29,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r config/requirements.lock
-        pip install -c config/requirements.lock -r config/requirements-dev.txt
+        pip install -r config/requirements-dev.lock
 
     - name: Lint with flake8
       run: |
@@ -86,7 +86,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r config/requirements.lock
-        pip install -c config/requirements.lock -r config/requirements-dev.txt
+        pip install -r config/requirements-dev.lock
 
     # Bring up services with working in-container healthchecks first; --wait
     # gates on those. hapi-fhir is distroless (no shell/curl), so it can't
