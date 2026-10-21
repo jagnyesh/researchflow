@@ -112,9 +112,10 @@ services:
       timeout: 5s
       retries: 10
 
+  # Both Redis services are pinned by tag+digest (#146); bump deliberately, never float.
   # Redis cache for Lambda Speed Layer
   redis:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: researchflow-redis
     ports:
       - "6379:6379"
@@ -131,7 +132,7 @@ services:
   # noeviction policy: writes fail loudly when full instead of silently dropping
   # queued audit events. AOF persistence so the queue survives Redis restart.
   redis-audit:
-    image: redis:7-alpine
+    image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: researchflow-redis-audit
     ports:
       - "6380:6379"
