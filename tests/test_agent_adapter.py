@@ -12,6 +12,8 @@ Tests:
 6. Factory functions
 """
 
+import re
+
 import pytest
 from datetime import datetime
 from typing import Dict, Any
@@ -336,9 +338,11 @@ async def test_execute_with_state_error_handling(adapter, sample_state):
     """Test error handling in execute_with_state"""
     state_updates = await adapter.execute_with_state("error_task", sample_state)
 
-    # Should return error in state updates, not raise exception
+    # Should return error in state updates, not raise exception. The error is the
+    # exception type + ref, never its message (#181: messages can carry PHI).
     assert "error" in state_updates
-    assert "Mock error" in state_updates["error"]
+    assert "Mock error" not in state_updates["error"]
+    assert re.fullmatch(r"\w+ \(ref: [0-9a-f]{12}\)", state_updates["error"])
     assert "updated_at" in state_updates
 
 

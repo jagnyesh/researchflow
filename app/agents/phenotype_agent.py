@@ -10,8 +10,8 @@ Validates feasibility of research requests by:
 
 from typing import Dict, Any, List
 import logging
+from app.schemas._errors import log_internal_error
 import os
-import traceback
 from langsmith import traceable
 from .base_agent import BaseAgent
 from ..utils.sql_generator import SQLGenerator
@@ -335,10 +335,7 @@ class PhenotypeValidationAgent(BaseAgent):
                     return 0
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Failed to estimate cohort: {str(e)}")
-            import traceback
-
-            logger.error(traceback.format_exc())
+            log_internal_error(logger, f"[{self.agent_id}] Failed to estimate cohort", e)
             # Return 0 instead of failing - will mark as not feasible
             return 0
 
@@ -508,7 +505,10 @@ class PhenotypeValidationAgent(BaseAgent):
             )
             return age
         except Exception as e:
-            logger.warning(f"[{self.agent_id}] Failed to parse birth_date '{birth_date_str}': {e}")
+            # The birth_date value is PHI, so it stays out of the log (#181).
+            log_internal_error(
+                logger, f"[{self.agent_id}] Failed to parse birth_date", e, level=logging.WARNING
+            )
             return None
 
     async def _get_patients_with_condition(
@@ -566,10 +566,11 @@ class PhenotypeValidationAgent(BaseAgent):
             return patient_ids
 
         except Exception as e:
-            logger.error(
-                f"[{self.agent_id}] Error getting patients with condition '{condition_term}': {e}"
+            # No condition_term in the context: it is criterion text derived from the
+            # PHI-tagged initial_request (#181).
+            log_internal_error(
+                logger, f"[{self.agent_id}] Error getting patients with condition", e
             )
-            logger.error(traceback.format_exc())
             return set()
 
     def _extract_patient_id(self, patient_ref: str) -> str:
@@ -598,8 +599,12 @@ class PhenotypeValidationAgent(BaseAgent):
             return patient_ref
 
         except Exception as e:
-            logger.warning(
-                f"[{self.agent_id}] Failed to extract patient ID from '{patient_ref}': {e}"
+            # The patient reference itself is not logged (#181).
+            log_internal_error(
+                logger,
+                f"[{self.agent_id}] Failed to extract patient ID from reference",
+                e,
+                level=logging.WARNING,
             )
             return None
 
@@ -777,8 +782,11 @@ class PhenotypeValidationAgent(BaseAgent):
                     )
 
             except Exception as e:
-                logger.warning(
-                    f"[{self.agent_id}] Could not check availability for {element}: {str(e)}"
+                log_internal_error(
+                    logger,
+                    f"[{self.agent_id}] Could not check availability for {element}",
+                    e,
+                    level=logging.WARNING,
                 )
                 availability["by_element"][element] = {
                     "availability": 0.0,
@@ -991,8 +999,8 @@ class PhenotypeValidationAgent(BaseAgent):
                 await fhir_client.close()
 
         except Exception as e:
-            logger.error(
-                f"[{self.agent_id}] Failed to estimate cohort with ViewDefinitions: {str(e)}"
+            log_internal_error(
+                logger, f"[{self.agent_id}] Failed to estimate cohort with ViewDefinitions", e
             )
             # Fallback to legacy SQL method
             logger.info(f"[{self.agent_id}] Falling back to legacy SQL estimation")
@@ -1128,7 +1136,7 @@ class PhenotypeValidationAgent(BaseAgent):
                 await fhir_client.close()
 
         except Exception as e:
-            logger.error(
-                f"[{self.agent_id}] Failed to execute ViewDefinition '{view_name}': {str(e)}"
+            log_internal_error(
+                logger, f"[{self.agent_id}] Failed to execute ViewDefinition '{view_name}'", e
             )
             raise

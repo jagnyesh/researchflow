@@ -21,6 +21,7 @@ States exercised by the original demo:
 """
 
 import logging
+from app.schemas._errors import log_internal_error
 from typing import TypedDict, Annotated, Literal
 from datetime import datetime
 
@@ -243,7 +244,7 @@ class SimpleWorkflow:
         try:
             return self.compiled_graph.get_graph().draw_mermaid()
         except Exception as e:
-            logger.error(f"Failed to generate diagram: {e}")
+            log_internal_error(logger, "Failed to generate diagram", e)
             return "Diagram generation failed"
 
 

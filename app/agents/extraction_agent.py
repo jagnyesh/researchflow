@@ -6,6 +6,7 @@ Executes data extraction from clinical data warehouse using multi-source orchest
 
 from typing import Dict, Any
 import logging
+from app.schemas._errors import log_internal_error
 import pandas as pd
 from langsmith import traceable
 from .base_agent import BaseAgent
@@ -107,7 +108,7 @@ class DataExtractionAgent(BaseAgent):
                     f"[{self.agent_id}] Extracted {len(element_data)} " f"{data_element} records"
                 )
             except Exception as e:
-                logger.error(f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}")
+                log_internal_error(logger, f"[{self.agent_id}] Failed to extract {data_element}", e)
                 extraction_results[data_element] = []
 
         # Sprint 6.5 honesty patch (2026-05-17, REQ-20260517-A097C5F6): surface
@@ -256,7 +257,7 @@ class DataExtractionAgent(BaseAgent):
                     f"[{self.agent_id}] Extracted {len(element_data)} preview rows for {data_element}"
                 )
             except Exception as e:
-                logger.error(f"[{self.agent_id}] Failed to extract {data_element}: {str(e)}")
+                log_internal_error(logger, f"[{self.agent_id}] Failed to extract {data_element}", e)
                 preview_results[data_element] = []
 
         # Step 3: NO de-identification for preview (informatician needs to see real data)
@@ -314,7 +315,7 @@ class DataExtractionAgent(BaseAgent):
             result = await self.sql_adapter.execute_sql(phenotype_sql, parameters)
             return result if result else []
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Phenotype query failed: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Phenotype query failed", e)
             return []
 
     async def _extract_data_element(
@@ -402,7 +403,12 @@ class DataExtractionAgent(BaseAgent):
                 result = await self.sql_adapter.execute_sql(sql, params)
                 return result if result else []
             except Exception as e:
-                logger.warning(f"[{self.agent_id}] Demographic extraction failed: {str(e)}")
+                log_internal_error(
+                    logger,
+                    f"[{self.agent_id}] Demographic extraction failed",
+                    e,
+                    level=logging.WARNING,
+                )
                 return []
 
         # Sprint 6.5b cleanup (2026-05-18, #79): non-demographic data elements
@@ -526,7 +532,12 @@ class DataExtractionAgent(BaseAgent):
             result = await self.sql_adapter.execute_sql(sql, params)
             return result if result else []
         except Exception as e:
-            logger.warning(f"[{self.agent_id}] Preview extraction query failed: {str(e)}")
+            log_internal_error(
+                logger,
+                f"[{self.agent_id}] Preview extraction query failed",
+                e,
+                level=logging.WARNING,
+            )
             return []
 
     async def _deidentify_data(self, data: Dict, phi_level: str) -> Dict:
@@ -748,7 +759,7 @@ class DataExtractionAgent(BaseAgent):
                 )
 
             except Exception as e:
-                logger.error(f"[{self.agent_id}] CSV generation failed: {str(e)}")
+                log_internal_error(logger, f"[{self.agent_id}] CSV generation failed", e)
                 # Return metadata even if file generation fails
                 for element_name, records in data.items():
                     formatted["files"].append(

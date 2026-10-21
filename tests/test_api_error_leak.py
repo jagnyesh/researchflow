@@ -114,8 +114,18 @@ async def test_submit_db_failure_leaks_nothing_and_keeps_audit_pair(
 
 
 API_DIR = Path(__file__).resolve().parents[1] / "app" / "api"
-_HELPERS = {"internal_error", "log_internal_error"}
+# helper name -> positional index of its exception argument
+_HELPERS = {"internal_error": 2, "log_internal_error": 2, "failure_text": 2, "should_retry": 0}
 _BANNED_CALLS = {"format_exc", "print_exc", "format_exception", "exc_info", "exception"}
+
+
+def _call_name(node: ast.AST):
+    """`f` for `f(...)` or `obj.f(...)`; None for anything else."""
+    if not isinstance(node, ast.Call):
+        return None
+    return (
+        node.func.attr if isinstance(node.func, ast.Attribute) else getattr(node.func, "id", None)
+    )
 
 
 def _is_intentional_4xx(node: ast.AST, handler: ast.ExceptHandler) -> bool:
@@ -150,17 +160,21 @@ def _handler_leaks(tree: ast.AST):
             continue
         allowed = set()
         for node in ast.walk(handler):
-            if (
-                isinstance(node, ast.Call)
-                and isinstance(node.func, ast.Name)
-                and node.func.id in _HELPERS
-            ):
-                # Only the exception slot (third positional or exc=); `e` as the
-                # context string would be str()-ed into the log.
-                slot = node.args[2:3] + [k.value for k in node.keywords if k.arg == "exc"]
+            name = _call_name(node)
+            if name in _HELPERS:
+                # Only the exception slot (or exc=); `e` as the context string
+                # would be str()-ed into the log.
+                i = _HELPERS[name]
+                slot = node.args[i : i + 1] + [k.value for k in node.keywords if k.arg == "exc"]
                 allowed.update(
                     id(a) for a in slot if isinstance(a, ast.Name) and a.id == handler.name
                 )
+            if (  # type(e) carries no message
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == "type"
+            ):
+                allowed.update(id(a) for a in node.args if isinstance(a, ast.Name))
             if _is_intentional_4xx(node, handler):
                 detail = next(k.value for k in node.exc.keywords if k.arg == "detail")
                 allowed.add(id(detail.args[0]))  # the `e` in `detail=str(e)`

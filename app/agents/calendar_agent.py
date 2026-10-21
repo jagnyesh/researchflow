@@ -7,6 +7,7 @@ Uses MultiLLMClient for intelligent agenda generation and stakeholder identifica
 
 from typing import Dict, Any
 import logging
+from app.schemas._errors import log_internal_error
 from datetime import datetime, timedelta
 from langsmith import traceable
 from .base_agent import BaseAgent
@@ -205,8 +206,11 @@ Keep it professional and concise."""
             )
             return agenda.strip()
         except Exception as e:
-            logger.warning(
-                f"[{self.agent_id}] Failed to generate LLM agenda: {str(e)}, using template"
+            log_internal_error(
+                logger,
+                f"[{self.agent_id}] Failed to generate LLM agenda (using template)",
+                e,
+                level=logging.WARNING,
             )
             # Fallback to template-based agenda
             agenda = f"""

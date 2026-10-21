@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 import asyncio
 import logging
+from app.schemas._errors import failure_text, log_internal_error
 
 # LangSmith observability (Sprint 7)
 try:
@@ -121,11 +122,11 @@ class BaseAgent(ABC):
             return result
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Task failed: {task} - {str(e)}", exc_info=True)
+            failure = failure_text(logger, f"[{self.agent_id}] Task failed: {task}", e)
 
             # Log failure
             self.current_task["completed_at"] = datetime.now()
-            self.current_task["error"] = str(e)
+            self.current_task["error"] = failure
             self.current_task["status"] = "failed"
 
             # Add to history
@@ -138,7 +139,7 @@ class BaseAgent(ABC):
             if self.should_retry(e, context):
                 return await self.retry_task(task, context)
             else:
-                await self.escalate_to_human(e, context)
+                await self.escalate_to_human(failure, context)
                 raise
 
         finally:
@@ -288,4 +289,4 @@ class BaseAgent(ABC):
 
         except Exception as e:
             # Don't fail the agent execution if database save fails
-            logger.error(f"[{self.agent_id}] Failed to save execution to database: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Failed to save execution to database", e)

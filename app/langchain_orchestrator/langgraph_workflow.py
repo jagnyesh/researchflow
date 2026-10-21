@@ -39,6 +39,7 @@ from app.langchain_orchestrator.approval_bridge import (
 
 # Import database models for AgentExecution tracking
 from app.database import get_db_session, AgentExecution, DATABASE_URL
+from app.schemas._errors import failure_text, log_internal_error
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
@@ -511,7 +512,7 @@ class FullWorkflow:
                 )
                 return execution.id
         except Exception as e:
-            logger.error(f"[AgentTracking] Failed to track execution start: {e}")
+            log_internal_error(logger, "[AgentTracking] Failed to track execution start", e)
             return None
 
     async def _track_agent_execution_complete(
@@ -545,7 +546,7 @@ class FullWorkflow:
                         f"[AgentTracking] Completed tracking: ID {execution_id} with status {status}"
                     )
         except Exception as e:
-            logger.error(f"[AgentTracking] Failed to track execution complete: {e}")
+            log_internal_error(logger, "[AgentTracking] Failed to track execution complete", e)
 
     async def _handle_requirements_gathering(self, state: FullWorkflowState) -> FullWorkflowState:
         """
@@ -604,15 +605,15 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] RequirementsAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] RequirementsAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to conservative defaults on error
                 state["requirements"] = {}
                 state["requirements_complete"] = False
                 state["completeness_score"] = 0.0
-                state["error"] = f"Requirements agent error: {str(e)}"
+                state["error"] = f"Requirements agent error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -729,16 +730,16 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] PhenotypeAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] PhenotypeAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to conservative defaults on error
                 state["feasible"] = False
                 state["estimated_cohort_size"] = 0
                 state["phenotype_sql"] = None
                 state["feasibility_score"] = 0.0
-                state["error"] = f"Phenotype agent error: {str(e)}"
+                state["error"] = f"Phenotype agent error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -834,14 +835,14 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] ExtractionAgent preview failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] ExtractionAgent preview failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to defaults on error
                 state["preview_extracted"] = False
                 state["preview_package"] = {}
-                state["error"] = f"Preview extraction error: {str(e)}"
+                state["error"] = f"Preview extraction error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -901,14 +902,16 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] QAAgent preview validation failed: {e}")
+                failure = failure_text(
+                    logger, "[FullWorkflow] QAAgent preview validation failed", e
+                )
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to defaults on error
                 state["preview_qa_passed"] = False
                 state["preview_qa_report"] = {}
-                state["error"] = f"Preview QA error: {str(e)}"
+                state["error"] = f"Preview QA error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -1005,14 +1008,14 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] CalendarAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] CalendarAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to defaults on error
                 state["meeting_scheduled"] = False
                 state["meeting_details"] = None
-                state["error"] = f"Calendar agent error: {str(e)}"
+                state["error"] = f"Calendar agent error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -1082,12 +1085,12 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] ExtractionAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] ExtractionAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 state["extraction_complete"] = False
-                state["error"] = f"Extraction agent error: {str(e)}"
+                state["error"] = f"Extraction agent error: {failure}"
 
         else:
             # STUB VALUES: For testing without real agents
@@ -1152,13 +1155,13 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] QAAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] QAAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 state["overall_status"] = "failed"
-                state["qa_report"] = {"overall_status": "failed", "error": str(e)}
-                state["error"] = f"QA agent error: {str(e)}"
+                state["qa_report"] = {"overall_status": "failed", "error": failure}
+                state["error"] = f"QA agent error: {failure}"
 
         else:
             # STUB VALUES: For testing without real agents
@@ -1257,15 +1260,15 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                logger.error(f"[FullWorkflow] DeliveryAgent failed: {e}")
+                failure = failure_text(logger, "[FullWorkflow] DeliveryAgent failed", e)
                 # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=str(e))
+                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 # Fall back to defaults on error
                 state["delivered"] = False
                 state["delivered_at"] = None
                 state["delivery_location"] = None
-                state["error"] = f"Delivery agent error: {str(e)}"
+                state["error"] = f"Delivery agent error: {failure}"
 
         else:
             # STUB VALUES: For E2E testing without real agents
@@ -1669,7 +1672,7 @@ class FullWorkflow:
                     f"{final_state['request_id']} → {final_state['current_state']}"
                 )
             except Exception as e:
-                logger.error(f"[FullWorkflow] Failed to save state to database: {e}", exc_info=True)
+                log_internal_error(logger, "[FullWorkflow] Failed to save state to database", e)
                 # Don't fail workflow if persistence fails
                 # Checkpointer still has state even if DB sync fails
 
@@ -1689,7 +1692,7 @@ class FullWorkflow:
         try:
             return self.compiled_graph.get_graph().draw_mermaid()
         except Exception as e:
-            logger.error(f"Failed to generate diagram: {e}")
+            log_internal_error(logger, "Failed to generate diagram", e)
             return "Diagram generation failed"
 
 

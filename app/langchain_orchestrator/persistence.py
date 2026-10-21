@@ -18,6 +18,7 @@ Status: Sprint 6.5 - Migration to LangGraph orchestration
 """
 
 import logging
+from app.schemas._errors import log_internal_error
 import os
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -167,7 +168,7 @@ async def get_checkpointer() -> AsyncSqliteSaver:
                     await _checkpointer_context_manager.__aexit__(None, None, None)
                     logger.info("[Bug #11 Part 12] Successfully closed old checkpointer")
             except Exception as e:
-                logger.error(f"[Bug #11 Part 12] Error closing old checkpointer: {e}")
+                log_internal_error(logger, "[Bug #11 Part 12] Error closing old checkpointer", e)
 
             # Clear references
             _checkpointer_instance = None
@@ -253,7 +254,9 @@ async def clear_checkpointer_cache(db_path: str = None):
                 await _checkpointer_context_manager.__aexit__(None, None, None)
                 logger.info("[Bug #11 Part 11] Closed and cleared singleton checkpointer")
             except Exception as e:
-                logger.warning(f"[Bug #11 Part 11] Error closing checkpointer: {e}")
+                log_internal_error(
+                    logger, "[Bug #11 Part 11] Error closing checkpointer", e, level=logging.WARNING
+                )
             finally:
                 _checkpointer_instance = None
                 _checkpointer_context_manager = None
