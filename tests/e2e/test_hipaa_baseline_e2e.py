@@ -19,7 +19,6 @@ Skipped automatically if the audit Redis port (6380) is not reachable —
 run after `docker-compose up redis-audit db` (or `make docker-up`).
 """
 
-import os
 import asyncio
 import socket
 
@@ -49,17 +48,17 @@ PHI_NEEDLE = "patient ABC-123 has HbA1c 9.2% on 2025-12-04"
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_full_phi_request_traverses_all_controls():
-    os.environ["REDIS_AUDIT_URL"] = "redis://localhost:6380/0"
-    os.environ["ENABLE_ORCHESTRATOR"] = "false"
+async def test_full_phi_request_traverses_all_controls(monkeypatch):
+    monkeypatch.setenv("REDIS_AUDIT_URL", "redis://localhost:6380/0")
+    monkeypatch.setenv("ENABLE_ORCHESTRATOR", "false")
     # Use the same SQLite test DB as other E2E tests; the docker Postgres may
     # have stale schema from prior sprints.
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
     from datetime import timedelta
 
     from httpx import ASGITransport, AsyncClient
-    from sqlalchemy import select, text
+    from sqlalchemy import func, select, text
 
     from app.database import get_db_session, get_engine
     from app.database.models import AuditLog
@@ -79,6 +78,10 @@ async def test_full_phi_request_traverses_all_controls():
     }
 
     async with lifespan(app):
+        # test.db persists across runs; scope assertions to rows this run writes.
+        async with get_db_session() as session:
+            baseline_id = (await session.execute(select(func.max(AuditLog.id)))).scalar() or 0
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # ---------- (1)–(6) golden path ---------------------------------
@@ -116,7 +119,10 @@ async def test_full_phi_request_traverses_all_controls():
                     rows = (
                         (
                             await session.execute(
-                                select(AuditLog).where(AuditLog.user_id == "e2e-baseline-user")
+                                select(AuditLog).where(
+                                    AuditLog.user_id == "e2e-baseline-user",
+                                    AuditLog.id > baseline_id,
+                                )
                             )
                         )
                         .scalars()
@@ -133,8 +139,11 @@ async def test_full_phi_request_traverses_all_controls():
 
             # (3) Phase 1.1: JWT principal flowed into the audit row
             assert pre[0].user_id == "e2e-baseline-user"
-            # Phase 2.2 post-event captures the response status code
-            assert post[0].status_code == 200
+            # Phase 2.2 post-event captures the response status code. AuditLog has
+            # no status_code column; the drain keeps it in event_data and derives
+            # `result` from it (audit_drain._payload_to_audit_log).
+            assert post[0].event_data["status_code"] == 200
+            assert post[0].result == "success"
 
             # (8) Negative tracer: malformed body → 422 with `input` stripped
             bad_response = await client.post(
