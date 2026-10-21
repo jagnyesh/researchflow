@@ -7,7 +7,6 @@ Skipped automatically if the audit Redis port (6380) is not reachable —
 run after `docker-compose up redis-audit db`.
 """
 
-import os
 import asyncio
 import socket
 import pytest
@@ -34,17 +33,17 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_sql_query_produces_audit_row():
-    os.environ["REDIS_AUDIT_URL"] = "redis://localhost:6380/0"
-    os.environ["ENABLE_ORCHESTRATOR"] = "false"
+async def test_sql_query_produces_audit_row(monkeypatch):
+    monkeypatch.setenv("REDIS_AUDIT_URL", "redis://localhost:6380/0")
+    monkeypatch.setenv("ENABLE_ORCHESTRATOR", "false")
     # Explicit override: .env points DATABASE_URL at the docker Postgres which
     # may have stale schema. Use SQLite test.db for E2E so audit_logs schema
     # matches the current AuditLog model.
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///./test.db"
+    monkeypatch.setenv("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 
     from datetime import timedelta
     from httpx import AsyncClient, ASGITransport
-    from sqlalchemy import select
+    from sqlalchemy import func, select
     from app.main import app, lifespan
     from app.database import get_db_session
     from app.database.models import AuditLog
@@ -54,7 +53,9 @@ async def test_sql_query_produces_audit_row():
     async def stub_execute(self, sql):
         return [{"col": "value"}]
 
-    SQLonFHIRAdapter.execute_sql = stub_execute
+    # monkeypatch, not assignment: CI runs both audit e2e files in one process
+    # (#172), and a bare class-attribute swap would leak the stub past this test.
+    monkeypatch.setattr(SQLonFHIRAdapter, "execute_sql", stub_execute)
 
     token = create_access_token(
         {"sub": "e2e@example.com", "user_id": "e2e-user", "role": "researcher"},
@@ -62,6 +63,11 @@ async def test_sql_query_produces_audit_row():
     )
 
     async with lifespan(app):
+        # test.db persists across runs; only count rows this run writes, or a
+        # stale row from an earlier run would satisfy the >= 1 checks below.
+        async with get_db_session() as session:
+            baseline_id = (await session.execute(select(func.max(AuditLog.id)))).scalar() or 0
+
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
@@ -79,7 +85,9 @@ async def test_sql_query_produces_audit_row():
         while asyncio.get_event_loop().time() < deadline:
             async with get_db_session() as session:
                 result = await session.execute(
-                    select(AuditLog).where(AuditLog.user_id == "e2e-user")
+                    select(AuditLog).where(
+                        AuditLog.user_id == "e2e-user", AuditLog.id > baseline_id
+                    )
                 )
                 rows = result.scalars().all()
             pre_seen = sum(1 for r in rows if r.event_type == "PHI_ACCESS_REQUESTED")

@@ -131,6 +131,16 @@ jobs:
       run: |
         pytest tests/ -v -m "requires_services and not requires_api_key" --tb=short
 
+    # The audit-queue e2e tests need the redis-audit service (6380) brought up
+    # above, but pytest.ini's `--ignore=tests/e2e` keeps them out of `pytest
+    # tests/`, so they run here by explicit path (#172). `-c pytest.ini` is
+    # load-bearing: without it tests/e2e/pytest.ini becomes the rootdir and
+    # tests/conftest.py (test Fernet key, SQLite test.db) never loads.
+    - name: Run audit-queue e2e (redis-audit :6380)
+      run: |
+        pytest -c pytest.ini --rootdir . -v --tb=short -rs \
+          tests/e2e/test_audit_pipeline_e2e.py tests/e2e/test_hipaa_baseline_e2e.py
+
     - name: Show docker logs on failure
       if: failure()
       run: |
