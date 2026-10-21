@@ -19,7 +19,7 @@
 | Validator hardening | six adversarial review passes on #95 → zero single-query PHI escape; allowlist-shape defenses survived every laundering attempt |
 | Deletion (#100) | −2,643 LOC: `JoinQueryBuilder` + `QueryInterpreter` + `FeasibilityService` four-way dispatch retired; `USE_LLM_SQL_SYNTHESIS` fully retired; closes #76 |
 | Exploratory cost ceiling | manual-verified median **$0.003586** → ceiling **$0.004661** (× 1.3); **cache_hit_rate 0%→95%** closes the Sprint 8.6 candidate (schema block clears the caching threshold) |
-| Carried forward | #116 (retired-model landmine in `langchain_agents.py`), #71 (re-scoped/close-recommended), #39 (dashboard auth, unchanged), small-cell suppression (deferred) |
+| Carried forward | #116 (retired-model landmine in `langchain_agents.py`), #71 (re-scoped/close-recommended), #39 (dashboard auth, unchanged), small-cell suppression (deferred). *Since closed: #116 (PR #120) and #71 (by decision). Current HybridRunner wiring: the statement under README → Architecture.* |
 
 
 Shipped-sprint narratives (6.5 and earlier): `docs/sprints/archive/CONTEXT_HISTORY_through_2026-07.md`.
