@@ -12,6 +12,7 @@ import time
 from sqlalchemy import select, func
 
 from app.database import get_db_session, ResearchRequest
+from app.schemas._errors import log_internal_error
 from app.clients.fhir_client import FHIRClient
 from app.security import audit_middleware as audit_mw
 from app.security.audit_drain import (
@@ -128,8 +129,11 @@ async def health() -> Dict[str, Any]:
                 "active_requests": active_requests,
             }
     except Exception as e:
-        logger.error(f"Database health check failed: {e}")
-        health_status["components"]["database"] = {"status": "unhealthy", "error": str(e)}
+        ref = log_internal_error(logger, "Database health check failed", e)
+        health_status["components"]["database"] = {
+            "status": "unhealthy",
+            "error": f"check failed (ref: {ref})",
+        }
         overall_healthy = False
 
     # Check FHIR server connectivity
@@ -147,11 +151,11 @@ async def health() -> Dict[str, Any]:
 
         await fhir_client.close()
     except Exception as e:
-        logger.error(f"FHIR server health check failed: {e}")
+        ref = log_internal_error(logger, "FHIR server health check failed", e)
         health_status["components"]["fhir_server"] = {
             "status": "unhealthy",
             "url": FHIR_BASE_URL,
-            "error": str(e),
+            "error": f"check failed (ref: {ref})",
         }
         overall_healthy = False
 
@@ -172,7 +176,8 @@ async def health() -> Dict[str, Any]:
 
         await temp_runner.fhir_client.close()
     except Exception as e:
-        logger.warning(f"Cache health check failed: {e}")
+        # WARNING, not ERROR: an unavailable cache is expected and /health is polled.
+        log_internal_error(logger, "Cache health check failed", e, level=logging.WARNING)
         health_status["components"]["cache"] = {
             "status": "unavailable",
             "message": "Cache statistics not available",
@@ -243,7 +248,8 @@ async def readiness_detailed():
             await session.execute(select(1))
             components["database"] = "ready"
     except Exception as e:
-        components["database"] = f"not ready: {str(e)}"
+        ref = log_internal_error(logger, "Readiness database check failed", e)
+        components["database"] = f"not ready (ref: {ref})"
         ready = False
 
     audit = await audit_health_check()

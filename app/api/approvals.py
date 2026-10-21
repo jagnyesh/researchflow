@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 
 from ..database import get_db_session
+from ..schemas._errors import internal_error
 from ..services.approval_service import ApprovalService
 from ..langchain_orchestrator.request_facade import LangGraphRequestFacade
 from ..schemas.approvals import ApprovalResponse, ScopeChangeRequest
@@ -77,8 +78,7 @@ async def get_pending_approvals(
             }
 
     except Exception as e:
-        logger.error(f"Error retrieving pending approvals: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error retrieving pending approvals", e)
 
 
 @router.get("/{approval_id}")
@@ -120,8 +120,7 @@ async def get_approval(approval_id: int):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving approval {approval_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error retrieving approval {approval_id}", e)
 
 
 @router.post("/{approval_id}/respond")
@@ -182,8 +181,7 @@ async def respond_to_approval(approval_id: int, response: ApprovalResponse):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error processing approval {approval_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error processing approval {approval_id}", e)
 
 
 @router.get("/request/{request_id}")
@@ -222,8 +220,7 @@ async def get_approvals_for_request(request_id: str):
             }
 
     except Exception as e:
-        logger.error(f"Error retrieving approvals for request {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error retrieving approvals for request {request_id}", e)
 
 
 @router.post("/scope-change")
@@ -318,8 +315,7 @@ async def request_scope_change(request: ScopeChangeRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing scope change request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error processing scope change request", e)
 
 
 @router.post("/check-timeouts")
@@ -353,5 +349,4 @@ async def check_approval_timeouts():
             }
 
     except Exception as e:
-        logger.error(f"Error checking approval timeouts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error checking approval timeouts", e)
