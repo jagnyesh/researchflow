@@ -113,21 +113,10 @@ async def health() -> Dict[str, Any]:
     # Check database connectivity
     try:
         async with get_db_session() as session:
-            # Simple query to test connection
-            result = await session.execute(select(func.count(ResearchRequest.id)))
-            total_requests = result.scalar()
-
-            # Count active requests
-            active_result = await session.execute(
-                select(func.count(ResearchRequest.id)).where(ResearchRequest.completed_at.is_(None))
-            )
-            active_requests = active_result.scalar()
-
-            health_status["components"]["database"] = {
-                "status": "healthy",
-                "total_requests": total_requests,
-                "active_requests": active_requests,
-            }
+            # Touch the table the app depends on; the count itself is not
+            # returned — /health is public, and volume is intel (#179).
+            await session.execute(select(func.count(ResearchRequest.id)))
+            health_status["components"]["database"] = {"status": "healthy"}
     except Exception as e:
         ref = log_internal_error(logger, "Database health check failed", e)
         health_status["components"]["database"] = {
@@ -141,20 +130,15 @@ async def health() -> Dict[str, Any]:
         fhir_client = FHIRClient(base_url=FHIR_BASE_URL)
 
         # Try a simple metadata query
-        metadata = await fhir_client.get_metadata()
+        await fhir_client.get_metadata()
 
-        health_status["components"]["fhir_server"] = {
-            "status": "healthy",
-            "url": FHIR_BASE_URL,
-            "version": metadata.get("fhirVersion", "unknown") if metadata else "unknown",
-        }
+        health_status["components"]["fhir_server"] = {"status": "healthy"}
 
         await fhir_client.close()
     except Exception as e:
         ref = log_internal_error(logger, "FHIR server health check failed", e)
         health_status["components"]["fhir_server"] = {
             "status": "unhealthy",
-            "url": FHIR_BASE_URL,
             "error": f"check failed (ref: {ref})",
         }
         overall_healthy = False
@@ -170,18 +154,14 @@ async def health() -> Dict[str, Any]:
         temp_runner = InMemoryRunner(
             fhir_client=FHIRClient(base_url=FHIR_BASE_URL), enable_cache=True
         )
-        cache_stats = temp_runner.get_cache_stats()
-
-        health_status["components"]["cache"] = {"status": "healthy", **cache_stats}
+        temp_runner.get_cache_stats()
+        health_status["components"]["cache"] = {"status": "healthy"}
 
         await temp_runner.fhir_client.close()
     except Exception as e:
         # WARNING, not ERROR: an unavailable cache is expected and /health is polled.
         log_internal_error(logger, "Cache health check failed", e, level=logging.WARNING)
-        health_status["components"]["cache"] = {
-            "status": "unavailable",
-            "message": "Cache statistics not available",
-        }
+        health_status["components"]["cache"] = {"status": "unavailable"}
 
     # Set overall status
     health_status["status"] = "healthy" if overall_healthy else "unhealthy"
