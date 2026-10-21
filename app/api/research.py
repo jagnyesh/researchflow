@@ -13,6 +13,7 @@ import uuid
 from pathlib import Path
 
 from ..database import get_db_session, ResearchRequest, DataDelivery
+from ..schemas._errors import internal_error
 from ..database.workflow_states import WorkflowState
 from ..services.file_storage import FileStorageService
 from ..schemas.research import ResearchRequestSubmission, RequestProcessingTrigger
@@ -93,8 +94,7 @@ async def submit_research_request(submission: ResearchRequestSubmission):
         }
 
     except Exception as e:
-        logger.error(f"Error submitting research request: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error submitting research request", e)
 
 
 @router.post("/process/{request_id}")
@@ -163,8 +163,7 @@ async def process_research_request(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error processing request {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error processing request {request_id}", e)
 
 
 @router.get("/{request_id}")
@@ -198,8 +197,7 @@ async def get_request_status(request_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving request {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error retrieving request {request_id}", e)
 
 
 @router.get("/")
@@ -229,8 +227,7 @@ async def list_active_requests():
             }
 
     except Exception as e:
-        logger.error(f"Error listing requests: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error listing requests", e)
 
 
 # Download API Endpoints
@@ -311,8 +308,7 @@ async def get_delivery_info(request_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error retrieving delivery info for {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error retrieving delivery info for {request_id}", e)
 
 
 @router.get("/{request_id}/download")
@@ -372,8 +368,7 @@ async def download_data_package(request_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error downloading data package for {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error downloading data package for {request_id}", e)
 
 
 @router.get("/{request_id}/download/{filename}")
@@ -433,5 +428,4 @@ async def download_specific_file(request_id: str, filename: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error downloading file {filename} for {request_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Error downloading file {filename} for {request_id}", e)

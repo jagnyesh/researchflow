@@ -21,6 +21,7 @@ import re
 import subprocess  # nosec B404 - used only with hardcoded script path in /create-all
 import asyncio
 
+from ..schemas._errors import internal_error, log_internal_error
 from ..security.dependencies import require_role
 from ..services.materialized_view_service import MaterializedViewService
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
@@ -139,8 +140,7 @@ async def list_materialized_views():
             await service.close()
 
     except Exception as e:
-        logger.error(f"Failed to list views: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Failed to list views", e)
 
 
 @router.get("/{view_name}/status", response_model=ViewStatusResponse)
@@ -175,8 +175,7 @@ async def get_view_status(view_name: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to get status for view '{view_name}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Failed to get status for view '{view_name}'", e)
 
 
 @router.post("/{view_name}/refresh", response_model=ViewRefreshResponse)
@@ -204,8 +203,7 @@ async def refresh_view(
             await service.close()
 
     except Exception as e:
-        logger.error(f"Failed to refresh view '{view_name}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Failed to refresh view '{view_name}'", e)
 
 
 @router.post("/refresh-all", response_model=RefreshAllResponse)
@@ -248,8 +246,7 @@ async def refresh_all_views(
             await service.close()
 
     except Exception as e:
-        logger.error(f"Failed to refresh all views: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Failed to refresh all views", e)
 
 
 @router.post("/refresh-stale")
@@ -287,8 +284,7 @@ async def refresh_stale_views(_admin=Depends(require_role("admin"))):
             await service.close()
 
     except Exception as e:
-        logger.error(f"Failed to refresh stale views: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Failed to refresh stale views", e)
 
 
 @router.post("/create-all")
@@ -329,23 +325,21 @@ async def create_all_views(_admin=Depends(require_role("admin"))):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        await process.communicate()  # drain both pipes; contents deliberately discarded
 
         if process.returncode == 0:
             logger.info("Successfully created all materialized views")
+            # No script output in the response or log: it echoes HAPI_DB_URL
+            # (credentials) and asyncpg error text, which can carry row values (#175).
             return {
                 "success": True,
                 "message": "All materialized views created successfully",
-                "output": stdout.decode() if stdout else "",
             }
         else:
-            error_msg = stderr.decode() if stderr else "Script execution failed"
-            logger.error(f"Failed to create views: {error_msg}")
-            raise HTTPException(status_code=500, detail=f"Failed to create views: {error_msg}")
+            raise RuntimeError(f"create_materialized_views.py exited rc={process.returncode}")
 
     except Exception as e:
-        logger.error(f"Error creating views: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error creating views", e)
 
 
 @router.delete("/{view_name}")
@@ -396,8 +390,7 @@ async def drop_view(
             await service.close()
 
     except Exception as e:
-        logger.error(f"Failed to drop view '{view_name}': {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, f"Failed to drop view '{view_name}'", e)
 
 
 @router.get("/health")
@@ -431,5 +424,5 @@ async def health_check():
             await service.close()
 
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "error": str(e)}
+        ref = log_internal_error(logger, "Health check failed", e)
+        return {"status": "unhealthy", "error": f"health check failed (ref: {ref})"}

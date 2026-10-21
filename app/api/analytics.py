@@ -16,6 +16,7 @@ import logging
 import os
 
 from ..clients.fhir_client import create_fhir_client
+from ..schemas._errors import internal_error, log_internal_error
 from ..clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
@@ -165,8 +166,7 @@ async def list_view_definitions():
         return ViewDefinitionListResponse(view_definitions=view_list)
 
     except Exception as e:
-        logger.error(f"Error listing ViewDefinitions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error listing ViewDefinitions", e)
 
 
 @router.get("/view-definitions/{view_name}")
@@ -190,8 +190,7 @@ async def get_view_definition(view_name: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"ViewDefinition '{view_name}' not found")
     except Exception as e:
-        logger.error(f"Error retrieving ViewDefinition: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error retrieving ViewDefinition", e)
 
 
 @router.post("/view-definitions")
@@ -215,8 +214,7 @@ async def create_view_definition(request: CreateViewDefinitionRequest):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error(f"Error creating ViewDefinition: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error creating ViewDefinition", e)
 
 
 @router.delete("/view-definitions/{view_name}")
@@ -243,8 +241,7 @@ async def delete_view_definition(view_name: str):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting ViewDefinition: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error deleting ViewDefinition", e)
 
 
 @router.post("/execute", response_model=ViewDefinitionResponse)
@@ -317,8 +314,7 @@ async def execute_view_definition(request: ViewDefinitionRequest):
             status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
         )
     except Exception as e:
-        logger.error(f"Error executing ViewDefinition: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error executing ViewDefinition", e)
 
 
 @router.get("/execute/{view_name}", response_model=ViewDefinitionResponse)
@@ -424,8 +420,7 @@ async def count_resources(request: CountRequest):
             status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
         )
     except Exception as e:
-        logger.error(f"Error counting resources: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error counting resources", e)
 
 
 @router.post("/query")
@@ -476,8 +471,10 @@ async def execute_custom_query(
                     }
 
                 except Exception as e:
-                    logger.warning(f"Error executing ViewDefinition '{view_name}': {e}")
-                    results[view_name] = {"error": str(e)}
+                    ref = log_internal_error(
+                        logger, f"Error executing ViewDefinition '{view_name}'", e
+                    )
+                    results[view_name] = {"error": f"execution failed (ref: {ref})"}
 
             logger.info(f"Batch query complete: {len(view_names)} ViewDefinitions")
             return results
@@ -486,8 +483,7 @@ async def execute_custom_query(
             await cleanup()
 
     except Exception as e:
-        logger.error(f"Error executing batch query: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error executing batch query", e)
 
 
 @router.get("/schema/{view_name}")
@@ -523,8 +519,7 @@ async def get_view_schema(view_name: str):
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail=f"ViewDefinition '{view_name}' not found")
     except Exception as e:
-        logger.error(f"Error retrieving schema: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise internal_error(logger, "Error retrieving schema", e)
 
 
 @router.get("/health")
@@ -551,5 +546,5 @@ async def health_check():
             await fhir_client.close()
 
     except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        return {"status": "unhealthy", "error": str(e)}
+        ref = log_internal_error(logger, "Health check failed", e)
+        return {"status": "unhealthy", "error": f"health check failed (ref: {ref})"}
