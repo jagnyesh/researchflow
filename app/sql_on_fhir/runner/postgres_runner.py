@@ -139,7 +139,7 @@ class PostgresRunner:
             logger.debug(f"Generated SQL:\n{query.sql}")
 
         except Exception as e:
-            log_internal_error(logger, f"Failed to build SQL query for '{view_name}", e)
+            log_internal_error(logger, f"Failed to build SQL query for '{view_name}'", e)
             raise ValueError("SQL generation failed") from e
 
         # Step 2: Execute SQL query
@@ -161,7 +161,7 @@ class PostgresRunner:
             )
 
         except Exception as e:
-            log_internal_error(logger, f"SQL execution failed for '{view_name}", e)
+            log_internal_error(logger, f"SQL execution failed for '{view_name}'", e)
             logger.debug(f"Failed SQL:\n{query.sql}")
             raise RuntimeError("Query execution failed") from e
 
@@ -192,7 +192,7 @@ class PostgresRunner:
         try:
             count_sql = self.builder.build_count_query(view_definition, search_params)
         except Exception as e:
-            log_internal_error(logger, f"Failed to build COUNT query for '{view_name}", e)
+            log_internal_error(logger, f"Failed to build COUNT query for '{view_name}'", e)
             raise ValueError("COUNT query generation failed") from e
 
         # Execute
@@ -211,7 +211,7 @@ class PostgresRunner:
             return count
 
         except Exception as e:
-            log_internal_error(logger, f"COUNT query execution failed for '{view_name}", e)
+            log_internal_error(logger, f"COUNT query execution failed for '{view_name}'", e)
             raise RuntimeError("COUNT query failed") from e
 
     def get_schema(self, view_definition: Dict[str, Any]) -> Dict[str, str]:

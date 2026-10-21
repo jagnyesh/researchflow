@@ -102,7 +102,10 @@ async def test_refresh_all_views_isolates_per_view_failures():
 
     failed_results = [r for r in summary["results"] if not r["success"]]
     assert len(failed_results) == 1
-    assert "simulated lock timeout" in str(failed_results[0].get("error", ""))
+    # Type + ref, never the exception text — /refresh-all returns this (#183).
+    error = str(failed_results[0].get("error", ""))
+    assert "simulated lock timeout" not in error
+    assert error.startswith("RuntimeError (ref: ")
 
 
 @pytest.mark.asyncio

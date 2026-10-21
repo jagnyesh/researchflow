@@ -26,6 +26,8 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 
+from app.schemas._errors import failure_text
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_NAME = "sqlonfhir"
@@ -300,9 +302,13 @@ class SQLValidator:
         try:
             await db_client.execute_query(f"EXPLAIN {result.safe_sql}")
         except Exception as e:
+            # Not LLM feedback: this goes straight to the researcher's error card
+            # (no retry), so it carries no driver text — connection/auth errors
+            # name infrastructure (#183).
+            failure = failure_text(logger, "EXPLAIN dry-run failed", e, level=logging.WARNING)
             return ValidationResult(
                 valid=False,
-                violations=[f"EXPLAIN dry-run failed against the live database: {e}"],
+                violations=[f"EXPLAIN dry-run failed against the live database ({failure})"],
             )
         return result
 

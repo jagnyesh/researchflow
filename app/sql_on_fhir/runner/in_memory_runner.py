@@ -223,7 +223,7 @@ class InMemoryRunner:
 
                 except Exception as e:
                     log_internal_error(
-                        logger, f"Error evaluating where clause '{path}", e, level=logging.WARNING
+                        logger, f"Error evaluating where clause '{path}'", e, level=logging.WARNING
                     )
                     include = False
                     break
@@ -431,7 +431,7 @@ class InMemoryRunner:
 
         except Exception as e:
             log_internal_error(
-                logger, f"Error evaluating forEach '{for_each_path}", e, level=logging.WARNING
+                logger, f"Error evaluating forEach '{for_each_path}'", e, level=logging.WARNING
             )
             return []
 
@@ -487,7 +487,7 @@ class InMemoryRunner:
             except Exception as e:
                 log_internal_error(
                     logger,
-                    f"Error extracting column '{column_name}' with path '{column_path}",
+                    f"Error extracting column '{column_name}' with path '{column_path}'",
                     e,
                     level=logging.WARNING,
                 )

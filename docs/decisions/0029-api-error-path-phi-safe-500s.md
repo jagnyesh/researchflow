@@ -31,3 +31,16 @@ related: [0007-sprint-6-1-hipaa-security-baseline.md, 0028-sprint-6-7-explorator
 - **Sites that don't re-raise `HTTPException`** before `except Exception` (for example `research.py` submit) still turn an inner 404 into a 500, as they do today. Status behavior is unchanged; only the body and the log line change.
 - **Line breaks in `context` are escaped** because contexts interpolate path params (`request_id`, `view_name`). This blocks log-line forging. The public `/health` cache probe logs at WARNING, not ERROR.
 - **Debugging a 500 now starts from `ref`.** Find the log line, read the type chain and frames, and reproduce locally.
+
+## Extended app-wide (#181, #183)
+
+The rule now covers all of `app/`, not just `app/api/**`.
+- **Logging:** every exception goes through `log_internal_error`.
+- **Persisted or returned failure text** goes through `failure_text()`, which yields `"<Type> (ref: <id>)"`. This covers workflow `state["error"]`, `research_requests.error_message`, `agent_executions.error`, approval and MV-refresh results, and the audit dead-letter reason.
+- **Re-raises** use `raise X("…") from e`: the cause stays chained and its text is not copied.
+- **The `feasibility_service` precedent is retired.** It logged `"%s", e` and returned only the type (#39); it now uses `log_internal_error` like everything else.
+- **The guard** (`tests/test_workflow_phi_safe_errors.py`) runs over `app/`:
+  - It also checks the bodies of exempt helpers, such as `_render_db_unreachable`.
+  - It allows `raise … from e` and `type(e)`.
+  - It keeps a reasoned `ALLOWED` map, with each entry pinned to a sink count. The one entry is `SQLValidator.validate`. Its sqlglot parse-error text is the LLM's self-correction feedback and quotes the LLM's own SQL, not row data, so changing it is LLM-touching and eval-gated.
+  - The EXPLAIN failure is *not* allowlisted. It goes to the researcher's card, not the LLM, so it now carries only type plus ref.

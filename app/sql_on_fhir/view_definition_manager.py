@@ -195,7 +195,7 @@ class ViewDefinitionManager:
                 view_defs[name] = self.load(name)
             except Exception as e:
                 log_internal_error(
-                    logger, f"Failed to load ViewDefinition '{name}", e, level=logging.WARNING
+                    logger, f"Failed to load ViewDefinition '{name}'", e, level=logging.WARNING
                 )
 
         logger.info(f"Loaded {len(view_defs)} ViewDefinitions")

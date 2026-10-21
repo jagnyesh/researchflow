@@ -120,9 +120,7 @@ class MultiLLMClient:
             logger.info(f"AI Suite initialized for provider: {self.secondary_provider}")
 
         except Exception as e:
-            log_internal_error(
-                logger, "Failed to initialize AI Suite (- falling back to Claude)", e
-            )
+            log_internal_error(logger, "Failed to initialize AI Suite; falling back to Claude", e)
             self.secondary_provider = "anthropic"
 
     def _get_model_identifier(self, task_type: str) -> str:

@@ -109,18 +109,43 @@ async def test_every_agent_node_keeps_phi_out(workflow, caplog, node, agent_attr
 # #183 widened the #181 guard to the whole package.
 GUARDED_DIRS = ["app"]
 
-# (path, enclosing function) -> why exception text may surface there. Each entry
-# is a decision, not a convenience; keep the reason honest.
+# (path, enclosing function) -> (sink count, why exception text may surface
+# there). The count pins the entry to its known sink, so a new leak in the same
+# function still fails. Each entry is a decision; keep the reason honest.
 ALLOWED = {
     ("app/services/sql_validator.py", "validate"): (
-        "parse error text is the LLM's self-correction feedback and derives from the "
-        "LLM's own SQL, not row data; changing it is LLM-touching (eval-gated, #183)"
-    ),
-    ("app/services/sql_validator.py", "validate_with_explain"): (
-        "EXPLAIN reads no rows; its error text is self-correction feedback on the "
-        "LLM's own SQL; changing it is LLM-touching (eval-gated, #183)"
+        1,
+        "sqlglot parse-error text is the LLM's self-correction feedback and quotes "
+        "the LLM's own SQL, not row data; changing it is LLM-touching (eval-gated)",
     ),
 }
+
+
+def _helper_body_leaks(tree):
+    """Exempt helpers (the guard's _HELPERS) receive the exception, so their
+    bodies are sinks too: inside one, its exception parameter may only reach
+    type(...) or another helper's exception slot (#183 review)."""
+    from tests.test_api_error_leak import _HELPERS, _call_name
+
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) or fn.name not in _HELPERS:
+            continue
+        params = [a.arg for a in fn.args.args if a.arg not in ("self", "cls")]
+        if fn.name in ("internal_error", "log_internal_error", "failure_text"):
+            continue  # the primitives themselves (app/schemas/_errors.py), tested directly
+        exc = params[_HELPERS[fn.name]] if len(params) > _HELPERS[fn.name] else None
+        if exc is None:
+            continue
+        allowed = set()
+        for node in ast.walk(fn):
+            name = _call_name(node)
+            if name == "type" or (name in _HELPERS and name != fn.name):
+                i = 0 if name == "type" else _HELPERS[name]
+                allowed.update(id(a) for a in node.args[i : i + 1] if isinstance(a, ast.Name))
+        for node in ast.walk(fn):
+            if isinstance(node, ast.Name) and node.id == exc and isinstance(node.ctx, ast.Load):
+                if id(node) not in allowed:
+                    yield node.lineno
 
 
 def _enclosing_functions(tree):
@@ -144,19 +169,21 @@ def test_no_exception_text_escapes_in_workflow_code(rel):
     from tests.test_api_error_leak import _banned_calls, _handler_leaks
 
     repo = Path(__file__).resolve().parents[1]
-    violations, used = [], set()
+    violations, used = [], {}
     for path in sorted((repo / rel).rglob("*.py")):
         tree = ast.parse(path.read_text(), filename=str(path))
         spans = _enclosing_functions(tree)
         relpath = str(path.relative_to(repo))
-        for line in sorted(set(_handler_leaks(tree)) | set(_banned_calls(tree))):
+        lines = set(_handler_leaks(tree)) | set(_banned_calls(tree)) | set(_helper_body_leaks(tree))
+        for line in sorted(lines):
             key = (relpath, _function_at(spans, line))
             if key in ALLOWED:
-                used.add(key)
+                used[key] = used.get(key, 0) + 1
             else:
                 violations.append(f"{relpath}:{line} ({key[1]})")
     assert not violations, "exception text escapes at: " + ", ".join(violations)
-    assert used == set(ALLOWED), f"stale allowlist entries: {set(ALLOWED) - used}"
+    expected = {k: v[0] for k, v in ALLOWED.items()}
+    assert used == expected, f"allowlist drift (sink counts): found {used}, expected {expected}"
 
 
 @pytest.mark.asyncio

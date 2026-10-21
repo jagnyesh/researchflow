@@ -206,7 +206,7 @@ class MaterializedViewService:
             return status
 
         except Exception as e:
-            log_internal_error(logger, f"Failed to get status for view '{view_name}", e)
+            log_internal_error(logger, f"Failed to get status for view '{view_name}'", e)
             raise
 
     async def refresh_view(self, view_name: str) -> Dict[str, Any]:
@@ -328,7 +328,8 @@ class MaterializedViewService:
                 result = {
                     "view_name": view_name,
                     "success": False,
-                    "error": str(raw),
+                    # Returned by POST /refresh-all: type + ref, never the text (#183).
+                    "error": failure_text(logger, f"Refresh of view '{view_name}' raised", raw),
                 }
                 fail_count += 1
             else:
@@ -430,7 +431,7 @@ class MaterializedViewService:
 
         except Exception as e:
             await self.session.rollback()
-            log_internal_error(logger, f"Failed to update metadata for '{view_name}", e)
+            log_internal_error(logger, f"Failed to update metadata for '{view_name}'", e)
             raise
 
     async def _update_staleness_for_all(self, metadata_list: List[MaterializedViewMetadata]):

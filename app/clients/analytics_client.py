@@ -107,7 +107,7 @@ class AnalyticsClient:
             )
 
         except Exception as e:
-            log_internal_error(logger, f"Failed to execute ViewDefinition '{view_name}", e)
+            log_internal_error(logger, f"Failed to execute ViewDefinition '{view_name}'", e)
             raise
 
     async def execute_multiple_view_definitions(

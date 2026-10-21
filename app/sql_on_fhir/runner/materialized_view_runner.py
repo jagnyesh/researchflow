@@ -161,7 +161,7 @@ class MaterializedViewRunner:
             return rows
 
         except Exception as e:
-            log_internal_error(logger, f"Query execution failed for '{view_name}", e)
+            log_internal_error(logger, f"Query execution failed for '{view_name}'", e)
             logger.debug(f"Failed SQL:\n{sql}")
             raise RuntimeError("Materialized view query failed") from e
 
@@ -200,7 +200,7 @@ class MaterializedViewRunner:
             return count
 
         except Exception as e:
-            log_internal_error(logger, f"COUNT query failed for '{view_name}", e)
+            log_internal_error(logger, f"COUNT query failed for '{view_name}'", e)
             raise RuntimeError("COUNT query failed") from e
 
     def get_schema(self, view_definition: Dict[str, Any]) -> Dict[str, str]:

@@ -301,7 +301,7 @@ class HybridRunner:
                 except Exception as e:
                     log_internal_error(
                         logger,
-                        f"Speed layer query failed for '{view_name} (. Using batch only)",
+                        f"Speed layer query failed for '{view_name}'; using batch only",
                         e,
                         level=logging.WARNING,
                     )
@@ -626,7 +626,10 @@ class HybridRunner:
 
         except Exception as e:
             log_internal_error(
-                logger, f"Failed to check view existence for '{view_name}", e, level=logging.WARNING
+                logger,
+                f"Failed to check view existence for '{view_name}'",
+                e,
+                level=logging.WARNING,
             )
             # Don't cache failures
             return False

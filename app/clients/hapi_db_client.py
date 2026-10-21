@@ -154,7 +154,7 @@ class HAPIDBClient:
                 f"Query execution exceeded {timeout or self.command_timeout} seconds"
             )
         except Exception as e:
-            log_internal_error(logger, f"Query execution failed (\nSQL: {sql[:200]}...)", e)
+            log_internal_error(logger, f"Query execution failed for SQL: {sql[:200]}...", e)
             raise
 
     async def execute_scalar(self, sql: str, params: Optional[List] = None) -> Any:
