@@ -538,7 +538,7 @@ class PhenotypeValidationAgent(BaseAgent):
             # Condition filtering happens during cohort estimation in the
             # pre-approval phenotype-validation step; same freshness rationale
             # as the patient_simple read above.
-            logger.info(f"[{self.agent_id}] Querying conditions for '{condition_term}'...")
+            logger.info(f"[{self.agent_id}] Querying conditions...")  # term is PHI-derived
             results = await self.hybrid_runner.execute(
                 view_definition=view_def,
                 search_params={},
@@ -561,7 +561,7 @@ class PhenotypeValidationAgent(BaseAgent):
                         patient_ids.add(patient_id)
 
             logger.info(
-                f"[{self.agent_id}] Found {len(patient_ids)} unique patients with '{condition_term}'"
+                f"[{self.agent_id}] Found {len(patient_ids)} unique patients for the condition"
             )
             return patient_ids
 

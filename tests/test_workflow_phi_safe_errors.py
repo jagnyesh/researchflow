@@ -123,3 +123,29 @@ def test_no_exception_text_escapes_in_workflow_code(rel):
         violations += [f"{path.name}:{n}" for n in _handler_leaks(tree)]
         violations += [f"{path.name}:{n} (banned call)" for n in _banned_calls(tree)]
     assert not violations, f"{rel}: " + ", ".join(violations)
+
+
+@pytest.mark.asyncio
+async def test_base_agent_failure_path_keeps_phi_out(caplog):
+    """The real BaseAgent.handle_task failure path — task record, DB persistence,
+    retry decision, escalation — not just a node with the agent swapped out."""
+    from app.agents.base_agent import BaseAgent
+    from app.database import init_db
+
+    await init_db()
+
+    class Failing(BaseAgent):
+        async def execute_task(self, task, context):
+            raise RuntimeError(PHI_NEEDLE)
+
+    agent = Failing(agent_id="failing_agent")
+    request_id = f"REQ-181-{uuid.uuid4().hex[:8]}"
+    with caplog.at_level(logging.DEBUG), pytest.raises(RuntimeError):
+        await agent.handle_task("boom", {"request_id": request_id})
+
+    recorded = agent.task_history[-1]["error"]
+    assert PHI_NEEDLE not in recorded and re.fullmatch(
+        r"RuntimeError \(ref: [0-9a-f]{12}\)", recorded
+    )
+    assert PHI_NEEDLE not in caplog.text
+    assert all(PHI_NEEDLE not in (e or "") for e in await _persisted_errors(request_id))

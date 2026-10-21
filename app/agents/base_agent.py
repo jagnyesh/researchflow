@@ -136,7 +136,7 @@ class BaseAgent(ABC):
             await self._save_execution_to_db(self.current_task.copy())
 
             # Attempt retry or escalate
-            if self.should_retry(e, context):
+            if self.should_retry(type(e).__name__, context):
                 return await self.retry_task(task, context)
             else:
                 await self.escalate_to_human(failure, context)
@@ -154,8 +154,12 @@ class BaseAgent(ABC):
                 agent_id=next_agent, task=next_task, context=context, from_agent=self.agent_id
             )
 
-    def should_retry(self, error: Exception, context: Dict) -> bool:
-        """Determine if task should be retried"""
+    def should_retry(self, error_type: str, context: Dict) -> bool:
+        """Determine if task should be retried.
+
+        Takes the exception's type name, not the exception: the decision needs
+        only the type, and never holding the object keeps its message out of
+        reach (#181)."""
         retry_count = context.get("retry_count", 0)
 
         # Don't retry if max retries exceeded
@@ -170,7 +174,7 @@ class BaseAgent(ABC):
             "ServiceUnavailable",
         ]
 
-        return type(error).__name__ in transient_errors
+        return error_type in transient_errors
 
     async def retry_task(self, task: str, context: Dict) -> Dict[str, Any]:
         """Retry failed task with exponential backoff"""

@@ -115,7 +115,7 @@ async def test_submit_db_failure_leaks_nothing_and_keeps_audit_pair(
 
 API_DIR = Path(__file__).resolve().parents[1] / "app" / "api"
 # helper name -> positional index of its exception argument
-_HELPERS = {"internal_error": 2, "log_internal_error": 2, "failure_text": 2, "should_retry": 0}
+_HELPERS = {"internal_error": 2, "log_internal_error": 2, "failure_text": 2}
 _BANNED_CALLS = {"format_exc", "print_exc", "format_exception", "exc_info", "exception"}
 
 
