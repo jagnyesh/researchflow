@@ -1,0 +1,9 @@
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -66,7 +66,7 @@
+ - `ctx_shell` instead of `bash` / `Shell` (95+ compression patterns)
+ - `ctx_search` instead of `Grep` / `rg` (compact results)
+ - `ctx_tree` instead of `ls` / `find` (compact directory maps)
+-- Native Edit/StrReplace stay unchanged. If Edit requires Read and Read is unavailable, use `ctx_edit(path, old_string, new_string)` instead.
++- Native Edit/StrReplace stay unchanged. If Edit requires Read and Read is unavailable, use `ctx_patch` instead (hash-anchored: `ctx_read(mode="anchored")` first, then `set_line`/`replace_lines`).
+ - Write, Delete, Glob — use normally.

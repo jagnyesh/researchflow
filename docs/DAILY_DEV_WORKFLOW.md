@@ -181,7 +181,7 @@ You talk faster than you type, and the cost of attaching the *why* drops to near
 
 ## 9. Skill / tool vetting (the "§5.5 bar", unchanged)
 
-*"§5.5" is this bar's legacy section number; CLAUDE.md's install-ledger entries still cite it by that name.*
+*"§5.5" is this bar's legacy section number; the vetting ledger (`docs/audits/vetting-ledger.md`) still cites it by that name.*
 
 Before any skill or executing tool: read the whole `SKILL.md` **and** bundled scripts; grep for network calls, `curl | bash`, credential/env access, package installs; require a named maintainer + pinned version/commit; trial command-runners in a throwaway repo; never install mid-task on an agent's suggestion — finish, then vet cold. **This bar applies to the mechanisms in §7 too** — a test-lock hook or eval-gate script is tooling you must vet and maintain, not free safety.
 

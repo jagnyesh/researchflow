@@ -51,12 +51,10 @@ Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules 
 
 **Skill vetting (§9, the "§5.5 bar").** Before installing any skill or tool: read the whole `SKILL.md` and its bundled scripts (not the README); grep for network calls, `curl | bash`, credential/env access, and package installs; require a named maintainer and a pinned version/commit; trial command-executing skills in a throwaway repo first; never install mid-task because an agent suggested it — finish the task, then vet cold. Sandbox-first is a standing rule beyond skills (added 2026-07-19): anything that mutates filesystems or environments — our own scripts included — proves itself in a throwaway target first. Precedent: the 2026-07-18 `uv pip sync` hijack of the shared `healthcare_env` (#129).
 
-**Vetting ledger** (tool · version · vet date · verdict):
-- lean-ctx · 3.9.12, floating (unpinned, unchecksummed stripped release binary from `releases/latest` — source-available upstream, binary provenance unverifiable; self-update capable) · 2026-07-19 · **FAIL** — pseudonymous maintainer, unpinned, `curl | bash` installer, hook-level rewrite of every Bash call; telemetry/cloud/proxy observed off. Retroactive vet (#132); in use pending a human keep/pin/remove decision (resolved same day — next entry). Full report: `docs/audits/2026-07-19-pipeline-audit.md`.
-- lean-ctx · 3.9.12, **pinned — self-built from source** (tag `v3.9.12` = commit `54e0a66`, `cargo build --release --locked`, rustc 1.97.1 — same command/features/lockfile as upstream release CI; installed sha256 `dba8532b61c46c3a4411721e22373362015c6259bd3b1237696df20d9bd4678a`; release binary retained as rollback) · 2026-07-19 · **decision: PIN** (#134), sandbox-verified per the sandbox-first rule. Update checks disabled in BOTH config files (XDG `~/.config/lean-ctx` + legacy `~/.lean-ctx` — config split-brain: MCP reads the former, hooks/CLI the latter) plus `LEAN_CTX_NO_UPDATE_CHECK` in the MCP env; no autoupdate LaunchAgent. **`lean-ctx update` is a no-go command** — even `update --help` executes the full setup rewire (missing help guard at `rust/src/cli/dispatch/mod.rs:669`; observed 2026-07-19 rewriting `~/.zshrc`, global CLAUDE.md, hooks). Upgrades happen by rebuilding from a newer tag, deliberately. The floating risk was live: the binary had self-updated 3.5.14→3.9.12 at 01:09 that same morning. Residuals: pseudonymous maintainer; crates.io transitive chain (Cargo.lock-pinned); no full source audit.
-- lean-ctx · hook trim · 2026-10-06 · **`UserPromptSubmit` → `lean-ctx hook observe` REMOVED** from `~/.claude/settings.json` (backup `settings.json.bak-20261006`). It injected observe telemetry into every prompt including fresh subagent spawns, intermittently derailing them → 0-tool-call `end_turn` (2 of 3 review subagents misfired this session; diagnosed from the agent transcripts). Kept: `ctx_*` MCP tools, `PreToolUse` rewrite/redirect, `PostToolUse` read-dedup; Verified: 3/3 probe subagents recovered — the misfire fix is solid and independent of everything that follows. **Deeper trim + correction (same day):** chasing the residual `ACTIVE SESSION (LITM…)` banner that still rode in tool output, also set `auto_preload=false` in BOTH configs (XDG + legacy, which lacked an `[autonomy]` table) and stripped `observe` from ALL settings.json events — hooks now only `PreToolUse` rewrite/redirect + `PostToolUse` read-dedup (observe fully off; lean-ctx event observation/memory off with it). **The banner survived all of it:** a fresh probe still saw it bundled with the lean-ctx MCP-server instructions → it is **MCP-server-sourced, not hook-sourced** (a frozen session snapshot from MCP-server startup; it even cites a stale `scripts`/`lane.sh` task, not the live session). Config changes do NOT hot-reload a running MCP server → clearing it needs a **Claude Code restart** to re-read `~/.config/lean-ctx/config.toml`; **untested until then**. Next lever if it persists post-restart: `[autonomy] enabled=false`; failing that it is core MCP behavior (accept, or drop the MCP server and lose `ctx_*`). (Corrects this bullet's earlier "full kill via auto_preload=false" wording — never tested against a fresh server.) Backups: `settings.json.bak-20261006`, `settings.json.bak-20261006-pre-observe-trim`, and `*.bak-20261006` for both config files.
-- ponytail · copy-a-file pinned @ `552acd5` (full `552acd5efd0aeae2583a12efe39373d2f076f25e`; installed sha256 `1316a2f3f95741d2300b116fe0c2d81ce4a9568656ed0a62643f54aaf09957f2`) · 2026-10-06 · **PASS (copy-a-file)** — pure-prompt YAGNI / laziness-ladder skill dropped at `.claude/skills/ponytail/SKILL.md`; **zero runtime** (no plugin, no hooks). §5.5: read the full 120-line SKILL.md (benign instructional text) + a representative plugin hook (`hooks/ponytail-runtime.js`, local-state only — no network/exec/credentials/telemetry). MIT, maintainer Dietrich Gebert. Orthogonal to lean-ctx (governs what you build, not what you read). Upgrade = re-fetch at a newer commit + re-diff; never run the marketplace/plugin install.
-- caveman · `juliusbrussee/caveman` v3.1.0 · 2026-10-06 · **FAIL (full system) — NOT adopted** — only its read-path proxy overlaps lean-ctx; the full install carries telemetry on by default (install-id/OS/IP/token-counts), a multi-language runtime (Go engine + headless-Chrome CDP automation + MCP delegate + k8s/ECS deploy) unauditable in one sitting — the same interception risk class lean-ctx failed, plus browser-automation reach. `install.sh` itself is a clean pinned npx bootstrap, but the *system* is the surface. Its only wanted sliver (output brevity) is already covered by the in-session `/caveman` skill. Apache-2.0, maintainer Julius Brussee.
+**Vetting ledger:** `docs/audits/vetting-ledger.md` (read on demand). Standing consequences:
+- lean-ctx is pinned to a source build of `v3.9.12`; never run `lean-ctx update` (even `--help` rewrites `~/.zshrc`, global CLAUDE.md and hooks). Upgrade only by rebuilding from a newer tag.
+- ponytail is a copy-a-file pin @ `552acd5` with three local edits (2026-10-20 prompt audit); upgrade by re-fetch + re-diff, never the marketplace/plugin install.
+- caveman (full system) is not adopted; the in-session `/caveman` skill covers output brevity.
 
 **Guardrail (§10).** The metric is *verified merges per week* (evidence section + green CI + fresh-context review), not raw merges. Never scale lanes past validation: pipeline red or flaky → drop to one lane until green. No new lane launches while ≥2 PRs sit awaiting your decision. `scripts/dials.sh` computes the measurable cycle-time sub-intervals (open→green pipeline health, green→merge merge-gate latency) per merge day.
 
@@ -100,17 +98,16 @@ Docker: `make docker-up` (postgres + mock FHIR + app).
 
 ## Key directories
 
-- `app/agents/` — 6 specialized agents (Requirements, Phenotype, Calendar, Extraction, QA, Delivery), all `BaseAgent` subclasses
-- `app/orchestrator/` — custom A2A orchestrator + 15-state workflow FSM (production)
-- `app/langchain_orchestrator/` — LangGraph migration (23-state FSM, behind `USE_LANGGRAPH_WORKFLOW` flag)
+- `app/agents/` — specialized agents (Requirements, Phenotype, Calendar, Extraction, QA, Delivery, Coordinator), all `BaseAgent` subclasses
+- `app/langchain_orchestrator/` — LangGraph workflow, the only orchestrator
 - `app/sql_on_fhir/runner/` — Lambda Architecture: `materialized_view_runner.py` (batch) + `speed_layer_runner.py` (Redis) + `hybrid_runner.py` (serving)
-- `app/database/models.py` — 6 tables (ResearchRequest, RequirementsData, FeasibilityReport, AgentExecution, Escalation, DataDelivery)
-- `app/security/` — JWT auth, RBAC, rate limiting, audit logging (Sprint 6.1 active work)
+- `app/database/models.py` — ORM tables: request lifecycle (ResearchRequest → DataDelivery), Approval, User, AuditLog, MaterializedViewMetadata
+- `app/security/` — JWT auth, RBAC, rate limiting, audit logging
 - `tests/` — pytest with `pytest-asyncio`; subdirs `e2e/`, `integration/`, `security/`
 
 ## Skill routing
 
-When the user's request matches an available skill, invoke it via the Skill tool. When in doubt, invoke the skill.
+When the user's request matches an available skill, invoke it via the Skill tool.
 
 Key routing rules:
 - Product ideas/brainstorming → invoke /office-hours
@@ -122,7 +119,7 @@ Key routing rules:
 - QA/testing site behavior → invoke /qa or /qa-only
 - Code review/diff check → invoke /review
 - Visual polish → invoke /design-review
-- Ship/deploy/PR → invoke /ship or /land-and-deploy
+- Ship a finished change / open + merge its PR → invoke /validate-and-ship (repo pipeline; not /ship)
 - Save progress → invoke /context-save
 - Resume context → invoke /context-restore
 - Token-tight responses → invoke /caveman
