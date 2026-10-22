@@ -68,7 +68,7 @@ def researcher_headers():
 @pytest.fixture
 def admin_headers():
     """Create is admin-only (#178): as a researcher it 403s before the name is
-    checked, so the traversal tests must run as admin."""
+    checked, so the create traversal test runs as admin."""
     return _auth_headers("admin")
 
 
@@ -105,7 +105,7 @@ async def test_researcher_create_with_traversal_name_is_403_and_writes_nothing(
     fake_audit_redis, view_dir, researcher_headers
 ):
     """A real JWT through the full app: test_view_definition_authz.py overrides
-    the user dependency, so only this pins role resolution from the token."""
+    the user dependency, so only this pins that a non-admin token is denied."""
     async with await _client() as client:
         resp = await client.post(
             "/analytics/view-definitions",
