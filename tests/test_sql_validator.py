@@ -726,7 +726,10 @@ class TestExplainDryRun:
         )
 
         assert result.valid is False
-        assert any("EXPLAIN" in v and "operator does not exist" in v for v in result.violations)
+        # The violation reaches the researcher's card (no LLM retry), so it names
+        # the failure and a ref, never the driver text (#183).
+        assert any("EXPLAIN" in v and "(ref: " in v for v in result.violations)
+        assert not any("operator does not exist" in v for v in result.violations)
 
     async def test_static_failure_never_reaches_the_database(self):
         from unittest.mock import AsyncMock, MagicMock

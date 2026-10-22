@@ -15,6 +15,7 @@ from datetime import datetime
 from enum import Enum
 import asyncio
 import logging
+from app.schemas._errors import failure_text, log_internal_error
 
 # LangSmith observability (Sprint 7)
 try:
@@ -121,11 +122,11 @@ class BaseAgent(ABC):
             return result
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Task failed: {task} - {str(e)}", exc_info=True)
+            failure = failure_text(logger, f"[{self.agent_id}] Task failed: {task}", e)
 
             # Log failure
             self.current_task["completed_at"] = datetime.now()
-            self.current_task["error"] = str(e)
+            self.current_task["error"] = failure
             self.current_task["status"] = "failed"
 
             # Add to history
@@ -135,10 +136,10 @@ class BaseAgent(ABC):
             await self._save_execution_to_db(self.current_task.copy())
 
             # Attempt retry or escalate
-            if self.should_retry(e, context):
+            if self.should_retry(type(e).__name__, context):
                 return await self.retry_task(task, context)
             else:
-                await self.escalate_to_human(e, context)
+                await self.escalate_to_human(failure, context)
                 raise
 
         finally:
@@ -153,8 +154,12 @@ class BaseAgent(ABC):
                 agent_id=next_agent, task=next_task, context=context, from_agent=self.agent_id
             )
 
-    def should_retry(self, error: Exception, context: Dict) -> bool:
-        """Determine if task should be retried"""
+    def should_retry(self, error_type: str, context: Dict) -> bool:
+        """Determine if task should be retried.
+
+        Takes the exception's type name, not the exception: the decision needs
+        only the type, and never holding the object keeps its message out of
+        reach (#181)."""
         retry_count = context.get("retry_count", 0)
 
         # Don't retry if max retries exceeded
@@ -169,7 +174,7 @@ class BaseAgent(ABC):
             "ServiceUnavailable",
         ]
 
-        return type(error).__name__ in transient_errors
+        return error_type in transient_errors
 
     async def retry_task(self, task: str, context: Dict) -> Dict[str, Any]:
         """Retry failed task with exponential backoff"""
@@ -288,4 +293,4 @@ class BaseAgent(ABC):
 
         except Exception as e:
             # Don't fail the agent execution if database save fails
-            logger.error(f"[{self.agent_id}] Failed to save execution to database: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Failed to save execution to database", e)

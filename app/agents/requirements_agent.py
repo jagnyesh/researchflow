@@ -7,6 +7,7 @@ Validates completeness and routes to phenotype validation when ready.
 
 from typing import Dict, Any
 import logging
+from app.schemas._errors import log_internal_error
 from datetime import datetime
 from langsmith import traceable
 from .base_agent import BaseAgent
@@ -158,8 +159,11 @@ class RequirementsAgent(BaseAgent):
                         f"but proceeding with form submission"
                     )
             except Exception as e:
-                logger.warning(
-                    f"[{self.agent_id}] LLM validation failed, using form data as-is: {e}"
+                log_internal_error(
+                    logger,
+                    f"[{self.agent_id}] LLM validation failed, using form data as-is",
+                    e,
+                    level=logging.WARNING,
                 )
 
             # Validate and structure
@@ -303,7 +307,7 @@ class RequirementsAgent(BaseAgent):
                 }
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Failed to extract requirements: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Failed to extract requirements", e)
             raise
 
     async def _continue_conversation(self, context: Dict) -> Dict[str, Any]:
@@ -383,7 +387,12 @@ class RequirementsAgent(BaseAgent):
             return structured_criteria
 
         except Exception as e:
-            logger.warning(f"Batch extraction failed: {str(e)}, falling back to individual calls")
+            log_internal_error(
+                logger,
+                "Batch extraction failed (falling back to individual calls)",
+                e,
+                level=logging.WARNING,
+            )
 
             # Fallback to individual extraction (original behavior)
             structured_criteria = []
@@ -401,7 +410,10 @@ class RequirementsAgent(BaseAgent):
                     structured_criteria.append(criterion_structured)
 
                 except Exception as e:
-                    logger.warning(f"Could not structure criterion '{criterion}': {str(e)}")
+                    # Criterion text derives from initial_request (PHI); not logged (#181).
+                    log_internal_error(
+                        logger, "Could not structure criterion", e, level=logging.WARNING
+                    )
                     # Fallback to simple structure
                     structured_criteria.append(
                         {"description": criterion, "concepts": [], "codes": []}

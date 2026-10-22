@@ -20,6 +20,7 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional, Tuple
 from fhirpathpy import evaluate as fhirpath_eval
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +222,9 @@ class InMemoryRunner:
                         break
 
                 except Exception as e:
-                    logger.warning(f"Error evaluating where clause '{path}': {e}")
+                    log_internal_error(
+                        logger, f"Error evaluating where clause '{path}'", e, level=logging.WARNING
+                    )
                     include = False
                     break
 
@@ -251,7 +254,12 @@ class InMemoryRunner:
                 resource_rows = self._transform_resource(resource, view_definition)
                 rows.extend(resource_rows)
             except Exception as e:
-                logger.warning(f"Error transforming resource {resource.get('id')}: {e}")
+                log_internal_error(
+                    logger,
+                    f"Error transforming resource {resource.get('id')}",
+                    e,
+                    level=logging.WARNING,
+                )
                 continue
 
         return rows
@@ -278,7 +286,12 @@ class InMemoryRunner:
                 # Run CPU-bound transformation in thread pool for true parallelism
                 return await asyncio.to_thread(self._transform_resource, resource, view_definition)
             except Exception as e:
-                logger.warning(f"Error transforming resource {resource.get('id')}: {e}")
+                log_internal_error(
+                    logger,
+                    f"Error transforming resource {resource.get('id')}",
+                    e,
+                    level=logging.WARNING,
+                )
                 return []
 
         # Process resources in parallel batches
@@ -417,7 +430,9 @@ class InMemoryRunner:
             return rows
 
         except Exception as e:
-            logger.warning(f"Error evaluating forEach '{for_each_path}': {e}")
+            log_internal_error(
+                logger, f"Error evaluating forEach '{for_each_path}'", e, level=logging.WARNING
+            )
             return []
 
     def _extract_columns(
@@ -470,8 +485,11 @@ class InMemoryRunner:
                     row[column_name] = None
 
             except Exception as e:
-                logger.warning(
-                    f"Error extracting column '{column_name}' with path '{column_path}': {e}"
+                log_internal_error(
+                    logger,
+                    f"Error extracting column '{column_name}' with path '{column_path}'",
+                    e,
+                    level=logging.WARNING,
                 )
                 row[column_name] = None
 

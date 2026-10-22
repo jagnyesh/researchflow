@@ -29,6 +29,7 @@ nest_asyncio.apply(_streamlit_loop)
 
 # NOW safe to import modules
 import streamlit as st
+
 import httpx
 import logging
 from datetime import datetime
@@ -66,6 +67,7 @@ sys.path.insert(0, project_root)
 # stack frame — burying the misconfiguration. With this call, the dashboard
 # refuses to start and emits the same clean RuntimeError as `uvicorn`.
 from app.security.encryption_keys import assert_encryption_key_present_if_production
+from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
@@ -323,7 +325,9 @@ async def handle_query(user_input: str):
         try:
             await st.session_state.feasibility_service.close()
         except Exception as e:
-            logger.warning(f"Failed to close old feasibility service: {e}")
+            log_internal_error(
+                logger, "Failed to close old feasibility service", e, level=logging.WARNING
+            )
 
         # Create fresh FeasibilityService with new connection pool
         st.session_state.feasibility_service = FeasibilityService()
@@ -475,8 +479,10 @@ You can continue using the notebook for other queries while waiting."""
             st.session_state.messages.append({"role": "assistant", "content": confirmation_message})
 
     except Exception as e:
+        ref = log_internal_error(logger, "Error submitting request", e)
         error_message = (
-            f"❌ **Error submitting request:** {str(e)}\n\nPlease try again or contact support."
+            f"❌ **Error submitting request** (ref: {ref}).\n\n"
+            "Please try again or contact support with that reference."
         )
         st.session_state.messages.append({"role": "assistant", "content": error_message})
 

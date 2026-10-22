@@ -7,6 +7,7 @@ Uses MultiLLMClient for generating personalized notifications and documentation.
 
 from typing import Dict, Any
 import logging
+from app.schemas._errors import log_internal_error
 import json
 from datetime import datetime
 from langsmith import traceable
@@ -318,8 +319,11 @@ Keep it concise and professional."""
             logger.info(f"[{self.agent_id}] Generated custom citation using LLM")
             return citation.strip()
         except Exception as e:
-            logger.warning(
-                f"[{self.agent_id}] LLM citation failed: {str(e)}, using template fallback"
+            log_internal_error(
+                logger,
+                f"[{self.agent_id}] LLM citation failed (using template fallback)",
+                e,
+                level=logging.WARNING,
             )
             # Final fallback to template
             return self._generate_citation_template(requirements)
@@ -424,7 +428,7 @@ Keep it concise and professional."""
             return (str(location), csv_filenames)
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Failed to save package metadata: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Failed to save package metadata", e)
             # Return fallback location with empty CSV list
             return (f"/data/deliveries/{request_id}", [])
 
@@ -638,8 +642,11 @@ Keep it concise and professional."""
             logger.info(f"[{self.agent_id}] Generated personalized notification using LLM")
             return message.strip()
         except Exception as e:
-            logger.warning(
-                f"[{self.agent_id}] LLM notification failed: {str(e)}, using template fallback"
+            log_internal_error(
+                logger,
+                f"[{self.agent_id}] LLM notification failed (using template fallback)",
+                e,
+                level=logging.WARNING,
             )
             # Final fallback to template
             return self._generate_notification_template(recipient, delivery_info)
@@ -706,7 +713,7 @@ Keep it concise and professional."""
                 )
 
         except Exception as e:
-            logger.error(f"[{self.agent_id}] Failed to log delivery to database: {str(e)}")
+            log_internal_error(logger, f"[{self.agent_id}] Failed to log delivery to database", e)
             # Don't fail the delivery if logging fails
             logger.debug(
                 f"Delivered {package['metadata']['cohort_size']} patients, "

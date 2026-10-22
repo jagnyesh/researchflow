@@ -17,6 +17,7 @@ from typing import Optional
 from .audit_drain import AUDIT_QUEUE_KEY
 from .auth import decode_access_token
 from ..a2a.auth import verify_service_token
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -182,8 +183,8 @@ async def _try_enqueue(payload: dict) -> bool:
     try:
         await _audit_redis.rpush(AUDIT_QUEUE_KEY, json.dumps(payload))
         return True
-    except Exception:
-        logger.exception("audit enqueue failed; PHI request will fail-closed")
+    except Exception as e:
+        log_internal_error(logger, "audit enqueue failed; PHI request will fail-closed", e)
         return False
 
 

@@ -44,7 +44,7 @@ def assert_encryption_key_present_if_production() -> None:
         Fernet(key.encode())
     except Exception as exc:
         raise RuntimeError(
-            f"ENCRYPTION_KEY_PRIMARY is set but is not a valid Fernet key: {exc}. "
+            f"ENCRYPTION_KEY_PRIMARY is set but is not a valid Fernet key ({type(exc).__name__}). "
             "Generate one with: "
             "python -c 'from cryptography.fernet import Fernet; "
             "print(Fernet.generate_key().decode())'"

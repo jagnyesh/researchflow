@@ -20,7 +20,12 @@ asyncio.set_event_loop(_streamlit_loop)
 nest_asyncio.apply(_streamlit_loop)
 
 # NOW safe to import modules that create database connections
+import logging
+
 import streamlit as st
+
+
+logger = logging.getLogger(__name__)
 import httpx
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
@@ -39,6 +44,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 # stack frame — burying the misconfiguration. With this call, the dashboard
 # refuses to start and emits the same clean RuntimeError as `uvicorn`.
 from app.security.encryption_keys import assert_encryption_key_present_if_production
+from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
@@ -74,7 +80,8 @@ def load_researcher_email() -> str:
         cookie_manager = get_cookie_manager()
         return cookie_manager.get("researcher_email") or ""
     except Exception as e:
-        st.warning(f"Could not load saved email: {str(e)}")
+        ref = log_internal_error(logger, "Could not load saved email", e)
+        st.warning(f"Could not load saved email (ref: {ref})")
         return ""
 
 
@@ -86,7 +93,8 @@ def save_researcher_email(email: str):
             "researcher_email", email, expires_at=datetime.now() + timedelta(days=30)
         )
     except Exception as e:
-        st.warning(f"Could not save email: {str(e)}")
+        ref = log_internal_error(logger, "Could not save email", e)
+        st.warning(f"Could not save email (ref: {ref})")
 
 
 def clear_researcher_email():
@@ -95,7 +103,8 @@ def clear_researcher_email():
         cookie_manager = get_cookie_manager()
         cookie_manager.delete("researcher_email")
     except Exception as e:
-        st.warning(f"Could not clear saved email: {str(e)}")
+        ref = log_internal_error(logger, "Could not clear saved email", e)
+        st.warning(f"Could not clear saved email (ref: {ref})")
 
 
 def get_status_badge(state: str) -> str:
@@ -184,7 +193,8 @@ def check_delivery_status(request_id: str) -> dict:
             "data_elements": delivery.data_elements or [],
         }
     except Exception as e:
-        st.error(f"Error checking delivery status: {str(e)}")
+        ref = log_internal_error(logger, "Error checking delivery status", e)
+        st.error(f"Error checking delivery status (ref: {ref})")
         return {"delivered": False, "files": []}
 
 
@@ -211,7 +221,8 @@ def download_file(request_id: str, filename: str = None):
             return None, None
 
     except Exception as e:
-        st.error(f"Download error: {str(e)}")
+        ref = log_internal_error(logger, "Download error", e)
+        st.error(f"Download error (ref: {ref})")
         return None, None
 
 
@@ -554,7 +565,8 @@ def main():
                     st.info("No requests yet. Submit a new request below!")
 
             except Exception as e:
-                st.error(f"Error loading requests: {str(e)}")
+                ref = log_internal_error(logger, "Error loading requests", e)
+                st.error(f"Error loading requests (ref: {ref})")
         else:
             st.info("👆 Enter your email to view your requests")
 
@@ -743,7 +755,8 @@ def show_new_request_form():
                         st.session_state.selected_request = request_id
 
                     except Exception as e:
-                        st.error(f"Failed to submit request: {str(e)}")
+                        ref = log_internal_error(logger, "Failed to submit request", e)
+                        st.error(f"Failed to submit request (ref: {ref})")
 
 
 def show_request_details():

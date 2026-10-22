@@ -18,6 +18,7 @@ this facade can be removed.
 """
 
 import logging
+from app.schemas._errors import failure_text, log_internal_error
 from typing import Dict, Any, Optional
 from datetime import datetime
 import asyncio
@@ -468,8 +469,8 @@ class LangGraphRequestFacade:
             )
 
         except Exception as e:
-            logger.error(
-                f"[LangGraphRequestFacade] Workflow FAILED for {request_id}: {e}", exc_info=True
+            failure = failure_text(
+                logger, f"[LangGraphRequestFacade] Workflow FAILED for {request_id}", e
             )
 
             # Update database with error (ENHANCED: track workflow attempt and provide debugging info)
@@ -480,7 +481,7 @@ class LangGraphRequestFacade:
                 req = result.scalar_one_or_none()
                 if req:
                     req.current_state = "error"
-                    req.error_message = str(e)
+                    req.error_message = failure
                     req.updated_at = datetime.now()
 
                     # Track workflow execution attempt in agents_involved for debugging
@@ -490,7 +491,7 @@ class LangGraphRequestFacade:
                             "agent": "langgraph_workflow",
                             "task": "_run_workflow",
                             "timestamp": datetime.now().isoformat(),
-                            "error": str(e),
+                            "error": failure,
                             "error_type": type(e).__name__,
                         }
                     )
@@ -502,7 +503,7 @@ class LangGraphRequestFacade:
                         {
                             "state": "error",
                             "timestamp": datetime.now().isoformat(),
-                            "error": str(e),
+                            "error": failure,
                         }
                     )
                     req.state_history = state_history
@@ -811,9 +812,8 @@ class LangGraphRequestFacade:
             )
 
         except Exception as e:
-            logger.error(
-                f"[LangGraphRequestFacade] Failed to resume workflow for {request_id}: {e}",
-                exc_info=True,
+            log_internal_error(
+                logger, f"[LangGraphRequestFacade] Failed to resume workflow for {request_id}", e
             )
 
     async def get_request_status(self, request_id: str) -> Optional[Dict[str, Any]]:

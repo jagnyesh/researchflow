@@ -131,9 +131,9 @@ def test_generic_exception_message_has_support_code_and_truncates_detail():
     assert not msg.startswith(long_detail[:10])
     # A support code the researcher can quote (carries the request id).
     assert REQUEST_ID in msg
-    # Technical detail is truncated — the full 500-char blob must NOT be echoed.
-    assert long_detail not in msg
-    assert msg.count("x") <= 200
+    # No exception detail at all — only a correlation ref (#183).
+    assert "x" * 10 not in msg
+    assert "ref:" in msg
 
 
 # --------------------------------------------------------------------------- #

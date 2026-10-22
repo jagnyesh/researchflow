@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from app.schemas._errors import log_internal_error
 
 # Load .env file from project root when this module is imported
 # This ensures ANTHROPIC_API_KEY is available before LLMClient is initialized
@@ -610,7 +611,7 @@ class LLMClient:
             return response_text
 
         except Exception as e:
-            logger.error(f"LLM API error: {str(e)}")
+            log_internal_error(logger, "LLM API error", e)
             raise
 
     async def extract_structured_json(
@@ -654,7 +655,7 @@ Return ONLY valid JSON, no other text."""
         try:
             return json.loads(response.strip())
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from LLM response: {e}")
+            log_internal_error(logger, "Failed to parse JSON from LLM response", e)
             logger.debug(f"Response: {response}")
             raise
 

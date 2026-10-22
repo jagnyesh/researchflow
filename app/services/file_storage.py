@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional
 import logging
 import pandas as pd
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ class FileStorageService:
             self.base_path.mkdir(parents=True, exist_ok=True)
             logger.info(f"Delivery base directory ready: {self.base_path}")
         except Exception as e:
-            logger.error(f"Failed to create delivery directory: {e}")
+            log_internal_error(logger, "Failed to create delivery directory", e)
             raise
 
     def _get_request_directory(self, request_id: str) -> Path:
@@ -82,7 +83,7 @@ class FileStorageService:
             return str(file_path)
 
         except Exception as e:
-            logger.error(f"Failed to save CSV {filename} for request {request_id}: {e}")
+            log_internal_error(logger, f"Failed to save CSV {filename} for request {request_id}", e)
             raise
 
     def save_text_file(self, request_id: str, filename: str, content: str) -> str:
@@ -107,7 +108,9 @@ class FileStorageService:
             return str(file_path)
 
         except Exception as e:
-            logger.error(f"Failed to save text file {filename} for request {request_id}: {e}")
+            log_internal_error(
+                logger, f"Failed to save text file {filename} for request {request_id}", e
+            )
             raise
 
     def save_data_package(
@@ -165,7 +168,7 @@ class FileStorageService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to save data package for request {request_id}: {e}")
+            log_internal_error(logger, f"Failed to save data package for request {request_id}", e)
             raise
 
     def list_files(self, request_id: str) -> List[Dict[str, Any]]:
@@ -203,7 +206,7 @@ class FileStorageService:
             return files
 
         except Exception as e:
-            logger.error(f"Failed to list files for request {request_id}: {e}")
+            log_internal_error(logger, f"Failed to list files for request {request_id}", e)
             return []
 
     def get_file_path(self, request_id: str, filename: str) -> Optional[Path]:
@@ -263,7 +266,7 @@ class FileStorageService:
             return zip_path
 
         except Exception as e:
-            logger.error(f"Failed to create ZIP for request {request_id}: {e}")
+            log_internal_error(logger, f"Failed to create ZIP for request {request_id}", e)
             return None
 
     def delete_request_data(self, request_id: str) -> bool:
@@ -288,7 +291,7 @@ class FileStorageService:
             return False
 
         except Exception as e:
-            logger.error(f"Failed to delete data package for request {request_id}: {e}")
+            log_internal_error(logger, f"Failed to delete data package for request {request_id}", e)
             return False
 
     def get_storage_stats(self) -> Dict[str, Any]:
@@ -321,5 +324,5 @@ class FileStorageService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get storage stats: {e}")
+            log_internal_error(logger, "Failed to get storage stats", e)
             return {"total_requests": 0, "total_size_mb": 0, "total_files": 0}

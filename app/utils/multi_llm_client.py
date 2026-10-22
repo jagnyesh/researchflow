@@ -14,6 +14,7 @@ import logging
 from typing import Dict, Any, Optional, Literal
 from langsmith import traceable
 from .llm_client import LLMClient
+from app.schemas._errors import log_internal_error
 
 # Optional aisuite import — present in dev/prod, absent in slim deployments.
 # Hoisted to module level (was lazy-imported inside _init_aisuite) so tests
@@ -119,7 +120,7 @@ class MultiLLMClient:
             logger.info(f"AI Suite initialized for provider: {self.secondary_provider}")
 
         except Exception as e:
-            logger.error(f"Failed to initialize AI Suite: {str(e)} - falling back to Claude")
+            log_internal_error(logger, "Failed to initialize AI Suite; falling back to Claude", e)
             self.secondary_provider = "anthropic"
 
     def _get_model_identifier(self, task_type: str) -> str:
@@ -212,7 +213,7 @@ class MultiLLMClient:
             return response_text
 
         except Exception as e:
-            logger.error(f"Error with {model_id}: {str(e)}")
+            log_internal_error(logger, f"Error with {model_id}", e)
 
             # Fallback to Claude if enabled
             if self.enable_fallback:
@@ -282,7 +283,7 @@ Return ONLY valid JSON, no other text."""
         try:
             return json.loads(response.strip())
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON from LLM response: {e}")
+            log_internal_error(logger, "Failed to parse JSON from LLM response", e)
             logger.debug(f"Response: {response}")
             raise
 

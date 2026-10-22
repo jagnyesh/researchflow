@@ -15,6 +15,7 @@ while enabling LangGraph orchestration.
 """
 
 import logging
+from app.schemas._errors import failure_text
 from typing import Dict, Any, Optional
 from datetime import datetime
 
@@ -110,9 +111,9 @@ class LangGraphAgentAdapter:
             result = await self.agent.handle_task(task, context)
             logger.info(f"[LangGraphAgentAdapter] {self.agent_name} completed successfully")
         except Exception as e:
-            logger.error(f"[LangGraphAgentAdapter] {self.agent_name} failed: {e}")
+            failure = failure_text(logger, f"[LangGraphAgentAdapter] {self.agent_name} failed", e)
             # Return error state updates
-            return {"error": str(e), "updated_at": datetime.now().isoformat()}
+            return {"error": failure, "updated_at": datetime.now().isoformat()}
 
         # Map agent result to state updates
         state_updates = self._result_to_state(result, task)

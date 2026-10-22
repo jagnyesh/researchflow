@@ -12,6 +12,7 @@ from typing import Dict, Any, Optional, Literal
 from enum import Enum
 import logging
 from datetime import datetime
+from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +252,7 @@ Intent:"""
                 return UserIntent.UNKNOWN
 
         except Exception as e:
-            logger.error(f"LLM intent detection failed: {e}")
+            log_internal_error(logger, "LLM intent detection failed", e)
             # Defensive fallback: default to QUERY (most common)
             return UserIntent.QUERY
 
@@ -508,7 +509,7 @@ Answer (YES or NO):"""
             return "YES" in response.upper()
 
         except Exception as e:
-            logger.error(f"LLM rejection detection failed: {e}")
+            log_internal_error(logger, "LLM rejection detection failed", e)
             return False
 
     def get_stats(self) -> Dict[str, Any]:

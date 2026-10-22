@@ -11,6 +11,7 @@ from sqlalchemy import select, and_
 import logging
 
 from ..database.models import Approval, ResearchRequest, Escalation
+from app.schemas._errors import failure_text
 
 logger = logging.getLogger(__name__)
 
@@ -263,8 +264,8 @@ class ApprovalService:
             return {"approved": True, "approval_id": approval.id}
 
         except Exception as e:
-            logger.error(f"Error approving preview for request {request_id}: {str(e)}")
-            return {"approved": False, "error": str(e)}
+            failure = failure_text(logger, f"Error approving preview for request {request_id}", e)
+            return {"approved": False, "error": failure}
 
     async def reject_preview(
         self, request_id: str, reviewed_by: str, review_notes: str
@@ -307,8 +308,8 @@ class ApprovalService:
             return {"rejected": True, "approval_id": approval.id}
 
         except Exception as e:
-            logger.error(f"Error rejecting preview for request {request_id}: {str(e)}")
-            return {"rejected": False, "error": str(e)}
+            failure = failure_text(logger, f"Error rejecting preview for request {request_id}", e)
+            return {"rejected": False, "error": failure}
 
     async def approve_delivery(
         self, request_id: str, reviewed_by: str, review_notes: Optional[str] = None
@@ -351,8 +352,8 @@ class ApprovalService:
             return {"approved": True, "approval_id": approval.id}
 
         except Exception as e:
-            logger.error(f"Error approving delivery for request {request_id}: {str(e)}")
-            return {"approved": False, "error": str(e)}
+            failure = failure_text(logger, f"Error approving delivery for request {request_id}", e)
+            return {"approved": False, "error": failure}
 
     async def reject_delivery(
         self, request_id: str, reviewed_by: str, review_notes: str
@@ -395,8 +396,8 @@ class ApprovalService:
             return {"rejected": True, "approval_id": approval.id}
 
         except Exception as e:
-            logger.error(f"Error rejecting delivery for request {request_id}: {str(e)}")
-            return {"rejected": False, "error": str(e)}
+            failure = failure_text(logger, f"Error rejecting delivery for request {request_id}", e)
+            return {"rejected": False, "error": failure}
 
     async def check_timeouts(self) -> List[Approval]:
         """

@@ -78,6 +78,17 @@ def log_internal_error(
     return ref
 
 
+def failure_text(
+    log: logging.Logger, context: str, exc: BaseException, level: int = logging.ERROR
+) -> str:
+    """Log `exc` PHI-safely and return text that may be persisted or returned in
+    its place — exception type + ref, never the message (#181). For failure
+    strings that outlive the log line: workflow `state["error"]`,
+    research_requests.error_message, agent_executions.error, agent results."""
+    ref = log_internal_error(log, context, exc, level=level)
+    return f"{type(exc).__name__} (ref: {ref})"
+
+
 def internal_error(log: logging.Logger, context: str, exc: BaseException) -> HTTPException:
     """The 500 to raise from an API `except Exception` block (#175).
 

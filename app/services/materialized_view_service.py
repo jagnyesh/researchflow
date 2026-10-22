@@ -22,6 +22,7 @@ from app.database.models import MaterializedViewMetadata
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
+from app.schemas._errors import failure_text, log_internal_error
 
 logger = logging.getLogger(__name__)
 
@@ -131,7 +132,7 @@ class MaterializedViewService:
             return views
 
         except Exception as e:
-            logger.error(f"Failed to list views: {e}")
+            log_internal_error(logger, "Failed to list views", e)
             raise
 
     async def get_view_status(self, view_name: str) -> Dict[str, Any]:
@@ -205,7 +206,7 @@ class MaterializedViewService:
             return status
 
         except Exception as e:
-            logger.error(f"Failed to get status for view '{view_name}': {e}")
+            log_internal_error(logger, f"Failed to get status for view '{view_name}'", e)
             raise
 
     async def refresh_view(self, view_name: str) -> Dict[str, Any]:
@@ -280,8 +281,8 @@ class MaterializedViewService:
             }
 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Failed to refresh view '{view_name}': {error_msg}")
+            # Persisted to the metadata table and returned: type + ref only (#183).
+            error_msg = failure_text(logger, f"Failed to refresh view '{view_name}'", e)
 
             # Update metadata with error
             await self._update_metadata(view_name, {"status": "failed", "error_message": error_msg})
@@ -327,7 +328,8 @@ class MaterializedViewService:
                 result = {
                     "view_name": view_name,
                     "success": False,
-                    "error": str(raw),
+                    # Returned by POST /refresh-all: type + ref, never the text (#183).
+                    "error": failure_text(logger, f"Refresh of view '{view_name}' raised", raw),
                 }
                 fail_count += 1
             else:
@@ -429,7 +431,7 @@ class MaterializedViewService:
 
         except Exception as e:
             await self.session.rollback()
-            logger.error(f"Failed to update metadata for '{view_name}': {e}")
+            log_internal_error(logger, f"Failed to update metadata for '{view_name}'", e)
             raise
 
     async def _update_staleness_for_all(self, metadata_list: List[MaterializedViewMetadata]):
