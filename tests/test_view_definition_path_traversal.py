@@ -68,7 +68,7 @@ def researcher_headers():
 @pytest.fixture
 def admin_headers():
     """Create is admin-only (#178): as a researcher it 403s before the name is
-    checked. That 403 is covered in test_view_definition_authz.py."""
+    checked, so the traversal tests must run as admin."""
     return _auth_headers("admin")
 
 
@@ -85,6 +85,9 @@ async def _client():
 async def test_create_rejects_traversal_name_and_writes_nothing_outside(
     fake_audit_redis, view_dir, admin_headers, name
 ):
+    # Without `x`, an unguarded save of `x/../../escaped` fails on open() and
+    # the no-write assertions below could never catch the escape.
+    (view_dir / "x").mkdir(parents=True)
     async with await _client() as client:
         resp = await client.post(
             "/analytics/view-definitions",
@@ -94,6 +97,23 @@ async def test_create_rejects_traversal_name_and_writes_nothing_outside(
 
     assert resp.status_code == 400
     assert not (view_dir.parent / "escaped.json").exists()
+    assert list(view_dir.parent.rglob("*.json")) == []
+
+
+@pytest.mark.asyncio
+async def test_researcher_create_with_traversal_name_is_403_and_writes_nothing(
+    fake_audit_redis, view_dir, researcher_headers
+):
+    """A real JWT through the full app: test_view_definition_authz.py overrides
+    the user dependency, so only this pins role resolution from the token."""
+    async with await _client() as client:
+        resp = await client.post(
+            "/analytics/view-definitions",
+            json={"view_definition": VALID_VIEW, "name": "../escaped"},
+            headers=researcher_headers,
+        )
+
+    assert resp.status_code == 403
     assert list(view_dir.parent.rglob("*.json")) == []
 
 
