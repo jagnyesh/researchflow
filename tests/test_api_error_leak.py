@@ -304,3 +304,41 @@ async def test_create_all_returns_no_script_output(fake_audit_redis, monkeypatch
         for needle in ("SECRET-CANARY", PHI_NEEDLE):
             assert needle not in resp.text
             assert needle not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_create_all_reports_view_counts_and_nothing_else(fake_audit_redis, monkeypatch):
+    """#182: the success body carries the script's created/total counts —
+    parsed from its RESULT line as digits only — and no other stdout."""
+    import asyncio as _asyncio
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+    from app.security.auth import create_access_token
+
+    class FakeProc:
+        returncode = 0
+
+        async def communicate(self):
+            out = "Database: postgresql://hapi:SECRET-CANARY@db/hapi\nRESULT created=7 total=7\n"
+            return (out.encode(), b"")
+
+    async def fake_exec(*a, **k):
+        return FakeProc()
+
+    monkeypatch.setattr(_asyncio, "create_subprocess_exec", fake_exec)
+    token = create_access_token(
+        {"sub": "admin@example.com", "user_id": "admin-1", "role": "admin"},
+        expires_delta=timedelta(minutes=5),
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        resp = await client.post(
+            "/analytics/materialized-views/create-all",
+            headers={"authorization": f"Bearer {token}"},
+        )
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert (body["views_created"], body["views_total"]) == (7, 7)
+    assert "SECRET-CANARY" not in resp.text
