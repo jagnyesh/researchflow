@@ -1,0 +1,13 @@
+# Reviewed 2026-10-22: generic-api-key hits in f931164 are not credentials.
+# auth.py lines are docstring examples holding only the public HS256 JWT header;
+# the docs lines are 16-char lsv2_pt_ placeholders (real LangSmith keys are ~51 chars).
+f931164d36bc4bab7cadc43ed63175cb6471993e:app/api/auth.py:generic-api-key:104
+f931164d36bc4bab7cadc43ed63175cb6471993e:app/api/auth.py:generic-api-key:239
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/fixes/DATABASE_CONNECTION_FIX.md:generic-api-key:150
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/fixes/DATABASE_CONNECTION_FIX.md:generic-api-key:157
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/observability/LANGSMITH_DEBUGGING_GUIDE.md:generic-api-key:15
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/observability/LANGSMITH_OBSERVABILITY_GUIDE.md:generic-api-key:526
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/ALL_FIXES_COMPLETE_SUMMARY.md:generic-api-key:186
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/ALL_FIXES_COMPLETE_SUMMARY.md:generic-api-key:193
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/COMPLETE_SESSION_FIX_SUMMARY.md:generic-api-key:163
+f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/COMPLETE_SESSION_FIX_SUMMARY.md:generic-api-key:170

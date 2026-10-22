@@ -76,6 +76,11 @@ Automated security scans run on every push and pull request.
    - **Trivy**: Scans for vulnerabilities in dependencies and containers
    - Results uploaded to GitHub Security tab
 
+5. **CodeQL Analysis**
+   - **CodeQL**: Semantic analysis of Python code for security issues
+   - Runs on: Push, PR, weekly schedule
+   - Results uploaded to GitHub Security tab
+
 ### Viewing Results
 
 1. Go to your repository on GitHub
@@ -114,6 +119,9 @@ detect-secrets scan > .secrets.baseline
 # Audit baseline (mark false positives)
 detect-secrets audit .secrets.baseline
 ```
+
+### `.gitleaksignore`
+Gitleaks fingerprints (`commit:file:rule:line`) for reviewed false positives in git history. The weekly scheduled scan reads the full history, so a historical false positive fails it until its fingerprint is listed here. Add an entry only after reviewing the finding.
 
 ### `pyproject.toml`
 Configuration for Bandit security scanning and code quality tools.
