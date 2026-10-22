@@ -50,15 +50,26 @@ def view_dir(tmp_path, monkeypatch):
     return views
 
 
-@pytest.fixture
-def auth_headers():
+def _auth_headers(role):
     from app.security.auth import create_access_token
 
     token = create_access_token(
-        {"sub": "vd@example.com", "user_id": "vd-1", "role": "researcher"},
+        {"sub": f"{role}@example.com", "user_id": f"{role}-1", "role": role},
         expires_delta=timedelta(minutes=5),
     )
     return {"authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def researcher_headers():
+    return _auth_headers("researcher")
+
+
+@pytest.fixture
+def admin_headers():
+    """Create is admin-only (#178): as a researcher it 403s before the name is
+    checked, so the create traversal test runs as admin."""
+    return _auth_headers("admin")
 
 
 async def _client():
@@ -72,17 +83,37 @@ async def _client():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["../escaped", "x/../../escaped"])
 async def test_create_rejects_traversal_name_and_writes_nothing_outside(
-    fake_audit_redis, view_dir, auth_headers, name
+    fake_audit_redis, view_dir, admin_headers, name
 ):
+    # Without `x`, an unguarded save of `x/../../escaped` fails on open() and
+    # the no-write assertions below could never catch the escape.
+    (view_dir / "x").mkdir(parents=True)
     async with await _client() as client:
         resp = await client.post(
             "/analytics/view-definitions",
             json={"view_definition": VALID_VIEW, "name": name},
-            headers=auth_headers,
+            headers=admin_headers,
         )
 
     assert resp.status_code == 400
     assert not (view_dir.parent / "escaped.json").exists()
+    assert list(view_dir.parent.rglob("*.json")) == []
+
+
+@pytest.mark.asyncio
+async def test_researcher_create_with_traversal_name_is_403_and_writes_nothing(
+    fake_audit_redis, view_dir, researcher_headers
+):
+    """A real JWT through the full app: test_view_definition_authz.py overrides
+    the user dependency, so only this pins that a non-admin token is denied."""
+    async with await _client() as client:
+        resp = await client.post(
+            "/analytics/view-definitions",
+            json={"view_definition": VALID_VIEW, "name": "../escaped"},
+            headers=researcher_headers,
+        )
+
+    assert resp.status_code == 403
     assert list(view_dir.parent.rglob("*.json")) == []
 
 
@@ -122,13 +153,15 @@ def test_load_refuses_names_outside_the_directory(tmp_path, name):
 
 
 @pytest.mark.asyncio
-async def test_execute_with_traversal_view_name_is_404(fake_audit_redis, view_dir, auth_headers):
+async def test_execute_with_traversal_view_name_is_404(
+    fake_audit_redis, view_dir, researcher_headers
+):
     """`view_name` is a body field, so separators reach the handler intact
     (unlike a path param, where an encoded `/` never routes)."""
     _plant_outside(view_dir)
     async with await _client() as client:
         resp = await client.post(
-            "/analytics/execute", json={"view_name": "../secret"}, headers=auth_headers
+            "/analytics/execute", json={"view_name": "../secret"}, headers=researcher_headers
         )
 
     assert resp.status_code == 404
@@ -157,10 +190,12 @@ def test_shipped_view_definitions_still_load():
 
 
 @pytest.mark.asyncio
-async def test_overlong_name_is_404_not_500(fake_audit_redis, view_dir, auth_headers):
+async def test_overlong_name_is_404_not_500(fake_audit_redis, view_dir, researcher_headers):
     """Path params are uncapped; past the OS name limit `exists()` raised
     ENAMETOOLONG → 500. Names are capped at Postgres's 63-char identifier."""
     async with await _client() as client:
-        resp = await client.get("/analytics/view-definitions/" + "a" * 300, headers=auth_headers)
+        resp = await client.get(
+            "/analytics/view-definitions/" + "a" * 300, headers=researcher_headers
+        )
 
     assert resp.status_code == 404
