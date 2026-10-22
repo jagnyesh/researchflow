@@ -9,13 +9,14 @@ Supports two runner types (configured via VIEWDEF_RUNNER env var):
 - 'in_memory': InMemoryRunner (slower, REST API-based)
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from typing import Dict, List, Any, Optional
 import logging
 import os
 
 from ..clients.fhir_client import create_fhir_client
+from ..security.dependencies import require_role
 from ..schemas._errors import internal_error, log_internal_error
 from ..clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
@@ -194,7 +195,9 @@ async def get_view_definition(view_name: str):
 
 
 @router.post("/view-definitions")
-async def create_view_definition(request: CreateViewDefinitionRequest):
+async def create_view_definition(
+    request: CreateViewDefinitionRequest, _admin=Depends(require_role("admin"))
+):
     """
     Create a new ViewDefinition
 
@@ -218,7 +221,7 @@ async def create_view_definition(request: CreateViewDefinitionRequest):
 
 
 @router.delete("/view-definitions/{view_name}")
-async def delete_view_definition(view_name: str):
+async def delete_view_definition(view_name: str, _admin=Depends(require_role("admin"))):
     """
     Delete a ViewDefinition
 
