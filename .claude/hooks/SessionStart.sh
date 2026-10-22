@@ -12,6 +12,14 @@ set -uo pipefail
 repo="$(cd "$(dirname "$0")/../.." && pwd)"
 banner=()
 
+# In a worktree session $CLAUDE_PROJECT_DIR (and so $repo) is the original
+# checkout; the session's own directory only arrives as `cwd` on stdin.
+session_dir=""
+if [[ ! -t 0 ]] && command -v jq >/dev/null 2>&1; then
+  session_dir=$(jq -r '.cwd // empty' 2>/dev/null)
+fi
+session_dir="${session_dir:-$PWD}"
+
 # 1. .env sentinel scan
 env_file="$repo/.env"
 if [[ -f "$env_file" ]]; then
@@ -44,7 +52,7 @@ ctx="$repo/CONTEXT.md"
 if [[ -f "$ctx" ]]; then
   sprint_line=$(grep -m1 -E '^\*\*Sprint:\*\*' "$ctx" | sed 's/\*\*//g')
   phase_line=$(grep -m1 -E '^\*\*Phase:\*\*' "$ctx" | sed 's/\*\*//g')
-  branch=$(cd "$repo" && git branch --show-current 2>/dev/null)
+  branch=$(git -C "$session_dir" branch --show-current 2>/dev/null)
   banner+=("📋 ${sprint_line:-Sprint: ?} | ${phase_line:-Phase: ?} | branch: ${branch:-detached}")
 fi
 

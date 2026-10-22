@@ -137,3 +137,25 @@ def test_gh_failure_says_skipped_instead_of_staying_silent(tmp_path):
 def test_unexpected_gh_output_says_skipped(tmp_path):
     lines = _lane_lines(tmp_path, gh_body="#!/bin/bash\necho 'not json'\n")
     assert lines == ["ℹ️  lane check skipped: unexpected gh output"]
+
+
+def test_banner_reports_the_branch_of_the_session_cwd(tmp_path):
+    """A worktree session runs the hook from the original checkout; the
+    banner's branch must come from the stdin `cwd`, not the hook's location."""
+    session = tmp_path / "worktree"
+    subprocess.run(["git", "init", "-q", "-b", "claude/some-session", str(session)], check=True)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text("#!/bin/bash\nexit 1\n")
+    (bin_dir / "gh").chmod(0o755)
+    out = subprocess.run(
+        ["bash", str(HOOK)],
+        input=json.dumps({"hook_event_name": "SessionStart", "cwd": str(session)}),
+        capture_output=True,
+        text=True,
+        env={**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"},
+        timeout=30,
+        check=True,
+    ).stdout
+    banner = next(line for line in out.splitlines() if line.startswith("📋"))
+    assert banner.endswith("| branch: claude/some-session")
