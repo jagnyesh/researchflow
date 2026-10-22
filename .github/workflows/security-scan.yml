@@ -8,6 +8,8 @@ on:
   schedule:
     # Run weekly security scan on Sundays at 2 AM UTC
     - cron: '0 2 * * 0'
+  # Manual run; Gitleaks scans full history on workflow_dispatch, as on schedule.
+  workflow_dispatch:
 
 # The repo default token is read-only; jobs that publish to code scanning opt in to security-events: write.
 permissions:
