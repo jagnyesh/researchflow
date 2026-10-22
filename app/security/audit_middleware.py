@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from ..schemas._errors import log_internal_error
 from .audit_drain import AUDIT_QUEUE_KEY
 from .auth import decode_access_token
 from ..a2a.auth import verify_service_token
@@ -214,6 +215,22 @@ def _make_payload(
     }
 
 
+async def _call_next_or_500(request, call_next):
+    """`call_next`, but an unhandled route exception becomes a PHI-safe 500
+    *response* here instead of escaping the middleware (#180). Escaping skipped
+    PHI_ACCESS_COMPLETED below and let the server log the exception message;
+    the ref ties the generic body to the log line (ADR 0029)."""
+    from fastapi.responses import JSONResponse
+
+    try:
+        return await call_next(request)
+    except Exception as exc:
+        ref = log_internal_error(
+            logger, f"Unhandled exception on {request.method} {request.url.path}", exc
+        )
+        return JSONResponse({"detail": f"Internal server error (ref: {ref})"}, status_code=500)
+
+
 async def audit_middleware(request, call_next):
     """Default-deny audit middleware with pre/post pair and fail-closed gate."""
     import time
@@ -223,7 +240,7 @@ async def audit_middleware(request, call_next):
     klass = classify_route(path)
 
     if klass is RouteClass.NO_AUDIT:
-        return await call_next(request)
+        return await _call_next_or_500(request, call_next)
 
     if klass is RouteClass.PHI:
         warn_if_unmapped_phi_route(path)
@@ -268,7 +285,7 @@ async def audit_middleware(request, call_next):
         return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
 
     start = time.perf_counter()
-    response = await call_next(request)
+    response = await _call_next_or_500(request, call_next)
     latency_ms = int((time.perf_counter() - start) * 1000)
 
     post_ok = await _try_enqueue(
