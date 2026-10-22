@@ -11,11 +11,19 @@ Manages SQL-on-FHIR v2 ViewDefinition resources:
 import json
 import os
 import logging
+import re
 from typing import Dict, Any, List, Optional
 from pathlib import Path
 from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
+
+# Names become file names (`<dir>/{name}.json`), so they are held to the same
+# database-friendly shape `validate()` requires of `view_definition["name"]` —
+# ASCII only, which also rules out separators, `..`, and NUL (#177). Capped at
+# Postgres's 63-char identifier limit (names also become matview names), which
+# keeps path params under the OS file-name limit too.
+_SAFE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,62}")
 
 
 class ViewDefinitionManager:
@@ -71,8 +79,12 @@ class ViewDefinitionManager:
             logger.debug(f"Loading ViewDefinition '{name}' from cache")
             return self._cache[name]
 
-        # Load from file
-        file_path = self.view_definitions_dir / f"{name}.json"
+        # Load from file. An unsafe name is reported like a missing one, so
+        # callers keep their existing not-found handling (404s).
+        try:
+            file_path = self._path_for(name)
+        except ValueError:
+            raise FileNotFoundError(f"ViewDefinition not found: {name!r}") from None
 
         if not file_path.exists():
             raise FileNotFoundError(f"ViewDefinition file not found: {file_path}")
@@ -120,7 +132,7 @@ class ViewDefinitionManager:
             if not name:
                 raise ValueError("ViewDefinition must have 'name' field or name must be provided")
 
-        file_path = self.view_definitions_dir / f"{name}.json"
+        file_path = self._path_for(name)
 
         logger.debug(f"Saving ViewDefinition to: {file_path}")
 
@@ -138,6 +150,15 @@ class ViewDefinitionManager:
             log_internal_error(logger, "Error saving ViewDefinition", e)
             raise
 
+    def _path_for(self, name: str) -> Path:
+        """The JSON file for `name`, or ValueError if `name` could leave the directory."""
+        if not isinstance(name, str) or not _SAFE_NAME.fullmatch(name):
+            raise ValueError(
+                "ViewDefinition name must start with a letter and contain only "
+                "letters, numbers, and underscores"
+            )
+        return self.view_definitions_dir / f"{name}.json"
+
     def delete(self, name: str) -> bool:
         """
         Delete a ViewDefinition
@@ -148,7 +169,11 @@ class ViewDefinitionManager:
         Returns:
             True if deleted, False if not found
         """
-        file_path = self.view_definitions_dir / f"{name}.json"
+        try:
+            file_path = self._path_for(name)
+        except ValueError:
+            logger.warning("Refusing to delete ViewDefinition with unsafe name %r", name)
+            return False
 
         if not file_path.exists():
             logger.warning(f"ViewDefinition file not found: {file_path}")
