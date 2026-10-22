@@ -84,7 +84,7 @@ lane_check() {
      --json number,title,headRefName,isDraft,isCrossRepository,statusCheckRollup) >"$tmp/prs" 2>/dev/null &
   pr_pid=$!
   (cd "$repo" && with_timeout "$secs" gh run list --branch main --limit 20 \
-     --json workflowName,conclusion,status,createdAt,headSha) >"$tmp/runs" 2>/dev/null &
+     --json workflowName,conclusion,createdAt,headSha) >"$tmp/runs" 2>/dev/null &
   run_pid=$!
   wait "$pr_pid"; pr_rc=$?
   wait "$run_pid"; run_rc=$?
@@ -92,9 +92,9 @@ lane_check() {
     echo "ℹ️  lane check skipped: gh failed (offline, unauthenticated, or timed out)"
   elif ! jq -nr --slurpfile prs "$tmp/prs" --slurpfile runs "$tmp/runs" '
       if ([$prs[0], $runs[0]] | all(type == "array") | not) then error("not arrays") else
-      # Latest finished run per workflow. A cancelled or skipped run says nothing
-      # about main, so it must not mask an earlier failure.
-      ($runs[0] | map(select(.status == "completed" and (.conclusion | IN("cancelled", "skipped") | not)))
+      # Latest definitive run per workflow. An in-progress, cancelled, skipped or
+      # neutral run says nothing about main, so it must not mask an earlier failure.
+      ($runs[0] | map(select(.conclusion | IN("success", "failure", "timed_out", "startup_failure")))
         | group_by(.workflowName) | map(max_by(.createdAt))
         | map(select(.conclusion | IN("failure", "timed_out", "startup_failure")))
         | if length > 0 then
@@ -108,8 +108,9 @@ lane_check() {
             "🚦 \(length) PRs await your decision (\(map("#\(.number)") | join(", "))) — §10: no new lane at ≥2"
           else empty end),
       # The repo is public: the branch and title of a fork PR are text anyone
-      # can write, and this output becomes the context of every session.
-      ($prs[0][] | if .isCrossRepository then "🚦 In flight: #\(.number) [fork PR; title not shown]"
+      # can write, and this output becomes the context of every session. Only an
+      # explicit false counts as ours, so a dropped --json field cannot leak it.
+      ($prs[0][] | if .isCrossRepository != false then "🚦 In flight: #\(.number) [fork PR; title not shown]"
                    else "🚦 In flight: #\(.number) [\(.headRefName)] \(.title[0:60])" end)
       end
     ' 2>/dev/null; then
