@@ -37,14 +37,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install detect-secrets
+      - name: Install pre-commit
         run: |
-          pip install detect-secrets
+          pip install -c config/requirements-dev.lock pre-commit
 
       - name: Run detect-secrets
         run: |
-          # Scan for new secrets and compare against baseline
-          detect-secrets scan --baseline .secrets.baseline
+          # Same hook, rev and excludes as local commits (.pre-commit-config.yaml).
+          # `detect-secrets scan --baseline` rewrote the baseline and exited 0, so it
+          # never failed (#199). The hook fails on a secret missing from the baseline,
+          # and on a stale baseline (commit made without hooks).
+          pre-commit run detect-secrets --all-files --show-diff-on-failure
           # Note: 'detect-secrets audit' is interactive and should only be run locally
 
   dependency-check:
