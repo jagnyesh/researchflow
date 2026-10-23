@@ -7,37 +7,8 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  validate-diagrams:
-    runs-on: ubuntu-latest
-    continue-on-error: true  # Ubuntu apt plantuml is older than the syntax used; informational only
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Install PlantUML
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y plantuml
-
-    - name: Validate PlantUML diagrams
-      continue-on-error: true
-      run: |
-        plantuml -checkonly diagrams/*.puml
-
-    - name: Generate diagram PNGs
-      continue-on-error: true
-      run: |
-        plantuml diagrams/*.puml
-
-    - name: Upload generated diagrams
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: diagrams
-        path: diagrams/*.png
-        if-no-files-found: warn
-
+  # No diagram job (#202): apt's PlantUML 1.2020.2 can't parse two of the diagrams,
+  # so the check never gated. Render them locally per CONTRIBUTING.md.
   check-documentation:
     runs-on: ubuntu-latest
 
