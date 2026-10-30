@@ -24,13 +24,16 @@ jq -r '
                  and (.completedAt >= $pr.createdAt))
         | .completedAt] | max) as $green
     # checks still running at merge (the merge rule is all-green): completed
-    # after it, or never — gh renders an unset completedAt as the zero time, and
-    # a StatusContext has none at all. The code-scanning "CodeQL" run has no
-    # workflow; it completes inside its codeql-analysis job, which is counted.
+    # after it, or never — gh renders an unset completedAt as the zero time. A
+    # StatusContext has no completedAt; its startedAt is when its current state
+    # was posted. The code-scanning "CodeQL" run has no workflow; it completes
+    # inside its codeql-analysis job, which is counted.
     | ([.statusCheckRollup[]?
         | select((.workflowName // "") != "" or .name != "CodeQL")
-        | select((.completedAt // "") as $c
-                 | $c == "" or ($c | startswith("0001-")) or $c > $pr.mergedAt)
+        | select(if .__typename == "StatusContext"
+                 then .state == "PENDING" or .state == "EXPECTED" or .startedAt > $pr.mergedAt
+                 else (.completedAt // "") as $c
+                      | $c == "" or ($c | startswith("0001-")) or $c > $pr.mergedAt end)
         | .name // .context] | unique) as $pending
     | {day: (.mergedAt | ts | strftime("%Y-%m-%d")), n: .number, t: .title,
        og: (if $green then ((($green|ts) - (.createdAt|ts))/60 | round) else null end),
