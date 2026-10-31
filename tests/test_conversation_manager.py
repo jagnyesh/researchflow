@@ -5,6 +5,8 @@ Tests both pattern matching (fast path) and LLM fallback (slow path)
 """
 
 import pytest
+from langchain_anthropic import ChatAnthropic
+from langchain_core.messages import AIMessage
 from langsmith.run_helpers import get_current_run_tree, tracing_context
 
 from app.services.conversation_manager import ConversationManager, UserIntent
@@ -160,19 +162,21 @@ async def test_is_rejection():
 @pytest.mark.asyncio
 async def test_confirmation_keywords_skip_llm(monkeypatch):
     """A confirmation keyword is answered without an LLM call (#217)"""
-    cm = ConversationManager()
-    prompts = []
+    # Without a key, LLMClient returns a dummy response and never reaches ChatAnthropic.
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    sent = []
 
     # Count instead of raising: is_rejection's `except Exception` would swallow a raise.
-    async def counting_complete(*args, **kwargs):
-        prompts.append(kwargs.get("prompt"))
-        return "NO"
+    async def counting_ainvoke(self, messages, *args, **kwargs):
+        sent.append(messages)
+        return AIMessage(content="NO")
 
-    monkeypatch.setattr(cm.llm_client, "complete", counting_complete)
+    monkeypatch.setattr(ChatAnthropic, "ainvoke", counting_ainvoke)
+    cm = ConversationManager()
 
     for keyword in ["proceed", "yes", "Go ahead "]:
         assert await cm.is_confirmation(keyword) is True
-    assert prompts == []
+    assert sent == []
 
 
 @pytest.mark.asyncio
@@ -199,6 +203,7 @@ async def test_conversation_llm_calls_tagged_outside_query_cost(monkeypatch):
     for tags in run_tags:
         assert tags is not None
         assert "conversation-manager" in tags
+        assert "portal:exploratory-overhead" in tags
         assert "portal:exploratory" not in tags
 
 
