@@ -17,11 +17,13 @@ from app.schemas._errors import log_internal_error
 try:
     from langsmith import traceable
 except ImportError:  # Keep local/unit-test imports lightweight.
+
     def traceable(**_kwargs):
         def decorator(function):
             return function
 
         return decorator
+
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +214,9 @@ class ConversationManager:
             self._llm_fallbacks += 1
             return await self._llm_fallback(user_input)
 
-    @traceable(name="conversation_intent_fallback", tags=["conversation-manager", "portal:exploratory"])
+    @traceable(
+        name="conversation_intent_fallback", tags=["conversation-manager", "portal:exploratory"]
+    )
     async def _llm_fallback(self, user_input: str) -> UserIntent:
         """
         Use LLM to classify intent when patterns are ambiguous or fail
@@ -495,7 +499,9 @@ Type **"yes"** to submit or **"no"** to cancel."""
         intent = await self.detect_intent(user_input)
         return intent == UserIntent.CONFIRMATION
 
-    @traceable(name="conversation_rejection_check", tags=["conversation-manager", "portal:exploratory"])
+    @traceable(
+        name="conversation_rejection_check", tags=["conversation-manager", "portal:exploratory"]
+    )
     async def is_rejection(self, user_input: str) -> bool:
         """
         Check if user input is a rejection
