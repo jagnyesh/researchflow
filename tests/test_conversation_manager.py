@@ -143,6 +143,20 @@ async def test_is_confirmation():
 
 
 @pytest.mark.asyncio
+async def test_confirmation_does_not_call_rejection_llm(monkeypatch):
+    """Known confirmation keywords must stay on the deterministic fast path."""
+    cm = ConversationManager()
+
+    async def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("confirmation keyword triggered an LLM call")
+
+    monkeypatch.setattr(cm.llm_client, "complete", fail_if_called)
+
+    assert await cm.is_confirmation("proceed") is True
+    assert await cm.is_rejection("yes") is False
+
+
+@pytest.mark.asyncio
 async def test_is_rejection():
     """Test is_rejection helper method"""
     cm = ConversationManager()
