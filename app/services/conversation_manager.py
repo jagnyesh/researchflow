@@ -12,9 +12,14 @@ from typing import Dict, Any, Optional, Literal
 from enum import Enum
 import logging
 from datetime import datetime
+from langsmith import traceable
 from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
+
+# Not portal:exploratory: these calls run as their own root traces, and cost
+# telemetry counts every portal:exploratory root run as one query (#217).
+_TRACE_TAGS = ["conversation-manager", "portal:exploratory-overhead"]
 
 
 class UserIntent(Enum):
@@ -203,6 +208,7 @@ class ConversationManager:
             self._llm_fallbacks += 1
             return await self._llm_fallback(user_input)
 
+    @traceable(name="conversation_intent_fallback", tags=_TRACE_TAGS)
     async def _llm_fallback(self, user_input: str) -> UserIntent:
         """
         Use LLM to classify intent when patterns are ambiguous or fail
@@ -475,6 +481,9 @@ Type **"yes"** to submit or **"no"** to cancel."""
 
     async def is_confirmation(self, user_input: str) -> bool:
         """Check if user input is a confirmation"""
+        if user_input.lower().strip() in self.confirmation_keywords:
+            return True
+
         # First check if it's a rejection (rejections are definitely not confirmations)
         if await self.is_rejection(user_input):
             return False
@@ -482,6 +491,7 @@ Type **"yes"** to submit or **"no"** to cancel."""
         intent = await self.detect_intent(user_input)
         return intent == UserIntent.CONFIRMATION
 
+    @traceable(name="conversation_rejection_check", tags=_TRACE_TAGS)
     async def is_rejection(self, user_input: str) -> bool:
         """
         Check if user input is a rejection

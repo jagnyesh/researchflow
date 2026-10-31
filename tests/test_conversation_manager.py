@@ -5,6 +5,8 @@ Tests both pattern matching (fast path) and LLM fallback (slow path)
 """
 
 import pytest
+from langsmith.run_helpers import get_current_run_tree, tracing_context
+
 from app.services.conversation_manager import ConversationManager, UserIntent
 
 
@@ -153,6 +155,51 @@ async def test_is_rejection():
 
     # Should not be rejections
     assert await cm.is_rejection("yes") is False
+
+
+@pytest.mark.asyncio
+async def test_confirmation_keywords_skip_llm(monkeypatch):
+    """A confirmation keyword is answered without an LLM call (#217)"""
+    cm = ConversationManager()
+    prompts = []
+
+    # Count instead of raising: is_rejection's `except Exception` would swallow a raise.
+    async def counting_complete(*args, **kwargs):
+        prompts.append(kwargs.get("prompt"))
+        return "NO"
+
+    monkeypatch.setattr(cm.llm_client, "complete", counting_complete)
+
+    for keyword in ["proceed", "yes", "Go ahead "]:
+        assert await cm.is_confirmation(keyword) is True
+    assert prompts == []
+
+
+@pytest.mark.asyncio
+async def test_conversation_llm_calls_tagged_outside_query_cost(monkeypatch):
+    """Remaining LLM calls are traced, but not as portal:exploratory roots (#217)
+
+    Cost telemetry counts every portal:exploratory root run as one query.
+    """
+    cm = ConversationManager()
+    run_tags = []
+
+    async def recording_complete(*args, **kwargs):
+        run = get_current_run_tree()
+        run_tags.append(run.tags if run else None)
+        return "NO"
+
+    monkeypatch.setattr(cm.llm_client, "complete", recording_complete)
+
+    with tracing_context(enabled="local"):
+        await cm.is_rejection("yes please")
+        await cm.detect_intent("what about men?")
+
+    assert len(run_tags) == 2
+    for tags in run_tags:
+        assert tags is not None
+        assert "conversation-manager" in tags
+        assert "portal:exploratory" not in tags
 
 
 @pytest.mark.asyncio
