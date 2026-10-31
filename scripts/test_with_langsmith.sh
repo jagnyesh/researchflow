@@ -122,13 +122,13 @@ start_portal() {
 # Parse command
 case "${1:-all}" in
     exploratory|exp)
-        start_portal "Exploratory Portal (Research Notebook)" 8503 "research_notebook.py"
+        start_portal "Exploratory Portal (Research Notebook)" 8501 "research_notebook.py"
         ;;
     formal|portal)
-        start_portal "Formal Request Portal" 8501 "researcher_portal.py"
+        start_portal "Formal Request Portal" 8502 "researcher_portal.py"
         ;;
     admin|dashboard)
-        start_portal "Admin Dashboard" 8502 "admin_dashboard.py"
+        start_portal "Admin Dashboard" 8503 "admin_dashboard.py"
         ;;
     all)
         echo -e "\n${BLUE}Starting all portals in background...${NC}"
@@ -141,23 +141,23 @@ case "${1:-all}" in
         # Start all portals in background
         export LANGCHAIN_TRACING_V2 USE_LANGGRAPH_WORKFLOW LANGCHAIN_API_KEY LANGCHAIN_PROJECT
 
-        echo "Starting exploratory portal on 8503..."
-        nohup streamlit run app/web_ui/research_notebook.py --server.port 8503 > logs/exploratory_$(date +%Y%m%d_%H%M%S).log 2>&1 &
+        echo "Starting exploratory portal on 8501..."
+        nohup streamlit run app/web_ui/research_notebook.py --server.port 8501 > logs/exploratory_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
-        echo "Starting formal portal on 8501..."
-        nohup streamlit run app/web_ui/researcher_portal.py --server.port 8501 > logs/formal_$(date +%Y%m%d_%H%M%S).log 2>&1 &
+        echo "Starting formal portal on 8502..."
+        nohup streamlit run app/web_ui/researcher_portal.py --server.port 8502 > logs/formal_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
-        echo "Starting admin dashboard on 8502..."
-        nohup streamlit run app/web_ui/admin_dashboard.py --server.port 8502 > logs/admin_$(date +%Y%m%d_%H%M%S).log 2>&1 &
+        echo "Starting admin dashboard on 8503..."
+        nohup streamlit run app/web_ui/admin_dashboard.py --server.port 8503 > logs/admin_$(date +%Y%m%d_%H%M%S).log 2>&1 &
 
         sleep 3
 
         echo -e "\n${GREEN}✓ All portals started!${NC}"
         echo ""
         echo "Access portals:"
-        echo -e "  • Exploratory: ${GREEN}http://localhost:8503${NC}"
-        echo -e "  • Formal:      ${GREEN}http://localhost:8501${NC}"
-        echo -e "  • Admin:       ${GREEN}http://localhost:8502${NC}"
+        echo -e "  • Exploratory: ${GREEN}http://localhost:8501${NC}"
+        echo -e "  • Formal:      ${GREEN}http://localhost:8502${NC}"
+        echo -e "  • Admin:       ${GREEN}http://localhost:8503${NC}"
         echo ""
         echo "View logs:"
         echo "  tail -f logs/*.log"
