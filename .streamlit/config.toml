@@ -18,9 +18,11 @@ textColor = "#1D1D1F"
 font = "sans serif"
 
 [server]
-# Enable CORS for local development
-enableCORS = false
-enableXsrfProtection = false
+# Streamlit's default listens on every interface, and the dashboards have no
+# auth (#39); loopback keeps them off the LAN for every launch command (#208).
+address = "127.0.0.1"
+enableCORS = true
+enableXsrfProtection = true
 
 [browser]
 # Disable dark mode detection
