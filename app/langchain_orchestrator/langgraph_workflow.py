@@ -33,16 +33,25 @@ from app.agents.delivery_agent import DeliveryAgent
 
 # Import ApprovalBridge for database sync at approval gates
 from app.langchain_orchestrator.approval_bridge import (
+    ApprovalBridge,
     create_approval_from_state,
     check_approval_status,
 )
 
 # Import database models for AgentExecution tracking
-from app.database import get_db_session, AgentExecution, DATABASE_URL
+from app.database import get_db_session, AgentExecution, Approval, DATABASE_URL
 from app.schemas._errors import failure_text, log_internal_error
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 logger = logging.getLogger(__name__)
+
+# Approval type -> the review node whose outgoing router consumes that decision
+REVIEW_NODE_BY_APPROVAL_TYPE = {
+    "requirements": "requirements_review",
+    "phenotype_sql": "phenotype_review",
+    "preview_qa": "preview_qa_review",
+    "delivery": "qa_review",
+}
 
 
 # ============================================================================
@@ -329,14 +338,14 @@ class FullWorkflow:
         # 2. After requirements_review (approval gate)
         # → feasibility_validation (if approved)
         # → requirements_gathering (if rejected)
-        # Note: "wait_for_approval" route removed - workflow now uses interrupt_after
+        # → END (pending; apply_approval_decision re-runs this router on resume)
         graph.add_conditional_edges(
             "requirements_review",
             self._route_after_requirements_review,
             {
                 "feasibility_validation": "feasibility_validation",
                 "requirements_gathering": "requirements_gathering",
-                # "wait_for_approval": END,  # Removed - handled by interrupt_after
+                "wait_for_approval": END,
             },
         )
 
@@ -353,7 +362,7 @@ class FullWorkflow:
         # → preview_extraction (if approved) - NEW: Extract 10 rows per data element
         # → not_feasible (if rejected as infeasible by human)
         # → feasibility_validation (if rejected for revision)
-        # Note: "wait_for_approval" route removed - workflow now uses interrupt_after
+        # → END (pending; apply_approval_decision re-runs this router on resume)
         graph.add_conditional_edges(
             "phenotype_review",
             self._route_after_phenotype_review,
@@ -361,7 +370,7 @@ class FullWorkflow:
                 "preview_extraction": "preview_extraction",  # UPDATED: Go to preview first, not schedule_kickoff
                 "not_feasible": "not_feasible",
                 "feasibility_validation": "feasibility_validation",
-                # "wait_for_approval": END,  # Removed - handled by interrupt_after
+                "wait_for_approval": END,
             },
         )
 
@@ -384,12 +393,14 @@ class FullWorkflow:
         # 4c. After preview_qa_review (approval gate) (NEW)
         # → data_extraction (if approved despite QA failure)
         # → feasibility_validation (if rejected - revise SQL)
+        # → END (pending; apply_approval_decision re-runs this router on resume)
         graph.add_conditional_edges(
             "preview_qa_review",
             self._route_after_preview_qa_review,
             {
                 "data_extraction": "data_extraction",
                 "feasibility_validation": "feasibility_validation",
+                "wait_for_approval": END,
             },
         )
 
@@ -409,14 +420,14 @@ class FullWorkflow:
         # 7. After qa_review (approval gate)
         # → data_delivery (if approved)
         # → data_extraction (if rejected - redo extraction)
-        # Note: "wait_for_approval" route removed - workflow now uses interrupt_after
+        # → END (pending; apply_approval_decision re-runs this router on resume)
         graph.add_conditional_edges(
             "qa_review",
             self._route_after_qa_review,
             {
                 "data_delivery": "data_delivery",
                 "data_extraction": "data_extraction",
-                # "wait_for_approval": END,  # Removed - handled by interrupt_after
+                "wait_for_approval": END,
             },
         )
 
@@ -653,22 +664,13 @@ class FullWorkflow:
         state["current_state"] = "requirements_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists
-        if state.get("requirements_approved") is None:
-            logger.info(f"[FullWorkflow] Creating requirements approval request in database...")
-            await create_approval_from_state(
-                state["request_id"], "requirements", state, database_url=DATABASE_URL
-            )
-
-        # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for requirements approval decision...")
-        state = await check_approval_status(
+        # Every entry (first pass or after a rejection loop) needs a fresh pending
+        # approval; the decision arrives later via apply_approval_decision.
+        logger.info(f"[FullWorkflow] Creating requirements approval request in database...")
+        await create_approval_from_state(
             state["request_id"], "requirements", state, database_url=DATABASE_URL
         )
-
-        logger.info(
-            f"[FullWorkflow] Requirements approved: {state.get('requirements_approved', 'pending')}"
-        )
+        state["requirements_approved"] = None
 
         return state
 
@@ -766,22 +768,13 @@ class FullWorkflow:
         state["current_state"] = "phenotype_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists
-        if state.get("phenotype_approved") is None:
-            logger.info(f"[FullWorkflow] Creating phenotype approval request in database...")
-            await create_approval_from_state(
-                state["request_id"], "phenotype_sql", state, database_url=DATABASE_URL
-            )
-
-        # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for phenotype approval decision...")
-        state = await check_approval_status(
+        # Every entry (first pass or after a rejection loop) needs a fresh pending
+        # approval; the decision arrives later via apply_approval_decision.
+        logger.info(f"[FullWorkflow] Creating phenotype approval request in database...")
+        await create_approval_from_state(
             state["request_id"], "phenotype_sql", state, database_url=DATABASE_URL
         )
-
-        logger.info(
-            f"[FullWorkflow] Phenotype approved: {state.get('phenotype_approved', 'pending')}"
-        )
+        state["phenotype_approved"] = None
 
         return state
 
@@ -932,27 +925,13 @@ class FullWorkflow:
         state["current_state"] = "preview_qa_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists
-        if state.get("preview_qa_review_approved") is None:
-            logger.info(
-                f"[FullWorkflow] Creating preview QA review approval request in database..."
-            )
-            await create_approval_from_state(
-                state["request_id"], "preview_qa", state, database_url=DATABASE_URL  # Approval type
-            )
-
-        # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for preview QA review approval decision...")
-        state = await check_approval_status(
-            state["request_id"],
-            "preview_qa",  # Maps to preview_qa_review_approved via approval bridge
-            state,
-            database_url=DATABASE_URL,
+        # Every entry (first pass or after a rejection loop) needs a fresh pending
+        # approval; the decision arrives later via apply_approval_decision.
+        logger.info(f"[FullWorkflow] Creating preview QA review approval request in database...")
+        await create_approval_from_state(
+            state["request_id"], "preview_qa", state, database_url=DATABASE_URL  # Approval type
         )
-
-        logger.info(
-            f"[FullWorkflow] Preview QA review approved: {state.get('preview_qa_review_approved', 'pending')}"
-        )
+        state["preview_qa_review_approved"] = None
 
         return state
 
@@ -1191,23 +1170,16 @@ class FullWorkflow:
         state["current_state"] = "qa_review"
         state["updated_at"] = datetime.now().isoformat()
 
-        # Create approval request if not exists.
         # The qa_approved state flag is the post-QA delivery gate; bridge
         # canonicalizes it as "delivery" approval (see approval_bridge.py
         # APPROVAL_TYPE_TO_STATE).
-        if state.get("qa_approved") is None:
-            logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
-            await create_approval_from_state(
-                state["request_id"], "delivery", state, database_url=DATABASE_URL
-            )
-
-        # Check for approval decision from database
-        logger.info(f"[FullWorkflow] Checking for delivery approval decision...")
-        state = await check_approval_status(
+        # Every entry (first pass or after a rejection loop) needs a fresh pending
+        # approval; the decision arrives later via apply_approval_decision.
+        logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
+        await create_approval_from_state(
             state["request_id"], "delivery", state, database_url=DATABASE_URL
         )
-
-        logger.info(f"[FullWorkflow] QA approved: {state.get('qa_approved', 'pending')}")
+        state["qa_approved"] = None
 
         return state
 
@@ -1371,17 +1343,15 @@ class FullWorkflow:
 
     def _route_after_requirements_review(
         self, state: FullWorkflowState
-    ) -> Literal["feasibility_validation", "requirements_gathering"]:
+    ) -> Literal["feasibility_validation", "requirements_gathering", "wait_for_approval"]:
         """
         Route after requirements review (approval gate)
 
         Returns:
-            "feasibility_validation" if approved (or approval pending - interrupted by interrupt_after)
+            "feasibility_validation" if approved
             "requirements_gathering" if rejected (need to revise)
-
-        Note: When approval is pending (requirements_approved=None), returns "feasibility_validation" as default.
-              The interrupt_after mechanism will pause before executing feasibility_validation.
-              When workflow resumes, this node re-executes and routes based on actual approval decision.
+            "wait_for_approval" if pending (END; apply_approval_decision re-runs
+            this router with the reviewer's decision before the graph resumes)
         """
         if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
             logger.info(
@@ -1395,11 +1365,8 @@ class FullWorkflow:
             logger.info(f"[FullWorkflow] Requirements rejected → requirements_gathering")
             return "requirements_gathering"
         else:
-            # Approval pending - return default route (interrupt_after will pause execution)
-            logger.info(
-                f"[FullWorkflow] Approval pending → feasibility_validation (will be interrupted)"
-            )
-            return "feasibility_validation"
+            logger.info(f"[FullWorkflow] Requirements approval pending → wait_for_approval")
+            return "wait_for_approval"
 
     def _route_after_feasibility_validation(
         self, state: FullWorkflowState
@@ -1438,7 +1405,9 @@ class FullWorkflow:
 
     def _route_after_phenotype_review(
         self, state: FullWorkflowState
-    ) -> Literal["preview_extraction", "feasibility_validation", "not_feasible"]:
+    ) -> Literal[
+        "preview_extraction", "feasibility_validation", "not_feasible", "wait_for_approval"
+    ]:
         """
         Route after phenotype review (approval gate)
 
@@ -1448,13 +1417,11 @@ class FullWorkflow:
         - Reject for revision: Return to feasibility_validation for SQL regeneration
 
         Returns:
-            "preview_extraction" if SQL approved (or approval pending - interrupted by interrupt_after)
+            "preview_extraction" if SQL approved
             "not_feasible" if rejected as infeasible by human
             "feasibility_validation" if rejected for revision (need to regenerate SQL)
-
-        Note: When approval is pending (phenotype_approved=None), returns "preview_extraction" as default.
-              The interrupt_after mechanism will pause before executing preview_extraction.
-              When workflow resumes, this node re-executes and routes based on actual approval decision.
+            "wait_for_approval" if pending (END; apply_approval_decision re-runs
+            this router with the reviewer's decision before the graph resumes)
         """
         if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
             logger.info(
@@ -1487,11 +1454,8 @@ class FullWorkflow:
                 return "feasibility_validation"
 
         else:
-            # Approval pending - return default route (interrupt_after will pause execution)
-            logger.info(
-                f"[FullWorkflow] Approval pending → preview_extraction (will be interrupted)"
-            )
-            return "preview_extraction"
+            logger.info(f"[FullWorkflow] SQL approval pending → wait_for_approval")
+            return "wait_for_approval"
 
     def _route_after_qa_validation(
         self, state: FullWorkflowState
@@ -1512,17 +1476,15 @@ class FullWorkflow:
 
     def _route_after_qa_review(
         self, state: FullWorkflowState
-    ) -> Literal["data_delivery", "data_extraction"]:
+    ) -> Literal["data_delivery", "data_extraction", "wait_for_approval"]:
         """
         Route after QA review (approval gate)
 
         Returns:
-            "data_delivery" if QA approved (or approval pending - interrupted by interrupt_after)
+            "data_delivery" if QA approved
             "data_extraction" if rejected (need to re-extract)
-
-        Note: When approval is pending (qa_approved=None), returns "data_delivery" as default.
-              The interrupt_after mechanism will pause before executing data_delivery.
-              When workflow resumes, this node re-executes and routes based on actual approval decision.
+            "wait_for_approval" if pending (END; apply_approval_decision re-runs
+            this router with the reviewer's decision before the graph resumes)
         """
         if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
             logger.info(
@@ -1536,9 +1498,8 @@ class FullWorkflow:
             logger.info(f"[FullWorkflow] QA rejected → data_extraction (redo)")
             return "data_extraction"
         else:
-            # Approval pending - return default route (interrupt_after will pause execution)
-            logger.info(f"[FullWorkflow] Approval pending → data_delivery (will be interrupted)")
-            return "data_delivery"
+            logger.info(f"[FullWorkflow] Delivery approval pending → wait_for_approval")
+            return "wait_for_approval"
 
     def _route_after_preview_qa(
         self, state: FullWorkflowState
@@ -1562,7 +1523,7 @@ class FullWorkflow:
 
     def _route_after_preview_qa_review(
         self, state: FullWorkflowState
-    ) -> Literal["data_extraction", "feasibility_validation"]:
+    ) -> Literal["data_extraction", "feasibility_validation", "wait_for_approval"]:
         """
         Route after preview QA review (approval gate) (NEW)
 
@@ -1573,6 +1534,8 @@ class FullWorkflow:
         Returns:
             "data_extraction" if approved (proceed despite failure)
             "feasibility_validation" if rejected (revise SQL)
+            "wait_for_approval" if pending (END; apply_approval_decision re-runs
+            this router with the reviewer's decision before the graph resumes)
         """
         if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
             logger.info(
@@ -1582,11 +1545,14 @@ class FullWorkflow:
         if state.get("preview_qa_review_approved") is True:
             logger.info(f"[FullWorkflow] Preview QA failure approved → data_extraction")
             return "data_extraction"
-        else:
+        elif state.get("preview_qa_review_approved") is False:
             logger.info(
                 f"[FullWorkflow] Preview QA failure rejected → feasibility_validation (revise SQL)"
             )
             return "feasibility_validation"
+        else:
+            logger.info(f"[FullWorkflow] Preview QA approval pending → wait_for_approval")
+            return "wait_for_approval"
 
     def _route_after_data_delivery(
         self, state: FullWorkflowState
@@ -1677,6 +1643,52 @@ class FullWorkflow:
                 # Checkpointer still has state even if DB sync fails
 
         return final_state
+
+    async def apply_approval_decision(self, config: RunnableConfig, approval_id: int) -> bool:
+        """
+        Write a reviewer's DB decision into its paused gate and re-run the router.
+
+        interrupt_after pauses only after the review node's conditional edge has
+        been evaluated on a pending decision, so resuming with None alone would
+        follow that stale edge (#229). update_state(as_node=...) re-evaluates it,
+        and also replaces the approve-branch `next` that threads paused before
+        #229 carry.
+
+        Returns:
+            True if the decision was applied and the caller may resume.
+            False if the approval is not its gate's newest (superseded by a
+            revise loop), the graph is not paused at that gate, or the decision
+            is still pending; the caller must not resume.
+        """
+        async with get_db_session() as session:
+            approval = await session.get(Approval, approval_id)
+            if approval is None:
+                return False
+            newest_id = await session.scalar(
+                select(func.max(Approval.id)).where(
+                    Approval.request_id == approval.request_id,
+                    Approval.approval_type == approval.approval_type,
+                )
+            )
+        if approval.id != newest_id:
+            return False
+
+        node = REVIEW_NODE_BY_APPROVAL_TYPE.get(approval.approval_type)
+        if node is None:
+            return False
+
+        values = (await self.compiled_graph.aget_state(config)).values
+        if values.get("current_state") != node or values.get("request_id") != approval.request_id:
+            return False
+
+        synced = await check_approval_status(
+            approval.request_id, approval.approval_type, dict(values), database_url=DATABASE_URL
+        )
+        if synced.get(ApprovalBridge.APPROVAL_TYPE_TO_STATE[approval.approval_type]) is None:
+            return False
+
+        await self.compiled_graph.aupdate_state(config, synced, as_node=node)
+        return True
 
     def get_graph_diagram(self) -> str:
         """
