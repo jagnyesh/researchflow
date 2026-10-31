@@ -720,13 +720,15 @@ class LangGraphRequestFacade:
             f"({approval_type}): {decision}"
         )
 
-        # Resume workflow (LangGraph will check approval status and continue)
+        # Resume workflow, routing the paused gate on this decision
         # This triggers workflow continuation from the approval gate
         # IMPORTANT: Run synchronously (not background task) to ensure it completes
         # before Streamlit reruns the page
-        await self._resume_workflow_after_approval(request_id, approval_type)
+        await self._resume_workflow_after_approval(request_id, approval_type, approval_id)
 
-    async def _resume_workflow_after_approval(self, request_id: str, approval_type: str):
+    async def _resume_workflow_after_approval(
+        self, request_id: str, approval_type: str, approval_id: int
+    ):
         """
         Resume LangGraph workflow after approval decision.
 
@@ -735,6 +737,7 @@ class LangGraphRequestFacade:
         Args:
             request_id: Request identifier
             approval_type: Type of approval (requirements, phenotype_sql, etc.)
+            approval_id: The decided Approval row the paused gate is routed on
         """
         try:
             # Ensure workflow is initialized (lazy init for async checkpointer)
@@ -766,8 +769,16 @@ class LangGraphRequestFacade:
             # Configure LangGraph execution with thread_id for checkpointing
             config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
 
-            # Resume workflow from checkpoint
-            # LangGraph will load the saved state and continue from approval gate
+            if not await workflow.apply_approval_decision(config, approval_id):
+                logger.warning(
+                    f"[LangGraphRequestFacade] Not resuming {request_id}: approval {approval_id} "
+                    f"is superseded or still pending, or the workflow is not paused at the "
+                    f"{approval_type} gate"
+                )
+                return
+
+            # Resume workflow from checkpoint; apply_approval_decision has already
+            # routed the paused gate on the reviewer's decision
             #
             # Bug #11 Part 7 fix: Use astream_events for real-time state updates during resumption
             # This ensures database is updated as workflow progresses through nodes

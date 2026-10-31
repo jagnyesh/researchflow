@@ -532,7 +532,7 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 For headline performance numbers (speedup, turnaround, LLM cost) see the [Performance](#performance) section. The shipping milestones:
 
 - 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` is now a production caller via `phenotype_agent` with three-mode `FreshnessAnnotation` routing (Sprint 6.5)
-- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal wired through LangGraph's `interrupt_after` mechanism
+- 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal; each gate pauses the LangGraph graph until the reviewer's DB decision re-runs its router (`FullWorkflow.apply_approval_decision`)
 
 ### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
 

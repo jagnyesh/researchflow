@@ -251,11 +251,12 @@ class ApprovalBridge:
             ```
         """
         async with self.async_session_maker() as session:
-            # Get latest approval for this type
+            # Get latest approval for this type. By id, not created_at: that is
+            # naive local wall-clock time and can step back (DST, NTP) (#229).
             result = await session.execute(
                 select(Approval)
                 .where(Approval.request_id == request_id, Approval.approval_type == approval_type)
-                .order_by(Approval.created_at.desc())
+                .order_by(Approval.id.desc())
                 .limit(1)
             )
             approval = result.scalar_one_or_none()
