@@ -118,7 +118,7 @@ One invocation, "code done" → "merged or escalated":
 5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
 6. Post the **SHA-bound review attestation** (step 2's consolidated verdict + reviewed commit SHA == `headRefOid`).
 7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #136/#137/#142 are open) would add a run iff the change is LLM-touching (trigger list below).
-8. On green, **merge by tier** (§1): human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
+8. On green, **merge by tier** (§1). Green means every workflow run for the head SHA has completed and passed, not just the checks visible so far: a `needs:` job has no check until its dependencies finish, which is how #203 merged early. Then: human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
 
 These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently.
 

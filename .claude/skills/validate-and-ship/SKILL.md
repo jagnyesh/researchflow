@@ -61,7 +61,22 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
 ### 8. Watch CI; merge by class
-`gh pr checks <n> --watch --interval 45` (background it). If CI goes red, diagnose and fix — and remember a fix push voids the attestation (Step 7.3). On all-green, verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
+Watch the workflow **runs** for the attested SHA (the full 40 characters; a short SHA silently matches no runs), not the check list (background it):
+
+```bash
+until gh run list --commit <attested-sha> --json status -q 'length > 0 and all(.[]; .status == "completed")' | grep -qx true; do sleep 45; done
+```
+
+Never `gh pr checks --watch`. It exits once every check that *exists* is complete, and a `needs:` job (`security-scan` in `tests.yml`) has no check until its dependencies finish. The watch exited in that ~1s gap, and #203 merged 25s before `security-scan` finished. A run stays `in_progress` until all of its jobs are done, dependent ones included. All PR workflows are created by the same event (#203's three runs share a `createdAt` second), so `length > 0` is enough once the PR is open.
+
+If CI goes red, diagnose and fix — and remember a fix push voids the attestation (Step 7.3). All-green means these print exactly `RUNS OK` and `CHECKS OK`, the second run fresh immediately before merging (gh renders an incomplete check's `completedAt` as `0001-01-01T00:00:00Z`). Anything else, including no output (a gh error), is not green:
+
+```bash
+gh run list --commit <attested-sha> --json name,conclusion -q 'if length == 0 then "NO RUNS" else (map(select(.conclusion | IN("success","skipped","neutral") | not) | .name) | if length == 0 then "RUNS OK" else .[] end) end'
+gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 then "NO CHECKS" else (map(select(.completedAt == "0001-01-01T00:00:00Z" or ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL") | not)) | .name // .context) | if length == 0 then "CHECKS OK" else .[] end) end'
+```
+
+The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
 
 - **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By` — and merge:
   `gh pr merge <n> --squash --delete-branch --match-head-commit <attested-sha> --body-file <file>`
