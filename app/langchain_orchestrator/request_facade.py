@@ -49,6 +49,11 @@ DECISION_STATUS = {"approve": "approved", "reject": "rejected", "modify": "modif
 GRAPH_DURABILITY = "sync"
 
 
+def _durability(workflow: FullWorkflow) -> Optional[str]:
+    # langgraph 1.0.2 raises AttributeError for "sync" when there is no checkpointer
+    return GRAPH_DURABILITY if workflow.compiled_graph.checkpointer else None
+
+
 class LangGraphRequestFacade:
     """
     Facade that presents ResearchRequestOrchestrator interface
@@ -407,7 +412,7 @@ class LangGraphRequestFacade:
                 final_state = None
                 last_synced_state = None
                 async for event in workflow.compiled_graph.astream_events(
-                    initial_state, config, version="v2", durability=GRAPH_DURABILITY
+                    initial_state, config, version="v2", durability=_durability(workflow)
                 ):
                     # Process events from workflow execution
                     if event["event"] == "on_chain_end":
@@ -435,7 +440,7 @@ class LangGraphRequestFacade:
                         "[LangGraphRequestFacade] No state captured from events, falling back to ainvoke"
                     )
                     final_state = await workflow.compiled_graph.ainvoke(
-                        initial_state, config, durability=GRAPH_DURABILITY
+                        initial_state, config, durability=_durability(workflow)
                     )
                     await self._update_request_from_state(request_id, final_state)
 
@@ -455,7 +460,7 @@ class LangGraphRequestFacade:
                 final_state = None
                 last_synced_state = None
                 async for event in workflow.compiled_graph.astream_events(
-                    initial_state, config, version="v2", durability=GRAPH_DURABILITY
+                    initial_state, config, version="v2", durability=_durability(workflow)
                 ):
                     if event["event"] == "on_chain_end":
                         current_state = event.get("data", {}).get("output", {})
@@ -479,7 +484,7 @@ class LangGraphRequestFacade:
                         "[LangGraphRequestFacade] No state captured from events, falling back to ainvoke"
                     )
                     final_state = await workflow.compiled_graph.ainvoke(
-                        initial_state, config, durability=GRAPH_DURABILITY
+                        initial_state, config, durability=_durability(workflow)
                     )
                     await self._update_request_from_state(request_id, final_state)
 
@@ -810,7 +815,7 @@ class LangGraphRequestFacade:
             last_synced_state = None
 
             async for event in workflow.compiled_graph.astream_events(
-                None, config, version="v2", durability=GRAPH_DURABILITY
+                None, config, version="v2", durability=_durability(workflow)
             ):
                 # Process events from workflow execution
                 if event["event"] == "on_chain_end":
@@ -840,7 +845,7 @@ class LangGraphRequestFacade:
                     f"falling back to ainvoke"
                 )
                 final_state = await workflow.compiled_graph.ainvoke(
-                    None, config, durability=GRAPH_DURABILITY
+                    None, config, durability=_durability(workflow)
                 )
                 await self._update_request_from_state(request_id, final_state)
 

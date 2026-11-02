@@ -23,7 +23,7 @@ from sqlalchemy import select
 import app.langchain_orchestrator.langgraph_workflow as langgraph_workflow
 from app.api import approvals as approvals_api
 from app.database import get_db_session, init_db
-from app.database.models import Approval
+from app.database.models import Approval, ResearchRequest
 from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
 from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
 from app.services.approval_service import ApprovalService
@@ -369,6 +369,18 @@ async def test_unknown_decision_is_refused_and_records_nothing(facade, saver, ra
     assert ran == []
     assert [a.status for a in await _approvals(request_id, "phenotype_sql")] == ["pending"]
     await _assert_waiting_at(saver, request_id, "phenotype_review")
+
+
+async def test_a_facade_without_persistence_still_runs_the_workflow(monkeypatch):
+    monkeypatch.delenv("AUTO_APPROVE_FOR_DEV", raising=False)
+    await init_db()
+    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=False)
+
+    request_id = await facade.process_new_request("Synthetic test request", RESEARCHER)
+
+    async with get_db_session() as session:
+        request = await session.get(ResearchRequest, request_id)
+    assert request.current_state == "requirements_review"
 
 
 async def test_deciding_a_missing_approval_is_refused(facade):
