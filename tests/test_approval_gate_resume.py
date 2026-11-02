@@ -6,18 +6,27 @@ stale edge: a reject resumed onto the approve branch. Drives the real
 `LangGraphRequestFacade` -> `FullWorkflow` (stub agents) with the production
 `AsyncSqliteSaver` checkpointer on an isolated file and the real SQLite app DB.
 The only doubles are the stub agents and a spy that records which nodes ran.
+
+A decision is recorded at most once, and only on the approval its gate is
+waiting on (#231); anything else is refused before the DB or the graph changes.
 """
 
+import asyncio
 from datetime import timedelta
 
+import httpx
 import pytest
+from fastapi import FastAPI
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from sqlalchemy import select
 
+import app.langchain_orchestrator.langgraph_workflow as langgraph_workflow
+from app.api import approvals as approvals_api
 from app.database import get_db_session, init_db
-from app.database.models import Approval
+from app.database.models import Approval, ResearchRequest
 from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
-from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
+from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
+from app.services.approval_service import ApprovalService
 
 pytestmark = [pytest.mark.workflow, pytest.mark.approval]
 
@@ -79,6 +88,12 @@ async def _approvals(request_id, approval_type):
             .order_by(Approval.id)
         )
         return rows.all()
+
+
+async def _review(approval_id):
+    async with get_db_session() as session:
+        approval = await session.get(Approval, approval_id)
+        return approval.status, approval.reviewed_by, approval.review_notes
 
 
 async def _decide(facade, request_id, approval_type, decision, **kwargs):
@@ -219,18 +234,20 @@ async def test_resume_without_a_decision_runs_nothing(
     assert ran == []
 
 
-async def test_deciding_a_superseded_approval_does_not_advance_the_graph(
-    facade, saver, ran, monkeypatch
-):
+async def test_a_superseded_approval_cannot_be_re_decided(facade, saver, ran, monkeypatch):
     request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
     await _decide(facade, request_id, "phenotype_sql", "reject", notes="Wrong inclusion criteria")
     superseded = (await _approvals(request_id, "phenotype_sql"))[0]
     ran.clear()
 
-    await facade.process_approval_response(superseded.id, REVIEWER, "approve")
+    with pytest.raises(ApprovalRefused, match="already rejected"):
+        await facade.process_approval_response(
+            superseded.id, "other@example.test", "approve", notes="Looks fine"
+        )
 
     assert ran == []
     await _assert_waiting_at(saver, request_id, "phenotype_review")
+    assert await _review(superseded.id) == ("rejected", REVIEWER, "Wrong inclusion criteria")
 
 
 async def test_superseded_decision_never_resumes_on_the_current_approval(
@@ -243,7 +260,8 @@ async def test_superseded_decision_never_resumes_on_the_current_approval(
     await facade.approval_bridge.update_approval_status(current.id, "approved", REVIEWER)
     ran.clear()
 
-    await facade.process_approval_response(superseded.id, "other@example.test", "approve")
+    with pytest.raises(ApprovalRefused):
+        await facade.process_approval_response(superseded.id, "other@example.test", "approve")
 
     assert ran == []
 
@@ -323,7 +341,8 @@ async def test_repeating_an_earlier_gate_decision_does_not_rewind_the_graph(
     request_id = await _pause_at(facade, saver, ran, monkeypatch, "delivery")
     (phenotype,) = await _approvals(request_id, "phenotype_sql")
 
-    await facade.process_approval_response(phenotype.id, REVIEWER, "approve")
+    with pytest.raises(ApprovalRefused):
+        await facade.process_approval_response(phenotype.id, REVIEWER, "approve")
 
     assert ran == []
     await _assert_waiting_at(saver, request_id, "qa_review")
@@ -339,3 +358,208 @@ async def test_reviewer_modified_sql_reaches_the_graph(facade, saver, ran, monke
 
     assert ran[0] == "preview_extraction"
     assert (await _snapshot(saver, request_id)).values["phenotype_sql"] == reviewed_sql
+
+
+async def test_unknown_decision_is_refused_and_records_nothing(facade, saver, ran, monkeypatch):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+
+    with pytest.raises(ValueError, match="Unknown decision"):
+        await _decide(facade, request_id, "phenotype_sql", "rejected")
+
+    assert ran == []
+    assert [a.status for a in await _approvals(request_id, "phenotype_sql")] == ["pending"]
+    await _assert_waiting_at(saver, request_id, "phenotype_review")
+
+
+async def test_a_facade_without_persistence_still_runs_the_workflow(monkeypatch):
+    monkeypatch.delenv("AUTO_APPROVE_FOR_DEV", raising=False)
+    await init_db()
+    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=False)
+
+    request_id = await facade.process_new_request("Synthetic test request", RESEARCHER)
+
+    async with get_db_session() as session:
+        request = await session.get(ResearchRequest, request_id)
+    assert request.current_state == "requirements_review"
+
+
+async def test_deciding_a_missing_approval_is_refused(facade):
+    with pytest.raises(ApprovalRefused, match="not found"):
+        await facade.process_approval_response(10**9, REVIEWER, "approve")
+
+
+async def test_the_bridge_never_overwrites_a_decided_approval(facade, saver, ran, monkeypatch):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+    await _decide(facade, request_id, "phenotype_sql", "reject", notes="Wrong inclusion criteria")
+    rejected = (await _approvals(request_id, "phenotype_sql"))[0]
+
+    recorded = await facade.approval_bridge.update_approval_status(
+        rejected.id, "approved", "other@example.test", "Looks fine"
+    )
+
+    assert recorded is False
+    assert await _review(rejected.id) == ("rejected", REVIEWER, "Wrong inclusion criteria")
+
+
+@pytest.mark.parametrize("second", ["approve", "reject"])
+async def test_concurrent_decisions_resume_the_graph_once(facade, saver, ran, monkeypatch, second):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "delivery")
+    (pending,) = await _approvals(request_id, "delivery")
+    deliver = FullWorkflow._handle_data_delivery
+
+    async def slow_delivery(self, state):
+        # keeps the first resume in flight while the second decision lands
+        await asyncio.sleep(0.3)
+        return await deliver(self, state)
+
+    monkeypatch.setattr(FullWorkflow, "_handle_data_delivery", slow_delivery)
+
+    outcomes = await asyncio.gather(
+        facade.process_approval_response(pending.id, REVIEWER, "approve"),
+        facade.process_approval_response(pending.id, "other@example.test", second),
+        return_exceptions=True,
+    )
+
+    assert sorted(type(o).__name__ for o in outcomes) == ["ApprovalRefused", "NoneType"], outcomes
+    statuses = [a.status for a in await _approvals(request_id, "delivery")]
+    if statuses[0] == "approved":
+        assert ran == ["data_delivery", "complete"]
+    else:
+        assert ran == ["data_extraction", "qa_validation", "qa_review"]
+        assert statuses == ["rejected", "pending"]
+
+
+async def test_a_decision_before_the_gate_is_checkpointed_stays_pending_for_a_retry(
+    facade, saver, ran, monkeypatch
+):
+    create = langgraph_workflow.create_approval_from_state
+    early = []
+
+    async def create_then_decide(request_id, approval_type, state, **kwargs):
+        # the reviewer decides after the pending row commits, before the graph pauses
+        approval_id = await create(request_id, approval_type, state, **kwargs)
+        try:
+            early.append(await facade.process_approval_response(approval_id, REVIEWER, "approve"))
+        except ApprovalRefused as refused:
+            early.append(refused)
+        return approval_id
+
+    monkeypatch.setattr(langgraph_workflow, "create_approval_from_state", create_then_decide)
+    request_id = await facade.process_new_request(
+        "Synthetic test request", RESEARCHER, from_formal_portal=True
+    )
+    monkeypatch.setattr(langgraph_workflow, "create_approval_from_state", create)
+
+    assert [type(e) for e in early] == [ApprovalRefused]
+    assert [a.status for a in await _approvals(request_id, "phenotype_sql")] == ["pending"]
+    await _assert_waiting_at(saver, request_id, "phenotype_review")
+    ran.clear()
+
+    await _decide(facade, request_id, "phenotype_sql", "approve")
+
+    assert ran[0] == "preview_extraction"
+
+
+# approval type whose reject loops back to its own gate -> first node its approve branch runs
+REOPENING_GATES = {
+    "requirements": "feasibility_validation",
+    "phenotype_sql": "preview_extraction",
+    "delivery": "data_delivery",
+}
+
+
+@pytest.mark.parametrize("approval_type", REOPENING_GATES)
+async def test_a_decision_on_a_reopened_gate_never_resumes_from_the_rejected_state(
+    facade, saver, ran, monkeypatch, approval_type
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, approval_type)
+    for save in ("aput", "aput_writes"):
+
+        async def slow(*args, _save=getattr(saver, save), **kwargs):
+            # checkpoint saves lag behind the graph, e.g. another process holds the file lock
+            await asyncio.sleep(0.3)
+            return await _save(*args, **kwargs)
+
+        monkeypatch.setattr(saver, save, slow)
+    create = langgraph_workflow.create_approval_from_state
+    early = []
+
+    async def create_then_decide(request_id, gate_type, state, **kwargs):
+        approval_id = await create(request_id, gate_type, state, **kwargs)
+        if gate_type == approval_type and not early:
+            # reviewer B approves the re-opened gate's approval as soon as it commits
+            try:
+                early.append(
+                    await facade.process_approval_response(
+                        approval_id, "other@example.test", "approve"
+                    )
+                )
+            except ApprovalRefused as refused:
+                early.append(refused)
+        return approval_id
+
+    monkeypatch.setattr(langgraph_workflow, "create_approval_from_state", create_then_decide)
+
+    await _decide(facade, request_id, approval_type, "reject", notes="Revise and resubmit")
+
+    assert REOPENING_GATES[approval_type] not in ran
+    assert [type(e) for e in early] == [ApprovalRefused]
+    assert [a.status for a in await _approvals(request_id, approval_type)] == [
+        "rejected",
+        "pending",
+    ]
+    await _assert_waiting_at(saver, request_id, GATES[approval_type])
+
+
+async def test_deleting_the_current_approval_does_not_revive_the_superseded_one(
+    facade, saver, ran, monkeypatch
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+    await _decide(facade, request_id, "phenotype_sql", "reject", notes="Wrong inclusion criteria")
+    superseded, current = await _approvals(request_id, "phenotype_sql")
+    async with get_db_session() as session:
+        # out of band: no app or script path deletes approvals
+        await session.delete(await session.get(Approval, current.id))
+        await session.commit()
+    ran.clear()
+
+    with pytest.raises(ApprovalRefused):
+        await facade.process_approval_response(superseded.id, REVIEWER, "approve")
+
+    assert ran == []
+
+
+async def test_an_approval_with_no_gate_is_recorded_without_moving_the_graph(
+    facade, saver, ran, monkeypatch
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+    async with get_db_session() as session:
+        scope = await ApprovalService(session).create_approval(
+            request_id, "scope_change", "researcher@example.test", {"requested_changes": {}}
+        )
+
+    await facade.process_approval_response(scope.id, REVIEWER, "approve")
+
+    assert ran == []
+    assert await _review(scope.id) == ("approved", REVIEWER, None)
+    await _assert_waiting_at(saver, request_id, "phenotype_review")
+    with pytest.raises(ApprovalRefused, match="already approved"):
+        await facade.process_approval_response(scope.id, REVIEWER, "reject")
+
+
+async def test_the_api_reports_a_refused_decision(facade, saver, ran, monkeypatch):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+    (pending,) = await _approvals(request_id, "phenotype_sql")
+    api = FastAPI()
+    api.include_router(approvals_api.router)
+    monkeypatch.setattr(approvals_api, "orchestrator", facade)
+    body = {"decision": "approve", "reviewer": REVIEWER}
+
+    transport = httpx.ASGITransport(app=api)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post(f"/approvals/{pending.id}/respond", json=body)
+        repeat = await client.post(f"/approvals/{pending.id}/respond", json=body)
+
+    assert first.status_code == 200, first.text
+    assert repeat.status_code == 400, repeat.text
+    assert "already approved" in repeat.json()["detail"]

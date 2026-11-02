@@ -1644,6 +1644,36 @@ class FullWorkflow:
 
         return final_state
 
+    async def waits_on(self, config: RunnableConfig, approval_id: int) -> bool:
+        """True if the graph is paused at the gate whose current approval is `approval_id`."""
+        return await self._paused_gate(config, approval_id) is not None
+
+    async def _paused_gate(self, config: RunnableConfig, approval_id: int):
+        """(approval, review node, graph values) if the graph is paused at the gate
+        whose newest approval is `approval_id`; None if it is superseded by a revise
+        loop, has no gate, or the graph is not paused at its gate."""
+        async with get_db_session() as session:
+            approval = await session.get(Approval, approval_id)
+            if approval is None:
+                return None
+            newest_id = await session.scalar(
+                select(func.max(Approval.id)).where(
+                    Approval.request_id == approval.request_id,
+                    Approval.approval_type == approval.approval_type,
+                )
+            )
+        if approval.id != newest_id:
+            return None
+
+        node = REVIEW_NODE_BY_APPROVAL_TYPE.get(approval.approval_type)
+        if node is None:
+            return None
+
+        values = (await self.compiled_graph.aget_state(config)).values
+        if values.get("current_state") != node or values.get("request_id") != approval.request_id:
+            return None
+        return approval, node, values
+
     async def apply_approval_decision(self, config: RunnableConfig, approval_id: int) -> bool:
         """
         Write a reviewer's DB decision into its paused gate and re-run the router.
@@ -1656,30 +1686,14 @@ class FullWorkflow:
 
         Returns:
             True if the decision was applied and the caller may resume.
-            False if the approval is not its gate's newest (superseded by a
-            revise loop), the graph is not paused at that gate, or the decision
-            is still pending; the caller must not resume.
+            False if the graph is not paused at this approval's gate (see
+            `_paused_gate`) or the decision is still pending; the caller must
+            not resume.
         """
-        async with get_db_session() as session:
-            approval = await session.get(Approval, approval_id)
-            if approval is None:
-                return False
-            newest_id = await session.scalar(
-                select(func.max(Approval.id)).where(
-                    Approval.request_id == approval.request_id,
-                    Approval.approval_type == approval.approval_type,
-                )
-            )
-        if approval.id != newest_id:
+        paused = await self._paused_gate(config, approval_id)
+        if paused is None:
             return False
-
-        node = REVIEW_NODE_BY_APPROVAL_TYPE.get(approval.approval_type)
-        if node is None:
-            return False
-
-        values = (await self.compiled_graph.aget_state(config)).values
-        if values.get("current_state") != node or values.get("request_id") != approval.request_id:
-            return False
+        approval, node, values = paused
 
         synced = await check_approval_status(
             approval.request_id, approval.approval_type, dict(values), database_url=DATABASE_URL

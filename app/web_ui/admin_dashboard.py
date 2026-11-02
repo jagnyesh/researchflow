@@ -50,7 +50,7 @@ from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
-from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
+from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
 from app.database import get_db_session, get_engine
 from app.database.models import AgentExecution, ResearchRequest
 from app.services.approval_service import ApprovalService
@@ -1804,6 +1804,12 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
         time.sleep(2)
         st.rerun()
 
+    except ApprovalRefused:
+        logger.warning(f"[Admin Dashboard] Approval {approval_id} refused")
+        st.warning(
+            f"Approval {approval_id} was not applied: it is already decided, or its "
+            "workflow is not waiting on it yet. Refresh the queue and try again."
+        )
     except Exception as e:
         ref = log_internal_error(
             logger, f"[Admin Dashboard] Error processing approval {approval_id}", e
