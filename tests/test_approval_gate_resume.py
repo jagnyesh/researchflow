@@ -448,6 +448,57 @@ async def test_a_decision_before_the_gate_is_checkpointed_stays_pending_for_a_re
     assert ran[0] == "preview_extraction"
 
 
+# approval type whose reject loops back to its own gate -> first node its approve branch runs
+REOPENING_GATES = {
+    "requirements": "feasibility_validation",
+    "phenotype_sql": "preview_extraction",
+    "delivery": "data_delivery",
+}
+
+
+@pytest.mark.parametrize("approval_type", REOPENING_GATES)
+async def test_a_decision_on_a_reopened_gate_never_resumes_from_the_rejected_state(
+    facade, saver, ran, monkeypatch, approval_type
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, approval_type)
+    for save in ("aput", "aput_writes"):
+
+        async def slow(*args, _save=getattr(saver, save), **kwargs):
+            # checkpoint saves lag behind the graph, e.g. another process holds the file lock
+            await asyncio.sleep(0.3)
+            return await _save(*args, **kwargs)
+
+        monkeypatch.setattr(saver, save, slow)
+    create = langgraph_workflow.create_approval_from_state
+    early = []
+
+    async def create_then_decide(request_id, gate_type, state, **kwargs):
+        approval_id = await create(request_id, gate_type, state, **kwargs)
+        if gate_type == approval_type and not early:
+            # reviewer B approves the re-opened gate's approval as soon as it commits
+            try:
+                early.append(
+                    await facade.process_approval_response(
+                        approval_id, "other@example.test", "approve"
+                    )
+                )
+            except ApprovalRefused as refused:
+                early.append(refused)
+        return approval_id
+
+    monkeypatch.setattr(langgraph_workflow, "create_approval_from_state", create_then_decide)
+
+    await _decide(facade, request_id, approval_type, "reject", notes="Revise and resubmit")
+
+    assert REOPENING_GATES[approval_type] not in ran
+    assert [type(e) for e in early] == [ApprovalRefused]
+    assert [a.status for a in await _approvals(request_id, approval_type)] == [
+        "rejected",
+        "pending",
+    ]
+    await _assert_waiting_at(saver, request_id, GATES[approval_type])
+
+
 async def test_deleting_the_current_approval_does_not_revive_the_superseded_one(
     facade, saver, ran, monkeypatch
 ):

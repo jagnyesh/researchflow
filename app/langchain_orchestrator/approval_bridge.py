@@ -373,8 +373,9 @@ class ApprovalBridge:
             ```
         """
         async with self.async_session_maker() as session:
-            # Compare-and-set on pending: a decision is never overwritten, and of two
-            # concurrent decisions exactly one lands (#231)
+            # Compare-and-set on pending: this path never overwrites a decision, and of
+            # two concurrent decisions through it exactly one lands (#231).
+            # ApprovalService.approve/reject are still check-then-set (#230).
             result = await session.execute(
                 update(Approval)
                 .where(Approval.id == approval_id, Approval.status == "pending")

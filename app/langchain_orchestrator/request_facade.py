@@ -42,6 +42,12 @@ class ApprovalRefused(ValueError):
 
 DECISION_STATUS = {"approve": "approved", "reject": "rejected", "modify": "modified"}
 
+# Save each step's checkpoint before the next step runs. Under the default
+# "async", a reject loop re-opens its gate while the rejecting decision's
+# checkpoint is still the newest saved one, so waits_on accepts a decision on the
+# new approval and the graph resumes from the rejected state (#231).
+GRAPH_DURABILITY = "sync"
+
 
 class LangGraphRequestFacade:
     """
@@ -401,7 +407,7 @@ class LangGraphRequestFacade:
                 final_state = None
                 last_synced_state = None
                 async for event in workflow.compiled_graph.astream_events(
-                    initial_state, config, version="v2"
+                    initial_state, config, version="v2", durability=GRAPH_DURABILITY
                 ):
                     # Process events from workflow execution
                     if event["event"] == "on_chain_end":
@@ -428,7 +434,9 @@ class LangGraphRequestFacade:
                     logger.warning(
                         "[LangGraphRequestFacade] No state captured from events, falling back to ainvoke"
                     )
-                    final_state = await workflow.compiled_graph.ainvoke(initial_state, config)
+                    final_state = await workflow.compiled_graph.ainvoke(
+                        initial_state, config, durability=GRAPH_DURABILITY
+                    )
                     await self._update_request_from_state(request_id, final_state)
 
                 logger.info(
@@ -447,7 +455,7 @@ class LangGraphRequestFacade:
                 final_state = None
                 last_synced_state = None
                 async for event in workflow.compiled_graph.astream_events(
-                    initial_state, config, version="v2"
+                    initial_state, config, version="v2", durability=GRAPH_DURABILITY
                 ):
                     if event["event"] == "on_chain_end":
                         current_state = event.get("data", {}).get("output", {})
@@ -470,7 +478,9 @@ class LangGraphRequestFacade:
                     logger.warning(
                         "[LangGraphRequestFacade] No state captured from events, falling back to ainvoke"
                     )
-                    final_state = await workflow.compiled_graph.ainvoke(initial_state, config)
+                    final_state = await workflow.compiled_graph.ainvoke(
+                        initial_state, config, durability=GRAPH_DURABILITY
+                    )
                     await self._update_request_from_state(request_id, final_state)
 
             logger.info(
@@ -799,7 +809,9 @@ class LangGraphRequestFacade:
             final_state = None
             last_synced_state = None
 
-            async for event in workflow.compiled_graph.astream_events(None, config, version="v2"):
+            async for event in workflow.compiled_graph.astream_events(
+                None, config, version="v2", durability=GRAPH_DURABILITY
+            ):
                 # Process events from workflow execution
                 if event["event"] == "on_chain_end":
                     # Get current state from event output
@@ -827,7 +839,9 @@ class LangGraphRequestFacade:
                     f"[LangGraphRequestFacade] No state captured from resumption events for {request_id}, "
                     f"falling back to ainvoke"
                 )
-                final_state = await workflow.compiled_graph.ainvoke(None, config)
+                final_state = await workflow.compiled_graph.ainvoke(
+                    None, config, durability=GRAPH_DURABILITY
+                )
                 await self._update_request_from_state(request_id, final_state)
 
             logger.info(
