@@ -32,7 +32,7 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.future import select as future_select
 
 from app.database.models import Approval, ResearchRequest
@@ -358,7 +358,8 @@ class ApprovalBridge:
             modifications: Optional modifications (for status="modified")
 
         Returns:
-            True if updated successfully
+            True if this call recorded the decision; False if the approval does
+            not exist or was already decided
 
         Example:
             ```python
@@ -372,27 +373,29 @@ class ApprovalBridge:
             ```
         """
         async with self.async_session_maker() as session:
-            result = await session.execute(select(Approval).where(Approval.id == approval_id))
-            approval = result.scalar_one_or_none()
-
-            if not approval:
-                logger.error(f"[ApprovalBridge] Approval not found: {approval_id}")
-                return False
-
-            approval.status = status
-            approval.reviewed_at = datetime.now()
-            approval.reviewed_by = reviewed_by
-            approval.review_notes = review_notes
-            approval.modifications = modifications
-
+            # Compare-and-set on pending: a decision is never overwritten, and of two
+            # concurrent decisions exactly one lands (#231)
+            result = await session.execute(
+                update(Approval)
+                .where(Approval.id == approval_id, Approval.status == "pending")
+                .values(
+                    status=status,
+                    reviewed_at=datetime.now(),
+                    reviewed_by=reviewed_by,
+                    review_notes=review_notes,
+                    modifications=modifications,
+                )
+            )
             await session.commit()
 
-            logger.info(
-                f"[ApprovalBridge] Updated approval {approval_id}: "
-                f"{approval.approval_type} → {status} (by {reviewed_by})"
-            )
+        if result.rowcount != 1:
+            logger.error(f"[ApprovalBridge] Approval {approval_id} not found or already decided")
+            return False
 
-            return True
+        logger.info(
+            f"[ApprovalBridge] Updated approval {approval_id} → {status} (by {reviewed_by})"
+        )
+        return True
 
     async def get_pending_approvals(self, request_id: Optional[str] = None) -> list[Dict[str, Any]]:
         """

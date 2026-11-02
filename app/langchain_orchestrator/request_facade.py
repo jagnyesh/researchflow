@@ -24,13 +24,23 @@ from datetime import datetime
 import asyncio
 import uuid
 
-from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
+from app.langchain_orchestrator.langgraph_workflow import (
+    FullWorkflow,
+    REVIEW_NODE_BY_APPROVAL_TYPE,
+)
 from app.langchain_orchestrator.persistence import get_checkpointer
 from app.langchain_orchestrator.approval_bridge import ApprovalBridge
-from app.database import get_db_session, ResearchRequest, AuditLog
+from app.database import get_db_session, Approval, ResearchRequest, AuditLog
 from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
+
+
+class ApprovalRefused(ValueError):
+    """A reviewer's decision was refused; the approval and the workflow are unchanged."""
+
+
+DECISION_STATUS = {"approve": "approved", "reject": "rejected", "modify": "modified"}
 
 
 class LangGraphRequestFacade:
@@ -657,12 +667,23 @@ class LangGraphRequestFacade:
         1. Updates approval record in database
         2. Resumes LangGraph workflow to continue from approval gate
 
+        The decision is recorded only while the approval is pending and, for an
+        approval with a workflow gate, while the graph is paused at that gate
+        waiting on it. Anything else is refused before the database or the graph
+        changes, so a decision that lands before its gate is checkpointed stays
+        pending and can be resubmitted (#231).
+
         Args:
             approval_id: Approval record ID
             reviewer: User ID or email of reviewer
             decision: 'approve', 'reject', or 'modify'
             notes: Optional review notes
             modifications: Optional modifications (for modify decision)
+
+        Raises:
+            ValueError: decision is not 'approve', 'reject' or 'modify'
+            ApprovalRefused: the approval does not exist, is already decided, or
+                is not the one its workflow is waiting on
 
         Example:
             ```python
@@ -684,50 +705,73 @@ class LangGraphRequestFacade:
             f"{decision} by {reviewer}"
         )
 
-        # Map decision to status
-        status_map = {"approve": "approved", "reject": "rejected", "modify": "modified"}
-        status = status_map.get(decision, "approved")
+        status = DECISION_STATUS.get(decision)
+        if status is None:
+            raise ValueError(
+                f"Unknown decision {decision!r}: expected one of {sorted(DECISION_STATUS)}"
+            )
 
-        # Update approval in database using approval bridge
-        success = await self.approval_bridge.update_approval_status(
+        async with get_db_session() as session:
+            approval = await session.get(Approval, approval_id)
+        if approval is None:
+            raise ApprovalRefused(f"Approval {approval_id} not found")
+        if approval.status != "pending":
+            raise ApprovalRefused(f"Approval {approval_id} is already {approval.status}")
+        request_id = approval.request_id
+        approval_type = approval.approval_type
+
+        workflow = None
+        if approval_type in REVIEW_NODE_BY_APPROVAL_TYPE:
+            workflow = await self._new_workflow()
+            config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
+            if not await workflow.waits_on(config, approval_id):
+                raise ApprovalRefused(
+                    f"The {request_id} workflow is not waiting on approval {approval_id}"
+                )
+
+        # Compare-and-set: of two concurrent decisions only one is recorded and resumes
+        recorded = await self.approval_bridge.update_approval_status(
             approval_id=approval_id,
             status=status,
             reviewed_by=reviewer,
             review_notes=notes,
             modifications=modifications,
         )
-
-        if not success:
-            logger.error(f"[LangGraphRequestFacade] Failed to update approval {approval_id}")
-            return
-
-        # Get approval to find request_id
-        async with get_db_session() as session:
-            from app.database.models import Approval
-
-            result = await session.execute(select(Approval).where(Approval.id == approval_id))
-            approval = result.scalar_one_or_none()
-
-            if not approval:
-                logger.error(f"[LangGraphRequestFacade] Approval {approval_id} not found")
-                return
-
-            request_id = approval.request_id
-            approval_type = approval.approval_type
+        if not recorded:
+            raise ApprovalRefused(f"Approval {approval_id} was decided by another reviewer")
 
         logger.info(
             f"[LangGraphRequestFacade] Approval {approval_id} for {request_id} "
             f"({approval_type}): {decision}"
         )
 
-        # Resume workflow, routing the paused gate on this decision
-        # This triggers workflow continuation from the approval gate
+        if workflow is None:
+            return
+
+        # Route the paused gate on this decision, then resume
+        if not await workflow.apply_approval_decision(config, approval_id):
+            # waits_on held and only this call recorded the decision
+            raise RuntimeError(f"Approval {approval_id} was recorded but its gate did not take it")
         # IMPORTANT: Run synchronously (not background task) to ensure it completes
         # before Streamlit reruns the page
-        await self._resume_workflow_after_approval(request_id, approval_type, approval_id)
+        await self._resume_workflow_after_approval(workflow, config, request_id, approval_type)
+
+    async def _new_workflow(self) -> FullWorkflow:
+        # BUG #11 PART 13 FIX: Always create fresh workflow for THIS resume (not cached)
+        # This ensures Lock in checkpointer is bound to CURRENT event loop
+        if self.use_persistence:
+            checkpointer = await self.checkpointer_factory()
+            return FullWorkflow(
+                use_real_agents=self.use_real_agents,
+                checkpointer=checkpointer,
+                persistence=self.persistence,
+            )
+        return FullWorkflow(
+            use_real_agents=self.use_real_agents, checkpointer=None, persistence=None
+        )
 
     async def _resume_workflow_after_approval(
-        self, request_id: str, approval_type: str, approval_id: int
+        self, workflow: FullWorkflow, config: Dict[str, Any], request_id: str, approval_type: str
     ):
         """
         Resume LangGraph workflow after approval decision.
@@ -735,47 +779,16 @@ class LangGraphRequestFacade:
         LangGraph checkpointing allows workflow to resume from where it stopped.
 
         Args:
+            workflow: Workflow whose paused gate apply_approval_decision has routed
+            config: LangGraph config carrying the request's thread_id
             request_id: Request identifier
             approval_type: Type of approval (requirements, phenotype_sql, etc.)
-            approval_id: The decided Approval row the paused gate is routed on
         """
         try:
-            # Ensure workflow is initialized (lazy init for async checkpointer)
-            await self._ensure_initialized()
-
-            # BUG #11 PART 13 FIX: Always create fresh workflow for THIS resume (not cached)
-            # This ensures Lock in checkpointer is bound to CURRENT event loop
-            # Old approach: if self.workflow is None → cached workflow → Lock bound to old loop
-            # New approach: always create workflow → recreated per-resume → Lock bound to current loop
-            from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
-
-            if self.use_persistence:
-                checkpointer = await self.checkpointer_factory()
-                workflow = FullWorkflow(
-                    use_real_agents=self.use_real_agents,
-                    checkpointer=checkpointer,
-                    persistence=self.persistence,
-                )
-            else:
-                workflow = FullWorkflow(
-                    use_real_agents=self.use_real_agents, checkpointer=None, persistence=None
-                )
-
             logger.info(
                 f"[LangGraphRequestFacade] Resuming workflow for {request_id} "
                 f"after {approval_type} approval"
             )
-
-            # Configure LangGraph execution with thread_id for checkpointing
-            config = {"configurable": {"thread_id": request_id}, "recursion_limit": 50}
-
-            if not await workflow.apply_approval_decision(config, approval_id):
-                logger.warning(
-                    f"[LangGraphRequestFacade] Not resuming {request_id}: approval {approval_id} "
-                    f"is superseded or still pending, or the workflow is not paused at the "
-                    f"{approval_type} gate"
-                )
-                return
 
             # Resume workflow from checkpoint; apply_approval_decision has already
             # routed the paused gate on the reviewer's decision
