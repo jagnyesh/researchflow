@@ -1370,7 +1370,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: requirements auto-approved → feasibility_validation"
             )
@@ -1440,7 +1440,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: phenotype SQL auto-approved → preview_extraction"
             )
@@ -1503,7 +1503,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: QA auto-approved → data_delivery"
             )
@@ -1554,7 +1554,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: preview QA failure auto-approved → data_extraction"
             )
