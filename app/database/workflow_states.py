@@ -21,11 +21,9 @@ These are retained so old-row queries don't break. Code that filters by
 state should be aware that LangGraph never writes these values — any
 filter depending on them only matches pre-LangGraph rows.
 
-Known latent bug: app/api/research.py queries
-`WHERE current_state IN ('delivered', 'complete')`. LangGraph never
-writes 'delivered'. Filed as #53. Sprint 7.2 preserved this bug-for-bug
-because fixing it was out of scope (orchestrator retirement vs query
-correctness). Future sprint should address.
+The request API's delivered checks (app/api/research.py) accept only
+COMPLETE, the state LangGraph ends a successful run in (#53). DELIVERED
+stays for old rows and is A2A-era only.
 """
 
 from __future__ import annotations
