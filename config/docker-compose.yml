@@ -9,6 +9,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://researchflow:researchflow@db:5432/researchflow
       - A2A_JWT_SECRET=supersecret
       - FHIR_SERVER_URL=http://hapi-fhir:8080/fhir
+      # HAPI Postgres (batch layer); the client's localhost default doesn't reach it here
+      - HAPI_DB_URL=postgresql://hapi:hapi@hapi-db:5432/hapi  # pragma: allowlist secret
       # Redis Speed Layer
       - REDIS_URL=redis://redis:6379/0
       - USE_SPEED_LAYER=true
@@ -170,7 +172,9 @@ services:
     depends_on:
       hapi-fhir:
         # Distroless image: no healthcheck is possible (see hapi-fhir), so
-        # service_healthy on it would wait forever.
+        # service_healthy on it would wait forever. HAPI may still be starting
+        # when this one-shot job runs; wait for /fhir/metadata first, as
+        # scripts/seed.sh does, before `--profile synthea up`.
         condition: service_started
     profiles:
       - synthea  # Only run when explicitly requested

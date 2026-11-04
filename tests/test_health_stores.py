@@ -94,3 +94,12 @@ async def test_a_hung_audit_redis_cannot_stall_health(monkeypatch):
     finally:
         await hung.aclose()
         server.close()
+
+
+def test_the_app_container_reaches_hapi_postgres_by_service_name():
+    # Without HAPI_DB_URL the client defaults to localhost:5433, which inside
+    # the app container is nothing: batch reads and /health both failed.
+    env = yaml.safe_load(COMPOSE.read_text())["services"]["app"]["environment"]
+    hapi = next(e for e in env if e.startswith("HAPI_DB_URL="))
+
+    assert "@hapi-db:5432/" in hapi
