@@ -221,12 +221,20 @@ async def run_referential_integrity_validation(conn):
         return False
 
 
+def _redacted(url: str) -> str:
+    """host:port/db only; the URL carries the password (#225)."""
+    from urllib.parse import urlsplit
+
+    parts = urlsplit(url)
+    return f"{parts.hostname}:{parts.port}{parts.path}"
+
+
 async def main():
     """Main function."""
     print(f"\n{'='*60}")
     print(f"MATERIALIZE SQL-ON-FHIR VIEWS")
     print(f"{'='*60}")
-    print(f"Database: {HAPI_DB_URL}")
+    print(f"Database: {_redacted(HAPI_DB_URL)}")
     print(f"Schema: {SCHEMA_NAME}")
     print(f"Validation: {'SKIPPED' if SKIP_VALIDATION else 'ENABLED'}\n")
 

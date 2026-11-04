@@ -181,7 +181,8 @@ class SQLSynthesizer:
                 logger, "LLM did not return usable synthesis JSON", e, level=logging.WARNING
             )
             raise SynthesisError(SYNTHESIS_FAILED_MESSAGE) from e
-        logger.info("Synthesized SQL for query %r: %s", natural_language_query, result.sql)
+        # Neither the query nor the SQL: both can carry criteria from PHI-tagged text (#225).
+        logger.info("Synthesized SQL (%d chars)", len(result.sql))
         return result
 
 

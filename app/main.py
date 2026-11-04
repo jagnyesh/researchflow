@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         _audit_drain_task = asyncio.create_task(
             audit_drain_loop(_audit_redis_client, _audit_drain_stop)
         )
-        logger.info(f"Audit pipeline initialized (REDIS_AUDIT_URL={audit_redis_url})")
+        logger.info("Audit pipeline initialized")
     else:
         logger.warning(
             "REDIS_AUDIT_URL not set; audit pipeline disabled (PHI routes will fail-closed)"

@@ -173,7 +173,6 @@ ResearchFlow System
 
         # TODO: Integrate with actual email service (MCP email server)
         logger.info(f"[{self.agent_id}] Sending requirements complete email for {request_id}")
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,
@@ -197,7 +196,6 @@ ResearchFlow System
         )
 
         logger.info(f"[{self.agent_id}] Sending SQL review email for {request_id}")
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,
@@ -220,8 +218,7 @@ ResearchFlow System
             data_elements=", ".join(data_elements) if data_elements else "N/A",
         )
 
-        logger.info(f"[{self.agent_id}] Sending extraction notice to {researcher_email}")
-        logger.debug(f"Email body: {email_body}")
+        logger.info(f"[{self.agent_id}] Sending extraction notice for {request_id}")
 
         return {
             "email_sent": True,
@@ -247,8 +244,7 @@ ResearchFlow System
             dashboard_url="http://localhost:8501",  # Researcher portal
         )
 
-        logger.info(f"[{self.agent_id}] Sending QA complete email to {researcher_email}")
-        logger.debug(f"Email body: {email_body}")
+        logger.info(f"[{self.agent_id}] Sending QA complete email for {request_id}")
 
         return {"email_sent": True, "email_type": "qa_complete", "recipient": researcher_email}
 
@@ -357,7 +353,6 @@ ResearchFlow System
         logger.info(
             f"[{self.agent_id}] Sending scope change notification to {len(recipients)} stakeholders"
         )
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,

@@ -549,10 +549,7 @@ Keep it concise and professional."""
         # email_server = self.mcp_registry.get_server('email')
         # await email_server.send_email(...)
 
-        logger.info(
-            f"[{self.agent_id}] Notification sent to {email}: " f"{delivery_info['request_id']}"
-        )
-        logger.debug(f"Email content:\n{message}")
+        logger.info(f"[{self.agent_id}] Notification sent for {delivery_info['request_id']}")
 
     def _is_standard_notification(self, delivery_info: Dict) -> bool:
         """
