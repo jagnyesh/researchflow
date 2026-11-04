@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0031** — [Sprint 6.7 gate: which layer stopped the adversarial cases (#276)](0031-sprint-6-7-adversarial-gate-attribution.md) (2026-11-03, accepted; corrects 0028's attribution)
 - **0030** — [ViewDefinition writes are admin-only; execution stays open (#178)](0030-viewdefinition-write-admin-only.md) (2026-10-21, accepted)
 - **0029** — [API error paths: PHI-safe 500s through a per-site helper (#175)](0029-api-error-path-phi-safe-500s.md) (2026-10-21, accepted)
 - **0028** — [Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md) (2026-07-11, shipped)
@@ -42,6 +43,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0026 — Sprint 6.4: sqlonfhir integration + dispatch plumbing](0026-sprint-6-4-sqlonfhir-integration.md)
 - [0027 — Sprint 6.5: Lambda differential freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION)](0027-sprint-6-5-differential-freshness-routing.md)
 - [0028 — Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md)
+- [0031 — Sprint 6.7 gate: which layer stopped the adversarial cases](0031-sprint-6-7-adversarial-gate-attribution.md) (corrects 0028's attribution)
 
 ### Orchestration
 
