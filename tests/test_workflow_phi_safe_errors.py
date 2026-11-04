@@ -73,7 +73,6 @@ NODES = [
     ("_handle_feasibility_validation", "phenotype_agent"),
     ("_handle_preview_extraction", "extraction_agent"),
     ("_handle_preview_qa", "qa_agent"),
-    ("_handle_schedule_kickoff", "calendar_agent"),
     ("_handle_data_extraction", "extraction_agent"),
     ("_handle_qa_validation", "qa_agent"),
     ("_handle_data_delivery", "delivery_agent"),

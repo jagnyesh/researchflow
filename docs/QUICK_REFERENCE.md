@@ -71,8 +71,7 @@ FHIR_PROJECT/
 
 ```
 new_request → requirements_gathering → requirements_complete →
-feasibility_validation → feasible → schedule_kickoff →
-kickoff_complete → data_extraction → extraction_complete →
+feasibility_validation → feasible → data_extraction → extraction_complete →
 qa_validation → qa_passed → data_delivery → delivered → complete
 ```
 

@@ -26,7 +26,6 @@ from langsmith import traceable
 # Import agents for real execution (when use_real_agents=True)
 from app.agents.requirements_agent import RequirementsAgent
 from app.agents.phenotype_agent import PhenotypeValidationAgent
-from app.agents.calendar_agent import CalendarAgent
 from app.agents.extraction_agent import DataExtractionAgent
 from app.agents.qa_agent import QualityAssuranceAgent
 from app.agents.delivery_agent import DeliveryAgent
@@ -216,7 +215,6 @@ class FullWorkflow:
             # Initialize all 6 agents with appropriate database connections
             self.requirements_agent = RequirementsAgent()
             self.phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
-            self.calendar_agent = CalendarAgent()
             self.extraction_agent = DataExtractionAgent(
                 database_url=healthcare_db_url or hapi_db_url
             )
@@ -226,7 +224,6 @@ class FullWorkflow:
             logger.info("[FullWorkflow] Initializing with STUB VALUES (test mode)")
             self.requirements_agent = None
             self.phenotype_agent = None
-            self.calendar_agent = None
             self.extraction_agent = None
             self.qa_agent = None
             self.delivery_agent = None
@@ -273,16 +270,15 @@ class FullWorkflow:
         3. requirements_review - Approval gate
         4. feasibility_validation - Phenotype Agent
         5. phenotype_review - Approval gate
-        6. schedule_kickoff - Calendar Agent
-        7. extraction_approval - Approval gate
-        8. data_extraction - Extraction Agent
-        9. qa_validation - QA Agent
-        10. qa_review - Approval gate
-        11. data_delivery - Delivery Agent
-        12. complete - Terminal (success)
-        13. not_feasible - Terminal (cohort too small)
-        14. qa_failed - Terminal (QA failed)
-        15. human_review - Terminal (escalation)
+        6. extraction_approval - Approval gate
+        7. data_extraction - Extraction Agent
+        8. qa_validation - QA Agent
+        9. qa_review - Approval gate
+        10. data_delivery - Delivery Agent
+        11. complete - Terminal (success)
+        12. not_feasible - Terminal (cohort too small)
+        13. qa_failed - Terminal (QA failed)
+        14. human_review - Terminal (escalation)
 
         This is much more declarative than the custom FSM's
         workflow_rules dict in workflow_engine.py
@@ -302,8 +298,6 @@ class FullWorkflow:
         graph.add_node("preview_qa_review", self._handle_preview_qa_review)
         # Full extraction (after preview passes)
         graph.add_node("data_extraction", self._handle_data_extraction)
-        # Calendar scheduling (optional, moved to after delivery)
-        graph.add_node("schedule_kickoff", self._handle_schedule_kickoff)
         graph.add_node("qa_validation", self._handle_qa_validation)
         graph.add_node("qa_review", self._handle_qa_review)
         graph.add_node("data_delivery", self._handle_data_delivery)
@@ -367,7 +361,7 @@ class FullWorkflow:
             "phenotype_review",
             self._route_after_phenotype_review,
             {
-                "preview_extraction": "preview_extraction",  # UPDATED: Go to preview first, not schedule_kickoff
+                "preview_extraction": "preview_extraction",
                 "not_feasible": "not_feasible",
                 "feasibility_validation": "feasibility_validation",
                 "wait_for_approval": END,
@@ -431,20 +425,8 @@ class FullWorkflow:
             },
         )
 
-        # 8. After data_delivery
-        # → schedule_kickoff (optional - post-delivery meeting) OR complete
-        graph.add_conditional_edges(
-            "data_delivery",
-            self._route_after_data_delivery,
-            {
-                "schedule_kickoff": "schedule_kickoff",  # Optional post-delivery meeting
-                "complete": "complete",  # Skip meeting, go straight to complete
-            },
-        )
-
-        # 9. After schedule_kickoff (OPTIONAL - now happens after delivery)
-        # → complete (always)
-        graph.add_edge("schedule_kickoff", "complete")
+        # 8. After data_delivery → complete
+        graph.add_edge("data_delivery", "complete")
 
         # ===== Terminal States → END =====
         graph.add_edge("complete", END)
@@ -932,83 +914,6 @@ class FullWorkflow:
             state["request_id"], "preview_qa", state, database_url=DATABASE_URL  # Approval type
         )
         state["preview_qa_review_approved"] = None
-
-        return state
-
-    async def _handle_schedule_kickoff(self, state: FullWorkflowState) -> FullWorkflowState:
-        """
-        Handle schedule kickoff state
-
-        Invokes Calendar Agent to schedule kickoff meeting with stakeholders.
-        """
-        logger.info(f"[FullWorkflow] SCHEDULE_KICKOFF: {state['request_id']}")
-
-        state["current_state"] = "schedule_kickoff"
-        state["updated_at"] = datetime.now().isoformat()
-
-        if self.use_real_agents and self.calendar_agent:
-            # REAL AGENT: Invoke Calendar Agent
-            logger.info("[FullWorkflow] Invoking REAL CalendarAgent...")
-
-            # Prepare context for agent (matching CalendarAgent interface)
-            context = {
-                "request_id": state["request_id"],
-                "requirements": state["requirements"],
-                "feasibility_report": {  # Agent expects nested structure
-                    "estimated_cohort_size": state.get("estimated_cohort_size"),
-                    "feasibility_score": state.get("feasibility_score", 0.0),
-                    "warnings": [],  # Add warnings if available in state
-                },
-            }
-
-            # Track agent execution start
-            execution_id = await self._track_agent_execution_start(
-                state["request_id"], "calendar_agent", "schedule_kickoff_meeting", context
-            )
-
-            try:
-                # Execute agent task (async call - non-blocking)
-                result = await self.calendar_agent.execute_task(
-                    task="schedule_kickoff_meeting",
-                    context=context,  # Agent expects "schedule_kickoff_meeting"
-                )
-
-                # Update state from agent result
-                state["meeting_scheduled"] = result.get("meeting_scheduled", False)
-                state["meeting_details"] = result.get(
-                    "meeting"
-                )  # Agent returns "meeting", not "meeting_details"
-
-                logger.info(
-                    f"[FullWorkflow] CalendarAgent result: scheduled={state['meeting_scheduled']}"
-                )
-
-                # Track agent execution success
-                await self._track_agent_execution_complete(execution_id, "success", result)
-
-            except Exception as e:
-                failure = failure_text(logger, "[FullWorkflow] CalendarAgent failed", e)
-                # Track agent execution failure
-                await self._track_agent_execution_complete(execution_id, "failed", error=failure)
-
-                # Fall back to defaults on error
-                state["meeting_scheduled"] = False
-                state["meeting_details"] = None
-                state["error"] = f"Calendar agent error: {failure}"
-
-        else:
-            # STUB VALUES: For E2E testing without real agents
-            logger.info("[FullWorkflow] Using STUB meeting scheduling (test mode)")
-
-            # Create stub meeting details
-            state["meeting_scheduled"] = True  # Mark scheduled to allow workflow progression
-            state["meeting_details"] = {
-                "scheduled_at": datetime.now().isoformat(),
-                "meeting_time": "TBD - to be scheduled by data team",
-                "attendees": ["researcher", "data team"],
-            }
-
-        logger.info(f"[FullWorkflow] Meeting scheduled: {state.get('meeting_scheduled', False)}")
 
         return state
 
@@ -1553,28 +1458,6 @@ class FullWorkflow:
         else:
             logger.info(f"[FullWorkflow] Preview QA approval pending → wait_for_approval")
             return "wait_for_approval"
-
-    def _route_after_data_delivery(
-        self, state: FullWorkflowState
-    ) -> Literal["schedule_kickoff", "complete"]:
-        """
-        Route after data delivery (NEW)
-
-        Determines if post-delivery meeting should be scheduled (optional).
-
-        Returns:
-            "schedule_kickoff" if calendar meeting enabled
-            "complete" if skip meeting
-        """
-        # Check if calendar scheduling is enabled (optional feature)
-        schedule_meeting = state.get("schedule_post_delivery_meeting", False)
-
-        if schedule_meeting:
-            logger.info(f"[FullWorkflow] Scheduling post-delivery meeting → schedule_kickoff")
-            return "schedule_kickoff"
-        else:
-            logger.info(f"[FullWorkflow] Skipping post-delivery meeting → complete")
-            return "complete"
 
     # ========================================================================
     # Public Methods
