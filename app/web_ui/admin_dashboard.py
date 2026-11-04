@@ -52,6 +52,7 @@ assert_encryption_key_present_if_production()
 
 from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
 from app.database import get_db_session, get_engine
+from app.services.gate_telemetry import gate_telemetry_rows, load_gate_telemetry
 from app.database.models import AgentExecution, ResearchRequest
 from app.services.approval_service import ApprovalService
 
@@ -1268,6 +1269,13 @@ def show_pending_approvals():
                 [a for a in approvals if a.get("approval_type") == "scope_change"]
             )
             st.metric("Scope Changes", scope_approvals)
+
+        # Gate telemetry (#144): what the human gates catch, and how fast. Aggregates only.
+        with st.expander("🚦 Gate Telemetry: decisions, reviewer time, what rejections caught"):
+            try:
+                st.dataframe(gate_telemetry_rows(run_async(load_gate_telemetry())))
+            except Exception as e:
+                _render_db_unreachable(e, "gate telemetry")
 
         # Display approvals
         st.subheader("📋 Pending Approvals")
