@@ -26,9 +26,9 @@ REQUIREMENTS = {
 }
 
 
-def _agent(monkeypatch, *, legacy_fails=False):
+def _agent(monkeypatch, *, sql_fails=False):
     agent = PhenotypeValidationAgent()
-    if legacy_fails:
+    if sql_fails:
 
         async def execute_sql(*_a, **_k):
             raise ConnectionError("database unreachable")
@@ -81,8 +81,8 @@ def _assert_unavailable(result, suggested):
 
 
 @pytest.mark.asyncio
-async def test_a_legacy_sql_error_is_an_unavailable_estimate(monkeypatch):
-    agent, suggested = _agent(monkeypatch, legacy_fails=True)
+async def test_a_count_query_error_is_an_unavailable_estimate(monkeypatch):
+    agent, suggested = _agent(monkeypatch, sql_fails=True)
 
     result = await agent.execute_task(
         "validate_feasibility", {"requirements": REQUIREMENTS, "request_id": "REQ-245"}
@@ -111,7 +111,7 @@ async def test_an_unavailable_estimate_is_saved_without_a_cohort_count(monkeypat
                 current_state="feasibility_validation",
             )
         )
-    agent, _ = _agent(monkeypatch, legacy_fails=True)
+    agent, _ = _agent(monkeypatch, sql_fails=True)
     monkeypatch.undo()  # the real report save
 
     async def execute_sql(*_a, **_k):
@@ -315,7 +315,7 @@ def test_the_preview_spinner_message_handles_a_missing_time():
 
 
 @pytest.mark.asyncio
-async def test_the_legacy_path_treats_an_empty_count_result_as_unavailable(monkeypatch):
+async def test_an_empty_count_result_is_an_unavailable_estimate(monkeypatch):
     agent, suggested = _agent(monkeypatch)
 
     async def no_rows(*_a, **_k):

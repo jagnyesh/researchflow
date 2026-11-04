@@ -95,9 +95,7 @@ class PhenotypeValidationAgent(BaseAgent):
         # must never reach G2 as a count (ADR 0028 honest-failure invariant).
         estimate_error_ref = None
         try:
-            estimated_count = await self._estimate_cohort_size(
-                phenotype_sql, sql_params, requirements
-            )
+            estimated_count = await self._estimate_cohort_size(phenotype_sql, sql_params)
         except CohortEstimateUnavailable as unavailable:
             estimated_count = None
             estimate_error_ref = unavailable.ref
@@ -247,9 +245,7 @@ class PhenotypeValidationAgent(BaseAgent):
             },
         }
 
-    async def _estimate_cohort_size(
-        self, count_sql: str, sql_params: Dict[str, Any], requirements: Dict[str, Any] = None
-    ) -> int:
+    async def _estimate_cohort_size(self, count_sql: str, sql_params: Dict[str, Any]) -> int:
         """Count the patients the phenotype SQL selects, on the batch tables.
 
         The same SQL and bound parameters the G2 reviewer approves, so the

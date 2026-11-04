@@ -57,6 +57,35 @@ async def _sql_count(requirements):
     return rows[0]["patient_count"]
 
 
+# Written independently of SQLGenerator, so a predicate the generator drops
+# shows up as a mismatch instead of agreeing on both sides. "Older than 65"
+# is age >= 66: born on or before today minus 66 years.
+ORACLE = """
+    SELECT COUNT(DISTINCT p.patient_id) AS n
+    FROM sqlonfhir.patient_demographics p
+    WHERE p.gender = 'female'
+      AND p.birth_date::date <= CURRENT_DATE - INTERVAL '66 years'
+      AND EXISTS (
+          SELECT 1 FROM sqlonfhir.condition_simple c
+          WHERE c.patient_id = p.patient_id
+            AND (c.code_text ILIKE '%diabetes mellitus%'
+                 OR c.icd10_display ILIKE '%diabetes mellitus%'
+                 OR c.snomed_display ILIKE '%diabetes mellitus%')
+      )
+"""
+
+
+async def _oracle():
+    import asyncpg
+
+    conn = await asyncpg.connect(HAPI)
+    try:
+        await conn.execute("SET default_transaction_read_only = on")
+        return await conn.fetchval(ORACLE)
+    finally:
+        await conn.close()
+
+
 def _agent(monkeypatch):
     agent = PhenotypeValidationAgent(database_url=HAPI)
 
@@ -76,6 +105,7 @@ def _agent(monkeypatch):
 @pytest.mark.skipif(not _hapi_reachable(), reason="HAPI Postgres (:5433) not running")
 async def test_the_estimate_equals_the_approved_sqls_count(monkeypatch):
     expected = await _sql_count(REQUIREMENTS)
+    assert expected == await _oracle(), "the generator itself disagrees with the criteria"
 
     result = await _agent(monkeypatch).execute_task(
         "validate_feasibility", {"requirements": REQUIREMENTS, "request_id": "REQ-206"}
