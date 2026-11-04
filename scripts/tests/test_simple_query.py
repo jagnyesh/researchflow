@@ -67,7 +67,7 @@ async def main():
 
         # Execute query
         print(f"\n✓ Executing query against HAPI database...")
-        rows = await client.execute_query(query.sql)
+        rows = await client.execute_query(query.sql, query.params)
 
         print(f"✓✓✓ SUCCESS! Query executed successfully!")
         print(f"  Returned {len(rows)} patients")
@@ -94,9 +94,9 @@ async def main():
 
         # Test COUNT query
         print(f"\n✓ Testing COUNT query...")
-        count_sql = builder.build_count_query(view_def)
+        count_sql, count_params = builder.build_count_query(view_def)
 
-        count_rows = await client.execute_query(count_sql)
+        count_rows = await client.execute_query(count_sql, count_params)
         total = count_rows[0]["count"]
         print(f"✓ Total patients in database: {total}")
 
