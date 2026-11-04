@@ -69,11 +69,13 @@ def test_internal_error_logs_and_returns_no_exception_text(caplog):
 async def test_a_failed_insert_leaks_nothing_and_keeps_audit_pair(
     fake_audit_redis, monkeypatch, caplog
 ):
-    """The #175 path: a failing INSERT whose error text embeds every bound param.
+    """A failing INSERT whose error text embeds every bound param (#175's shape).
 
     Was /research/submit (removed in #273). POST /users derives the user id from
     the clock to the second; pinning the clock onto an existing id makes the
-    INSERT raise an IntegrityError carrying the email and name.
+    INSERT raise an IntegrityError carrying the email and name. create_user has
+    no try/except, so this exercises the #180 middleware backstop; the per-site
+    internal_error() helper is covered by the unit test above.
     """
     from datetime import datetime
 

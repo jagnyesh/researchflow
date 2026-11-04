@@ -418,41 +418,38 @@ async def start_formal_request(
     )
 
 
+def formal_structured_requirements(feasibility_data: Dict[str, Any]) -> Dict[str, Any]:
+    """What the notebook knows about a confirmed query, for the formal workflow.
+
+    No criteria or data-element keys: the exploratory path has no parsed
+    criteria (QueryIntent was retired in #100), and an empty list would
+    override the requirements agent's fallback to the query text (#273).
+    Blank dates mean no time filter.
+    """
+    return {
+        "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
+        "principal_investigator": "Research Notebook User",
+        "time_period": feasibility_data.get("time_period") or {"start": None, "end": None},
+        "estimated_cohort_size": feasibility_data.get("estimated_cohort"),
+        "delivery_format": "CSV",
+        "phi_level": "de-identified",
+    }
+
+
 async def submit_research_request():
     """Start the confirmed query as a formal request (LangGraph workflow)."""
     try:
-        # Get stored data
-        query_intent = st.session_state.last_query_intent
-        feasibility_data = st.session_state.pending_feasibility
-
-        # Build structured requirements from feasibility data
-        structured_requirements = {
-            "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
-            "principal_investigator": "Research Notebook User",
-            "inclusion_criteria": (
-                getattr(query_intent, "inclusion_criteria", [])
-                if hasattr(query_intent, "inclusion_criteria")
-                else []
-            ),
-            "exclusion_criteria": (
-                getattr(query_intent, "exclusion_criteria", [])
-                if hasattr(query_intent, "exclusion_criteria")
-                else []
-            ),
-            "data_elements": (
-                getattr(query_intent, "data_elements", [])
-                if hasattr(query_intent, "data_elements")
-                else []
-            ),
-            "time_period": feasibility_data.get("time_period", {}),
-            "estimated_cohort_size": feasibility_data.get("estimated_cohort", 0),
-            "delivery_format": "CSV",
-            "phi_level": "de-identified",
-        }
+        structured_requirements = formal_structured_requirements(
+            st.session_state.pending_feasibility
+        )
 
         # The user's original query is the message before the confirmation.
-        request_id = await start_formal_request(
-            _formal_facade(), st.session_state.messages[-2]["content"], structured_requirements
+        # Same bound as the formal portal's submit (2 minutes).
+        request_id = await asyncio.wait_for(
+            start_formal_request(
+                _formal_facade(), st.session_state.messages[-2]["content"], structured_requirements
+            ),
+            timeout=120.0,
         )
         st.session_state.pending_request_id = request_id
 

@@ -62,3 +62,51 @@ def test_the_dead_end_routes_are_gone():
     paths = {route.path for route in research.router.routes}
     assert "/research/submit" not in paths
     assert "/research/process/{request_id}" not in paths
+
+
+def test_the_notebook_payload_sends_only_what_it_knows():
+    from app.web_ui.research_notebook import formal_structured_requirements
+
+    payload = formal_structured_requirements({"estimated_cohort": 42})
+
+    # The exploratory path has no parsed criteria (QueryIntent was retired in
+    # #100); sending empty lists overrode the requirements agent's fallback to
+    # the query text. Blank dates mean no time filter.
+    for key in ("inclusion_criteria", "exclusion_criteria", "data_elements"):
+        assert key not in payload
+    assert payload["time_period"] == {"start": None, "end": None}
+
+
+@pytest.mark.asyncio
+async def test_criteria_survive_a_failed_llm_call(monkeypatch):
+    from app.agents.requirements_agent import RequirementsAgent
+    from app.web_ui.research_notebook import formal_structured_requirements
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    agent = RequirementsAgent()
+
+    async def outage(*_a, **_k):
+        raise ConnectionError("provider down")
+
+    monkeypatch.setattr(agent.llm_client, "extract_requirements", outage)
+    monkeypatch.setattr(agent.llm_client, "extract_medical_concepts_batch", outage)
+    monkeypatch.setattr(agent.llm_client, "extract_medical_concepts", outage)
+
+    query = "How many patients with type 2 diabetes?"
+    result = await agent.execute_task(
+        "gather_requirements",
+        {
+            "request_id": "REQ-273-PAYLOAD",
+            "initial_request": query,
+            "from_formal_portal": True,
+            "researcher_info": {
+                "name": "Research Notebook User",
+                "email": "researcher@hospital.org",
+                "irb_number": "IRB-NOTEBOOK-001",
+                "structured_requirements": formal_structured_requirements({"estimated_cohort": 42}),
+            },
+        },
+    )
+
+    inclusion = result["structured_requirements"]["inclusion_criteria"]
+    assert query in str(inclusion), inclusion
