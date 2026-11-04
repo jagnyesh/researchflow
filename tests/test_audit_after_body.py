@@ -230,3 +230,35 @@ async def test_the_backstop_500_still_fails_closed_on_a_lost_post_event(queue, m
     response = await _get(app, "/research/zz_raises", caplog)
 
     assert response.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_an_auth_route_backstop_500_fails_open_on_a_lost_post_event(
+    queue, monkeypatch, caplog
+):
+    # /auth/* fails open per ADR 0011 (#270): a lost post-event on its #180
+    # 500 keeps the 500 instead of turning into a 503.
+    from app.security import audit_middleware as am
+
+    app = FastAPI()
+    am.install_audit_middleware(app)
+
+    @app.post("/auth/login")
+    async def login():
+        raise OSError(PHI_NEEDLE)
+
+    real = am._try_enqueue
+
+    async def fail_completed(payload):
+        if payload["event_type"] == "PHI_ACCESS_COMPLETED":
+            return False
+        return await real(payload)
+
+    monkeypatch.setattr(am, "_try_enqueue", fail_completed)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    with caplog.at_level(logging.DEBUG):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post("/auth/login")
+
+    assert response.status_code == 500
+    assert PHI_NEEDLE not in caplog.text

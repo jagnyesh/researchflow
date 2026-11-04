@@ -310,7 +310,8 @@ async def audit_middleware(request, call_next):
         )
 
     if not hasattr(response, "body_iterator"):
-        # Built here (the #180 500); nothing streams, so fail closed as before.
+        # Built here (the #180 500); nothing streams, so the post-event keeps its
+        # 503 (fail closed), except on the /auth/* fail-open routes (ADR 0011).
         if not await _try_enqueue(completed(response.status_code)) and not _fails_open(path):
             return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
         return response
