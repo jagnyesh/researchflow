@@ -52,9 +52,13 @@ async def test_postgres_runner_rejects_an_unknown_key(db_client, patient_view):
 async def test_postgres_runner_select_binds_values_and_limit(db_client, patient_view):
     runner = PostgresRunner(db_client, enable_cache=False)
 
-    rows = await runner.execute(patient_view, search_params={"gender": "female"}, max_resources=3)
+    females = await db_client.execute_query(
+        "SELECT COUNT(*) AS count FROM sqlonfhir.patient_simple WHERE gender = 'female'"
+    )
+    assert females[0]["count"] > 1, "LIMIT 1 must be below the matching count"
+    rows = await runner.execute(patient_view, search_params={"gender": "female"}, max_resources=1)
 
-    assert len(rows) == 3
+    assert len(rows) == 1
     assert {r["gender"] for r in rows} == {"female"}
 
 

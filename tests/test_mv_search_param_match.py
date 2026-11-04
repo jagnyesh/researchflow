@@ -116,7 +116,9 @@ async def test_select_with_limit_binds_and_filters(db_client):
     runner = MaterializedViewRunner(db_client)
     view_def = ViewDefinitionManager().load("patient_demographics")
 
-    rows = await runner.execute(view_def, search_params={"gender": "female"}, max_resources=5)
+    # LIMIT 1 below the matching count, so the limit is what trims (CI's fixture is tiny).
+    assert await _direct_count(db_client, "patient_demographics", "gender", "female") > 1
+    rows = await runner.execute(view_def, search_params={"gender": "female"}, max_resources=1)
 
-    assert len(rows) == 5
+    assert len(rows) == 1
     assert {r["gender"] for r in rows} == {"female"}
