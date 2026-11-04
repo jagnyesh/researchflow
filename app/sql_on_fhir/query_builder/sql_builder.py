@@ -11,9 +11,10 @@ Combines:
 """
 
 import logging
-from typing import Dict, Any, List, Optional
-from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Tuple
+from dataclasses import dataclass, field
 
+from app.sql_on_fhir.errors import UnsupportedSearchParamError
 from app.sql_on_fhir.transpiler import FHIRPathTranspiler, ColumnExtractor
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class SQLQuery:
     column_count: int
     has_lateral_joins: bool
     has_where_clause: bool
+    params: List[Any] = field(default_factory=list)
 
 
 class SQLQueryBuilder:
@@ -83,6 +85,7 @@ class SQLQueryBuilder:
 
         # Build WHERE clause
         where_conditions = []
+        params: List[Any] = []
 
         # Add ViewDefinition where clauses
         if where_elements:
@@ -93,14 +96,16 @@ class SQLQueryBuilder:
 
         # Add search parameter filters
         if search_params:
-            search_where = self._build_search_param_where(search_params, resource_type)
+            search_where = self._build_search_param_where(search_params, params)
             if search_where:
                 where_conditions.append(search_where)
 
         # Always filter deleted resources
         where_conditions.append("r.res_deleted_at IS NULL")
 
-        # Filter by resource type
+        # Filter by resource type. A literal, not a bound param: resource_type comes
+        # from an admin-only ViewDefinition (ADR 0030), and materialize_views.py
+        # reuses this SQL in CREATE MATERIALIZED VIEW, which can't take parameters.
         where_conditions.append(f"r.res_type = '{resource_type}'")
 
         # Combine WHERE conditions
@@ -113,7 +118,8 @@ class SQLQueryBuilder:
 
         # Add LIMIT if specified
         if limit:
-            query_parts.append(f"LIMIT {limit}")
+            params.append(int(limit))
+            query_parts.append(f"LIMIT ${len(params)}")
 
         sql = "\n".join(part for part in query_parts if part)
 
@@ -124,6 +130,7 @@ class SQLQueryBuilder:
             column_count=len(select_clause.columns),
             has_lateral_joins=bool(select_clause.lateral_joins),
             has_where_clause=bool(where_elements or search_params),
+            params=params,
         )
 
     def _build_from_clause(self, resource_type: str) -> str:
@@ -143,79 +150,72 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
 
         return from_clause
 
-    def _build_search_param_where(self, search_params: Dict[str, Any], resource_type: str) -> str:
+    def _build_search_param_where(self, search_params: Dict[str, Any], params: List[Any]) -> str:
         """
         Build WHERE conditions from FHIR search parameters
 
+        Values are appended to `params` and referenced as $n, never pasted into
+        the SQL text. Unknown keys are rejected: they used to become JSONB keys.
+
         Args:
             search_params: FHIR search parameters
-            resource_type: Resource type
+            params: Bound parameters of the query being built (appended to)
 
         Returns:
             WHERE conditions SQL
+
+        Raises:
+            UnsupportedSearchParamError: unknown key or non-string value
         """
         conditions = []
 
+        def bind(value: str) -> str:
+            params.append(value)
+            return f"${len(params)}"
+
+        birth_date = "v.res_text_vc::jsonb->>'birthDate'"
+        prefix_ops = {"ge": ">=", "le": "<=", "gt": ">", "lt": "<", "eq": "="}
+
         for param_name, param_value in search_params.items():
-            # Handle common search parameters
+            if not isinstance(param_value, str):
+                raise UnsupportedSearchParamError(param_name)
+
             if param_name == "_id":
-                conditions.append(f"r.res_id = '{param_value}'")
+                conditions.append(f"r.res_id::text = {bind(param_value)}")
 
             elif param_name == "gender":
-                # Use JSONB path for simple fields
-                conditions.append(f"v.res_text_vc::jsonb->>'gender' = '{param_value}'")
+                # Case-insensitive exact, same rule as the batch and speed layers
+                conditions.append(
+                    f"LOWER(v.res_text_vc::jsonb->>'gender') = LOWER({bind(param_value)})"
+                )
 
-            elif (
-                param_name == "birthdate"
-                or param_name == "birthdate_min"
-                or param_name == "birthdate_max"
-            ):
-                # Date search with FHIR prefix support (ge, le, gt, lt, eq)
-                # Examples: "ge1995-01-01" means >= 1995-01-01
-                #           "le2005-12-31" means <= 2005-12-31
-                # birthdate_min and birthdate_max allow separate min/max constraints
-                if isinstance(param_value, str):
-                    if param_value.startswith("ge"):
-                        # Greater than or equal
-                        date_val = param_value[2:]
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' >= '{date_val}'")
-                    elif param_value.startswith("le"):
-                        # Less than or equal
-                        date_val = param_value[2:]
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' <= '{date_val}'")
-                    elif param_value.startswith("gt"):
-                        # Greater than
-                        date_val = param_value[2:]
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' > '{date_val}'")
-                    elif param_value.startswith("lt"):
-                        # Less than
-                        date_val = param_value[2:]
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' < '{date_val}'")
-                    elif param_value.startswith("eq"):
-                        # Equal
-                        date_val = param_value[2:]
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' = '{date_val}'")
-                    else:
-                        # No prefix - exact match
-                        conditions.append(f"v.res_text_vc::jsonb->>'birthDate' = '{param_value}'")
+            elif param_name in ("birthdate", "birthdate_min", "birthdate_max"):
+                # FHIR prefix support: "ge1995-01-01" means >= 1995-01-01; no prefix is exact
+                op, date_val = "=", param_value
+                if param_value[:2] in prefix_ops:
+                    op, date_val = prefix_ops[param_value[:2]], param_value[2:]
+                conditions.append(f"{birth_date} {op} {bind(date_val)}")
+
+            elif param_name == "status":
+                # Top-level code on Procedure/Observation/MedicationRequest. The
+                # sqlonfhir tables route here (HybridRunner only detects matviews).
+                conditions.append(f"v.res_text_vc::jsonb->>'status' = {bind(param_value)}")
 
             elif param_name == "family":
                 # Name search - check in name array
                 conditions.append(
                     f"EXISTS (SELECT 1 FROM jsonb_array_elements(v.res_text_vc::jsonb->'name') AS name_elem "
-                    f"WHERE name_elem->>'family' = '{param_value}')"
+                    f"WHERE name_elem->>'family' = {bind(param_value)})"
                 )
 
             else:
-                # Generic parameter - try JSONB path
-                logger.warning(f"Unknown search parameter: {param_name}, using generic JSONB match")
-                conditions.append(f"v.res_text_vc::jsonb->>'{param_name}' = '{param_value}'")
+                raise UnsupportedSearchParamError(param_name)
 
         return " AND ".join(conditions) if conditions else ""
 
     def build_count_query(
         self, view_definition: Dict[str, Any], search_params: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Tuple[str, List[Any]]:
         """
         Build COUNT query for feasibility checks
 
@@ -224,13 +224,14 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
             search_params: FHIR search parameters
 
         Returns:
-            SQL COUNT query
+            SQL COUNT query and its bound parameters
         """
         resource_type = view_definition.get("resource", "Unknown")
         where_elements = view_definition.get("where", [])
 
         # Build WHERE clause (same logic as full query)
         where_conditions = []
+        params: List[Any] = []
 
         if where_elements:
             vd_where = self.extractor.extract_where_clause(where_elements)
@@ -238,7 +239,7 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
                 where_conditions.append(vd_where.replace("WHERE\n    ", ""))
 
         if search_params:
-            search_where = self._build_search_param_where(search_params, resource_type)
+            search_where = self._build_search_param_where(search_params, params)
             if search_where:
                 where_conditions.append(search_where)
 
@@ -253,7 +254,7 @@ FROM hfj_resource r
 JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver
 {where_clause}"""
 
-        return count_sql
+        return count_sql, params
 
 
 def create_sql_query_builder(

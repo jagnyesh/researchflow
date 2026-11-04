@@ -34,6 +34,7 @@ def test_viewdef(viewdef_path: str):
         print(f"Has LATERAL: {query.has_lateral_joins}")
         print(f"\nGenerated SQL:\n{'-'*80}")
         print(query.sql)
+        print(f"Params: {query.params}")
         print(f"{'-'*80}\n")
 
     except Exception as e:
