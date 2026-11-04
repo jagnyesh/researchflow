@@ -224,8 +224,8 @@ class LangGraphRequestFacade:
             audit_entry = AuditLog(
                 request_id=request_id,
                 event_type="request_created",
-                # Ids only: event_data is a plain JSON column, and the name and
-                # request text (which can hold PHI) live on the request row.
+                # No name or request text: event_data is a plain JSON column, and
+                # both (the text can hold PHI) live on the row request_id points to.
                 event_data={
                     "orchestrator": "LangGraphRequestFacade",
                     "source": "formal" if from_formal_portal else "exploratory",
