@@ -54,6 +54,19 @@ def _durability(workflow: FullWorkflow) -> Optional[str]:
     return GRAPH_DURABILITY if workflow.compiled_graph.checkpointer else None
 
 
+def record_state_transition(req, new_state: Optional[str], **details: Any) -> None:
+    """Append `new_state` to req.state_history unless it is already the last entry.
+
+    Assigns a new list: state_history is a plain JSON column, so appending to
+    the loaded list in place is never marked dirty and never written (#63).
+    """
+    history = list(req.state_history or [])
+    if not new_state or (history and history[-1].get("state") == new_state):
+        return
+    entry = {"state": new_state, "timestamp": datetime.now().isoformat(), **details}
+    req.state_history = history + [entry]
+
+
 class LangGraphRequestFacade:
     """
     Facade that presents ResearchRequestOrchestrator interface
@@ -522,16 +535,7 @@ class LangGraphRequestFacade:
                     )
                     req.agents_involved = agents_involved
 
-                    # Update state history
-                    state_history = req.state_history or []
-                    state_history.append(
-                        {
-                            "state": "error",
-                            "timestamp": datetime.now().isoformat(),
-                            "error": failure,
-                        }
-                    )
-                    req.state_history = state_history
+                    record_state_transition(req, "error", error=failure)
 
                     await session.commit()
 
@@ -594,17 +598,10 @@ class LangGraphRequestFacade:
             req = result.scalar_one_or_none()
 
             if req:
+                record_state_transition(req, state.get("current_state"))
                 req.current_state = state.get("current_state", req.current_state)
                 req.current_agent = self._get_agent_for_state(state.get("current_state"))
                 req.updated_at = datetime.now()
-
-                # Update state history if changed
-                if state.get("current_state") and state["current_state"] != req.current_state:
-                    state_history = req.state_history or []
-                    state_history.append(
-                        {"state": state["current_state"], "timestamp": datetime.now().isoformat()}
-                    )
-                    req.state_history = state_history
 
                 await session.commit()
             else:

@@ -1,0 +1,76 @@
+"""#63: research_requests.state_history records every workflow transition.
+
+It stayed at its creation entry: the sync compared the new state after
+overwriting it, and in-place appends to a plain JSON column were never marked
+dirty. Real facade (stub agents, no LLM) and the real (test) database.
+"""
+
+import pytest
+from sqlalchemy import select
+
+from app.database import ResearchRequest, get_db_session, init_db
+from app.langchain_orchestrator.request_facade import (
+    LangGraphRequestFacade,
+    record_state_transition,
+)
+
+
+@pytest.fixture(autouse=True)
+def _delivery_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DELIVERY_PATH", str(tmp_path))
+
+
+async def _history(request_id: str) -> list:
+    async with get_db_session() as session:
+        req = (
+            await session.execute(select(ResearchRequest).where(ResearchRequest.id == request_id))
+        ).scalar_one()
+        return [entry["state"] for entry in req.state_history]
+
+
+@pytest.mark.asyncio
+async def test_a_request_records_each_state_it_passes_through():
+    await init_db()
+    facade = LangGraphRequestFacade(use_real_agents=False)
+    request_id = await facade.process_new_request(
+        "female patients over 50 with diabetes", {"name": "Dr. Synthetic", "email": "s@example.org"}
+    )
+    async with get_db_session() as session:
+        from app.database.models import Approval
+
+        gate = (
+            await session.execute(select(Approval).where(Approval.request_id == request_id))
+        ).scalar_one()
+    await facade.process_approval_response(gate.id, "reviewer@example.org", "approve")
+
+    history = await _history(request_id)
+
+    assert history[0] == "new_request"
+    assert "requirements_review" in history
+    assert history[-1] == "phenotype_review"
+    assert history.index("requirements_review") < history.index("phenotype_review")
+
+
+@pytest.mark.asyncio
+async def test_recording_the_same_state_twice_adds_one_entry():
+    await init_db()
+    async with get_db_session() as session:
+        req = ResearchRequest(
+            id="REQ-SH-DEDUP",
+            researcher_name="Synthetic",
+            researcher_email="s@example.org",
+            initial_request="synthetic",
+            current_state="new_request",
+            state_history=[{"state": "new_request", "timestamp": "2026-11-04T00:00:00"}],
+        )
+        await session.merge(req)
+    async with get_db_session() as session:
+        req = (
+            await session.execute(
+                select(ResearchRequest).where(ResearchRequest.id == "REQ-SH-DEDUP")
+            )
+        ).scalar_one()
+        record_state_transition(req, "requirements_review")
+        record_state_transition(req, "requirements_review")
+
+    assert await _history("REQ-SH-DEDUP") == ["new_request", "requirements_review"]
