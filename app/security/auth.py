@@ -124,7 +124,8 @@ def decode_access_token(token: str) -> Optional[TokenData]:
         user_id: str = payload.get("user_id")
         role: str = payload.get("role")
 
-        if email is None:
+        # Every caller needs both identities; a token missing either is invalid (#227).
+        if not email or not user_id:
             return None
 
         return TokenData(email=email, user_id=user_id, role=role)

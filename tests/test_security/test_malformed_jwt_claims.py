@@ -3,11 +3,12 @@
 An integer user_id made TokenData raise a pydantic ValidationError that
 escaped the audit middleware: a plain 500, no audit event, and the claim
 value in the server log. Driven through the real app; the audit queue is
-fakeredis, as in the other audit middleware tests.
+fakeredis, as in the other audit middleware tests. The leak site was the
+server's (uvicorn) error log, which this in-process harness doesn't run, so
+these tests pin the status, the audit event and the response body.
 """
 
 import json
-import logging
 
 import fakeredis.aioredis
 import pytest
@@ -19,7 +20,7 @@ from app.security import audit_middleware as am
 from app.security.auth import create_access_token
 from app.security.rate_limit import limiter
 
-NEEDLE = 918273645  # the malformed claim value; must never reach a log line
+NEEDLE = 918273645  # the malformed claim value; must never reach the response
 
 
 @pytest.fixture
@@ -49,34 +50,39 @@ async def _events(queue):
     return events
 
 
+MALFORMED = [
+    {"user_id": NEEDLE},
+    {"user_id": "u-1", "role": [NEEDLE]},
+    {},  # no user_id claim
+    {"user_id": None},
+    {"user_id": ""},
+]
+
+
 @pytest.mark.asyncio
-async def test_an_integer_user_id_on_a_phi_route_is_an_audited_401(client_and_queue, caplog):
+@pytest.mark.parametrize("claims", MALFORMED)
+async def test_a_malformed_token_on_a_phi_route_is_an_audited_401(client_and_queue, claims):
     client, queue = client_and_queue
 
-    with caplog.at_level(logging.DEBUG):
-        response = await client.get(
-            "/research/", headers={"Authorization": f"Bearer {_token(user_id=NEEDLE)}"}
-        )
+    response = await client.get(
+        "/research/", headers={"Authorization": f"Bearer {_token(**claims)}"}
+    )
 
     assert response.status_code == 401
     assert [e["event_type"] for e in await _events(queue)] == ["UNAUTH_PHI_ATTEMPT"]
-    assert str(NEEDLE) not in caplog.text
+    assert str(NEEDLE) not in response.text
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("claims", [{"user_id": NEEDLE}, {"user_id": "u-1", "role": [NEEDLE]}])
-async def test_a_malformed_token_on_a_user_dependency_route_is_401(
-    client_and_queue, caplog, claims
-):
+@pytest.mark.parametrize("route", ["/auth/refresh", "/auth/logout"])
+@pytest.mark.parametrize("claims", MALFORMED)
+async def test_a_malformed_token_on_a_user_dependency_route_is_401(client_and_queue, claims, route):
     client, _ = client_and_queue
 
-    with caplog.at_level(logging.DEBUG):
-        response = await client.post(
-            "/auth/refresh", headers={"Authorization": f"Bearer {_token(**claims)}"}
-        )
+    response = await client.post(route, headers={"Authorization": f"Bearer {_token(**claims)}"})
 
     assert response.status_code == 401
-    assert str(NEEDLE) not in caplog.text
+    assert str(NEEDLE) not in response.text
 
 
 @pytest.mark.asyncio
