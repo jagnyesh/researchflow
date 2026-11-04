@@ -89,3 +89,42 @@ async def test_analytics_rejects_an_unsupported_param_as_a_client_error(route):
 
     assert response.status_code == 400
     assert "1=1 OR gender" not in response.text, "don't echo client input"
+
+
+@pytest.mark.asyncio
+async def test_hybrid_status_filter_on_a_sqlonfhir_table_still_counts(db_client):
+    # The sqlonfhir views are tables, so HybridRunner routes them to PostgresRunner;
+    # `status` must still work there, as it did through the old catch-all.
+    runner = HybridRunner(db_client, enable_cache=False)
+    view_def = ViewDefinitionManager().load("procedure_history")
+    rows = await db_client.execute_query(
+        "SELECT COUNT(DISTINCT id) AS count FROM sqlonfhir.procedure_history WHERE status = $1",
+        ["completed"],
+    )
+
+    count = await runner.execute_count(view_def, search_params={"status": "completed"})
+
+    assert count == rows[0]["count"] > 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [{}, {"eq": "male"}])
+async def test_a_dict_value_without_a_range_is_rejected_not_dropped(db_client, value):
+    from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
+
+    runner = MaterializedViewRunner(db_client)
+    view_def = ViewDefinitionManager().load("patient_demographics")
+
+    with pytest.raises(UnsupportedSearchParamError):
+        await runner.execute_count(view_def, search_params={"gender": value})
+
+
+@pytest.mark.asyncio
+async def test_like_wildcards_in_a_value_are_literal(db_client):
+    from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
+
+    runner = MaterializedViewRunner(db_client)
+    view_def = ViewDefinitionManager().load("patient_demographics")
+
+    assert await runner.execute_count(view_def, search_params={"given": "%"}) == 0
+    assert await runner.execute_count(view_def, search_params={"given": "_"}) == 0
