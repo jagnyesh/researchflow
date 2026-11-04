@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 
 from .base_agent import BaseAgent
+from app.portal_urls import ADMIN_DASHBOARD_URL, FORMAL_PORTAL_URL
 
 logger = logging.getLogger(__name__)
 
@@ -167,7 +168,7 @@ ResearchFlow System
             request_id=request_id,
             researcher_name=researcher_name,
             researcher_department=researcher_department,
-            dashboard_url="http://localhost:8502",  # TODO: Get from config
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
@@ -192,7 +193,7 @@ ResearchFlow System
             request_id=request_id,
             researcher_name=researcher_name,
             estimated_cohort=estimated_cohort,
-            dashboard_url="http://localhost:8502",
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
@@ -244,7 +245,7 @@ ResearchFlow System
             qa_status=qa_status,
             cohort_size=cohort_size,
             qa_summary=qa_summary,
-            dashboard_url="http://localhost:8501",  # Researcher portal
+            dashboard_url=FORMAL_PORTAL_URL,
         )
 
         logger.info(f"[{self.agent_id}] Sending QA complete email to {researcher_email}")
@@ -347,7 +348,7 @@ ResearchFlow System
             original_requirements=str(original_requirements),
             requested_changes=str(requested_changes),
             impact_analysis=str(impact_analysis),
-            dashboard_url="http://localhost:8502",
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
