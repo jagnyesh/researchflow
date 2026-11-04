@@ -49,6 +49,7 @@ from app.schemas._errors import log_internal_error
 assert_encryption_key_present_if_production()
 
 from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
+from app.agents.extraction_agent import FORM_DATA_ELEMENTS
 from app.database import get_engine
 
 
@@ -648,18 +649,9 @@ def show_new_request_form():
         st.subheader("📊 Data Elements")
         data_elements = st.multiselect(
             "Select data elements needed",
-            options=[
-                "Demographics (age, gender, race)",
-                "Diagnoses (ICD codes)",
-                "Procedures (CPT/HCPCS codes)",
-                "Medications (prescriptions)",
-                "Lab Results (LOINC codes)",
-                "Vital Signs (BP, HR, temperature)",
-                "Clinical Notes",
-                "Imaging Reports",
-                "Encounter Data (visits, admissions)",
-            ],
-            default=["Demographics (age, gender, race)"],
+            # Only elements extraction can deliver (#205); the list lives next to the dispatch.
+            options=FORM_DATA_ELEMENTS,
+            default=[FORM_DATA_ELEMENTS[0]],
             help="Select all data types you need for your study",
         )
 
