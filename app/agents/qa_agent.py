@@ -262,7 +262,7 @@ class QualityAssuranceAgent(BaseAgent):
             "details": {
                 "requested_count": len(requested_elements),
                 "extracted_count": len(elements_with_data),
-                "missing_elements": list(missing_elements),
+                "missing_elements": missing_elements,
             },
             "message": (
                 "All requested data elements have preview data"
@@ -406,9 +406,13 @@ class QualityAssuranceAgent(BaseAgent):
             Check result dict
         """
         requested_elements = set(requirements.get("data_elements", []))
-        extracted_elements = set(data_package.get("data_elements", {}).keys())
+        # Extraction keys every requested element, [] included; an element with
+        # no rows was not extracted (#205).
+        extracted_elements = {
+            name for name, records in data_package.get("data_elements", {}).items() if records
+        }
 
-        missing_elements = requested_elements - extracted_elements
+        missing_elements = sorted(requested_elements - extracted_elements)
         passed = len(missing_elements) == 0
 
         return {
@@ -418,7 +422,7 @@ class QualityAssuranceAgent(BaseAgent):
             "details": {
                 "requested_count": len(requested_elements),
                 "extracted_count": len(extracted_elements),
-                "missing_elements": list(missing_elements),
+                "missing_elements": missing_elements,
             },
             "message": (
                 "All requested data elements extracted"
