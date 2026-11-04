@@ -425,8 +425,13 @@ class MaterializedViewRunner:
 
             elif isinstance(param_value, dict):
                 # Date ranges; the mapped date columns hold ISO-8601 text.
-                if not ({"start", "end"} & param_value.keys()):
-                    # Anything else would silently drop the filter.
+                bounds = {"start", "end"}
+                if (
+                    not param_value
+                    or param_value.keys() - bounds
+                    or any(v is None for v in param_value.values())
+                ):
+                    # Anything else would silently drop or garble part of the filter.
                     raise UnsupportedSearchParamError(param_name)
                 if "start" in param_value:
                     clauses.append(f"{column} >= {bind(str(param_value['start']))}")

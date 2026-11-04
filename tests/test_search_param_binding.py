@@ -105,10 +105,12 @@ async def test_hybrid_status_filter_on_a_sqlonfhir_table_still_counts(db_client)
     count = await runner.execute_count(view_def, search_params={"status": "completed"})
 
     assert count == rows[0]["count"] > 0
+    # Every procedure in the corpus is completed, so also prove the filter applies.
+    assert await runner.execute_count(view_def, search_params={"status": "entered-in-error"}) == 0
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", [{}, {"eq": "male"}])
+@pytest.mark.parametrize("value", [{}, {"eq": "male"}, {"start": "m", "eq": "x"}, {"start": None}])
 async def test_a_dict_value_without_a_range_is_rejected_not_dropped(db_client, value):
     from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
 
