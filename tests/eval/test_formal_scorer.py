@@ -98,7 +98,7 @@ async def test_a_missing_predicate_fails_with_a_mismatch_count():
     # Drops the gender criterion: a superset of the oracle's cohort.
     result = await score_case(FEMALE_DM, _requirements(DIABETES))
 
-    assert result.executed
+    assert result.executed and not result.vacuous
     assert result.mismatch > 0 and not result.passed
     assert result.sql_count > result.oracle_count
 
@@ -187,7 +187,9 @@ def test_the_jsonl_evidence_carries_counts_only(tmp_path):
 @pytest.mark.requires_services
 @live
 async def test_an_extra_predicate_fails_on_the_missing_patients():
-    # One more criterion than the oracle: a strict subset of its cohort.
+    # One more criterion than the oracle: a strict subset of its cohort. On CI's
+    # seed this relies on fixture-patient-d (female, diabetes mellitus, born
+    # 1970-06-15) being 65 or younger: revisit before June 2036.
     over_65 = {
         "description": "> 65",
         "concepts": [{"type": "demographic", "term": "age", "details": "> 65"}],
@@ -195,7 +197,7 @@ async def test_an_extra_predicate_fails_on_the_missing_patients():
 
     result = await score_case(FEMALE_DM, _requirements(FEMALE, DIABETES, over_65))
 
-    assert result.executed and not result.passed
+    assert result.executed and not result.passed and not result.vacuous
     assert result.sql_count < result.oracle_count
     assert result.mismatch == result.oracle_count - result.sql_count
 
@@ -203,3 +205,52 @@ async def test_an_extra_predicate_fails_on_the_missing_patients():
 def test_both_seed_oracles_are_signed_off():
     # Approved by the repo owner on 2026-11-04 (#239).
     assert [c.signoff for c in FORMAL_CASES] == ["approved", "approved"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@live
+async def test_equal_counts_with_different_patients_fail():
+    # Same size, no overlap: a count comparison would call this a pass.
+    case = _case(
+        oracle_sql=FEMALE_DM.oracle_sql.replace(
+            "SELECT p.patient_id FROM", "SELECT p.patient_id || '-x' AS patient_id FROM", 1
+        )
+    )
+
+    result = await score_case(case, _requirements(FEMALE, DIABETES))
+
+    assert result.executed and not result.passed
+    assert result.sql_count == result.oracle_count > 0
+    assert result.mismatch == 2 * result.oracle_count
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@live
+@pytest.mark.parametrize("case", FORMAL_CASES, ids=lambda c: c.id)
+async def test_each_seed_oracle_executes(case):
+    from app.adapters.sql_on_fhir import SQLonFHIRAdapter
+
+    [row] = await SQLonFHIRAdapter().execute_sql(
+        f"SELECT count(*) AS n FROM ({case.oracle_sql}) AS oracle"  # nosec B608 - checked-in oracle
+    )
+
+    assert row["n"] >= 0  # 0 is fine on CI's 5-patient seed
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@live
+async def test_an_empty_generated_cohort_is_a_failure_not_vacuous():
+    # Vacuity is about the oracle; SQL that finds nobody against a populated
+    # oracle is an ordinary miss.
+    nobody = {
+        "description": "x",
+        "concepts": [{"type": "condition", "term": "no-such-condition-zz"}],
+    }
+
+    result = await score_case(FEMALE_DM, _requirements(nobody))
+
+    assert result.executed and result.sql_count == 0 < result.oracle_count
+    assert not result.vacuous and not result.passed
