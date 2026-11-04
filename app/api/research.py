@@ -279,10 +279,8 @@ async def get_delivery_info(request_id: str, user: User = Depends(get_current_ac
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
             # Check if request is delivered
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 return {
                     "request_id": request_id,
                     "delivered": False,
@@ -351,10 +349,8 @@ async def download_data_package(request_id: str, user: User = Depends(get_curren
             if not request:
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Data not yet delivered. Current state: {request.current_state}",
@@ -412,10 +408,8 @@ async def download_specific_file(
             if not request:
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Data not yet delivered. Current state: {request.current_state}",

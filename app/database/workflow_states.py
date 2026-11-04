@@ -64,7 +64,7 @@ class WorkflowState(Enum):
     QA_FAILED = "qa_failed"
     DELIVERY_REVIEW = "delivery_review"  # Informatician reviews full dataset before delivery
     DATA_DELIVERY = "data_delivery"
-    DELIVERED = "delivered"
+    DELIVERED = "delivered"  # A2A-era only; LangGraph ends at COMPLETE (#53)
     COMPLETE = "complete"
     FAILED = "failed"
     HUMAN_REVIEW = "human_review"
