@@ -91,6 +91,13 @@ class FullWorkflowState(TypedDict):
     feasibility_score: float
     estimated_cohort_size: int | None
     feasible: bool
+    # Phenotype agent's report, shown to the G2 reviewer. Declared so LangGraph
+    # carries them to the review node (it drops undeclared keys, #265).
+    warnings: list
+    recommendations: list
+    data_availability: dict | None
+    estimated_extraction_time_hours: float | None
+    auto_feasibility_assessment: str | None
     phenotype_approved: bool | None
     phenotype_rejection_reason: str | None
 
@@ -131,6 +138,7 @@ class FullWorkflowState(TypedDict):
     # ===== Scope Change =====
     scope_change_requested: bool
     scope_approved: bool | None
+    scope_change_reason: str | None  # read by the scope-change approval payload
 
     # ===== Request Source =====
     from_formal_portal: bool  # True = form-based validation, False = chat-based
@@ -720,9 +728,20 @@ class FullWorkflow:
                 approval_data = result.get("additional_context", {}).get("approval_data", {})
                 state["sql_parameters"] = approval_data.get("parameters", {})
                 state["feasibility_score"] = result.get("feasibility_score", 0.0)
-                state["feasibility_report"] = result.get(
-                    "feasibility_report", {}
-                )  # Store detailed report
+                report = result.get("feasibility_report", {})
+                state["warnings"] = approval_data.get("warnings", report.get("warnings", []))
+                state["recommendations"] = approval_data.get(
+                    "recommendations", report.get("recommendations", [])
+                )
+                state["data_availability"] = approval_data.get(
+                    "data_availability", report.get("data_availability")
+                )
+                state["estimated_extraction_time_hours"] = report.get(
+                    "estimated_extraction_time_hours"
+                )
+                state["auto_feasibility_assessment"] = approval_data.get(
+                    "auto_feasibility_assessment"
+                )
 
                 logger.info(
                     f"[FullWorkflow] PhenotypeAgent result: feasible={state['feasible']}, cohort={state['estimated_cohort_size']}"
