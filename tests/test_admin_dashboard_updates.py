@@ -160,7 +160,7 @@ class TestAgentMetricsTab:
     """Test Agent Metrics tab displays agent activity"""
 
     @pytest.mark.asyncio
-    async def test_agent_activity_appears_in_metrics(self, orchestrator, clean_database):
+    async def test_agent_activity_appears_in_metrics(self, clean_database):
         """
         Test: Agent activity appears in Agent Metrics tab
 
@@ -236,7 +236,7 @@ class TestAgentMetricsTab:
             print(f"✅ PASS: Can query metrics from AgentExecution table")
 
     @pytest.mark.asyncio
-    async def test_agent_metrics_calculation(self, orchestrator, clean_database):
+    async def test_agent_metrics_calculation(self, clean_database):
         """Test that metrics can be calculated from database"""
 
         query = "Test query for metrics"
@@ -329,7 +329,7 @@ class TestPendingApprovalsTab:
     """Test Pending Approvals tab displays new approvals"""
 
     @pytest.mark.asyncio
-    async def test_sql_approval_appears(self, orchestrator, clean_database):
+    async def test_sql_approval_appears(self, clean_database):
         """Test SQL approval appears in Pending Approvals tab"""
 
         print(f"\n{'='*80}")
@@ -407,7 +407,7 @@ class TestPendingApprovalsTab:
                 print(f"\n⚠️  No approvals found yet (may still be processing)")
 
     @pytest.mark.asyncio
-    async def test_approvals_newest_first(self, orchestrator, clean_database):
+    async def test_approvals_newest_first(self, clean_database):
         """Test approvals display in newest-first order"""
 
         print(f"\n{'='*80}")
