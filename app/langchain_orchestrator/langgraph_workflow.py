@@ -760,6 +760,15 @@ class FullWorkflow:
                 state["estimated_cohort_size"] = 0
                 state["phenotype_sql"] = None
                 state["feasibility_score"] = 0.0
+                # Clear the previous run's report, or a reject-and-retry G2 would
+                # show its warnings and "feasible" next to this run's failure.
+                # The G2 payload's own defaults, not None: the dashboard reads them.
+                state["sql_parameters"] = {}
+                state["warnings"] = []
+                state["recommendations"] = []
+                state["data_availability"] = {}
+                state["estimated_extraction_time_hours"] = 0
+                state["auto_feasibility_assessment"] = "unknown"
                 state["error"] = f"Phenotype agent error: {failure}"
 
         else:

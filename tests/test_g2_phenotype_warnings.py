@@ -94,8 +94,18 @@ async def saver(tmp_path):
         yield s
 
 
-@pytest.fixture
-async def facade(saver, monkeypatch):
+class _FailsOnSecondRunAgent(_FakePhenotypeAgent):
+    def __init__(self):
+        self.calls = 0
+
+    async def execute_task(self, task, context):
+        self.calls += 1
+        if self.calls > 1:
+            raise ConnectionError("database unreachable")
+        return await super().execute_task(task, context)
+
+
+async def _facade_with(agent, saver, monkeypatch):
     monkeypatch.delenv("AUTO_APPROVE_FOR_DEV", raising=False)
     original_init = FullWorkflow.__init__
 
@@ -104,7 +114,7 @@ async def facade(saver, monkeypatch):
         # Only the phenotype node takes its real-agent branch; every other
         # node needs its own agent instance, which stays None (stub path).
         self.use_real_agents = True
-        self.phenotype_agent = _FakePhenotypeAgent()
+        self.phenotype_agent = agent
 
     monkeypatch.setattr(FullWorkflow, "__init__", init_with_fake_phenotype_agent)
     await init_db()
@@ -116,6 +126,49 @@ async def facade(saver, monkeypatch):
 
     f.checkpointer_factory = checkpointer
     return f
+
+
+@pytest.fixture
+async def facade(saver, monkeypatch):
+    return await _facade_with(_FakePhenotypeAgent(), saver, monkeypatch)
+
+
+async def _g2_approvals(request_id):
+    async with get_db_session() as session:
+        rows = await session.execute(
+            select(Approval)
+            .where(Approval.request_id == request_id, Approval.approval_type == "phenotype_sql")
+            .order_by(Approval.id)
+        )
+        return rows.scalars().all()
+
+
+@pytest.mark.asyncio
+async def test_a_failed_rerun_does_not_show_the_previous_runs_warnings(saver, monkeypatch):
+    # Reject G2 for revision, then the agent fails: the second G2 must not
+    # carry the first run's warnings or its "feasible" assessment.
+    facade = await _facade_with(_FailsOnSecondRunAgent(), saver, monkeypatch)
+    request_id = await facade.process_new_request(
+        "Synthetic test request",
+        {"name": "Test Researcher", "email": "researcher@example.test"},
+        from_formal_portal=True,
+    )
+    [first] = await _g2_approvals(request_id)
+    assert first.approval_data["warnings"] == [WARNING]
+
+    await facade.process_approval_response(
+        first.id, "reviewer@example.test", "reject", notes="please revise the SQL"
+    )
+
+    second = (await _g2_approvals(request_id))[-1]
+    assert second.id != first.id
+    data = second.approval_data
+    assert data["warnings"] == []
+    assert data["recommendations"] == []
+    assert data["data_availability"] == {}
+    assert data["estimated_extraction_time_hours"] == 0
+    assert data["auto_feasibility_assessment"] == "unknown"
+    assert data["parameters"] == {}
 
 
 @pytest.mark.asyncio
