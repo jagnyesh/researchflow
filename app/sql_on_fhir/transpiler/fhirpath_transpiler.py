@@ -25,6 +25,8 @@ import re
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass
 
+from app.sql_on_fhir.errors import UnsupportedViewDefinitionError
+
 logger = logging.getLogger(__name__)
 
 
@@ -45,17 +47,28 @@ class FHIRPathTranspiler:
     Handles the subset of FHIRPath used in SQL-on-FHIR ViewDefinitions
     """
 
-    def __init__(self, resource_alias: str = "v", resource_column: str = "res_text_vc"):
+    def __init__(
+        self, resource_alias: str = "v", resource_column: str = "res_text_vc", strict: bool = False
+    ):
         """
         Initialize transpiler
 
         Args:
             resource_alias: Table alias for resource version table (default: 'v')
             resource_column: Column name containing JSONB resource (default: 'res_text_vc')
+            strict: Raise UnsupportedViewDefinitionError on a construct it can't
+                express, instead of emitting NULL or a no-op filter (#263). The
+                serving fallback is strict; the batch build stays lenient.
         """
         self.resource_alias = resource_alias
         self.resource_column = resource_column
+        self.strict = strict
         self._array_counter = 0  # For generating unique array aliases
+
+    def unsupported(self, construct: str) -> None:
+        """In strict mode, refuse a construct this transpiler can't express."""
+        if self.strict:
+            raise UnsupportedViewDefinitionError(f"Unsupported FHIRPath {construct}")
 
     def transpile(
         self, fhir_path: str, as_text: bool = True, context_path: Optional[str] = None
@@ -179,6 +192,7 @@ class FHIRPathTranspiler:
             value_list = ", ".join(f"'{v}'" for v in values)
             return f"{field_sql} IN ({value_list})"
 
+        self.unsupported(f"where-clause pattern {expr!r}")
         logger.warning("Unsupported where-clause pattern, emitting 'true' (no-op): %s", expr)
         return "true"
 
@@ -363,6 +377,7 @@ class FHIRPathTranspiler:
                 # replace('from', 'to') → replace(text, 'from', 'to')
                 current = f"replace({current}, {args})"
             else:
+                self.unsupported(f"function {seg!r} in {orig_path!r}")
                 logger.warning(
                     "Unsupported function in path: %s in %s — column will be NULL",
                     seg,
@@ -395,6 +410,7 @@ class FHIRPathTranspiler:
         match = re.match(r"(.+?)\.where\((.+?)\)(?:\.(.+))?", fhir_path)
 
         if not match:
+            self.unsupported(f"where clause {fhir_path!r}")
             logger.warning(f"Could not parse where clause: {fhir_path}")
             return self._transpile_simple_path(fhir_path, as_text, context_path)
 
@@ -486,6 +502,7 @@ class FHIRPathTranspiler:
             return "{}->>'{}'  = '{}'".format(elem_alias, field, value)
 
         # TODO: Support more complex conditions
+        self.unsupported(f"where condition {condition!r}")
         logger.warning(f"Unsupported where condition: {condition}")
         return "true"
 
@@ -704,7 +721,7 @@ class FHIRPathTranspiler:
 
 
 def create_fhirpath_transpiler(
-    resource_alias: str = "v", resource_column: str = "res_text_vc"
+    resource_alias: str = "v", resource_column: str = "res_text_vc", strict: bool = False
 ) -> FHIRPathTranspiler:
     """
     Factory function to create FHIRPath transpiler
@@ -716,4 +733,4 @@ def create_fhirpath_transpiler(
     Returns:
         Configured FHIRPathTranspiler
     """
-    return FHIRPathTranspiler(resource_alias, resource_column)
+    return FHIRPathTranspiler(resource_alias, resource_column, strict=strict)
