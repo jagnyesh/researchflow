@@ -74,3 +74,30 @@ async def test_recording_the_same_state_twice_adds_one_entry():
         record_state_transition(req, "requirements_review")
 
     assert await _history("REQ-SH-DEDUP") == ["new_request", "requirements_review"]
+
+
+@pytest.mark.asyncio
+async def test_a_repeat_carrying_details_is_still_recorded():
+    # e.g. the dashboard's preview approval: its approved_by/notes must not be
+    # dropped just because the last entry already names the same state.
+    await init_db()
+    async with get_db_session() as session:
+        await session.merge(
+            ResearchRequest(
+                id="REQ-SH-DETAILS",
+                researcher_name="Synthetic",
+                researcher_email="s@example.org",
+                initial_request="synthetic",
+                current_state="data_extraction",
+                state_history=[{"state": "data_extraction", "timestamp": "2026-11-04T00:00:00"}],
+            )
+        )
+    async with get_db_session() as session:
+        req = (
+            await session.execute(
+                select(ResearchRequest).where(ResearchRequest.id == "REQ-SH-DETAILS")
+            )
+        ).scalar_one()
+        record_state_transition(req, "data_extraction", approved_by="admin_dashboard")
+
+    assert await _history("REQ-SH-DETAILS") == ["data_extraction", "data_extraction"]

@@ -55,13 +55,15 @@ def _durability(workflow: FullWorkflow) -> Optional[str]:
 
 
 def record_state_transition(req, new_state: Optional[str], **details: Any) -> None:
-    """Append `new_state` to req.state_history unless it is already the last entry.
+    """Append `new_state` to req.state_history, skipping a bare repeat of the last entry.
 
     Assigns a new list: state_history is a plain JSON column, so appending to
     the loaded list in place is never marked dirty and never written (#63).
     """
     history = list(req.state_history or [])
-    if not new_state or (history and history[-1].get("state") == new_state):
+    # A bare repeat of the last state is the same transition synced twice; one
+    # carrying details (who approved, why) is its own event and is kept.
+    if not new_state or (not details and history and history[-1].get("state") == new_state):
         return
     entry = {"state": new_state, "timestamp": datetime.now().isoformat(), **details}
     req.state_history = history + [entry]
