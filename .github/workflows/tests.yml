@@ -163,7 +163,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install safety bandit
+        pip install safety==3.8.1 bandit==1.9.4  # bandit matches config/requirements-dev.lock
 
     - name: Run safety check
       run: |

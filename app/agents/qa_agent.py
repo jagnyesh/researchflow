@@ -4,12 +4,36 @@ Quality Assurance Agent
 Validates extracted data quality before delivery to researcher.
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import logging
 from langsmith import traceable
 from .base_agent import BaseAgent
 
 logger = logging.getLogger(__name__)
+
+# Cohort-count tolerance against the phenotype estimate (#209). Out-of-band at
+# preview routes to the preview_qa human approval; at final QA the check fails.
+PREVIEW_COHORT_TOLERANCE_PCT = 0.50
+PREVIEW_COHORT_MIN_TOLERANCE = 5
+FINAL_COHORT_TOLERANCE_PCT = 0.20
+
+# Columns that must not reach a de-identified or limited-dataset delivery.
+# Dates are allowed in a limited data set, so full dates are checked only for
+# de-identified requests (HIPAA Safe Harbor).
+DIRECT_IDENTIFIER_COLUMNS = frozenset(
+    {
+        "patient_name",
+        "family_name",
+        "given_name",
+        "ssn",
+        "mrn",
+        "address",
+        "postal_code",
+        "phone",
+        "email",
+    }
+)
+DATE_IDENTIFIER_COLUMNS = frozenset({"birth_date", "dob"})
 
 
 class QualityAssuranceAgent(BaseAgent):
@@ -76,7 +100,9 @@ class QualityAssuranceAgent(BaseAgent):
             qa_report["checks"].append(phi_check)
 
         # Check 4: Cohort validation
-        cohort_check = await self._validate_cohort_characteristics(data_package, requirements)
+        cohort_check = await self._validate_cohort_characteristics(
+            data_package, (context.get("feasibility_report") or {}).get("estimated_cohort_size")
+        )
         qa_report["checks"].append(cohort_check)
 
         # Determine overall status
@@ -292,9 +318,11 @@ class QualityAssuranceAgent(BaseAgent):
         self, preview_package: Dict, context: Dict
     ) -> Dict:
         """
-        Validate preview cohort matches initial phenotype estimate (SIMPLIFIED)
+        Validate the full cohort size against the phenotype estimate.
 
-        Checks if actual cohort count matches estimated count (±10% tolerance)
+        The size comes from the preview metadata, not the preview list, which is
+        cut to 10 rows. The estimate comes only from the caller: falling back to
+        the metadata would compare the cohort with itself (#209).
 
         Args:
             preview_package: Preview extraction results
@@ -303,52 +331,29 @@ class QualityAssuranceAgent(BaseAgent):
         Returns:
             Check result dict
         """
-        # Get actual cohort size from preview
-        actual_cohort = preview_package.get("cohort", [])
-        actual_size = len(actual_cohort)
-
-        # Get estimated cohort from phenotype agent (in context or metadata)
+        metadata = preview_package.get("metadata", {})
+        actual_size = metadata.get("cohort_size", len(preview_package.get("cohort", [])))
         estimated_size = context.get("estimated_cohort")
-        if estimated_size is None:
-            # Try metadata in preview_package
-            metadata = preview_package.get("metadata", {})
-            estimated_size = metadata.get("cohort_size")
 
         logger.info(
             f"[{self.agent_id}] Cohort count comparison: actual={actual_size}, estimated={estimated_size}"
         )
 
-        # If no estimate available, just check cohort is not empty
         if estimated_size is None:
-            passed = actual_size > 0
             return {
                 "check_name": "preview_cohort_count",
-                "passed": passed,
-                "severity": "critical" if not passed else "info",
-                "details": {
-                    "actual_cohort_size": actual_size,
-                    "estimated_cohort_size": "unknown",
-                },
-                "message": (
-                    f"Preview cohort: {actual_size} patients (no estimate to compare)"
-                    if passed
-                    else "No cohort identified"
-                ),
+                "passed": False,
+                "severity": "critical",
+                "details": {"actual_cohort_size": actual_size, "estimated_cohort_size": None},
+                "message": f"Preview cohort: {actual_size} patients, no estimate to compare against",
             }
 
-        # Calculate tolerance (±50% or minimum ±5 patients) - WIDENED FOR MVP
-        # For MVP: Accept any non-empty cohort to allow workflow completion
-        tolerance_pct = 0.50  # 50% (was 10% - too strict for MVP)
-        min_tolerance = 5
-        tolerance = max(int(estimated_size * tolerance_pct), min_tolerance)
-
+        tolerance = max(
+            int(estimated_size * PREVIEW_COHORT_TOLERANCE_PCT), PREVIEW_COHORT_MIN_TOLERANCE
+        )
         lower_bound = estimated_size - tolerance
         upper_bound = estimated_size + tolerance
-
-        # Check if actual is within tolerance range
-        # MVP: Only fail if cohort is completely empty (0 patients)
-        # Accept any non-empty cohort to allow workflow completion
-        passed = actual_size > 0
+        passed = actual_size > 0 and lower_bound <= actual_size <= upper_bound
 
         return {
             "check_name": "preview_cohort_count_match",
@@ -362,14 +367,9 @@ class QualityAssuranceAgent(BaseAgent):
                 "upper_bound": upper_bound,
             },
             "message": (
-                f"Preview cohort validated: {actual_size} patients found (estimated: {estimated_size}, ±{tolerance}). "
-                + (
-                    f"Within expected range [{lower_bound}, {upper_bound}]"
-                    if lower_bound <= actual_size <= upper_bound
-                    else f"Outside strict range [{lower_bound}, {upper_bound}] but accepted for MVP (non-empty cohort)"
-                )
-                if passed
-                else f"Cohort validation failed: No patients found (estimated: {estimated_size})"
+                f"Preview cohort: {actual_size} patients (estimated: {estimated_size}, "
+                f"expected range [{lower_bound}, {upper_bound}])"
+                + ("" if passed else " - outside the expected range")
             ),
         }
 
@@ -484,72 +484,70 @@ class QualityAssuranceAgent(BaseAgent):
 
     async def _validate_deidentification(self, data_package: Dict, phi_level: str) -> Dict:
         """
-        Validate that de-identification was properly applied
+        Validate that no identifying column reaches a de-identified delivery.
 
-        Checks:
-        - No patient names present
-        - No SSNs
-        - No MRNs (if de-identified)
-        - Dates shifted (if de-identified)
+        Fails on any present identifying column, populated or not, and records
+        the columns inspected and the identifiers found (#209). The names are
+        the ones extraction actually emits (family_name, given_name,
+        birth_date), not only the generic ones.
         """
-        issues = []
-        data_elements = data_package.get("data_elements", {})
-
-        # Fields that should not be present
-        prohibited_fields = []
+        identifying = set(DIRECT_IDENTIFIER_COLUMNS)
         if phi_level == "de-identified":
-            prohibited_fields = ["patient_name", "ssn", "mrn", "address", "phone"]
-        elif phi_level == "limited_dataset":
-            prohibited_fields = ["patient_name", "ssn", "address"]
+            identifying |= DATE_IDENTIFIER_COLUMNS
 
-        # Check for prohibited fields
-        for element_name, records in data_elements.items():
-            for record in records[:100]:  # Sample first 100
-                for field in prohibited_fields:
-                    if field in record and record[field]:
-                        issues.append(
-                            {
-                                "issue": "phi_not_removed",
-                                "field": field,
-                                "element": element_name,
-                                "severity": "critical",
-                            }
-                        )
-                        break
+        inspected, found, issues = set(), set(), []
+        for element_name, records in data_package.get("data_elements", {}).items():
+            columns = {key for record in records for key in record}
+            inspected |= columns
+            for column in sorted(columns & identifying):
+                found.add(column)
+                issues.append(
+                    {
+                        "issue": "phi_not_removed",
+                        "field": column,
+                        "element": element_name,
+                        "severity": "critical",
+                    }
+                )
 
-        passed = len(issues) == 0
-
+        passed = not issues
         return {
             "check_name": "deidentification",
             "passed": passed,
             "severity": "critical" if not passed else "info",
             "issues": issues,
+            "details": {
+                "phi_level": phi_level,
+                "columns_inspected": sorted(inspected),
+                "identifiers_found": sorted(found),
+            },
             "message": (
-                "De-identification verified" if passed else f"Found {len(issues)} PHI issues"
+                f"De-identification verified across {len(inspected)} columns"
+                if passed
+                else f"Identifying columns present: {', '.join(sorted(found))}"
             ),
         }
 
     async def _validate_cohort_characteristics(
-        self, data_package: Dict, requirements: Dict
+        self, data_package: Dict, estimated_size: Optional[int]
     ) -> Dict:
         """
-        Validate cohort matches expected characteristics
+        Validate the delivered cohort size against the phenotype estimate.
 
-        Checks:
-        - Cohort size within expected range
-        - Demographic distribution reasonable
+        `estimated_size` is the estimate stored before extraction. It used to be
+        read from the requirements, where it never is, so it defaulted to the
+        actual size and the check compared the cohort with itself (#209).
         """
         cohort = data_package.get("cohort", [])
         cohort_size = len(cohort)
 
-        feasibility_report = requirements.get("feasibility_report", {})
-        estimated_size = feasibility_report.get("estimated_cohort_size", cohort_size)
-
-        # Allow ±20% variance from estimate
-        min_expected = estimated_size * 0.8
-        max_expected = estimated_size * 1.2
-
-        within_range = min_expected <= cohort_size <= max_expected
+        if estimated_size is None:
+            within_range = False
+            estimated_size = 0
+        else:
+            min_expected = estimated_size * (1 - FINAL_COHORT_TOLERANCE_PCT)
+            max_expected = estimated_size * (1 + FINAL_COHORT_TOLERANCE_PCT)
+            within_range = min_expected <= cohort_size <= max_expected
 
         return {
             "check_name": "cohort_validation",
