@@ -24,6 +24,12 @@ class CriteriaNotStructuredError(ValueError):
         super().__init__("A criterion could not be turned into structured concepts")
 
 
+def _has_value(value) -> bool:
+    if isinstance(value, dict):
+        return any(_has_value(v) for v in value.values())
+    return value not in (None, "", [])
+
+
 def _require_concepts(structured_criteria: list) -> None:
     if any(not c.get("concepts") for c in structured_criteria):
         raise CriteriaNotStructuredError()
@@ -133,8 +139,19 @@ class RequirementsAgent(BaseAgent):
             # Extract researcher info from context (already validated in UI)
             researcher_info = context.get("researcher_info", {})
 
-            # Get structured requirements from form (if provided, else use defaults)
-            structured_reqs = researcher_info.get("structured_requirements", {})
+            # Get structured requirements from form (if provided, else use defaults).
+            # A blank optional field (the portal sends [] / None) counts as not
+            # submitted, so it falls back to its default and the LLM may fill it.
+            structured_reqs = {
+                k: v
+                for k, v in researcher_info.get("structured_requirements", {}).items()
+                if _has_value(v)
+            }
+            submitted = set(structured_reqs)
+            if researcher_info.get("name"):
+                submitted.add("principal_investigator")
+            if researcher_info.get("irb_number"):
+                submitted.add("irb_number")
 
             # Build requirements from form data and initial_request
             # Merge form fields with defaults
@@ -144,7 +161,9 @@ class RequirementsAgent(BaseAgent):
                 ),
                 "principal_investigator": researcher_info.get("name"),
                 "irb_number": researcher_info.get("irb_number"),
-                "inclusion_criteria": structured_reqs.get("inclusion_criteria", [initial_request]),
+                "inclusion_criteria": structured_reqs.get(
+                    "inclusion_criteria", [initial_request] if initial_request else []
+                ),
                 "exclusion_criteria": structured_reqs.get("exclusion_criteria", []),
                 "data_elements": structured_reqs.get(
                     "data_elements", ["demographics", "clinical_data"]
@@ -167,7 +186,7 @@ class RequirementsAgent(BaseAgent):
 
                 # The LLM may fill gaps, never overwrite what the researcher submitted.
                 for key, value in analysis.get("extracted_requirements", {}).items():
-                    if key not in structured_reqs:
+                    if key not in submitted:
                         form_requirements[key] = value
 
                 # Log any warnings but proceed anyway
@@ -183,6 +202,13 @@ class RequirementsAgent(BaseAgent):
                     e,
                     level=logging.WARNING,
                 )
+
+            criteria = (form_requirements.get("inclusion_criteria") or []) + (
+                form_requirements.get("exclusion_criteria") or []
+            )
+            if not any(_has_value(c) for c in criteria):
+                # No criteria would build unfiltered SQL: every patient as the cohort.
+                raise CriteriaNotStructuredError()
 
             # Validate and structure
             final_requirements = await self._validate_and_structure_requirements(form_requirements)
@@ -392,9 +418,16 @@ class RequirementsAgent(BaseAgent):
             # Build structured criteria from batch results
             structured_criteria = []
             for criterion, concepts_data in zip(criteria_list, batch_results):
+                concepts = concepts_data.get("concepts", [])
+                if not concepts:
+                    # The batch can return an empty placeholder (e.g. numbering
+                    # mismatch); retry that criterion alone before giving up.
+                    concepts = (await self.llm_client.extract_medical_concepts(criterion)).get(
+                        "concepts", []
+                    )
                 criterion_structured = {
                     "description": criterion,
-                    "concepts": concepts_data.get("concepts", []),
+                    "concepts": concepts,
                     "codes": [],  # Will be populated by terminology server
                 }
                 structured_criteria.append(criterion_structured)

@@ -606,6 +606,13 @@ class LangGraphRequestFacade:
                     )
                     req.state_history = state_history
 
+                if state.get("error") and not state.get("requirements_complete"):
+                    # The requirements node caught a failure and the graph ended
+                    # there; show it the way a crashed workflow is shown, not as a
+                    # request still gathering requirements forever.
+                    req.current_state = "error"
+                    req.error_message = state["error"]
+
                 await session.commit()
             else:
                 # Request not found in database - split-brain condition detected

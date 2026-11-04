@@ -20,7 +20,9 @@ SUBMITTED = {
 }
 
 
-async def _context() -> dict:
+async def _context(
+    structured=None, initial_request="Adults with type 2 diabetes and their HbA1c"
+) -> dict:
     await init_db()
     request_id = f"REQ-264-{uuid.uuid4().hex[:8].upper()}"
     async with get_db_session() as session:
@@ -29,40 +31,52 @@ async def _context() -> dict:
                 id=request_id,
                 researcher_name="Synthetic Researcher",
                 researcher_email="r264@example.test",
-                initial_request="Adults with type 2 diabetes and their HbA1c",
+                initial_request=initial_request or "(blank)",
                 current_state="requirements_gathering",
             )
         )
     return {
         "request_id": request_id,
-        "initial_request": "Adults with type 2 diabetes and their HbA1c",
+        "initial_request": initial_request,
         "from_formal_portal": True,
         "researcher_info": {
             "name": "Synthetic Researcher",
             "email": "r264@example.test",
-            "structured_requirements": dict(SUBMITTED),
+            "irb_number": "IRB-REAL",
+            "structured_requirements": dict(SUBMITTED if structured is None else structured),
         },
     }
 
 
 @pytest.mark.asyncio
 async def test_without_an_llm_the_request_fails_instead_of_merging_canned_output(monkeypatch):
+    from app.agents.requirements_agent import CriteriaNotStructuredError
+
     monkeypatch.setenv("ANTHROPIC_API_KEY", "")
     agent = RequirementsAgent()
     assert agent.llm_client.client is None, "precondition: keyless"
+    merged = []
+    real_extract = agent.llm_client.extract_requirements
 
-    with pytest.raises(Exception) as excinfo:
+    async def spy(**kwargs):
+        merged.append(kwargs)
+        return await real_extract(**kwargs)
+
+    agent.llm_client.extract_requirements = spy
+
+    with pytest.raises(CriteriaNotStructuredError):
         await agent.execute_task("gather_requirements", await _context())
-
-    assert "dummy criterion" not in str(excinfo.value)
+    assert merged == [], "no canned LLM output may be merged without a client"
 
 
 def _available_llm(agent, extracted, concepts=None, fail_concepts=False):
     """Stub only the provider-facing calls; the agent's own logic runs for real."""
     agent.llm_client.client = object()  # "initialized"
 
+    _available_llm.extracted = extracted
+
     async def extract_requirements(**_kwargs):
-        return {"extracted_requirements": extracted, "completeness_score": 0.9}
+        return {"extracted_requirements": _available_llm.extracted, "completeness_score": 0.9}
 
     async def batch(criteria):
         if fail_concepts:
@@ -92,12 +106,16 @@ async def test_the_llm_fills_gaps_but_never_overwrites_submitted_fields():
         concepts=[{"type": "condition", "term": "type 2 diabetes"}],
     )
 
-    result = await agent.execute_task("gather_requirements", await _context())
+    context = await _context(structured={**SUBMITTED, "time_period": {"start": None, "end": None}})
+    _available_llm.extracted["time_period"] = {"start": "2020-01-01", "end": None}
+
+    result = await agent.execute_task("gather_requirements", context)
 
     reqs = result["structured_requirements"]
     assert [c["description"] for c in reqs["inclusion_criteria"]] == ["type 2 diabetes"]
     assert reqs["data_elements"] == ["HbA1c"]
-    assert reqs["irb_number"] == "IRB-FILLED", "a field the form left blank may be filled"
+    assert reqs["irb_number"] == "IRB-REAL", "the submitted IRB number is the researcher's"
+    assert reqs["time_period"]["start"] == "2020-01-01", "a blank field may be filled"
 
 
 @pytest.mark.asyncio
@@ -110,6 +128,39 @@ async def test_a_criterion_whose_concept_extraction_fails_stops_the_request():
     with pytest.raises(CriteriaNotStructuredError) as excinfo:
         await agent.execute_task("gather_requirements", await _context())
     assert "diabetes" not in str(excinfo.value), "error text must not echo the criterion"
+
+
+@pytest.mark.asyncio
+async def test_a_blank_inclusion_box_falls_back_to_the_request_text():
+    # The portal sends [] for the optional inclusion box; [] must not be "submitted"
+    # (that left the criteria empty and built an all-patient COUNT).
+    agent = RequirementsAgent()
+    _available_llm(agent, extracted={}, concepts=[{"type": "condition", "term": "type 2 diabetes"}])
+
+    result = await agent.execute_task(
+        "gather_requirements", await _context(structured={**SUBMITTED, "inclusion_criteria": []})
+    )
+
+    inclusion = result["structured_requirements"]["inclusion_criteria"]
+    assert [c["description"] for c in inclusion] == ["Adults with type 2 diabetes and their HbA1c"]
+    sql, params = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        result["structured_requirements"], count_only=True
+    )
+    assert params, "the cohort must be filtered"
+
+
+@pytest.mark.asyncio
+async def test_a_request_with_no_criteria_at_all_is_refused():
+    from app.agents.requirements_agent import CriteriaNotStructuredError
+
+    agent = RequirementsAgent()
+    _available_llm(agent, extracted={}, concepts=[{"type": "condition", "term": "x"}])
+
+    with pytest.raises(CriteriaNotStructuredError):
+        await agent.execute_task(
+            "gather_requirements",
+            await _context(structured={**SUBMITTED, "inclusion_criteria": []}, initial_request=""),
+        )
 
 
 def test_sql_generator_refuses_criteria_that_build_no_conditions():
@@ -142,3 +193,50 @@ def test_sql_generator_still_builds_sql_for_a_structured_criterion():
         requirements, count_only=True
     )
     assert params, "the condition should be a bound parameter"
+
+
+@pytest.mark.asyncio
+async def test_a_failed_formal_request_shows_as_an_error_not_in_progress(tmp_path, monkeypatch):
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+    from sqlalchemy import select
+
+    from app.database.models import Approval
+    from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
+    from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    monkeypatch.delenv("AUTO_APPROVE_FOR_DEV", raising=False)
+    original_init = FullWorkflow.__init__
+
+    def init_with_keyless_requirements_agent(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        # Only the requirements node runs a real agent; the rest stay on stubs.
+        self.use_real_agents = True
+        self.requirements_agent = RequirementsAgent()
+
+    monkeypatch.setattr(FullWorkflow, "__init__", init_with_keyless_requirements_agent)
+    await init_db()
+    facade = LangGraphRequestFacade(use_real_agents=False, use_persistence=True)
+    await facade._ensure_initialized()
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "cp.db")) as saver:
+
+        async def checkpointer():
+            return saver
+
+        facade.checkpointer_factory = checkpointer
+        context = await _context()
+        request_id = await facade.process_new_request(
+            context["initial_request"], context["researcher_info"], from_formal_portal=True
+        )
+
+    async with get_db_session() as session:
+        row = await session.get(ResearchRequest, request_id)
+        approvals = (
+            (await session.execute(select(Approval).where(Approval.request_id == request_id)))
+            .scalars()
+            .all()
+        )
+    assert row.current_state == "error"
+    assert "CriteriaNotStructuredError" in (row.error_message or "")
+    assert "diabetes" not in row.error_message
+    assert [a.approval_type for a in approvals] == [], "must stop before any review gate"
