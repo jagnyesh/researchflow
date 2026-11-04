@@ -142,6 +142,7 @@ class ApprovalBridge:
         approval_type: str,
         state: Dict[str, Any],
         submitted_by: str = "langgraph_workflow",
+        auto_approved: bool = False,
     ) -> Optional[int]:
         """
         Create approval request in database when agent requests human review.
@@ -151,6 +152,8 @@ class ApprovalBridge:
             approval_type: Type of approval (requirements, phenotype_sql, etc.)
             state: Current LangGraph workflow state
             submitted_by: Agent or system requesting approval
+            auto_approved: AUTO_APPROVE_FOR_DEV routed past this gate; record
+                it as decided so no row is left pending (#210)
 
         Returns:
             Approval record ID if created, None if already exists
@@ -211,6 +214,11 @@ class ApprovalBridge:
                 approval_data=approval_data,
                 status="pending",
             )
+            if auto_approved:
+                approval.status = "approved"
+                approval.reviewed_at = datetime.now()
+                approval.reviewed_by = "auto_approve_for_dev"
+                approval.review_notes = "Auto-approved: AUTO_APPROVE_FOR_DEV=true (dev/test only)"
 
             session.add(approval)
             await session.commit()
@@ -573,6 +581,7 @@ async def create_approval_from_state(
     approval_type: str,
     state: Dict[str, Any],
     database_url: str = "sqlite+aiosqlite:///./dev.db",
+    auto_approved: bool = False,
 ) -> Optional[int]:
     """
     Convenience function to create approval request.
@@ -596,7 +605,9 @@ async def create_approval_from_state(
         ```
     """
     bridge = ApprovalBridge(database_url)
-    approval_id = await bridge.create_approval_request(request_id, approval_type, state)
+    approval_id = await bridge.create_approval_request(
+        request_id, approval_type, state, auto_approved=auto_approved
+    )
     await bridge.close()
     return approval_id
 

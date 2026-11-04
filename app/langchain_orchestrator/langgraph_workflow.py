@@ -234,6 +234,7 @@ class FullWorkflow:
         self.graph = self._build_graph()
 
         auto_approve = os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true"
+        self.auto_approve = auto_approve
         is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
         if auto_approve and is_production:
             raise RuntimeError(
@@ -668,7 +669,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating requirements approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "requirements", state, database_url=DATABASE_URL
+            state["request_id"],
+            "requirements",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["requirements_approved"] = None
 
@@ -772,7 +777,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating phenotype approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "phenotype_sql", state, database_url=DATABASE_URL
+            state["request_id"],
+            "phenotype_sql",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["phenotype_approved"] = None
 
@@ -929,7 +938,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating preview QA review approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "preview_qa", state, database_url=DATABASE_URL  # Approval type
+            state["request_id"],
+            "preview_qa",  # Approval type
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["preview_qa_review_approved"] = None
 
@@ -1177,7 +1190,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "delivery", state, database_url=DATABASE_URL
+            state["request_id"],
+            "delivery",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["qa_approved"] = None
 
