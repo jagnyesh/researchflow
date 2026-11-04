@@ -49,6 +49,9 @@ class SQLGenerator:
             # the cohort on SNOMED-source datasets.
             self.condition_code_columns = ("code_text", "icd10_display", "snomed_display")
             self.observation_code_column = "code"
+            # Lab criteria match by name: code_text is FHIR code.text, code_display the
+            # coding display; either may be the populated one.
+            self.observation_text_columns = ("code_text", "code_display")
         else:
             # Legacy HAPI FHIR schema (deprecated)
             self.schema = None
@@ -59,6 +62,7 @@ class SQLGenerator:
             self.patient_id_column = "id"
             self.condition_code_columns = ("code_display",)
             self.observation_code_column = "code_display"
+            self.observation_text_columns = ("code_display",)
 
         # Back-compat alias for callers that still read condition_code_column.
         # Keep the most semantically informative single column for any code
@@ -535,11 +539,16 @@ class SQLGenerator:
         param_name = self._get_param_name("lab")
         params = {param_name: f"%{lab_term}%"}
 
+        observation_table = self._build_table_name(self.observation_table)
+        col_match = " OR ".join(
+            f"LOWER(o.{col}) LIKE LOWER(:{param_name})" for col in self.observation_text_columns
+        )
+
         # nosec B608 - Table/column names from validated configuration, parameters are bound
         sql = f"""{operator} (
-        SELECT 1 FROM observation o
-        WHERE o.patient_id = p.id
-        AND LOWER(o.code_display) LIKE LOWER(:{param_name})
+        SELECT 1 FROM {observation_table} o
+        WHERE o.patient_id = p.{self.patient_id_column}
+        AND ({col_match})
     )"""
 
         return sql, params
