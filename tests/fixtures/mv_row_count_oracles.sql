@@ -101,3 +101,26 @@ JOIN hfj_res_ver v ON v.res_id = r.res_id AND v.res_ver = r.res_ver
 WHERE r.res_type = 'Procedure'
   AND r.res_deleted_at IS NULL
   AND v.res_text_vc::jsonb ->> 'status' IN ('completed', 'in-progress');
+
+-- ============================================================================
+-- medication_requests
+-- ============================================================================
+-- View-def WHERE clause:
+--   status in ('active' | 'completed' | 'on-hold')
+--
+-- Moved to the sqlonfhir backend in #111: the custom transpiler emitted NULL
+-- for medication.ofType(CodeableConcept), so medication_code/_display/_text
+-- were NULL in every row.
+--
+-- Data observation (2026-11-04): 19,170 'completed' + 946 'active', no
+-- 'on-hold'. 12,253 carry medicationCodeableConcept; the other 7,863 use
+-- medicationReference (a Medication resource), so their medication columns
+-- stay NULL.
+--
+-- Expected 2026-11-04: 20,116 rows.
+SELECT count(*) AS medication_requests_oracle
+FROM hfj_resource r
+JOIN hfj_res_ver v ON v.res_id = r.res_id AND v.res_ver = r.res_ver
+WHERE r.res_type = 'MedicationRequest'
+  AND r.res_deleted_at IS NULL
+  AND v.res_text_vc::jsonb ->> 'status' IN ('active', 'completed', 'on-hold');
