@@ -4,6 +4,7 @@ Data Extraction Agent
 Executes data extraction from clinical data warehouse using multi-source orchestration.
 """
 
+from datetime import date, timedelta
 from typing import Dict, Any, Optional
 import logging
 import re
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Data elements dispatch on a canonical ID, never on the display string: the
 # requirements LLM rewrites form labels ("Demographics (age, gender, race)" →
 # "Demographics"), and an exact-label match silently extracted nothing (#205).
-# id -> (sqlonfhir view, selected columns, date column for a time-period filter)
+# id -> (sqlonfhir view, selected columns, date expression for a time-period filter)
 DATA_ELEMENT_SOURCES = {
     "demographics": (
         "patient_demographics",
@@ -35,8 +36,10 @@ DATA_ELEMENT_SOURCES = {
     "procedures": (
         "procedure_history",
         "patient_id, procedure_id, status, cpt_code, cpt_display, snomed_code, "
-        "snomed_display, code_text, performed_datetime",
-        "performed_datetime",
+        "snomed_display, code_text, performed_datetime, performed_period_start",
+        # Synthea records procedures as performedPeriod; performed_datetime is
+        # almost always NULL, so filtering on it alone returned nothing.
+        "COALESCE(performed_datetime, performed_period_start)",
     ),
     "lab_results": (
         "observation_labs",
@@ -53,13 +56,21 @@ DATA_ELEMENT_SOURCES = {
 _DATA_ELEMENT_ALIASES = {
     "demographics": "demographics",
     "demographic": "demographics",
+    "demographic data": "demographics",
+    "patient demographics": "demographics",
+    "age": "demographics",
+    "gender": "demographics",
     "diagnoses": "diagnoses",
     "diagnosis": "diagnoses",
     "conditions": "diagnoses",
     "conditions diagnoses": "diagnoses",
+    "diagnoses conditions": "diagnoses",
+    "condition": "diagnoses",
     "procedures": "procedures",
     "lab results": "lab_results",
     "labs": "lab_results",
+    "lab": "lab_results",
+    "laboratory results": "lab_results",
     "family name": "family_name",
     "given name": "given_name",
     "date of birth": "birth_date",
@@ -405,8 +416,15 @@ class DataExtractionAgent(BaseAgent):
         # nosec B608 - view/columns come from DATA_ELEMENT_SOURCES; values are bound
         sql = f"SELECT {columns} FROM sqlonfhir.{view} WHERE patient_id IN ({placeholders})"
         if date_column and time_period.get("start") and time_period.get("end"):
-            sql += f" AND {date_column} BETWEEN :date_start AND :date_end"
-            params.update(date_start=time_period["start"], date_end=time_period["end"])
+            # The date columns are ISO-8601 text with a time; a half-open range
+            # keeps the whole end day ('2024-12-31T10:00' > '2024-12-31').
+            sql += f" AND {date_column} >= :date_start AND {date_column} < :date_end_exclusive"
+            params.update(
+                date_start=str(time_period["start"])[:10],
+                date_end_exclusive=(
+                    date.fromisoformat(str(time_period["end"])[:10]) + timedelta(days=1)
+                ).isoformat(),
+            )
         if limit is not None:
             sql += " LIMIT :preview_limit"
             params["preview_limit"] = limit

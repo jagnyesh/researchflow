@@ -30,7 +30,17 @@ def _delivery_dir(monkeypatch, tmp_path):
         ("Procedures (CPT/HCPCS codes)", "procedures"),
         ("Lab Results (LOINC codes)", "lab_results"),
         ("lab_results", "lab_results"),
+        # Spellings the requirements LLM produces (review of #205)
+        ("Diagnoses/Conditions", "diagnoses"),
+        ("condition", "diagnoses"),
+        ("laboratory results", "lab_results"),
+        ("demographic data", "demographics"),
+        ("patient demographics", "demographics"),
+        ("age", "demographics"),
+        ("gender", "demographics"),
         ("Clinical Notes", None),
+        ("Medication history", None),
+        ("clinical_data", None),
     ],
 )
 def test_names_resolve_to_canonical_elements(name, expected):
@@ -84,3 +94,28 @@ async def test_a_time_period_filters_on_the_element_date_column():
     )
 
     assert everything and nothing == []
+
+
+@pytest.mark.requires_services
+@pytest.mark.asyncio
+async def test_procedures_honour_a_time_period():
+    # Synthea records procedures as performedPeriod, so performed_datetime is
+    # almost always NULL; filtering on it alone returned nothing (#205 review).
+    ids = await _patients("procedure_history", 50)
+
+    rows = await DataExtractionAgent()._extract_data_element(
+        "Procedures", ids, {"start": "1900-01-01", "end": "2100-12-31"}
+    )
+
+    assert rows
+
+
+@pytest.mark.requires_services
+@pytest.mark.asyncio
+async def test_the_end_date_includes_that_whole_day():
+    # A real onset at 2025-05-30T21:26:21-05:00; BETWEEN on ISO text dropped it.
+    rows = await DataExtractionAgent()._extract_data_element(
+        "Diagnoses", ["155656"], {"start": "2025-05-30", "end": "2025-05-30"}
+    )
+
+    assert any(r["onset_datetime"].startswith("2025-05-30T21:26") for r in rows)
