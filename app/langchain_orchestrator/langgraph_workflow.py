@@ -9,7 +9,7 @@ States: 23 total
 - Approval gates: 5 states
 - Terminal states: 3 states
 
-Purpose: Production-ready LangGraph workflow with all 6 agents integrated
+Purpose: Production-ready LangGraph workflow with all 5 workflow agents integrated
 Status: Sprint 3 - Production Implementation
 """
 
@@ -212,7 +212,7 @@ class FullWorkflow:
             logger.info(f"[FullWorkflow] HAPI DB URL: {hapi_db_url}")
             logger.info(f"[FullWorkflow] Healthcare DB URL: {healthcare_db_url}")
 
-            # Initialize all 6 agents with appropriate database connections
+            # Initialize all 5 workflow agents with appropriate database connections
             self.requirements_agent = RequirementsAgent()
             self.phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
             self.extraction_agent = DataExtractionAgent(
