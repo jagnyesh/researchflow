@@ -198,3 +198,8 @@ async def test_an_extra_predicate_fails_on_the_missing_patients():
     assert result.executed and not result.passed
     assert result.sql_count < result.oracle_count
     assert result.mismatch == result.oracle_count - result.sql_count
+
+
+def test_both_seed_oracles_are_signed_off():
+    # Approved by the repo owner on 2026-11-04 (#239).
+    assert [c.signoff for c in FORMAL_CASES] == ["approved", "approved"]

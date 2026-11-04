@@ -62,6 +62,7 @@ FORMAL_CASES: List[FormalCase] = [
               )
         """,
         required_predicates=["gender = female", "age > 65", "condition: diabetes mellitus"],
+        signoff="approved",  # repo owner, 2026-11-04
         verified_count=13,
     ),
     FormalCase(
@@ -91,6 +92,7 @@ FORMAL_CASES: List[FormalCase] = [
               )
         """,
         required_predicates=["condition: hypertension", "exclude condition: diabetes mellitus"],
+        signoff="approved",  # repo owner, 2026-11-04
         verified_count=37,
     ),
 ]
