@@ -351,7 +351,7 @@ class SQLGenerator:
                     # Build lab value query
                     condition, lab_params = self._build_lab_clause(term, include)
                     if condition:
-                        logger.debug(f"Added lab clause: {condition}")
+                        logger.debug("Added lab clause")
                         conditions.append(condition)
                         params.update(lab_params)
 
