@@ -1145,6 +1145,8 @@ class FullWorkflow:
                 "structured_requirements": state[
                     "requirements"
                 ],  # Agent expects "structured_requirements"
+                # The phenotype-time estimate the final cohort check compares against (#209)
+                "feasibility_report": {"estimated_cohort_size": state.get("estimated_cohort_size")},
             }
 
             # Track agent execution start

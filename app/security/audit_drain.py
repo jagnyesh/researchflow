@@ -28,6 +28,10 @@ AUDIT_DEAD_LETTER_KEY = "audit:dead_letter"
 
 
 # Drain liveness state for /health/ready (Issue #3).
+# BLMOVE's block must end before the client's socket timeout (5 s in app/main.py),
+# or every empty poll raises TimeoutError and the loop backs off for up to 60 s.
+DRAIN_BLOCK_TIMEOUT_SEC = 2
+
 _drain_state = {
     "last_success_monotonic": None,
     "restart_count": 0,
@@ -98,7 +102,9 @@ async def _ack(redis_client, raw: str) -> None:
     await redis_client.lrem(AUDIT_PROCESSING_KEY, 1, raw)
 
 
-async def drain_batch(redis_client, batch_size: int = 100, block_timeout_sec: float = 5) -> int:
+async def drain_batch(
+    redis_client, batch_size: int = 100, block_timeout_sec: float = DRAIN_BLOCK_TIMEOUT_SEC
+) -> int:
     """Drain a batch from audit:queue. At-least-once via processing list.
 
     Returns the number of events successfully written to audit_logs.
@@ -152,9 +158,6 @@ async def drain_batch(redis_client, batch_size: int = 100, block_timeout_sec: fl
                 await _send_to_dead_letter(redis_client, raw, type(exc).__name__)
                 await _ack(redis_client, raw)
 
-    if written > 0:
-        _drain_state["last_success_monotonic"] = time.monotonic()
-
     return written
 
 
@@ -183,7 +186,7 @@ async def audit_drain_loop(
     redis_client,
     stop_event: Optional[asyncio.Event] = None,
     batch_size: int = 100,
-    block_timeout_sec: float = 5,
+    block_timeout_sec: float = DRAIN_BLOCK_TIMEOUT_SEC,
 ):
     """Background drain loop. Issue #3: supervised, at-least-once."""
     if stop_event is None:
@@ -192,11 +195,17 @@ async def audit_drain_loop(
     attempts = 0
     while not stop_event.is_set():
         try:
-            await drain_batch(
+            written = await drain_batch(
                 redis_client,
                 batch_size=batch_size,
                 block_timeout_sec=block_timeout_sec,
             )
+            # An empty poll is a healthy drain (or readiness goes stale on an idle
+            # instance), but only while nothing is stranded in audit:processing:
+            # a batch that crashed on a failing audit write leaves its events
+            # there, and readiness must go stale for that.
+            if written > 0 or await redis_client.llen(AUDIT_PROCESSING_KEY) == 0:
+                _drain_state["last_success_monotonic"] = time.monotonic()
             attempts = 0  # reset backoff on any successful loop iteration
         except Exception as e:
             attempts += 1

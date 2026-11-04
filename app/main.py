@@ -26,6 +26,7 @@ from .security.rate_limit import setup_rate_limiting
 from .security import audit_middleware as audit_mw
 from .security.audit_drain import audit_drain_loop, recovery_sweep
 from .security.body_size import body_size_limit_middleware
+from .security.auth import get_jwt_secret_key
 from .security.encryption_keys import assert_encryption_key_present_if_production
 from .security.tls import (
     install_tls_middleware_if_production,
@@ -66,6 +67,8 @@ async def lifespan(app: FastAPI):
     maybe_warn_about_allowed_hosts()
     # Phase 3b: refuse to start in production without a valid Fernet encryption key
     assert_encryption_key_present_if_production()
+    # #279: fail fast; the same check also runs on every sign/verify
+    get_jwt_secret_key()
 
     # Initialize audit pipeline (Sprint 6.1 Phase 2.2)
     audit_redis_url = os.getenv("REDIS_AUDIT_URL")
