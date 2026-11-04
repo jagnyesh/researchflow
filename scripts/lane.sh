@@ -44,19 +44,19 @@ lane_dir() {
   echo "$(dirname "$(repo_root)")/$(repo_name)-${issue}"
 }
 
-# Count active lane worktrees: only sibling dirs matching <repo>-<issue>, so an
-# unrelated worktree (e.g. a .claude/worktrees/ one) doesn't inflate the WIP.
-# substr over the whole line (not $2) tolerates spaces in the path; awk exits 0
-# on no-match so `set -e` doesn't kill a bare assignment.
+# Count active lanes by branch, not path (#198): any worktree on a feat/<n>- or
+# fix/<n>- branch, wherever it lives (lane.sh siblings, native
+# .claude/worktrees/, raw `git worktree add`). Detached-HEAD worktrees have no
+# branch line, so stale ones drop out. The main checkout (porcelain's first
+# entry) never counts, even when it's on an issue branch. awk exits 0 on
+# no-match so `set -e` doesn't kill a bare assignment.
 active_lane_count() {
-  local prefix; prefix="$(dirname "$(repo_root)")/$(repo_name)-"
   git worktree list --porcelain \
-    | awk -v p="$prefix" '
-        index($0, "worktree ") == 1 {
-          path = substr($0, 10)
-          if (index(path, p) == 1 && substr(path, length(p) + 1) ~ /^[0-9]+$/) c++
-        }
-        END { print c + 0 }'
+    | awk 'index($0, "worktree ") == 1 { n++ }
+           n > 1 && index($0, "branch refs/heads/") == 1 {
+             if (substr($0, 19) ~ /^(feat|fix)\/[0-9]+-/) c++
+           }
+           END { print c + 0 }'
 }
 
 tmux_has_session() { tmux has-session -t "$TMUX_SESSION" 2>/dev/null; }
