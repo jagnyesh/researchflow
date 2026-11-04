@@ -29,9 +29,11 @@ def test_cost_per_passing_query_divides_median_cost_by_pass_rate():
 
     s = summarize(results, n_unsupported=0)
 
-    assert s["median_cost_per_attempt_usd"] == 0.003
+    # Scored queries only: the pass rate is a scored-query rate, so the cost it
+    # divides must be too. The adversarial attempt is excluded.
+    assert s["median_cost_per_attempt_usd"] == 0.0035
     assert s["accuracy"] == 0.75
-    assert s["cost_per_passing_query_usd"] == round(0.003 / 0.75, 6)
+    assert s["cost_per_passing_query_usd"] == round(0.0035 / 0.75, 6)
 
 
 def test_full_denominator_accuracy_counts_unsupported_as_fails():

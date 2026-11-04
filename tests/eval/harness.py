@@ -77,13 +77,14 @@ def summarize(results: List[Dict], *, n_unsupported: int) -> Dict:
 
     accuracy is scored-only, the ADR 0028 gate number. full_denominator_accuracy
     counts the unsupported (multi-row) cases as fails. Cost per passing query is
-    the median cost per attempt divided by the pass rate.
+    the median scored-query cost divided by the scored pass rate.
     """
     scored = [r for r in results if r["kind"] == "scored"]
     adversarial = [r for r in results if r["kind"] == "adversarial"]
     matched = sum(1 for r in scored if r["matched"])
     accuracy = round(matched / len(scored), 4) if scored else 0.0
-    costs = [r["cost_usd"] for r in results if r.get("cost_usd") is not None]
+    # Scored queries only, so the cost and the pass rate cover the same population.
+    costs = [r["cost_usd"] for r in scored if r.get("cost_usd") is not None]
     median_cost = statistics.median(costs) if costs else None
     return {
         "scored_total": len(scored),
