@@ -17,7 +17,7 @@ from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 # JWT Configuration
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
@@ -128,5 +128,7 @@ def decode_access_token(token: str) -> Optional[TokenData]:
             return None
 
         return TokenData(email=email, user_id=user_id, role=role)
-    except JWTError:
+    except (JWTError, ValidationError):
+        # A signed token with mistyped claims is still an invalid token (#227);
+        # the ValidationError text would echo the claim values, so it is dropped.
         return None
