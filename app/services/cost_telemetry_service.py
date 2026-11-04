@@ -389,14 +389,15 @@ def _run_start_time(run: Any) -> datetime:
 
 
 def _get_input_tokens(run: Any) -> int:
-    """Total input tokens, INCLUDING cache_read.
+    """Total input tokens, INCLUDING cache reads and cache writes.
 
     Despite the Anthropic API returning input_tokens as the non-cached portion,
     LangSmith's `Run.input_tokens` stores the TOTAL (verified Sprint 8.4 wire
-    pull on 2026-05-14: every observed LLM leaf satisfied
-    `total_tokens == input_tokens + output_tokens` with cache_read inside
-    input_tokens). Callers that need the non-cached portion must subtract
-    cache_read_tokens themselves via `_get_non_cached_input_tokens` below.
+    pull on 2026-05-14 for cache_read, and 2026-10-30/31 for cache_creation,
+    #271: every observed LLM leaf satisfied
+    `total_tokens == input_tokens + output_tokens` with both inside
+    input_tokens). Callers that need the non-cached portion use
+    `_get_non_cached_input_tokens` below.
     """
     return int(getattr(run, "input_tokens", 0) or 0)
 

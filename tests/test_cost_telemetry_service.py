@@ -185,12 +185,11 @@ async def test_thread_aggregation_sums_per_request():
 
 @pytest.mark.asyncio
 async def test_cache_hit_rate_calculation():
-    """cache_hit_rate = cache_read / (cache_read + non_cached_input).
+    """cache_hit_rate = cache_read / total input_tokens.
 
     Per Sprint 8.4 wire-level verification: LangSmith stores `input_tokens` as
     the TOTAL (cache_read is INSIDE input_tokens). So for an 80% cache hit
-    rate, set input_tokens=5000 with cache_read=4000 — the non-cached portion
-    is 5000 - 4000 = 1000, and the rate is 4000 / (4000 + 1000) = 0.8.
+    rate, set input_tokens=5000 with cache_read=4000: 4000 / 5000 = 0.8.
     """
     base = datetime(2026, 5, 11, 12, 0, 0)
     runs = [
@@ -556,6 +555,45 @@ async def test_cache_hit_rate_counts_cache_writes_as_uncached_input():
     summary = await _make_service([cold, warm]).get_exploratory_portal_cost_p50(n=2)
 
     assert abs(summary.cache_hit_rate - 1762 / (1798 + 1787)) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_formal_cache_hit_rate_counts_cache_writes_as_uncached_input():
+    """Same rule on the formal portal's per-thread path (the cold formal
+    request's two leaves, then a warm request reading the Sonnet cache)."""
+    base = datetime(2026, 10, 30, 21, 29, 54)
+    runs = [
+        FakeRun(
+            id="sonnet-cold",
+            name="ChatAnthropic",
+            input_tokens=3339,
+            output_tokens=284,
+            cache_creation_input_tokens=3087,
+            start_time=base,
+            metadata={"thread_id": "REQ-COLD", "ls_model_name": "claude-sonnet-4-6"},
+        ),
+        FakeRun(
+            id="haiku-cold",
+            name="ChatAnthropic",
+            input_tokens=5932,
+            output_tokens=195,
+            cache_creation_input_tokens=5850,
+            start_time=base + timedelta(seconds=5),
+            metadata={"thread_id": "REQ-COLD", "ls_model_name": "claude-haiku-4-5-20251001"},
+        ),
+        FakeRun(
+            id="sonnet-warm",
+            name="ChatAnthropic",
+            input_tokens=3362,
+            output_tokens=257,
+            cache_read_input_tokens=3087,
+            start_time=base + timedelta(seconds=60),
+            metadata={"thread_id": "REQ-WARM", "ls_model_name": "claude-sonnet-4-6"},
+        ),
+    ]
+    summary = await _make_service(runs).get_formal_portal_cost_p50(n=2)
+
+    assert abs(summary.cache_hit_rate - 3087 / (3339 + 5932 + 3362)) < 1e-9
 
 
 def test_langsmith_schema_contract_input_includes_cache_read():
