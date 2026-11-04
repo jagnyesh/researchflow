@@ -155,6 +155,17 @@ NON_AUTH_ALLOWLIST = NO_AUDIT_ALLOWLIST | frozenset(
 )
 
 
+# Audited routes that stay up when the audit pipeline is down (ADR 0011 decision 1):
+# a failed enqueue is logged, not a 503. Everything else audited fails closed,
+# /a2a/token included (it's not on the ADR's fail-open list).
+FAIL_OPEN_AUDITED = frozenset({"/auth/login", "/auth/refresh", "/auth/logout"})
+
+
+def _fails_open(path: str) -> bool:
+    normalized = path.rstrip("/") or "/"
+    return normalized in FAIL_OPEN_AUDITED
+
+
 def classify_route(path: str) -> RouteClass:
     """Classify a request path. Default-deny: unknown paths are PHI."""
     normalized = path.rstrip("/") or "/"
@@ -179,13 +190,13 @@ def set_audit_redis(client):
 async def _try_enqueue(payload: dict) -> bool:
     """Enqueue payload to audit:queue. Returns True on success, False on failure."""
     if _audit_redis is None:
-        logger.error("audit redis not configured; PHI request will fail-closed")
+        logger.error("audit redis not configured; audit enqueue failed")
         return False
     try:
         await _audit_redis.rpush(AUDIT_QUEUE_KEY, json.dumps(payload))
         return True
     except Exception as e:
-        log_internal_error(logger, "audit enqueue failed; PHI request will fail-closed", e)
+        log_internal_error(logger, "audit enqueue failed", e)
         return False
 
 
@@ -281,7 +292,7 @@ async def audit_middleware(request, call_next):
             latency_ms=None,
         )
     )
-    if not pre_ok:
+    if not pre_ok and not _fails_open(path):
         return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
 
     start = time.perf_counter()
@@ -300,7 +311,7 @@ async def audit_middleware(request, call_next):
 
     if not hasattr(response, "body_iterator"):
         # Built here (the #180 500); nothing streams, so fail closed as before.
-        if not await _try_enqueue(completed(response.status_code)):
+        if not await _try_enqueue(completed(response.status_code)) and not _fails_open(path):
             return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
         return response
 
