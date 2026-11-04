@@ -21,6 +21,7 @@ Stub mode (use_real_agents=False) is deterministic and makes no LLM calls.
 """
 
 import pytest
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from sqlalchemy import select
 
 from app.database import get_db_session, init_db
@@ -36,6 +37,30 @@ def _delivery_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DELIVERY_PATH", str(tmp_path))
 
 
+@pytest.fixture
+async def make_facade(tmp_path):
+    # Both aiosqlite handles a facade holds (its checkpointer, its approval
+    # bridge engine) run non-daemon threads; left open they kept CI's pytest
+    # from exiting. Close both with the test.
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "checkpoints.db")) as saver:
+
+        async def checkpointer():
+            return saver
+
+        made = []
+
+        async def make(use_real_agents=False):
+            facade = LangGraphRequestFacade(use_real_agents=use_real_agents)
+            await facade._ensure_initialized()  # it resets checkpointer_factory
+            facade.checkpointer_factory = checkpointer
+            made.append(facade)
+            return facade
+
+        yield make
+        for facade in made:
+            await facade.close()
+
+
 async def _approvals(request_id: str) -> list:
     async with get_db_session() as session:
         result = await session.execute(select(Approval).where(Approval.request_id == request_id))
@@ -43,9 +68,9 @@ async def _approvals(request_id: str) -> list:
 
 
 @pytest.mark.asyncio
-async def test_a_new_request_pauses_at_requirements_review_with_its_approval():
+async def test_a_new_request_pauses_at_requirements_review_with_its_approval(make_facade):
     await init_db()
-    facade = LangGraphRequestFacade(use_real_agents=False)
+    facade = await make_facade()
 
     request_id = await facade.process_new_request(REQUEST, RESEARCHER)
 
@@ -56,9 +81,9 @@ async def test_a_new_request_pauses_at_requirements_review_with_its_approval():
 
 
 @pytest.mark.asyncio
-async def test_approving_requirements_hands_off_to_phenotype_review():
+async def test_approving_requirements_hands_off_to_phenotype_review(make_facade):
     await init_db()
-    facade = LangGraphRequestFacade(use_real_agents=False)
+    facade = await make_facade()
     request_id = await facade.process_new_request(REQUEST, RESEARCHER)
     (gate,) = await _approvals(request_id)
 
@@ -73,11 +98,11 @@ async def test_approving_requirements_hands_off_to_phenotype_review():
 
 @pytest.mark.requires_api_key
 @pytest.mark.asyncio
-async def test_real_agent_executions_are_tracked():
+async def test_real_agent_executions_are_tracked(make_facade):
     # Execution rows are written only on the real-agent path; that needs a live
     # LLM, so this runs only where an API key is configured (billed).
     await init_db()
-    facade = LangGraphRequestFacade(use_real_agents=True)
+    facade = await make_facade(use_real_agents=True)
 
     request_id = await facade.process_new_request(REQUEST, RESEARCHER)
 
