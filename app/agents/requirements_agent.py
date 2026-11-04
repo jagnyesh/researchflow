@@ -140,12 +140,13 @@ class RequirementsAgent(BaseAgent):
             researcher_info = context.get("researcher_info", {})
 
             # Get structured requirements from form (if provided, else use defaults).
-            # A blank optional field (the portal sends [] / None) counts as not
-            # submitted, so it falls back to its default and the LLM may fill it.
+            # A blank criteria box (the portal sends []) counts as not submitted, so
+            # it falls back to the request text. Other blanks are the researcher's
+            # answer: blank dates mean no time filter, not an invented window.
             structured_reqs = {
                 k: v
                 for k, v in researcher_info.get("structured_requirements", {}).items()
-                if _has_value(v)
+                if k not in ("inclusion_criteria", "exclusion_criteria") or _has_value(v)
             }
             submitted = set(structured_reqs)
             if researcher_info.get("name"):

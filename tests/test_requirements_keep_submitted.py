@@ -106,8 +106,9 @@ async def test_the_llm_fills_gaps_but_never_overwrites_submitted_fields():
         concepts=[{"type": "condition", "term": "type 2 diabetes"}],
     )
 
-    context = await _context(structured={**SUBMITTED, "time_period": {"start": None, "end": None}})
-    _available_llm.extracted["time_period"] = {"start": "2020-01-01", "end": None}
+    _available_llm.extracted["principal_investigator"] = "Someone Else"
+    _available_llm.extracted["study_title"] = "LLM-written title"
+    context = await _context()
 
     result = await agent.execute_task("gather_requirements", context)
 
@@ -115,7 +116,53 @@ async def test_the_llm_fills_gaps_but_never_overwrites_submitted_fields():
     assert [c["description"] for c in reqs["inclusion_criteria"]] == ["type 2 diabetes"]
     assert reqs["data_elements"] == ["HbA1c"]
     assert reqs["irb_number"] == "IRB-REAL", "the submitted IRB number is the researcher's"
-    assert reqs["time_period"]["start"] == "2020-01-01", "a blank field may be filled"
+    assert reqs["principal_investigator"] == "Synthetic Researcher"
+    assert reqs["study_title"] == "LLM-written title", "a field the form doesn't send may be filled"
+
+
+@pytest.mark.asyncio
+async def test_blank_dates_mean_no_time_filter():
+    # The portal's date pickers default to blank: {"start": None, "end": None}.
+    agent = RequirementsAgent()
+    _available_llm(
+        agent,
+        extracted={"time_period": {"start": "2022-01-01", "end": "2024-12-31"}},
+        concepts=[{"type": "condition", "term": "type 2 diabetes"}],
+    )
+
+    result = await agent.execute_task(
+        "gather_requirements",
+        await _context(structured={**SUBMITTED, "time_period": {"start": None, "end": None}}),
+    )
+
+    reqs = result["structured_requirements"]
+    assert reqs["time_period"] == {"start": None, "end": None}
+    sql, params = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        reqs, count_only=True
+    )
+    assert not any(k.startswith(("start_date", "end_date")) for k in params), params
+
+
+@pytest.mark.asyncio
+async def test_an_empty_batch_entry_is_retried_per_criterion():
+    agent = RequirementsAgent()
+    _available_llm(agent, extracted={})
+    single_calls = []
+
+    async def batch(criteria):
+        return [{"concepts": []} for _ in criteria]  # numbering-mismatch placeholder
+
+    async def single(criterion):
+        single_calls.append(criterion)
+        return {"concepts": [{"type": "condition", "term": "type 2 diabetes"}]}
+
+    agent.llm_client.extract_medical_concepts_batch = batch
+    agent.llm_client.extract_medical_concepts = single
+
+    result = await agent.execute_task("gather_requirements", await _context())
+
+    assert single_calls == ["type 2 diabetes"]
+    assert result["structured_requirements"]["inclusion_criteria"][0]["concepts"]
 
 
 @pytest.mark.asyncio
