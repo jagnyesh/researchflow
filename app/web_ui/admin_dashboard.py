@@ -1514,16 +1514,18 @@ def display_sql_approval(data):
     sql_query = data.get("phenotype_sql", "N/A")
     st.code(sql_query, language="sql")
 
-    # Metrics
+    # Metrics. A failed estimate arrives as None, never as a count (#245).
+    estimate = data.get("cohort_estimate") or {}
+    cohort = data.get("estimated_cohort_size")
+    estimate_unavailable = cohort is None or estimate.get("status") == "unavailable"
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        cohort = data.get("estimated_cohort_size", "Unknown")
-        st.metric("Estimated Cohort", cohort)
+        st.metric("Estimated Cohort", "Unavailable" if estimate_unavailable else cohort)
 
     with col2:
-        feasibility = data.get("feasibility_score", 0)
-        st.metric("Feasibility Score", f"{feasibility:.2f}")
+        feasibility = data.get("feasibility_score")
+        st.metric("Feasibility Score", "—" if feasibility is None else f"{feasibility:.2f}")
 
     with col3:
         availability = data.get("data_availability", {}).get("overall_availability", 0)
@@ -1531,7 +1533,9 @@ def display_sql_approval(data):
 
     with col4:
         extraction_time = data.get("estimated_extraction_time_hours", 0)
-        if extraction_time < 1:
+        if extraction_time is None:
+            time_display = "—"
+        elif extraction_time < 1:
             time_display = f"{int(extraction_time * 60)} min"
         else:
             time_display = f"{extraction_time:.1f} hrs"
@@ -1539,7 +1543,14 @@ def display_sql_approval(data):
 
     # Auto-Feasibility Assessment (informational, not decision gate)
     auto_assessment = data.get("auto_feasibility_assessment", "unknown")
-    if auto_assessment == "not_feasible":
+    if estimate_unavailable:
+        ref = estimate.get("error_ref")
+        st.error(
+            "🔴 **Cohort estimate unavailable** — the count query failed"
+            + (f" (ref: {ref})" if ref else "")
+            + ". No cohort size is known; review the SQL on its own."
+        )
+    elif auto_assessment == "not_feasible":
         st.error(
             "🔴 **Auto-Assessment: Low Cohort Size Detected**\n\n"
             "The automated feasibility check detected a small cohort size. "
@@ -1586,16 +1597,19 @@ def display_preview_qa_approval(data):
         with col1:
             actual_size = cohort_check.get("details", {}).get("actual_cohort_size", "N/A")
             st.metric("Actual Cohort", actual_size)
+        details = cohort_check.get("details", {})
+        # None means the estimate failed; there is nothing to compare (#245).
+        estimated_size = details.get("estimated_cohort_size", "N/A")
         with col2:
-            estimated_size = cohort_check.get("details", {}).get("estimated_cohort_size", "N/A")
-            st.metric("Estimated Cohort", estimated_size)
+            st.metric(
+                "Estimated Cohort", "Unavailable" if estimated_size is None else estimated_size
+            )
         with col3:
-            tolerance = cohort_check.get("details", {}).get("tolerance", "N/A")
-            st.metric("Tolerance (±)", tolerance)
+            tolerance = details.get("tolerance", "N/A")
+            st.metric("Tolerance (±)", "—" if tolerance is None else tolerance)
 
         # Show expected range
-        details = cohort_check.get("details", {})
-        if "lower_bound" in details and "upper_bound" in details:
+        if details.get("lower_bound") is not None and details.get("upper_bound") is not None:
             lower = details["lower_bound"]
             upper = details["upper_bound"]
             st.info(f"**Expected Range:** {lower} - {upper} patients")

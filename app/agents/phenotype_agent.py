@@ -27,6 +27,14 @@ from ..cache.redis_client import RedisClient
 logger = logging.getLogger(__name__)
 
 
+class CohortEstimateUnavailable(Exception):
+    """The cohort count could not be computed; `ref` points at the log line."""
+
+    def __init__(self, ref: str):
+        super().__init__(f"cohort estimate unavailable (ref: {ref})")
+        self.ref = ref
+
+
 class PhenotypeValidationAgent(BaseAgent):
     """
     Agent for validating phenotype feasibility and translating to SQL
@@ -128,8 +136,16 @@ class PhenotypeValidationAgent(BaseAgent):
             f"[{self.agent_id}] Generated SQL with {len(sql_params)} parameters: {list(sql_params.keys())}"
         )
 
-        # Step 2: Estimate cohort size
-        estimated_count = await self._estimate_cohort_size(phenotype_sql, sql_params, requirements)
+        # Step 2: Estimate cohort size. A failed estimate stays None: an error
+        # must never reach G2 as a count (ADR 0028 honest-failure invariant).
+        estimate_error_ref = None
+        try:
+            estimated_count = await self._estimate_cohort_size(
+                phenotype_sql, sql_params, requirements
+            )
+        except CohortEstimateUnavailable as unavailable:
+            estimated_count = None
+            estimate_error_ref = unavailable.ref
 
         # Step 3: Check data availability
         data_availability = await self._check_data_availability(
@@ -137,8 +153,10 @@ class PhenotypeValidationAgent(BaseAgent):
         )
 
         # Step 4: Calculate feasibility score
-        feasibility_score = self._calculate_feasibility_score(
-            estimated_count, data_availability, requirements
+        feasibility_score = (
+            None
+            if estimated_count is None
+            else self._calculate_feasibility_score(estimated_count, data_availability, requirements)
         )
 
         # Step 5: Generate full SQL (not count-only) with parameters
@@ -147,15 +165,27 @@ class PhenotypeValidationAgent(BaseAgent):
         )
 
         # Step 6: Build feasibility report
+        estimated = estimated_count is not None
         feasibility_report = {
-            "feasible": feasibility_score > 0.6,
+            "feasible": estimated and feasibility_score > 0.6,
             "feasibility_score": feasibility_score,
             "estimated_cohort_size": estimated_count,
-            "confidence_interval": (int(estimated_count * 0.85), int(estimated_count * 1.15)),
+            "cohort_estimate": (
+                {"status": "ok"}
+                if estimated
+                else {"status": "unavailable", "error_ref": estimate_error_ref}
+            ),
+            "confidence_interval": (
+                (int(estimated_count * 0.85), int(estimated_count * 1.15)) if estimated else None
+            ),
             "data_availability": data_availability,
             "phenotype_sql": full_phenotype_sql,
-            "estimated_extraction_time_hours": self._estimate_extraction_time(
-                estimated_count, requirements.get("data_elements", [])
+            "estimated_extraction_time_hours": (
+                self._estimate_extraction_time(
+                    estimated_count, requirements.get("data_elements", [])
+                )
+                if estimated
+                else None
             ),
             "warnings": [],
             "recommendations": [],
@@ -163,7 +193,15 @@ class PhenotypeValidationAgent(BaseAgent):
 
         # Step 7: Add warnings and recommendations
         min_cohort = requirements.get("minimum_cohort_size", 50)
-        if estimated_count < min_cohort:
+        if not estimated:
+            feasibility_report["warnings"].append(
+                {
+                    "type": "cohort_estimate_unavailable",
+                    "message": f"Cohort estimate unavailable: the count query failed (ref: {estimate_error_ref})",
+                    "suggestion": "Review the SQL on its own; no cohort size is known",
+                }
+            )
+        elif estimated_count < min_cohort:
             feasibility_report["warnings"].append(
                 {
                     "type": "small_cohort",
@@ -194,7 +232,7 @@ class PhenotypeValidationAgent(BaseAgent):
 
         logger.info(
             f"[{self.agent_id}] Feasibility: {feasibility_report['feasible']}, "
-            f"Score: {feasibility_score:.2f}, Cohort: {estimated_count}"
+            f"Score: {feasibility_score}, Cohort: {estimated_count}"
         )
 
         # Step 9: Determine next step
@@ -203,7 +241,12 @@ class PhenotypeValidationAgent(BaseAgent):
         # whether the SQL is appropriate to run, regardless of cohort size
         feasible = feasibility_report["feasible"]
 
-        if feasible:
+        if not estimated:
+            logger.warning(
+                f"[{self.agent_id}] SQL generated without a cohort estimate "
+                f"(ref={estimate_error_ref}), requesting informatician review"
+            )
+        elif feasible:
             logger.info(
                 f"[{self.agent_id}] SQL generated with adequate cohort (score {feasibility_score:.2f}), "
                 f"requesting informatician approval"
@@ -237,7 +280,11 @@ class PhenotypeValidationAgent(BaseAgent):
                     "data_availability": data_availability,
                     "warnings": feasibility_report["warnings"],
                     "recommendations": feasibility_report["recommendations"],
-                    "auto_feasibility_assessment": "feasible" if feasible else "not_feasible",
+                    "auto_feasibility_assessment": (
+                        "unavailable"
+                        if not estimated
+                        else "feasible" if feasible else "not_feasible"
+                    ),
                     # Include research request context for informatician review
                     "initial_request": context.get("initial_request", ""),
                     "structured_requirements": requirements,
@@ -331,13 +378,11 @@ class PhenotypeValidationAgent(BaseAgent):
                     # Conservative factor removed (Bug #8 fix) - see ViewDefinition path above for explanation
                     return count
                 else:
-                    logger.warning(f"[{self.agent_id}] No results from count query")
-                    return 0
+                    raise LookupError("count query returned no rows")
 
         except Exception as e:
-            log_internal_error(logger, f"[{self.agent_id}] Failed to estimate cohort", e)
-            # Return 0 instead of failing - will mark as not feasible
-            return 0
+            ref = log_internal_error(logger, f"[{self.agent_id}] Failed to estimate cohort", e)
+            raise CohortEstimateUnavailable(ref) from e
 
     async def _filter_patients_by_requirements(
         self, patients: List[Dict[str, Any]], requirements: Dict[str, Any]
@@ -523,55 +568,47 @@ class PhenotypeValidationAgent(BaseAgent):
 
         Returns:
             Set of patient IDs (as strings)
+
+        A failed read propagates: an empty set here would filter every patient
+        out and report a cohort of 0 (#245).
         """
-        try:
-            if not self.use_view_definitions or not self.hybrid_runner:
-                logger.warning(
-                    f"[{self.agent_id}] ViewDefinitions not enabled, skipping condition filtering"
-                )
-                return set()
-
-            # Load condition_simple ViewDefinition
-            view_def = self.view_definition_manager.load("condition_simple")
-
-            # Execute via HybridRunner with FORMAL_DRAFT mode (Sprint 6.5 #70).
-            # Condition filtering happens during cohort estimation in the
-            # pre-approval phenotype-validation step; same freshness rationale
-            # as the patient_simple read above.
-            logger.info(f"[{self.agent_id}] Querying conditions...")  # term is PHI-derived
-            results = await self.hybrid_runner.execute(
-                view_definition=view_def,
-                search_params={},
-                max_resources=None,
-                mode=FreshnessAnnotation.FORMAL_DRAFT,
-                caller="phenotype_agent",
-            )
-
-            logger.info(f"[{self.agent_id}] Found {len(results)} total conditions in database")
-
-            # Filter for specific condition and extract patient IDs
-            patient_ids = set()
-            for condition in results:
-                # Check if this condition matches the term
-                if self._matches_condition(condition, condition_term, condition_details):
-                    # Extract patient ID from reference
-                    patient_ref = condition.get("patient_ref", "")
-                    patient_id = self._extract_patient_id(patient_ref)
-                    if patient_id:
-                        patient_ids.add(patient_id)
-
-            logger.info(
-                f"[{self.agent_id}] Found {len(patient_ids)} unique patients for the condition"
-            )
-            return patient_ids
-
-        except Exception as e:
-            # No condition_term in the context: it is criterion text derived from the
-            # PHI-tagged initial_request (#181).
-            log_internal_error(
-                logger, f"[{self.agent_id}] Error getting patients with condition", e
+        if not self.use_view_definitions or not self.hybrid_runner:
+            logger.warning(
+                f"[{self.agent_id}] ViewDefinitions not enabled, skipping condition filtering"
             )
             return set()
+
+        # Load condition_simple ViewDefinition
+        view_def = self.view_definition_manager.load("condition_simple")
+
+        # Execute via HybridRunner with FORMAL_DRAFT mode (Sprint 6.5 #70).
+        # Condition filtering happens during cohort estimation in the
+        # pre-approval phenotype-validation step; same freshness rationale
+        # as the patient_simple read above.
+        logger.info(f"[{self.agent_id}] Querying conditions...")  # term is PHI-derived
+        results = await self.hybrid_runner.execute(
+            view_definition=view_def,
+            search_params={},
+            max_resources=None,
+            mode=FreshnessAnnotation.FORMAL_DRAFT,
+            caller="phenotype_agent",
+        )
+
+        logger.info(f"[{self.agent_id}] Found {len(results)} total conditions in database")
+
+        # Filter for specific condition and extract patient IDs
+        patient_ids = set()
+        for condition in results:
+            # Check if this condition matches the term
+            if self._matches_condition(condition, condition_term, condition_details):
+                # Extract patient ID from reference
+                patient_ref = condition.get("patient_ref", "")
+                patient_id = self._extract_patient_id(patient_ref)
+                if patient_id:
+                    patient_ids.add(patient_id)
+
+        logger.info(f"[{self.agent_id}] Found {len(patient_ids)} unique patients for the condition")
+        return patient_ids
 
     def _extract_patient_id(self, patient_ref: str) -> str:
         """
@@ -900,8 +937,12 @@ class PhenotypeValidationAgent(BaseAgent):
             )
             existing = result.scalar_one_or_none()
 
+            # feasibility_score is NOT NULL; an unavailable estimate (#245) is
+            # marked by the NULL cohort, not by this placeholder.
+            score = feasibility_report.get("feasibility_score") or 0.0
+
             # Extract confidence interval
-            confidence_interval = feasibility_report.get("confidence_interval", [])
+            confidence_interval = feasibility_report.get("confidence_interval") or []
             conf_low = confidence_interval[0] if len(confidence_interval) > 0 else None
             conf_high = confidence_interval[1] if len(confidence_interval) > 1 else None
 
@@ -914,8 +955,8 @@ class PhenotypeValidationAgent(BaseAgent):
             if existing:
                 # Update existing record
                 existing.is_feasible = feasibility_report.get("feasible", False)
-                existing.feasibility_score = feasibility_report.get("feasibility_score", 0.0)
-                existing.estimated_cohort_size = feasibility_report.get("estimated_cohort_size", 0)
+                existing.feasibility_score = score
+                existing.estimated_cohort_size = feasibility_report.get("estimated_cohort_size")
                 existing.confidence_interval_low = conf_low
                 existing.confidence_interval_high = conf_high
                 existing.phenotype_sql = feasibility_report.get("phenotype_sql", "")
@@ -931,8 +972,8 @@ class PhenotypeValidationAgent(BaseAgent):
                 feasibility = FeasibilityReport(
                     request_id=request_id,
                     is_feasible=feasibility_report.get("feasible", False),
-                    feasibility_score=feasibility_report.get("feasibility_score", 0.0),
-                    estimated_cohort_size=feasibility_report.get("estimated_cohort_size", 0),
+                    feasibility_score=score,
+                    estimated_cohort_size=feasibility_report.get("estimated_cohort_size"),
                     confidence_interval_low=conf_low,
                     confidence_interval_high=conf_high,
                     phenotype_sql=feasibility_report.get("phenotype_sql", ""),
