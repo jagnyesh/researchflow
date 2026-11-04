@@ -35,7 +35,7 @@ Detailed long-form write-ups for each arc — covering the problem, the design d
 
 ![ResearchFlow Architecture](docs/images/architecture-overview.png)
 
-ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (FastAPI) → Orchestration (LangGraph) → Agents (6 specialized) → Core Services → Infrastructure (Lambda Architecture) → Data → External integrations.
+ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (FastAPI) → Orchestration (LangGraph) → Agents (5 specialized) → Core Services → Infrastructure (Lambda Architecture) → Data → External integrations.
 
 [View interactive architecture diagram →](https://jagnyesh.github.io/researchflow/architecture.html)
 
@@ -519,7 +519,7 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 | Metric | Value |
 |--------|-------|
 | **Lines of Code** | ~36,000 (application code under `app/`) |
-| **AI Agents** | 6 specialized agents (1 LLM-using, 5 procedural) |
+| **AI Agents** | 5 specialized agents |
 | **Database Tables** | 10 tables |
 | **Workflow Nodes** | 16 nodes (LangGraph FSM) |
 | **API Endpoints** | 25+ REST endpoints |
