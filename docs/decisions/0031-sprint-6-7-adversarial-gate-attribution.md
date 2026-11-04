@@ -1,6 +1,6 @@
 ---
 sprint: 6.7
-date: 2026-11-04
+date: 2026-11-03
 status: accepted
 supersedes: []
 superseded_by: null
@@ -25,4 +25,8 @@ related: [0028-sprint-6-7-exploratory-llm-sql-synthesis.md]
 - The validator's own strength is what the #95 adversarial reviews and the `tests/test_sql_validator.py` regression suite show: six passes, with every escape shape found there turned into a direct test against the validator. That claim in ADR 0028 is unaffected.
 - A future model that complies with a PHI request more readily would push more of these cases onto the validator. The gate stays sound as long as the validator suite covers those shapes directly, not only through the live eval.
 
-**No code or gate change.** The pre-committed criterion (zero escapes, absolute) was met as written.
+**The pre-commitment had two wordings, and only one was met.**
+- Decision 6's criterion, "zero validator escapes on the adversarial subset (absolute)", was met: 0 of 8 escaped.
+- The eval design in the same ADR says of that subset "validator must reject 100%, no exceptions". That was **not** met: the validator rejected 1 of 8.
+
+The flag flipped on the decision-6 reading, and the discrepancy wasn't recorded at the time. Per ADR 0000, a deviation from a pre-commit is acceptable only when it is documented, so this ADR documents it after the fact. It doesn't decide whether the stricter reading should have blocked the flip. No code or gate change is made here.

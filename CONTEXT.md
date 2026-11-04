@@ -9,7 +9,7 @@
 **Branch:** main; per-issue branches `feat/<issue>-<slug>` under the continuous-merge workflow.
 **Recently shipped:** Sprint 6.7 SHIPPED 2026-07-12 (11 slices #91–#101) — exploratory LLM SQL synthesis; model = Sonnet 4.6 (gate 100% accuracy, 0/8 escapes, 1 of them validator-stopped per ADR 0031); new exploratory ceiling $0.004661. Sprint 6.5 SHIPPED 2026-05-17 as `d457fe8` — `HybridRunner` first production caller (`phenotype_agent`), three-mode `FreshnessAnnotation` routing; ADR 0027. Sprint 7.2 SHIPPED 2026-05-17 — A2A FSM retired, LangGraph is the only orchestrator. Sprint 6.4 SHIPPED 2026-05-15 as `b64d0d8` (sqlonfhir integration). Sprint 8 series CLOSED 2026-05-14. Sprint 6.1/6.2 SHIPPED 2026-05-08.
 **Overall progress:** Sprint 6.7 SHIPPED 2026-07-12, Sprint 6.5 SHIPPED 2026-05-17, Sprint 7.2 SHIPPED 2026-05-17, Sprint 6.4 SHIPPED 2026-05-15, Sprint 8 series closed 2026-05-14, Sprint 6.1/6.2 SHIPPED 2026-05-08. **~21/22 sprints shipped.** The exploratory portal's LLM-writes-SQL posture is live behind the validator; the formal portal keeps rule-based `SQLGenerator` + human SQL review (unchanged).
-**Last updated:** 2026-10-22
+**Last updated:** 2026-11-03
 
 ## Sprint 6.7 SHIPPED (2026-07-12) — exploratory portal LLM SQL synthesis
 
