@@ -52,8 +52,8 @@ def test_the_preview_panel_points_to_the_approvals_queue(state):
     at.run()
 
     assert not at.exception, at.exception
-    labels = [b.label for b in at.button]
-    assert not any("Preview" in label for label in labels), labels
+    # No decision button of any label: the panel only points to the queue.
+    assert not at.button, [b.label for b in at.button]
     assert any("Approvals" in i.value for i in at.info), [i.value for i in at.info]
 
 
