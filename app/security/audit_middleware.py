@@ -286,20 +286,99 @@ async def audit_middleware(request, call_next):
 
     start = time.perf_counter()
     response = await _call_next_or_500(request, call_next)
-    latency_ms = int((time.perf_counter() - start) * 1000)
 
-    post_ok = await _try_enqueue(
-        _make_payload(
+    def completed(status_code):
+        return _make_payload(
             event_type="PHI_ACCESS_COMPLETED",
             phase="completed",
             user_id=user_id,
             method=request.method,
             route_template=path,
-            status_code=response.status_code,
-            latency_ms=latency_ms,
+            status_code=status_code,
+            latency_ms=int((time.perf_counter() - start) * 1000),
         )
-    )
-    if not post_ok:
-        return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
 
+    if not hasattr(response, "body_iterator"):
+        # Built here (the #180 500); nothing streams, so fail closed as before.
+        if not await _try_enqueue(completed(response.status_code)):
+            return JSONResponse({"detail": "Audit pipeline unavailable"}, status_code=503)
+        return response
+
+    response.body_iterator = _audited_body(
+        response.body_iterator, response.status_code, completed, request
+    )
     return response
+
+
+_BODY_FAILED = "audit_body_failed_ref"
+
+
+class AuditBodyGuard:
+    """Pure-ASGI guard installed just inside `audit_middleware` (#224).
+
+    Starlette's `call_next` doesn't surface a body that fails mid-stream: the
+    body just ends, and the original exception (message included) is re-raised
+    after the middleware returns. This catches an exception raised after the
+    response started, logs type + ref only, marks the request for
+    `_audited_body`, and re-raises without the message or its context.
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+
+        async def tracking_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, tracking_send)
+        except Exception as exc:
+            if not started:
+                raise  # the #180 backstop turns it into a PHI-safe 500
+            ref = log_internal_error(
+                logger, f"Response body failed on {scope['method']} {scope['path']}", exc
+            )
+            scope.setdefault("state", {})[_BODY_FAILED] = ref
+            raise RuntimeError(f"response body failed (ref: {ref})") from None
+
+
+def install_audit_middleware(app):
+    """The guard first, so it runs inside the audit middleware."""
+    app.add_middleware(AuditBodyGuard)
+    app.middleware("http")(audit_middleware)
+
+
+async def _audited_body(body, status_code, completed, request):
+    """Stream `body`, then record COMPLETED with the real outcome (#224, ADR 0032).
+
+    A body that fails mid-stream is audited as a 500 and logged type + ref
+    only; the re-raised exception carries no message and suppresses its
+    context, so the server's own error line can't print PHI. Headers are gone
+    by the time COMPLETED is written, so a failed write is logged, not a 503.
+    """
+    try:
+        async for chunk in body:
+            yield chunk
+        if request.scope.get("state", {}).get(_BODY_FAILED):
+            status_code = 500
+    except Exception as exc:
+        status_code = 500
+        ref = log_internal_error(
+            logger, f"Response body failed on {request.method} {request.url.path}", exc
+        )
+        raise RuntimeError(f"response body failed (ref: {ref})") from None
+    finally:
+        if not await _try_enqueue(completed(status_code)):
+            logger.error(
+                "PHI_ACCESS_COMPLETED not recorded for %s %s (audit pipeline unavailable)",
+                request.method,
+                request.url.path,
+            )
