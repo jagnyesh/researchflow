@@ -45,3 +45,30 @@ async def test_replay_runs_every_approved_case(tmp_path):
     assert len(scores) == len(approved_cases()) == 2
     assert all(s.executed for s in scores), [s.error_ref for s in scores]
     assert (tmp_path / "formal_gold_set.jsonl").read_text().count("\n") == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@pytest.mark.skipif(not _hapi_reachable(), reason="HAPI Postgres (:5433) not running")
+async def test_a_pending_case_is_never_scored(tmp_path, monkeypatch):
+    from dataclasses import replace
+
+    from tests.eval import formal_record
+
+    pending = replace(FORMAL_CASES[0], id="pending_case", signoff="pending")
+    monkeypatch.setattr(formal_record, "FORMAL_CASES", [*FORMAL_CASES, pending])
+
+    scores = await replay(evidence=tmp_path / "evidence.jsonl")
+
+    assert "pending_case" not in {s.id for s in scores}
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@pytest.mark.skipif(not _hapi_reachable(), reason="HAPI Postgres (:5433) not running")
+async def test_the_anchor_covers_only_the_views_a_case_touches():
+    from tests.eval.formal_record import touched_views
+
+    views = touched_views(FORMAL_CASES[0], load_recording()[FORMAL_CASES[0].id])
+
+    assert views == {"patient_demographics", "condition_simple"}

@@ -13,6 +13,7 @@ are recorded or scored.
 """
 
 import json
+import re
 import subprocess  # nosec B404 - fixed git command, no input
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -57,18 +58,33 @@ async def _requirements_from_agent(case: FormalCase) -> Dict:
     return result["structured_requirements"]
 
 
+def touched_views(case: FormalCase, requirements: Dict) -> set:
+    """The sqlonfhir views the case's generated SQL and oracle read."""
+    from app.utils.sql_generator import SQLGenerator
+
+    sql, _ = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        requirements, count_only=False
+    )
+    return set(re.findall(r"sqlonfhir\.(\w+)", sql + case.oracle_sql))
+
+
 async def _score_all(recording: Dict[str, Dict], evidence: Path) -> List[CaseScore]:
-    scores = [await score_case(c, recording[c.id]) for c in approved_cases()]
-    write_jsonl(scores, evidence, commit=_commit(), batch_anchor_ts=await _batch_anchor_ts())
+    cases = approved_cases()
+    scores = [await score_case(c, recording[c.id]) for c in cases]
+    views = set().union(*(touched_views(c, recording[c.id]) for c in cases)) if cases else set()
+    write_jsonl(scores, evidence, commit=_commit(), batch_anchor_ts=await _batch_anchor_ts(views))
     return scores
 
 
-async def _batch_anchor_ts() -> Optional[str]:
+async def _batch_anchor_ts(views: set) -> Optional[str]:
+    """MAX(refreshed_at) over the views the cases read (ADR 0027's batch_anchor_ts)."""
     from app.adapters.sql_on_fhir import SQLonFHIRAdapter
 
     try:
         [row] = await SQLonFHIRAdapter().execute_sql(
             "SELECT max(refreshed_at) AS ts FROM sqlonfhir.mv_refresh_metadata"
+            " WHERE view_name = ANY(:views)",
+            {"views": sorted(views)},
         )
     except Exception:  # nosec B110 - the anchor is citation metadata; absent is recorded as None
         return None
