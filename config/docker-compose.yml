@@ -1,6 +1,7 @@
 version: '3.8'
 services:
   app:
+    restart: unless-stopped
     build: .
     ports:
       - "8000:8000"
@@ -8,6 +9,8 @@ services:
       - DATABASE_URL=postgresql+asyncpg://researchflow:researchflow@db:5432/researchflow
       - A2A_JWT_SECRET=supersecret
       - FHIR_SERVER_URL=http://hapi-fhir:8080/fhir
+      # HAPI Postgres (batch layer); the client's localhost default doesn't reach it here
+      - HAPI_DB_URL=postgresql://hapi:hapi@hapi-db:5432/hapi  # pragma: allowlist secret
       # Redis Speed Layer
       - REDIS_URL=redis://redis:6379/0
       - USE_SPEED_LAYER=true
@@ -23,13 +26,16 @@ services:
       db:
         condition: service_healthy
       hapi-fhir:
-        condition: service_healthy
+        # Distroless image: no healthcheck is possible (see hapi-fhir), so
+        # service_healthy on it would wait forever.
+        condition: service_started
       redis:
         condition: service_healthy
       redis-audit:
         condition: service_healthy
 
   db:
+    restart: unless-stopped
     image: postgres:15
     environment:
       POSTGRES_USER: researchflow
@@ -51,6 +57,7 @@ services:
   # To upgrade: pull the new tag locally, regenerate the dump, update both this line
   # and tests/fixtures/hapi_seed.meta.json's hapi_tag field.
   hapi-fhir:
+    restart: unless-stopped
     image: hapiproject/hapi:v8.8.0@sha256:34c86fd5805df77c2b9d9c10538050b16ac3dc244352da0ebe4717f931330775
     container_name: hapi-fhir-server
     ports:
@@ -91,6 +98,7 @@ services:
 
   # PostgreSQL database for HAPI FHIR
   hapi-db:
+    restart: unless-stopped
     image: postgres:15
     container_name: hapi-postgres
     environment:
@@ -115,6 +123,7 @@ services:
   # Both Redis services are pinned by tag+digest (#146); bump deliberately, never float.
   # Redis cache for Lambda Speed Layer
   redis:
+    restart: unless-stopped
     image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: researchflow-redis
     ports:
@@ -132,6 +141,7 @@ services:
   # noeviction policy: writes fail loudly when full instead of silently dropping
   # queued audit events. AOF persistence so the queue survives Redis restart.
   redis-audit:
+    restart: unless-stopped
     image: redis:7.4.11-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
     container_name: researchflow-redis-audit
     ports:
@@ -147,6 +157,7 @@ services:
 
   # Synthea synthetic data generator (run once to populate)
   synthea:
+    restart: "no"  # one-shot data generator; restarting would re-run it
     image: conceptant/synthea-fhir:latest
     container_name: synthea-generator
     environment:
@@ -160,12 +171,17 @@ services:
       - SEED=12345
     depends_on:
       hapi-fhir:
-        condition: service_healthy
+        # Distroless image: no healthcheck is possible (see hapi-fhir), so
+        # service_healthy on it would wait forever. HAPI may still be starting
+        # when this one-shot job runs; wait for /fhir/metadata first, as
+        # scripts/seed.sh does, before `--profile synthea up`.
+        condition: service_started
     profiles:
       - synthea  # Only run when explicitly requested
 
   # Legacy mock FHIR server (kept for backward compatibility)
   mock-fhir:
+    restart: unless-stopped
     image: mitre/clinical_ig_mock_server:latest
     ports:
       - "8080:8080"

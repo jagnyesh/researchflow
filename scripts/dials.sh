@@ -60,9 +60,12 @@ jq -r '
   | group_by(.day) | reverse | .[]
   | "== \(.[0].day)  (\(length) merged) ==",
     (.[] | if .og == null
-      then "  #\(.n)  merged-before-green (no completed pre-merge check)  \(.red)\(.early)\(.t[0:56])"
+      then "  #\(.n)  merged-before-green (no green pre-merge check)  \(.red)\(.early)\(.t[0:56])"
       else "  #\(.n)  open->green \(.og)m   green->merge \(.gm)m   \(.red)\(.early)\(.t[0:56])" end),
-    ([.[].gm | select(. != null)] | sort
+    # green->merge is human latency after all-green, so PRs that never got
+    # there (merged-on-red, merged-before-all-green) stay out of the median;
+    # their per-PR timings are still printed above (#214).
+    ([.[] | select(.red == "" and .early == "") | .gm | select(. != null)] | sort
      | if length > 0 then "  median green->merge: \(.[length/2|floor])m" else empty end),  # upper-median on even counts
     "  merged-before-all-green: \(map(select(.early != "")) | length) of \(length)",
     "  merged-on-red: \(map(select(.red != "")) | length) of \(length)"

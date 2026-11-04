@@ -40,6 +40,7 @@ from app.cache.redis_client import RedisClient
 from app.sql_on_fhir.runner.speed_layer_runner import SpeedLayerRunner
 from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
 from app.schemas._errors import log_internal_error
+from app.sql_on_fhir.errors import UnsupportedSearchParamError
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +239,9 @@ class HybridRunner:
                 batch_result = await self.materialized_runner.execute(
                     view_definition, search_params=search_params, max_resources=max_resources
                 )
+            except UnsupportedSearchParamError:
+                # A client error, not a batch-layer failure: no fallback.
+                raise
             except Exception as e:
                 log_internal_error(
                     logger,
@@ -383,6 +387,8 @@ class HybridRunner:
                 return await self.materialized_runner.execute_count(
                     view_definition, search_params=search_params
                 )
+            except UnsupportedSearchParamError:
+                raise
             except Exception as e:
                 log_internal_error(
                     logger,

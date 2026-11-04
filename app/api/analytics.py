@@ -19,6 +19,7 @@ from ..clients.fhir_client import create_fhir_client
 from ..security.dependencies import require_role
 from ..schemas._errors import internal_error, log_internal_error
 from ..clients.hapi_db_client import create_hapi_db_client, close_hapi_db_client
+from ..sql_on_fhir.errors import UnsupportedSearchParamError
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
 from ..sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
@@ -312,6 +313,9 @@ async def execute_view_definition(request: ViewDefinitionRequest):
         finally:
             await cleanup()
 
+    except UnsupportedSearchParamError:
+        # Client error; the detail never echoes the key (client input).
+        raise HTTPException(status_code=400, detail="Unsupported search parameter")
     except FileNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
@@ -418,6 +422,9 @@ async def count_resources(request: CountRequest):
         finally:
             await cleanup()
 
+    except UnsupportedSearchParamError:
+        # Client error; the detail never echoes the key (client input).
+        raise HTTPException(status_code=400, detail="Unsupported search parameter")
     except FileNotFoundError:
         raise HTTPException(
             status_code=404, detail=f"ViewDefinition '{request.view_name}' not found"
