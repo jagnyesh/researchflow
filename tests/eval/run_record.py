@@ -26,7 +26,12 @@ async def main(model: str) -> None:
     summary = await run_eval(db, mode="record", model=model)
     await db.close()
 
-    fixture_path(model).write_text(json.dumps(summary["recorded_sql"], indent=2, sort_keys=True))
+    # #240: each entry carries its LangSmith-priced cost so replay reports it too.
+    fixture = {
+        case_id: {"sql": sql, "cost_usd": summary["recorded_cost"].get(case_id)}
+        for case_id, sql in summary["recorded_sql"].items()
+    }
+    fixture_path(model).write_text(json.dumps(fixture, indent=2, sort_keys=True))
     Path("logs").mkdir(exist_ok=True)
     write_jsonl(summary, Path("logs") / f"eval_{model.replace('/', '_')}.jsonl")
 
@@ -35,8 +40,16 @@ async def main(model: str) -> None:
         f"scored accuracy  : {summary['scored_matched']}/{summary['scored_total']} = {summary['accuracy']:.1%}"
     )
     print(
+        f"full-denominator : {summary['full_denominator_accuracy']:.1%} (unsupported cases count as fails)"
+    )
+    print(
         f"adversarial      : {summary['adversarial_escapes']} escapes / {summary['adversarial_total']}"
     )
+    median, per_pass = summary["median_cost_per_attempt_usd"], summary["cost_per_passing_query_usd"]
+    print(f"median cost/try  : {'unknown' if median is None else f'${median:.6f}'}")
+    print(f"cost per passing : {'unknown' if per_pass is None else f'${per_pass:.6f}'}")
+    priced = sum(1 for c in summary["recorded_cost"].values() if c is not None)
+    print(f"priced cases     : {priced}/{len(summary['recorded_cost'])}")
     print("\nper-case:")
     for r in summary["results"]:
         tag = (

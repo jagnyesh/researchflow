@@ -18,17 +18,20 @@ database as the synthesized SQL, so a fixture recorded on the full local corpus
 replays correctly against CI's small seed fixture (dataset-size-independent).
 """
 
+import asyncio
 import json
+import statistics
 import time
+import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from app.services.schema_introspection import get_cached_schemas
 from app.services.sql_synthesis import SQLSynthesizer, SynthesisError
 from app.services.sql_validator import SQLValidator
 
-from tests.eval.cases import EvalCase, adversarial_cases, scored_cases
+from tests.eval.cases import EvalCase, adversarial_cases, scored_cases, unsupported_cases
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -49,11 +52,77 @@ class CaseResult:
     matched: Optional[bool]  # scored: count == oracle; adversarial: None
     escaped: Optional[bool]  # adversarial: PHI SQL passed validation; scored: None
     latency_ms: float
-    # cost_usd is a #99 prerequisite: run_record (the Sonnet-vs-Opus benchmark
-    # driver) must wire per-call token usage before the gate's cost comparison.
-    # #98's gate is accuracy + escapes only, so it is left None here.
+    # Priced from the case's LangSmith trace in record mode and stored in the
+    # fixture, so replay reports it too (#240). None when unknown, never 0.
     cost_usd: Optional[float]
     note: str = ""
+
+
+def load_fixture(path: Path) -> Dict[str, Tuple[Optional[str], Optional[float]]]:
+    """{case id: (sql, cost_usd)}. Reads the #240 {sql, cost_usd} entries and the
+    older SQL-only fixtures (cost unknown)."""
+    if not path.exists():
+        return {}
+    out = {}
+    for case_id, entry in json.loads(path.read_text()).items():
+        if isinstance(entry, dict):
+            out[case_id] = (entry.get("sql"), entry.get("cost_usd"))
+        else:
+            out[case_id] = (entry, None)
+    return out
+
+
+def summarize(results: List[Dict], *, n_unsupported: int) -> Dict:
+    """Gate numbers plus the cost and full-denominator lines (#240).
+
+    accuracy is scored-only, the ADR 0028 gate number. full_denominator_accuracy
+    counts the unsupported (multi-row) cases as fails. Cost per passing query is
+    the median cost per attempt divided by the pass rate.
+    """
+    scored = [r for r in results if r["kind"] == "scored"]
+    adversarial = [r for r in results if r["kind"] == "adversarial"]
+    matched = sum(1 for r in scored if r["matched"])
+    accuracy = round(matched / len(scored), 4) if scored else 0.0
+    costs = [r["cost_usd"] for r in results if r.get("cost_usd") is not None]
+    median_cost = statistics.median(costs) if costs else None
+    return {
+        "scored_total": len(scored),
+        "scored_matched": matched,
+        "accuracy": accuracy,
+        "full_denominator_accuracy": (
+            round(matched / (len(scored) + n_unsupported), 4) if scored else 0.0
+        ),
+        "adversarial_total": len(adversarial),
+        "adversarial_escapes": sum(1 for r in adversarial if r["escaped"]),
+        "median_cost_per_attempt_usd": median_cost,
+        "cost_per_passing_query_usd": (
+            round(median_cost / accuracy, 6) if median_cost is not None and accuracy else None
+        ),
+    }
+
+
+async def _trace_costs(run_ids: Dict[str, str], attempts: int = 12) -> Dict[str, float]:
+    """Price each case's trace from its LLM leaf runs (CostTelemetryService pricing).
+
+    LangSmith ingests asynchronously, so poll until every trace has its LLM runs.
+    """
+    from langsmith import Client
+
+    from app.services.cost_telemetry_service import _run_cost_usd
+
+    client = Client()
+    costs: Dict[str, float] = {}
+    for _ in range(attempts):
+        for case_id, trace_id in run_ids.items():
+            if case_id in costs:
+                continue
+            leaves = list(client.list_runs(trace_id=trace_id, run_type="llm"))
+            if leaves and all(r.end_time for r in leaves):
+                costs[case_id] = round(sum(_run_cost_usd(r) for r in leaves), 6)
+        if len(costs) == len(run_ids):
+            break
+        await asyncio.sleep(5)
+    return costs
 
 
 async def _synthesize(
@@ -62,21 +131,27 @@ async def _synthesize(
     mode: str,
     model: str,
     synthesizer: Optional[SQLSynthesizer],
-    fixtures: Dict[str, Optional[str]],
+    fixtures: Dict[str, Tuple[Optional[str], Optional[float]]],
     schemas,
+    run_ids: Optional[Dict[str, str]] = None,
 ) -> tuple[Optional[str], float]:
     """Return (sql, latency_ms). sql is None when the model refused (record) or
     the fixture recorded a refusal (replay)."""
     start = time.perf_counter()
     if mode == "replay":
-        sql = fixtures.get(case.id)  # None if refused/absent
+        sql = fixtures.get(case.id, (None, None))[0]  # None if refused/absent
         return sql, (time.perf_counter() - start) * 1000
-    # record
-    try:
-        result = await synthesizer.synthesize(case.nl)
-        sql = result.sql
-    except SynthesisError:
-        sql = None
+    # record: one LangSmith trace per case, so its cost can be priced afterwards
+    from langsmith import trace
+
+    run_id = str(uuid.uuid4())
+    run_ids[case.id] = run_id
+    with trace(name="eval_case", run_type="chain", run_id=run_id, tags=["eval", case.id]):
+        try:
+            result = await synthesizer.synthesize(case.nl)
+            sql = result.sql
+        except SynthesisError:
+            sql = None
     return sql, (time.perf_counter() - start) * 1000
 
 
@@ -227,12 +302,12 @@ async def run_eval(db, *, mode: str, model: str = "claude-sonnet-4-6") -> Dict:
     validator = SQLValidator(schemas=schemas)
 
     synthesizer = None
-    fixtures: Dict[str, Optional[str]] = {}
+    fixtures: Dict[str, Tuple[Optional[str], Optional[float]]] = {}
+    run_ids: Dict[str, str] = {}
     if mode == "record":
         synthesizer = SQLSynthesizer(db_client=db, model=model)
     else:
-        path = fixture_path(model)
-        fixtures = json.loads(path.read_text()) if path.exists() else {}
+        fixtures = load_fixture(fixture_path(model))
 
     results: List[CaseResult] = []
     recorded: Dict[str, Optional[str]] = {}
@@ -245,6 +320,7 @@ async def run_eval(db, *, mode: str, model: str = "claude-sonnet-4-6") -> Dict:
             synthesizer=synthesizer,
             fixtures=fixtures,
             schemas=schemas,
+            run_ids=run_ids,
         )
         recorded[case.id] = sql
         r = await _score_scored(case, sql, db, validator)
@@ -259,28 +335,29 @@ async def run_eval(db, *, mode: str, model: str = "claude-sonnet-4-6") -> Dict:
             synthesizer=synthesizer,
             fixtures=fixtures,
             schemas=schemas,
+            run_ids=run_ids,
         )
         recorded[case.id] = sql
         r = await _score_adversarial(case, sql, db, validator)
         r.latency_ms = latency
         results.append(r)
 
-    scored = [r for r in results if r.kind == "scored"]
-    adversarial = [r for r in results if r.kind == "adversarial"]
-    n_scored = len(scored)
-    n_matched = sum(1 for r in scored if r.matched)
-    n_escapes = sum(1 for r in adversarial if r.escaped)
+    costs = (
+        await _trace_costs(run_ids)
+        if mode == "record"
+        else {case_id: cost for case_id, (_, cost) in fixtures.items()}
+    )
+    for r in results:
+        r.cost_usd = costs.get(r.id)
 
+    rows = [asdict(r) for r in results]
     return {
         "mode": mode,
         "model": model,
-        "scored_total": n_scored,
-        "scored_matched": n_matched,
-        "accuracy": round(n_matched / n_scored, 4) if n_scored else 0.0,
-        "adversarial_total": len(adversarial),
-        "adversarial_escapes": n_escapes,
-        "results": [asdict(r) for r in results],
+        **summarize(rows, n_unsupported=len(unsupported_cases())),
+        "results": rows,
         "recorded_sql": recorded,
+        "recorded_cost": {r.id: r.cost_usd for r in results},
     }
 
 
