@@ -6,6 +6,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from datetime import datetime
 from typing import Dict, Any, Optional
+import asyncio
 import logging
 import os
 import time
@@ -61,7 +62,8 @@ async def _probe_redis(url: str) -> None:
 async def _probe_audit_redis() -> None:
     # The live client when the lifespan configured one; else the configured URL.
     if audit_mw._audit_redis is not None:
-        await audit_mw._audit_redis.ping()
+        # The live client's own socket timeout may be long; don't let it stall /health.
+        await asyncio.wait_for(audit_mw._audit_redis.ping(), timeout=STORE_PROBE_TIMEOUT_S)
         return
     url = os.getenv("REDIS_AUDIT_URL")
     if not url:

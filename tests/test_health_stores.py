@@ -64,3 +64,33 @@ def test_every_compose_service_restarts_and_waits_only_on_real_healthchecks():
         for dep, cond in (svc.get("depends_on") or {}).items():
             if cond.get("condition") == "service_healthy":
                 assert "healthcheck" in services[dep], f"{name} waits on {dep}, which has none"
+
+
+@pytest.mark.asyncio
+async def test_a_hung_audit_redis_cannot_stall_health(monkeypatch):
+    # A server that accepts the connection and never answers: the live audit
+    # client has no socket timeout of its own, so the probe must bound it.
+    import asyncio
+    import time
+
+    import redis.asyncio as redis_async
+
+    from app.api import health as health_module
+    from app.security import audit_middleware as am
+
+    async def never_reply(reader, writer):
+        await asyncio.sleep(3600)
+
+    server = await asyncio.start_server(never_reply, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    hung = redis_async.from_url(f"redis://127.0.0.1:{port}/0")
+    monkeypatch.setattr(am, "_audit_redis", hung)
+    monkeypatch.setattr(health_module, "STORE_PROBE_TIMEOUT_S", 0.5)
+    try:
+        start = time.monotonic()
+        with pytest.raises(Exception):
+            await health_module._probe_audit_redis()
+        assert time.monotonic() - start < 3
+    finally:
+        await hung.aclose()
+        server.close()
