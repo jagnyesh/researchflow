@@ -14,12 +14,19 @@ from typing import Any, Dict, Iterable, List, Optional
 from sqlalchemy import select
 
 GATE_NAMES = {"requirements": "G1", "phenotype_sql": "G2"}
-DECISIONS = ("approved", "rejected", "modified", "pending")
+DECISIONS = ("approved", "rejected", "modified", "pending", "timeout")
+# Decided by a reviewer: timed-out approvals had none, so they are counted but
+# kept out of the rejection rate and reviewer time.
+REVIEWED = ("approved", "rejected", "modified")
 
 # Fixed taxonomy (≤8) for what a rejection or modification caught. First match
 # wins, so the more specific patterns come first.
 _CATEGORY_RULES = [
-    ("phi_concern", r"\b(phi|pii|identif\w*|names?|ssn|mrn|de-?identif\w*|privacy)\b"),
+    # "names" alone is too broad ("the code names are wrong"); require a person.
+    (
+        "phi_concern",
+        r"\b(phi|pii|identif\w*|(patient|person|researcher)s?'? names?|ssn|mrn|de-?identif\w*|privacy)\b",
+    ),
     ("wrong_codes", r"\b(code|codes|icd|icd-?10|snomed|loinc|rxnorm|cpt)\b"),
     ("missing_predicate", r"\b(missing|forgot|omit\w*|drops?|dropped|without the)\b"),
     (
@@ -58,7 +65,7 @@ def summarize_gates(rows: Iterable[Any]) -> Dict[str, Dict[str, Any]]:
     summary = {}
     for gate, gate_rows in sorted(by_gate.items()):
         counts = Counter(r.status for r in gate_rows if r.status in DECISIONS)
-        decided = [r for r in gate_rows if r.status != "pending"]
+        decided = [r for r in gate_rows if r.status in REVIEWED]
         timed = [
             (r.reviewed_at - r.submitted_at).total_seconds() / 60
             for r in decided

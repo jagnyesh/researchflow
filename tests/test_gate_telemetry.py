@@ -39,8 +39,20 @@ def test_counts_per_gate_by_decision():
         ]
     )
 
-    assert summary["G1"]["counts"] == {"approved": 1, "rejected": 1, "modified": 0, "pending": 0}
-    assert summary["G2"]["counts"] == {"approved": 0, "rejected": 0, "modified": 1, "pending": 1}
+    assert summary["G1"]["counts"] == {
+        "approved": 1,
+        "rejected": 1,
+        "modified": 0,
+        "pending": 0,
+        "timeout": 0,
+    }
+    assert summary["G2"]["counts"] == {
+        "approved": 0,
+        "rejected": 0,
+        "modified": 1,
+        "pending": 1,
+        "timeout": 0,
+    }
     assert summary["G1"]["rejection_rate"] == 0.5
 
 
@@ -67,7 +79,7 @@ def test_reviewer_time_and_timestamp_coverage():
         ("adds a filter nobody asked for", "extra_predicate"),
         ("this is beyond the IRB scope", "scope_creep"),
         ("cohort too small to be feasible", "infeasible_cohort"),
-        ("names must not be delivered", "phi_concern"),
+        ("patient names must not be delivered", "phi_concern"),
         ("please re-check", "other"),
         (None, "other"),
     ],
@@ -124,7 +136,13 @@ async def test_loader_reads_the_approvals_table():
 def test_a_gate_with_no_rows_is_reported_not_omitted():
     summary = summarize_gates([_row("phenotype_sql", "approved", 2)])
 
-    assert summary["G1"]["counts"] == {"approved": 0, "rejected": 0, "modified": 0, "pending": 0}
+    assert summary["G1"]["counts"] == {
+        "approved": 0,
+        "rejected": 0,
+        "modified": 0,
+        "pending": 0,
+        "timeout": 0,
+    }
     assert summary["G1"]["rejection_rate"] is None
 
 
@@ -139,3 +157,23 @@ def test_dashboard_rows_flatten_each_gate():
     assert g2["rejected"] == 1 and g2["median reviewer minutes"] == 6
     assert g2["top category"] == "wrong_codes"
     assert {r["gate"] for r in rows} >= {"G1", "G2"}
+
+
+def test_timed_out_approvals_are_counted_but_not_as_reviewer_decisions():
+    summary = summarize_gates(
+        [
+            _row("phenotype_sql", "approved", 5),
+            _row("phenotype_sql", "rejected", 9, "wrong code"),
+            _row("phenotype_sql", "timeout"),  # nobody reviewed it; no reviewed_at by design
+        ]
+    )
+
+    g2 = summary["G2"]
+    assert g2["counts"]["timeout"] == 1
+    assert g2["rejection_rate"] == 0.5
+    assert g2["reviewer_minutes"]["decided_without_timestamp"] == 0
+
+
+def test_code_names_are_a_coding_problem_not_phi():
+    assert categorize_rejection("the code names are wrong") == "wrong_codes"
+    assert categorize_rejection("patient names must not be delivered") == "phi_concern"

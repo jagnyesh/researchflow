@@ -26,7 +26,8 @@ def render(summary: dict) -> str:
         median = "n/a" if t["median"] is None else f"{t['median']:.1f}m"
         lines.append(
             f"{gate:<14} approved {c['approved']:>4}  rejected {c['rejected']:>4}  "
-            f"modified {c['modified']:>4}  pending {c['pending']:>4}  rejection rate {rate}"
+            f"modified {c['modified']:>4}  pending {c['pending']:>4}  timeout {c['timeout']:>4}  "
+            f"rejection rate {rate}"
         )
         lines.append(
             f"{'':<14} reviewer time median {median} (n={t['n']}, "
