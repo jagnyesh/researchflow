@@ -12,7 +12,7 @@
 >
 > **Production Implementations:**
 > - **Exploratory Analytics**: Use `QueryInterpreter` service (app/services/query_interpreter.py)
-> - **Formal Requests**: Use orchestrator workflow (POST /research/submit → Phenotype Agent)
+> - **Formal Requests**: Use the LangGraph workflow, started in-process via `LangGraphRequestFacade.process_new_request` (→ Phenotype Agent)
 >
 > This document remains for architectural reference and to document the 5-phase text-to-SQL flow.
 

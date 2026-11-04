@@ -30,7 +30,6 @@ nest_asyncio.apply(_streamlit_loop)
 # NOW safe to import modules
 import streamlit as st
 
-import httpx
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
@@ -74,6 +73,7 @@ assert_encryption_key_present_if_production()
 from app.services.conversation_manager import ConversationManager, UserIntent, ConversationState
 from app.services.feasibility_service import FeasibilityService
 from app.components.approval_tracker import ApprovalTracker
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 
 
 def run_async(coroutine):
@@ -391,8 +391,35 @@ async def handle_query(user_input: str):
     st.session_state.conversation_state = ConversationState.AWAITING_CONFIRMATION
 
 
+def _formal_facade() -> LangGraphRequestFacade:
+    if "formal_facade" not in st.session_state:
+        st.session_state.formal_facade = LangGraphRequestFacade(
+            use_real_agents=True, use_persistence=True
+        )
+    return st.session_state.formal_facade
+
+
+async def start_formal_request(
+    facade: LangGraphRequestFacade, initial_request: str, structured_requirements: Dict[str, Any]
+) -> str:
+    """Create the formal request and start its LangGraph workflow, in-process,
+    as the formal portal does (#273). The old /research/submit +
+    /research/process hand-off never started a workflow."""
+    return await facade.process_new_request(
+        researcher_request=initial_request,
+        researcher_info={
+            "name": "Research Notebook User",
+            "email": "researcher@hospital.org",
+            "department": "Clinical Research",
+            "irb_number": "IRB-NOTEBOOK-001",
+            "structured_requirements": structured_requirements,
+        },
+        from_formal_portal=True,
+    )
+
+
 async def submit_research_request():
-    """Submit research request to orchestrator via API"""
+    """Start the confirmed query as a formal request (LangGraph workflow)."""
     try:
         # Get stored data
         query_intent = st.session_state.last_query_intent
@@ -423,42 +450,14 @@ async def submit_research_request():
             "phi_level": "de-identified",
         }
 
-        # Prepare submission
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Submit to research API
-            response = await client.post(
-                "http://localhost:8000/research/submit",
-                json={
-                    "researcher_name": "Research Notebook User",
-                    "researcher_email": "researcher@hospital.org",
-                    "researcher_department": "Clinical Research",
-                    "irb_number": "IRB-NOTEBOOK-001",
-                    "initial_request": st.session_state.messages[-2][
-                        "content"
-                    ],  # User's original query
-                    "structured_requirements": structured_requirements,  # Pass pre-structured requirements
-                },
-            )
-            response.raise_for_status()
-            result = response.json()
+        # The user's original query is the message before the confirmation.
+        request_id = await start_formal_request(
+            _formal_facade(), st.session_state.messages[-2]["content"], structured_requirements
+        )
+        st.session_state.pending_request_id = request_id
 
-            request_id = result.get("request_id")
-            st.session_state.pending_request_id = request_id
-
-            # Trigger processing with structured requirements
-            process_response = await client.post(
-                f"http://localhost:8000/research/process/{request_id}",
-                json={
-                    "structured_requirements": structured_requirements,
-                    "skip_conversation": True,  # Indicate we already have requirements
-                },
-            )
-            process_response.raise_for_status()
-
-            # REMOVED: conversation_state (agent handles this now)
-
-            # Show confirmation message
-            confirmation_message = f"""### ✅ Research Request Submitted!
+        # Show confirmation message
+        confirmation_message = f"""### ✅ Research Request Submitted!
 
 **Request ID:** {request_id}
 
@@ -476,7 +475,7 @@ Your data request has been submitted and is now entering the approval workflow:
 
 You can continue using the notebook for other queries while waiting."""
 
-            st.session_state.messages.append({"role": "assistant", "content": confirmation_message})
+        st.session_state.messages.append({"role": "assistant", "content": confirmation_message})
 
     except Exception as e:
         ref = log_internal_error(logger, "Error submitting request", e)

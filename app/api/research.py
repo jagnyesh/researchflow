@@ -1,22 +1,19 @@
 """
 Research Request API Endpoints
 
-Provides REST API for submitting and managing research data requests.
+Read-side REST API for research data requests: status, lists and downloads.
+Requests are created and started through LangGraphRequestFacade (#273).
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from typing import Optional
-from datetime import datetime
 import logging
-import uuid
 from pathlib import Path
 
 from ..database import get_db_session, ResearchRequest, DataDelivery
 from ..schemas._errors import internal_error
 from ..database.workflow_states import WorkflowState
 from ..services.file_storage import FileStorageService
-from ..schemas.research import ResearchRequestSubmission, RequestProcessingTrigger
 from sqlalchemy import func, select
 
 from ..security.dependencies import User, get_current_active_user
@@ -35,151 +32,6 @@ def _visible_requests(user: User):
     if user.role not in ALL_REQUESTS_ROLES:
         query = query.where(func.lower(ResearchRequest.researcher_email) == user.email.lower())
     return query
-
-
-# Global orchestrator reference (set by main.py)
-orchestrator = None
-
-
-def set_orchestrator(orch):
-    """Set the orchestrator instance"""
-    global orchestrator
-    orchestrator = orch
-
-
-# Schemas migrated to app/schemas/research.py (Sprint 6.1 Phase 2.3 Issue #5)
-
-
-@router.post("/submit")
-async def submit_research_request(submission: ResearchRequestSubmission):
-    """
-    Submit a new research data request.
-
-    Creates the request and triggers the orchestrator to begin processing.
-    """
-    try:
-        # Generate request ID
-        date_str = datetime.now().strftime("%Y%m%d")
-        unique_id = str(uuid.uuid4())[:8].upper()
-        request_id = f"REQ-{date_str}-{unique_id}"
-
-        # Create research request in database
-        async with get_db_session() as session:
-            research_request = ResearchRequest(
-                id=request_id,
-                researcher_name=submission.researcher_name,
-                researcher_email=submission.researcher_email,
-                researcher_department=submission.researcher_department,
-                irb_number=submission.irb_number,
-                initial_request=submission.initial_request,
-                current_state=WorkflowState.NEW_REQUEST.value,
-                current_agent="requirements_agent",
-                agents_involved=[],
-                state_history=[
-                    {
-                        "state": WorkflowState.NEW_REQUEST.value,
-                        "timestamp": datetime.now().isoformat(),
-                        "notes": "Request submitted",
-                    }
-                ],
-            )
-
-            session.add(research_request)
-            await session.commit()
-            await session.refresh(research_request)
-
-            logger.info(f"Created research request: {request_id}")
-
-        # Trigger orchestrator to process the request
-        if orchestrator:
-            logger.info(f"Triggering orchestrator for request: {request_id}")
-            # Start processing in background
-            # Note: In production, this should be a background task
-            # For now, we'll return and let the user manually trigger processing
-        else:
-            logger.warning("Orchestrator not available - request created but not processing")
-
-        return {
-            "success": True,
-            "request_id": request_id,
-            "message": "Research request submitted successfully",
-            "status": WorkflowState.NEW_REQUEST.value,
-            "next_step": f"Use POST /research/process/{request_id} to begin processing",
-        }
-
-    except Exception as e:
-        raise internal_error(logger, "Error submitting research request", e)
-
-
-@router.post("/process/{request_id}")
-async def process_research_request(
-    request_id: str,
-    trigger: Optional[RequestProcessingTrigger] = None,
-    user: User = Depends(get_current_active_user),
-):
-    """
-    Trigger processing of a research request.
-
-    Starts the orchestrator workflow for the specified request.
-
-    Args:
-        request_id: Research request ID
-        trigger: Optional trigger with structured requirements and skip_conversation flag
-    """
-    if not orchestrator:
-        raise HTTPException(
-            status_code=500, detail="Orchestrator not initialized. Please restart the API server."
-        )
-
-    try:
-        # Get the research request
-        async with get_db_session() as session:
-            result = await session.execute(
-                _visible_requests(user).where(ResearchRequest.id == request_id)
-            )
-            request = result.scalar_one_or_none()
-
-            if not request:
-                raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
-
-        logger.info(f"Starting processing for request: {request_id}")
-
-        # Build context for requirements agent
-        context = {
-            "request_id": request_id,
-            "initial_request": request.initial_request,
-            "researcher_email": request.researcher_email,
-        }
-
-        # Add structured requirements if provided
-        if trigger and trigger.structured_requirements:
-            context["structured_requirements"] = trigger.structured_requirements
-            context["skip_conversation"] = trigger.skip_conversation
-            logger.info(
-                f"Processing with pre-structured requirements (skip_conversation={trigger.skip_conversation})"
-            )
-
-        # Start the orchestrator workflow using route_task
-        result = await orchestrator.route_task(
-            agent_id="requirements_agent",
-            task="gather_requirements",
-            context=context,
-            from_agent="research_api",
-        )
-
-        return {
-            "success": True,
-            "request_id": request_id,
-            "message": "Processing started - agent execution triggered",
-            "agent": "requirements_agent",
-            "task": "gather_requirements",
-            "result": result,
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise internal_error(logger, f"Error processing request {request_id}", e)
 
 
 @router.get("/{request_id}")

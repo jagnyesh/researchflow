@@ -329,19 +329,18 @@ The Sprint 8 series (8.1–8.4, 2026-05-12 through 2026-05-14) was the project's
 ### Quick Examples
 
 #### Submit Research Request
+Formal requests are started in-process through `LangGraphRequestFacade` (the
+Formal Portal and the Research Notebook both do this); there is no HTTP submit
+endpoint.
 ```python
-import requests
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 
-response = requests.post(
-    "http://localhost:8000/research/submit",
-    json={
-        "researcher_name": "Dr. Smith",
-        "researcher_email": "smith@hospital.org",
-        "irb_number": "IRB-2025-001",
-        "request": "Female patients over 50 with diabetes in past 2 years"
-    }
+facade = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
+request_id = await facade.process_new_request(
+    researcher_request="Female patients over 50 with diabetes in past 2 years",
+    researcher_info={"name": "Dr. Smith", "email": "smith@hospital.org", "irb_number": "IRB-2025-001"},
+    from_formal_portal=True,
 )
-request_id = response.json()["request_id"]
 ```
 
 #### Approve SQL Query
@@ -381,7 +380,6 @@ print(f"Found {results['total_count']} patients")
 
 ```
 # Workflow Management
-POST   /research/submit           Submit research request
 GET    /research/{request_id}     Get request status
 GET    /research/active           List active requests
 

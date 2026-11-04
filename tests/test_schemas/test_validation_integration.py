@@ -47,14 +47,14 @@ async def test_phi_route_with_invalid_body_returns_phi_safe_422_and_full_audit_p
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # POST /research/submit with researcher_email malformed AND a leaked PHI marker
+        # A PHI route with an EmailStr field (was /research/submit, removed in #273),
+        # with the email malformed AND carrying a PHI marker
         response = await client.post(
-            "/research/submit",
+            "/approvals/scope-change",
             json={
-                "researcher_name": "Dr. Test",
-                "researcher_email": "DEFINITELY-NOT-AN-EMAIL-PHI-MARKER",
-                "irb_number": "IRB-2024-001",
-                "initial_request": "find patients",
+                "request_id": "REQ-TEST-1",
+                "requested_by": "DEFINITELY-NOT-AN-EMAIL-PHI-MARKER",
+                "requested_changes": {"inclusion": "find patients"},
             },
             headers={"authorization": f"Bearer {token}"},
         )
@@ -121,7 +121,7 @@ async def test_oversized_body_rejected_413_without_polluting_audit_queue(fake_au
 
 @pytest.mark.asyncio
 async def test_one_megabyte_body_to_bounded_dict_route_rejected(fake_audit_redis):
-    """Regression: POST 1MB+ body to /research/submit (which has structured_requirements
+    """Regression: POST 1MB+ body to /approvals/scope-change (which has requested_changes
     as BoundedDict) — must be rejected with 413 (body-size middleware) or 422
     (Pydantic leaf-string cap). Either is acceptable; both close the DoS vector.
     """
@@ -144,13 +144,11 @@ async def test_one_megabyte_body_to_bounded_dict_route_rejected(fake_audit_redis
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/research/submit",
+            "/approvals/scope-change",
             json={
-                "researcher_name": "Bob",
-                "researcher_email": "bob@example.edu",
-                "irb_number": "IRB-001",
-                "initial_request": "ok",
-                "structured_requirements": {"evil": huge_inside_dict},
+                "request_id": "REQ-TEST-1",
+                "requested_by": "bob@example.edu",
+                "requested_changes": {"evil": huge_inside_dict},
             },
             headers={"authorization": f"Bearer {token}"},
         )
@@ -163,7 +161,7 @@ async def test_one_megabyte_body_to_bounded_dict_route_rejected(fake_audit_redis
 
 @pytest.mark.asyncio
 async def test_leaf_string_cap_catches_oversized_inside_bounded_dict(fake_audit_redis):
-    """Regression: 50KB leaf string inside BoundedDict on /research/submit must 422.
+    """Regression: 50KB leaf string inside BoundedDict on /approvals/scope-change must 422.
 
     This sizes the body UNDER the body-size middleware cap (1MB) but OVER the
     BoundedDict leaf-string cap (10KB). It exercises layer 1 (Pydantic) in
@@ -187,13 +185,11 @@ async def test_leaf_string_cap_catches_oversized_inside_bounded_dict(fake_audit_
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/research/submit",
+            "/approvals/scope-change",
             json={
-                "researcher_name": "Bob",
-                "researcher_email": "bob@example.edu",
-                "irb_number": "IRB-001",
-                "initial_request": "ok",
-                "structured_requirements": {"evil": leaf_over_cap},
+                "request_id": "REQ-TEST-1",
+                "requested_by": "bob@example.edu",
+                "requested_changes": {"evil": leaf_over_cap},
             },
             headers={"authorization": f"Bearer {token}"},
         )

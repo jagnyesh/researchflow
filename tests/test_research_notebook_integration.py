@@ -354,90 +354,6 @@ Would you still like to proceed? (yes/no)
 @pytest.mark.asyncio
 @pytest.mark.exploratory
 @pytest.mark.ui
-async def test_convert_to_formal_request(
-    mock_conversation_manager, sample_query_intent, sample_feasibility_data, mock_httpx_client
-):
-    """
-    Test: Convert exploratory query to formal request
-
-    Workflow:
-    1. User confirms after feasibility check
-    2. Request submitted to /research/submit API
-    3. Request processed with skip_conversation=True
-    4. Request ID returned
-    5. Approval workflow initiated
-    6. User notified of submission
-    """
-    # Setup session state
-    session_state = {
-        "conversation_state": ConversationState.AWAITING_CONFIRMATION,
-        "pending_feasibility": sample_feasibility_data,
-        "last_query_intent": sample_query_intent,
-        "messages": [{"role": "user", "content": "How many patients with diabetes?"}],
-    }
-
-    # Mock confirmation detection
-    mock_conversation_manager.is_confirmation.return_value = True
-    mock_conversation_manager.is_rejection.return_value = False
-
-    # Prepare expected payload
-    expected_structured_requirements = {
-        "study_title": f"Research Notebook Query - {datetime.now().strftime('%Y-%m-%d')}",
-        "principal_investigator": "Research Notebook User",
-        "inclusion_criteria": sample_query_intent["inclusion_criteria"],
-        "exclusion_criteria": sample_query_intent["exclusion_criteria"],
-        "data_elements": sample_query_intent["data_elements"],
-        "time_period": sample_feasibility_data["time_period"],
-        "estimated_cohort_size": sample_feasibility_data["estimated_cohort"],
-        "delivery_format": "CSV",
-        "phi_level": "de-identified",
-    }
-
-    # Execute: Submit to API (mocked)
-    # Simulate API calls directly (since we can't patch async context managers easily in unit tests)
-    submit_response = await mock_httpx_client.post(
-        "http://localhost:8000/research/submit",
-        json={
-            "researcher_name": "Research Notebook User",
-            "researcher_email": "researcher@hospital.org",
-            "researcher_department": "Clinical Research",
-            "irb_number": "IRB-NOTEBOOK-001",
-            "initial_request": session_state["messages"][-1]["content"],
-            "structured_requirements": expected_structured_requirements,
-        },
-    )
-    submit_result = await submit_response.json()
-
-    # Process request
-    request_id = submit_result["request_id"]
-    process_response = await mock_httpx_client.post(
-        f"http://localhost:8000/research/process/{request_id}",
-        json={
-            "structured_requirements": expected_structured_requirements,
-            "skip_conversation": True,
-        },
-    )
-
-    # Verify: API calls made
-    assert mock_httpx_client.post.call_count == 2
-
-    # Verify: Request ID returned
-    assert request_id == "REQ-TEST-123"
-
-    # Verify: Session state updated
-    session_state["pending_request_id"] = request_id
-    session_state["conversation_state"] = ConversationState.AWAITING_APPROVAL
-
-    assert session_state["pending_request_id"] == "REQ-TEST-123"
-    assert session_state["conversation_state"] == ConversationState.AWAITING_APPROVAL
-
-    print("✅ Convert to formal request flow validated")
-    print(f"   Request ID: {request_id}")
-
-
-@pytest.mark.asyncio
-@pytest.mark.exploratory
-@pytest.mark.ui
 async def test_rejection_after_feasibility(mock_conversation_manager, sample_feasibility_data):
     """Test user rejection after feasibility check"""
 
@@ -628,88 +544,6 @@ async def test_status_check_without_active_request(mock_conversation_manager):
 
 @pytest.mark.asyncio
 @pytest.mark.exploratory
-@pytest.mark.integration
-async def test_notebook_to_dashboard_visibility(mock_httpx_client):
-    """
-    Test: Request submitted from research_notebook appears in Admin Dashboard
-
-    Integration test verifying:
-    1. Request submitted via /research/submit
-    2. Request appears in /approvals/pending
-    3. Request visible in Admin Dashboard
-    """
-
-    request_id = "REQ-NOTEBOOK-123"
-
-    # Mock: Submit request
-    mock_httpx_client.post.return_value.json = AsyncMock(
-        return_value={"request_id": request_id, "status": "submitted"}
-    )
-
-    # Mock: Get pending approvals
-    mock_httpx_client.get.return_value.json = AsyncMock(
-        return_value=[
-            {
-                "request_id": request_id,
-                "approval_type": "phenotype_sql",
-                "current_state": "phenotype_review",
-                "created_at": datetime.now().isoformat(),
-            }
-        ]
-    )
-
-    # Execute: Submit request
-    # Submit
-    submit_response = await mock_httpx_client.post("http://localhost:8000/research/submit", json={})
-    submit_data = await submit_response.json()
-
-    # Check pending approvals (Admin Dashboard call)
-    approvals_response = await mock_httpx_client.get("http://localhost:8000/approvals/pending")
-    approvals_data = await approvals_response.json()
-
-    # Verify: Request submitted
-    assert submit_data["request_id"] == request_id
-
-    # Verify: Request visible in approvals
-    assert len(approvals_data) > 0
-    assert approvals_data[0]["request_id"] == request_id
-    assert approvals_data[0]["approval_type"] == "phenotype_sql"
-
-    print("✅ Research notebook → Admin Dashboard visibility validated")
-    print(f"   Request {request_id} visible in pending approvals")
-
-
-# ============================================================================
-# Test: Error Handling
-# ============================================================================
-
-
-@pytest.mark.asyncio
-@pytest.mark.exploratory
-@pytest.mark.ui
-async def test_api_error_handling(mock_httpx_client):
-    """Test error handling when API call fails"""
-
-    # Mock API error
-    mock_httpx_client.post.side_effect = Exception("API connection failed")
-
-    # Execute: Try to submit request
-    try:
-        await mock_httpx_client.post("http://localhost:8000/research/submit", json={})
-        error_occurred = False
-    except Exception as e:
-        error_occurred = True
-        error_message = str(e)
-
-    # Verify: Error caught
-    assert error_occurred is True
-    assert "API connection failed" in error_message
-
-    print("✅ API error handling validated")
-
-
-@pytest.mark.asyncio
-@pytest.mark.exploratory
 @pytest.mark.ui
 async def test_feasibility_check_error_handling(mock_feasibility_service):
     """Test error handling when feasibility check fails"""
@@ -747,14 +581,13 @@ def test_priority_0_coverage_summary():
     ✅ test_chat_query_submission - Full query workflow
     ✅ test_intent_detection_* (4 tests) - Intent detection for all types
     ✅ test_feasibility_display_* (2 tests) - Feasibility display and warnings
-    ✅ test_convert_to_formal_request - Conversion to formal workflow
     ✅ test_rejection_after_feasibility - Rejection handling
     ✅ test_session_state_* (2 tests) - Session state persistence
     ✅ test_status_check_* (2 tests) - Status check workflow
-    ✅ test_notebook_to_dashboard_visibility - Dashboard integration
-    ✅ test_*_error_handling (2 tests) - Error handling
+    ✅ test_feasibility_check_error_handling - Error handling
 
-    Total: 16 test functions
+    Total: 13 test functions (the formal hand-off is in
+    tests/test_notebook_formal_handoff.py)
     Coverage: ~85% of research_notebook.py critical paths
 
     Remaining Gaps (Low Priority):

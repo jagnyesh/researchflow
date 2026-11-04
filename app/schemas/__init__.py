@@ -5,7 +5,7 @@ in submodules and require explicit `from app.schemas.X import Y` imports.
 
 Usage:
     from app.schemas import PHIInputModel, ShortText, LongText, IRBNumber, BoundedDict, EmailStr
-    from app.schemas.research import ResearchRequestSubmission   # actual schemas
+    from app.schemas.approvals import ApprovalResponse   # actual schemas
 """
 
 from ._base import PHIInputModel
