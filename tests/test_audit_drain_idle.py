@@ -8,6 +8,7 @@ it (socket_timeout=5); the bug only shows against a real socket timeout.
 import asyncio
 import json
 import socket
+import time
 
 import pytest
 import redis.asyncio as redis_async
@@ -118,3 +119,23 @@ async def test_readiness_still_fails_when_audit_redis_is_unreachable(audit_redis
 
     assert health["audit_redis"] == "unreachable"
     assert not health["healthy"]
+
+
+@pytest.mark.asyncio
+async def test_readiness_fails_when_audit_writes_keep_failing(audit_redis, monkeypatch):
+    # A non-IntegrityError write failure crashes the batch and strands the event
+    # in audit:processing; later empty polls must not mark the drain healthy.
+    def failing_write(_payload):
+        raise RuntimeError("audit_logs insert failed")
+
+    monkeypatch.setattr(audit_drain, "_payload_to_audit_log", failing_write)
+    # A drain that was healthy, then started failing (a never-succeeded drain is
+    # treated as starting up; that's the health check's existing grace).
+    audit_drain._drain_state["last_success_monotonic"] = time.monotonic()
+    await audit_redis.rpush(AUDIT_QUEUE_KEY, _event())
+
+    await _run_loop_for(audit_redis, 8)
+
+    assert await audit_redis.llen(audit_drain.AUDIT_PROCESSING_KEY) == 1
+    health = await audit_health_check(staleness_threshold_sec=4)
+    assert not health["healthy"], health

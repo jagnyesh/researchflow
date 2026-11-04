@@ -195,14 +195,17 @@ async def audit_drain_loop(
     attempts = 0
     while not stop_event.is_set():
         try:
-            await drain_batch(
+            written = await drain_batch(
                 redis_client,
                 batch_size=batch_size,
                 block_timeout_sec=block_timeout_sec,
             )
-            # Any iteration that didn't raise is a healthy drain, an empty poll
-            # included; otherwise readiness goes stale on an idle instance.
-            _drain_state["last_success_monotonic"] = time.monotonic()
+            # An empty poll is a healthy drain (or readiness goes stale on an idle
+            # instance), but only while nothing is stranded in audit:processing:
+            # a batch that crashed on a failing audit write leaves its events
+            # there, and readiness must go stale for that.
+            if written > 0 or await redis_client.llen(AUDIT_PROCESSING_KEY) == 0:
+                _drain_state["last_success_monotonic"] = time.monotonic()
             attempts = 0  # reset backoff on any successful loop iteration
         except Exception as e:
             attempts += 1
