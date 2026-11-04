@@ -307,3 +307,147 @@ def test_a_preview_qa_gate_without_an_estimate_shows_no_expected_count():
     assert details["estimated_cohort_size"] is None
     assert "unavailable" in data["message"]
     assert "expected: None" not in data["message"]
+
+
+# ---- Downstream consumers of an unavailable estimate (review pass 1) ----
+
+UNAVAILABLE_REPORT = {
+    "estimated_cohort_size": None,
+    "feasibility_score": None,
+    "cohort_estimate": {"status": "unavailable", "error_ref": "abcdef123456"},
+    "warnings": [],
+}
+
+
+@pytest.mark.asyncio
+async def test_the_kickoff_meeting_handles_an_unavailable_estimate(monkeypatch):
+    from app.agents.calendar_agent import CalendarAgent
+
+    agent = CalendarAgent()
+    prompts = []
+
+    async def complete(prompt, **_kwargs):
+        prompts.append(prompt)
+        raise ConnectionError("provider down")  # exercise the template fallback too
+
+    monkeypatch.setattr(agent.llm_client, "complete", complete)
+
+    attendees = await agent._identify_stakeholders({}, UNAVAILABLE_REPORT)
+    agenda = await agent._generate_meeting_agenda({}, UNAVAILABLE_REPORT)
+
+    assert "Biostatistician" not in str(attendees)
+    for text in (prompts[0], agenda):
+        assert "Estimated Size: unavailable" in text
+        assert "Feasibility Score: unavailable" in text
+        assert "None patients" not in text
+
+
+def test_the_preview_spinner_message_handles_a_missing_time():
+    from app.web_ui.admin_dashboard import preview_time_message
+
+    assert preview_time_message(None) == "Extraction in progress..."
+    assert preview_time_message(0) == "Extraction in progress..."
+    assert preview_time_message(0.5) == "Estimated time: ~30 minutes"
+    assert preview_time_message(2.5) == "Estimated time: ~2.5 hours"
+
+
+@pytest.mark.asyncio
+async def test_the_legacy_path_treats_an_empty_count_result_as_unavailable(monkeypatch):
+    agent, suggested = _agent(monkeypatch)
+
+    async def no_rows(*_a, **_k):
+        return []
+
+    monkeypatch.setattr(agent.sql_adapter, "execute_sql", no_rows)
+
+    result = await agent.execute_task(
+        "validate_feasibility", {"requirements": REQUIREMENTS, "request_id": "REQ-245"}
+    )
+
+    _assert_unavailable(result, suggested)
+
+
+async def _seed_request(request_id):
+    from app.database import ResearchRequest, get_db_session, init_db
+
+    await init_db()
+    async with get_db_session() as session:
+        session.add(
+            ResearchRequest(
+                id=request_id,
+                researcher_name="Synthetic Researcher",
+                researcher_email="r245@example.test",
+                initial_request="synthetic",
+                current_state="feasibility_validation",
+            )
+        )
+
+
+async def _report_row(request_id):
+    from sqlalchemy import select
+
+    from app.database import FeasibilityReport, get_db_session
+
+    async with get_db_session() as session:
+        return (
+            await session.execute(
+                select(FeasibilityReport).where(FeasibilityReport.request_id == request_id)
+            )
+        ).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_a_rerun_that_loses_its_estimate_clears_the_saved_count():
+    import uuid
+
+    request_id = f"REQ-245-{uuid.uuid4().hex[:8].upper()}"
+    await _seed_request(request_id)
+    agent = PhenotypeValidationAgent()
+    await agent._save_feasibility_report(
+        request_id,
+        {
+            "feasible": True,
+            "feasibility_score": 0.9,
+            "estimated_cohort_size": 120,
+            "confidence_interval": (102, 138),
+        },
+    )
+
+    await agent._save_feasibility_report(
+        request_id, dict(UNAVAILABLE_REPORT, feasible=False, confidence_interval=None)
+    )
+
+    row = await _report_row(request_id)
+    assert row.estimated_cohort_size is None
+    assert row.confidence_interval_low is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing", [False, True])
+async def test_workflow_persistence_saves_an_unavailable_estimate(existing):
+    import uuid
+
+    from app.langchain_orchestrator.persistence import WorkflowPersistence
+
+    request_id = f"REQ-245-{uuid.uuid4().hex[:8].upper()}"
+    await _seed_request(request_id)
+    persistence = WorkflowPersistence()
+    state = {
+        "request_id": request_id,
+        "current_state": "phenotype_review",
+        "feasible": False,
+        "feasibility_score": None,
+        "estimated_cohort_size": None,
+        "phenotype_sql": "SELECT 1",
+        "updated_at": "2026-11-04T12:00:00",
+    }
+    if existing:
+        await persistence.save_workflow_state(
+            dict(state, feasible=True, feasibility_score=0.9, estimated_cohort_size=120)
+        )
+
+    await persistence.save_workflow_state(state)
+
+    row = await _report_row(request_id)
+    assert row.estimated_cohort_size is None
+    assert row.is_feasible is False

@@ -620,15 +620,7 @@ def show_preview_data_section(request_id: str, status: dict):
                         return 0
 
                 est_time = run_async(get_estimated_time())
-
-                if est_time > 0:
-                    if est_time < 1:
-                        time_msg = f"Estimated time: ~{int(est_time * 60)} minutes"
-                    else:
-                        time_msg = f"Estimated time: ~{est_time:.1f} hours"
-                    st.info(f"⏳ {time_msg}")
-                else:
-                    st.info("⏳ Extraction in progress...")
+                st.info(f"⏳ {preview_time_message(est_time)}")
 
                 # Auto-refresh every 5 seconds to check for completion
                 st.caption("🔄 Auto-refreshing every 5 seconds...")
@@ -1435,6 +1427,16 @@ def display_approval_card(approval, reviewer_email):
                     reviewer = reviewer_email if reviewer_email else "System Admin"
                     handle_approval_response(approval_id, "reject", reviewer, reject_reason, {})
                     st.session_state[f"show_reject_{approval_id}"] = False
+
+
+def preview_time_message(est_time) -> str:
+    """Spinner text for preview extraction; est_time is None when the cohort
+    estimate failed (#245)."""
+    if not est_time or est_time <= 0:
+        return "Extraction in progress..."
+    if est_time < 1:
+        return f"Estimated time: ~{int(est_time * 60)} minutes"
+    return f"Estimated time: ~{est_time:.1f} hours"
 
 
 def display_sql_approval(data):
