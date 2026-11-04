@@ -89,3 +89,31 @@ async def test_bootstrap_script_creates_a_user_who_can_log_in(client):
 
     assert response.status_code == 200
     assert response.json()["user"]["role"] == "admin"
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_script_normalizes_email_like_login_does(client):
+    from scripts.create_user import create_user
+
+    local = f"Boot-{uuid.uuid4().hex[:8]}"
+    await create_user(
+        email=f"{local}@EXAMPLE.ORG", password=PASSWORD, role="admin", full_name="First Admin"
+    )
+
+    response = await client.post(
+        "/auth/login", json={"email": f"{local}@EXAMPLE.ORG", "password": PASSWORD}
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "email,password",
+    [("not-an-email", PASSWORD), ("ok@example.org", "x" * 201)],
+)
+async def test_bootstrap_script_rejects_what_login_would_reject(email, password):
+    from scripts.create_user import create_user
+
+    with pytest.raises(ValueError):
+        await create_user(email=email, password=password, role="admin", full_name="First Admin")

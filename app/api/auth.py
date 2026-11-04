@@ -222,8 +222,8 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
 
         Response:
         {
-            "email": "researcher@example.com",
-            "user_id": "USR-00000001",
+            "email": "researcher@example.org",
+            "user_id": "USR-1A2B3C4D",
             "full_name": "Jane Researcher",
             "role": "researcher",
             "is_active": true
@@ -232,7 +232,7 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
     return UserResponse(
         email=current_user.email,
         user_id=current_user.user_id,
-        full_name=current_user.email.split("@")[0].title(),  # Fallback for mock users
+        full_name=current_user.email.split("@")[0].title(),  # the token carries no full_name
         role=current_user.role,
         is_active=current_user.is_active,
     )
