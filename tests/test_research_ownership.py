@@ -112,3 +112,17 @@ async def test_unauthenticated_caller_is_rejected(setup):
     response = await client.get(f"/research/{requests[alice]}")
 
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_owner_match_ignores_email_case(setup):
+    # The submitted researcher_email isn't normalized; the token's email is.
+    client, *_ = setup
+    owner = f"Carol-{uuid.uuid4().hex[:6]}@Example.ORG"
+    request_id = await _seed_request(owner)
+
+    response = await client.get(
+        f"/research/{request_id}", headers=_token(owner.lower(), "researcher")
+    )
+
+    assert response.status_code == 200
