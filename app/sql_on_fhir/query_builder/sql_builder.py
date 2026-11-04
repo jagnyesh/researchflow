@@ -197,8 +197,8 @@ JOIN hfj_res_ver v ON r.res_id = v.res_id AND r.res_ver = v.res_ver"""
                 conditions.append(f"{birth_date} {op} {bind(date_val)}")
 
             elif param_name == "status":
-                # Top-level code on Procedure/Observation/MedicationRequest. The
-                # sqlonfhir tables route here (HybridRunner only detects matviews).
+                # Top-level code on Procedure/Observation/MedicationRequest, for a
+                # view read live (no batch table, or the batch read failed).
                 conditions.append(f"v.res_text_vc::jsonb->>'status' = {bind(param_value)}")
 
             elif param_name == "family":
