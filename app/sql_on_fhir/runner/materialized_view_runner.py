@@ -80,6 +80,9 @@ class MaterializedViewRunner:
         "value-quantity": "value",
     }
 
+    # Coded values: a substring match is wrong ('%male%' matches 'female').
+    EXACT_MATCH_PARAMS = {"gender"}
+
     def __init__(self, db_client: HAPIDBClient):
         """
         Initialize materialized view runner
@@ -377,7 +380,10 @@ class MaterializedViewRunner:
             column_name = self.SEARCH_PARAM_MAPPINGS.get(param_name, param_name)
 
             # Build condition based on value type
-            if isinstance(param_value, str):
+            if isinstance(param_value, str) and param_name in self.EXACT_MATCH_PARAMS:
+                clauses.append(f"LOWER({column_name}) = LOWER('{param_value}')")
+
+            elif isinstance(param_value, str):
                 # String comparison (case-insensitive LIKE)
                 clauses.append(f"{column_name} ILIKE '%{param_value}%'")
 

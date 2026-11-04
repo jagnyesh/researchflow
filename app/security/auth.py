@@ -20,9 +20,24 @@ from passlib.context import CryptContext
 from pydantic import BaseModel
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-key-change-in-production")
+_DEV_SECRET_KEY = "dev-secret-key-change-in-production"  # nosec B105  # pragma: allowlist secret
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+
+
+def get_jwt_secret_key() -> str:
+    """Return the JWT signing secret; in production, refuse an unset or default one.
+
+    Resolved on every sign/verify rather than at import, so Streamlit dashboards
+    and scripts are gated too, not only the FastAPI lifespan.
+    """
+    key = os.getenv("JWT_SECRET_KEY")
+    if os.getenv("ENVIRONMENT", "development") == "production" and (
+        not key or key == _DEV_SECRET_KEY
+    ):
+        raise RuntimeError("JWT_SECRET_KEY must be set to a non-default value in production.")
+    return key or _DEV_SECRET_KEY
+
 
 # Password hashing context (bcrypt)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -99,7 +114,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     to_encode.update({"exp": expire})
 
     # Encode JWT token
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, get_jwt_secret_key(), algorithm=ALGORITHM)
     return encoded_jwt
 
 
@@ -119,7 +134,7 @@ def decode_access_token(token: str) -> Optional[TokenData]:
         - Validates token structure
     """
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, get_jwt_secret_key(), algorithms=[ALGORITHM])
         email: str = payload.get("sub")
         user_id: str = payload.get("user_id")
         role: str = payload.get("role")
