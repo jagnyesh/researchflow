@@ -9,6 +9,7 @@ Supports multiple LLM providers via AI Suite with intelligent routing:
 Sprint 8 Optimization 6: Added LangSmith tracing for full cost visibility
 """
 
+import asyncio
 import os
 import logging
 from typing import Dict, Any, Optional, Literal
@@ -204,8 +205,13 @@ class MultiLLMClient:
             if system:
                 messages.insert(0, {"role": "system", "content": system})
 
-            response = self.aisuite_client.chat.completions.create(
-                model=model_id, messages=messages, temperature=temperature, max_tokens=max_tokens
+            # aisuite is synchronous: run it in a thread so the event loop keeps serving.
+            response = await asyncio.to_thread(
+                self.aisuite_client.chat.completions.create,
+                model=model_id,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
 
             response_text = response.choices[0].message.content
