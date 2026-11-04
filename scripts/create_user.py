@@ -21,8 +21,10 @@ from dotenv import load_dotenv  # noqa: E402
 from pydantic import ValidationError  # noqa: E402
 
 # Same as app/main.py: without it, a DATABASE_URL kept only in .env is missed and
-# the admin lands in a cwd-relative ./dev.db the API never reads.
-load_dotenv()
+# the admin lands in a cwd-relative ./dev.db the API never reads. Only when run as a
+# script: tests import create_user, and must not pull .env into the pytest process.
+if __name__ == "__main__":
+    load_dotenv()
 
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.engine import make_url  # noqa: E402
