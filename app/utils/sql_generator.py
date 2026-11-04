@@ -357,10 +357,8 @@ class SQLGenerator:
         logger.info(f"[SQLGenerator] Parameters: {params}")
 
         if len(conditions) == 0 and len(criteria) > 0:
-            logger.error(
-                f"[SQLGenerator] ⚠️ PROBLEM: {len(criteria)} criteria provided but 0 WHERE conditions generated! "
-                f"This will result in unfiltered query. Check criteria structure."
-            )
+            # Unfiltered SQL would count everyone as the cohort (#264).
+            raise ValueError(f"{len(criteria)} criteria provided but 0 WHERE conditions generated")
 
         logger.debug(f"Final conditions: {conditions}")
         return conditions, params

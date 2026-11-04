@@ -16,6 +16,19 @@ from ..utils.llm_client import LLMClient
 logger = logging.getLogger(__name__)
 
 
+class CriteriaNotStructuredError(ValueError):
+    """A submitted criterion produced no concepts, so it can't become a SQL condition."""
+
+    def __init__(self):
+        # No criterion text: it derives from the request, which can hold PHI.
+        super().__init__("A criterion could not be turned into structured concepts")
+
+
+def _require_concepts(structured_criteria: list) -> None:
+    if any(not c.get("concepts") for c in structured_criteria):
+        raise CriteriaNotStructuredError()
+
+
 class RequirementsAgent(BaseAgent):
     """
     Agent for gathering research data requirements through conversation
@@ -142,15 +155,20 @@ class RequirementsAgent(BaseAgent):
                 "phi_level": structured_reqs.get("phi_level", "limited_dataset"),
             }
 
-            # Use LLM for light validation (hybrid approach - validate + light LLM check)
+            # Use LLM for light validation (hybrid approach - validate + light LLM check).
+            # Without a client the LLM layer returns canned output, so skip it.
             try:
+                if self.llm_client.client is None:
+                    raise RuntimeError("LLM client not initialized")
                 analysis = await self.llm_client.extract_requirements(
                     conversation_history=[{"role": "user", "content": initial_request}],
                     current_requirements=form_requirements,
                 )
 
-                # Update with LLM-extracted details
-                form_requirements.update(analysis.get("extracted_requirements", {}))
+                # The LLM may fill gaps, never overwrite what the researcher submitted.
+                for key, value in analysis.get("extracted_requirements", {}).items():
+                    if key not in structured_reqs:
+                        form_requirements[key] = value
 
                 # Log any warnings but proceed anyway
                 if analysis.get("completeness_score", 1.0) < 0.5:
@@ -380,12 +398,15 @@ class RequirementsAgent(BaseAgent):
                     "codes": [],  # Will be populated by terminology server
                 }
                 structured_criteria.append(criterion_structured)
+            _require_concepts(structured_criteria)
 
             logger.info(
                 f"[{self.agent_id}] Batch extraction successful (1 LLM call vs {len(criteria_list)} calls)"
             )
             return structured_criteria
 
+        except CriteriaNotStructuredError:
+            raise
         except Exception as e:
             log_internal_error(
                 logger,
@@ -411,14 +432,12 @@ class RequirementsAgent(BaseAgent):
 
                 except Exception as e:
                     # Criterion text derives from initial_request (PHI); not logged (#181).
-                    log_internal_error(
-                        logger, "Could not structure criterion", e, level=logging.WARNING
-                    )
-                    # Fallback to simple structure
-                    structured_criteria.append(
-                        {"description": criterion, "concepts": [], "codes": []}
-                    )
+                    log_internal_error(logger, "Could not structure criterion", e)
+                    # An unstructured criterion builds no SQL condition, so the cohort
+                    # would silently ignore it (#264). Fail before G2 instead.
+                    raise CriteriaNotStructuredError() from e
 
+            _require_concepts(structured_criteria)
             return structured_criteria
 
     def _validate_dates(self, time_period: dict) -> dict:
