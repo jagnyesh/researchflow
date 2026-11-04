@@ -113,9 +113,25 @@ async def test_procedures_honour_a_time_period():
 @pytest.mark.requires_services
 @pytest.mark.asyncio
 async def test_the_end_date_includes_that_whole_day():
-    # A real onset at 2025-05-30T21:26:21-05:00; BETWEEN on ISO text dropped it.
-    rows = await DataExtractionAgent()._extract_data_element(
-        "Diagnoses", ["155656"], {"start": "2025-05-30", "end": "2025-05-30"}
+    # A procedure performed at a time of day; BETWEEN on ISO text dropped every
+    # timed value on the end day. Found in the database, not hardcoded, so this
+    # holds on the local corpus and on CI's seed (whose conditions carry no dates).
+    from app.adapters.sql_on_fhir import SQLonFHIRAdapter
+
+    rows = await SQLonFHIRAdapter().execute_sql(
+        "SELECT patient_id, COALESCE(performed_datetime, performed_period_start) AS performed "
+        "FROM sqlonfhir.procedure_history "
+        "WHERE COALESCE(performed_datetime, performed_period_start) LIKE '____-__-__T%' "
+        "ORDER BY 2 DESC LIMIT 1"
+    )
+    assert rows, "vacuous: no timed procedure dates in this corpus"
+    patient_id, performed = rows[0]["patient_id"], rows[0]["performed"]
+    day = performed[:10]
+
+    extracted = await DataExtractionAgent()._extract_data_element(
+        "Procedures", [patient_id], {"start": day, "end": day}
     )
 
-    assert any(r["onset_datetime"].startswith("2025-05-30T21:26") for r in rows)
+    assert any(
+        (r["performed_datetime"] or r["performed_period_start"]) == performed for r in extracted
+    )
