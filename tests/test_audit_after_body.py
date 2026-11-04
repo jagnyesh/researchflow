@@ -157,13 +157,16 @@ async def test_a_lost_post_event_after_the_body_is_logged(queue, app, caplog, mo
 
 
 def test_no_api_route_runs_background_tasks():
-    # A BackgroundTasks task runs after the response, outside the audited body;
+    # A background task (BackgroundTasks, BackgroundTask, Response(background=))
+    # runs after the response, outside the audited body;
     # none exists today, and a new one needs the same treatment first (ADR 0032).
     root = Path(__file__).resolve().parents[1] / "app"
     users = [
         str(p.relative_to(root))
         for p in root.rglob("*.py")
-        if "BackgroundTasks" in p.read_text() or ".add_task(" in p.read_text()
+        if any(
+            marker in p.read_text() for marker in ("BackgroundTask", ".add_task(", "background=")
+        )
     ]
     assert users == []
 
@@ -177,5 +180,53 @@ def test_the_app_runs_the_guard_inside_the_audit_middleware():
         getattr(m.kwargs.get("dispatch"), "__name__", None) or m.cls.__name__
         for m in app.user_middleware
     ]
+    # Directly inside audit, and innermost: a BaseHTTPMiddleware inside the
+    # guard would end the body before the guard flags it (COMPLETED(200)).
     assert stack.index("AuditBodyGuard") == stack.index("audit_middleware") + 1, stack
-    assert am.AuditBodyGuard.__name__ in stack
+    assert stack[-1] == am.AuditBodyGuard.__name__, stack
+
+
+@pytest.mark.asyncio
+async def test_the_exception_the_server_sees_carries_no_phi(queue, app):
+    # What uvicorn prints for "Exception in ASGI application" is this
+    # exception's traceback; its context must not be printed either.
+    import traceback
+
+    transport = ASGITransport(app=app, raise_app_exceptions=True)
+    with pytest.raises(Exception) as excinfo:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get(
+                "/research/zz_stream_fails", headers={"authorization": f"Bearer {_token()}"}
+            )
+
+    printed = "".join(traceback.format_exception(excinfo.value))
+    assert PHI_NEEDLE not in printed
+    assert re.search(r"ref: [0-9a-f]{12}", printed)
+
+
+@pytest.mark.asyncio
+async def test_the_backstop_500_still_fails_closed_on_a_lost_post_event(queue, monkeypatch, caplog):
+    # A route that raises before responding gets the #180 JSON 500, which has
+    # no body to stream: its COMPLETED is written up front and a failed write
+    # is still a 503 (ADR 0032).
+    from app.security import audit_middleware as am
+
+    app = FastAPI()
+    am.install_audit_middleware(app)
+
+    @app.get("/research/zz_raises")
+    async def raises():
+        raise OSError(PHI_NEEDLE)
+
+    real = am._try_enqueue
+
+    async def fail_completed(payload):
+        if payload["event_type"] == "PHI_ACCESS_COMPLETED":
+            return False
+        return await real(payload)
+
+    monkeypatch.setattr(am, "_try_enqueue", fail_completed)
+
+    response = await _get(app, "/research/zz_raises", caplog)
+
+    assert response.status_code == 503
