@@ -5,6 +5,8 @@ overwriting it, and in-place appends to a plain JSON column were never marked
 dirty. Real facade (stub agents, no LLM) and the real (test) database.
 """
 
+import uuid
+
 import pytest
 from sqlalchemy import select
 
@@ -54,26 +56,25 @@ async def test_a_request_records_each_state_it_passes_through():
 @pytest.mark.asyncio
 async def test_recording_the_same_state_twice_adds_one_entry():
     await init_db()
+    rid = f"REQ-SH-{uuid.uuid4().hex[:8]}"
     async with get_db_session() as session:
         req = ResearchRequest(
-            id="REQ-SH-DEDUP",
+            id=rid,
             researcher_name="Synthetic",
             researcher_email="s@example.org",
             initial_request="synthetic",
             current_state="new_request",
             state_history=[{"state": "new_request", "timestamp": "2026-11-04T00:00:00"}],
         )
-        await session.merge(req)
+        session.add(req)
     async with get_db_session() as session:
         req = (
-            await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == "REQ-SH-DEDUP")
-            )
+            await session.execute(select(ResearchRequest).where(ResearchRequest.id == rid))
         ).scalar_one()
         record_state_transition(req, "requirements_review")
         record_state_transition(req, "requirements_review")
 
-    assert await _history("REQ-SH-DEDUP") == ["new_request", "requirements_review"]
+    assert await _history(rid) == ["new_request", "requirements_review"]
 
 
 @pytest.mark.asyncio
@@ -81,10 +82,11 @@ async def test_a_repeat_carrying_details_is_still_recorded():
     # e.g. the dashboard's preview approval: its approved_by/notes must not be
     # dropped just because the last entry already names the same state.
     await init_db()
+    rid = f"REQ-SH-{uuid.uuid4().hex[:8]}"
     async with get_db_session() as session:
-        await session.merge(
+        session.add(
             ResearchRequest(
-                id="REQ-SH-DETAILS",
+                id=rid,
                 researcher_name="Synthetic",
                 researcher_email="s@example.org",
                 initial_request="synthetic",
@@ -94,10 +96,8 @@ async def test_a_repeat_carrying_details_is_still_recorded():
         )
     async with get_db_session() as session:
         req = (
-            await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == "REQ-SH-DETAILS")
-            )
+            await session.execute(select(ResearchRequest).where(ResearchRequest.id == rid))
         ).scalar_one()
         record_state_transition(req, "data_extraction", approved_by="admin_dashboard")
 
-    assert await _history("REQ-SH-DETAILS") == ["data_extraction", "data_extraction"]
+    assert await _history(rid) == ["data_extraction", "data_extraction"]
