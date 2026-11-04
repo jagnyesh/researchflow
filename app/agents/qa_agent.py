@@ -262,7 +262,7 @@ class QualityAssuranceAgent(BaseAgent):
             "details": {
                 "requested_count": len(requested_elements),
                 "extracted_count": len(elements_with_data),
-                "missing_elements": missing_elements,
+                "missing_elements": list(missing_elements),
             },
             "message": (
                 "All requested data elements have preview data"

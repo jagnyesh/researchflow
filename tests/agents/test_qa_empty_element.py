@@ -6,6 +6,7 @@ Before, completeness compared element keys only, and extraction writes a key
 
 import pytest
 
+from app.agents.delivery_agent import DeliveryAgent
 from app.agents.qa_agent import QualityAssuranceAgent
 
 
@@ -46,3 +47,16 @@ async def test_every_element_with_rows_passes_completeness():
     )
 
     assert _completeness(result)["passed"] is True
+
+
+def test_qa_report_txt_lists_the_readme_extraction_warnings(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DELIVERY_PATH", str(tmp_path))
+    agent = DeliveryAgent()
+    documentation = {"extraction_warnings": ["medications: requested but returned 0 records"]}
+
+    qa_text = agent._format_qa_report_text({"status": "failed"}, documentation)
+
+    assert "medications: requested but returned 0 records" in qa_text
+    assert "medications: requested but returned 0 records" in agent._format_readme_text(
+        {**documentation, "citation_info": "", "extraction_methods": {}}
+    )
