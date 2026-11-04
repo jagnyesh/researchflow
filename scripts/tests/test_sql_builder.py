@@ -128,11 +128,6 @@ async def main():
             view_def, search_params={"gender": "female"}
         )
 
-        print("COUNT SQL:")
-        print("-" * 80)
-        print(count_sql)
-        print("-" * 80)
-
         print("\n\nExecuting count query...")
         try:
             count_rows = await client.execute_query(count_sql, count_params)
