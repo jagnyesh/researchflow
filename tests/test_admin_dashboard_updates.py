@@ -15,22 +15,11 @@ and Admin Dashboard via shared database.
 
 import pytest
 
-# Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator was deleted.
-# Per ADR 0024 D3, this file is classified PORT — pending port to
-# LangGraphRequestFacade in Phase 6. Until then, this whole module
-# is skipped at collection time.
-pytest.importorskip(
-    "app.orchestrator.orchestrator",
-    reason="Sprint 7.2 Phase 4: A2A retired. PORT to LangGraph pending in Phase 6 (ADR 0024 D3).",
-)
-
 import asyncio
 from datetime import datetime
 from sqlalchemy import select, func
 
-from app.orchestrator.orchestrator import ResearchRequestOrchestrator
-from app.agents.requirements_agent import RequirementsAgent
-from app.agents.phenotype_agent import PhenotypeValidationAgent
+from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 from app.database import get_db_session
 from app.database.models import ResearchRequest, AgentExecution, Approval
 from app.services.approval_service import ApprovalService
@@ -38,11 +27,8 @@ from app.services.approval_service import ApprovalService
 
 @pytest.fixture
 def orchestrator():
-    """Create orchestrator like Researcher Portal does"""
-    orch = ResearchRequestOrchestrator()
-    orch.register_agent("requirements_agent", RequirementsAgent())
-    orch.register_agent("phenotype_agent", PhenotypeValidationAgent())
-    return orch
+    """The LangGraph facade, as the Admin Dashboard holds it (#65 port off A2A)."""
+    return LangGraphRequestFacade()
 
 
 async def create_test_request(query: str, researcher_info: dict) -> str:
