@@ -53,7 +53,7 @@ FEMALE_DM = FormalCase(
                    OR c.icd10_display ILIKE '%diabetes mellitus%'
                    OR c.snomed_display ILIKE '%diabetes mellitus%'))
     """,
-    required_predicates=["gender = female", "condition: diabetes mellitus"],
+    required_predicates=[("gender", "=", "female"), ("condition", "has", "diabetes mellitus")],
 )
 
 
@@ -254,3 +254,26 @@ async def test_an_empty_generated_cohort_is_a_failure_not_vacuous():
 
     assert result.executed and result.sql_count == 0 < result.oracle_count
     assert not result.vacuous and not result.passed
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@live
+async def test_a_matching_cohort_with_an_unrequested_predicate_still_fails():
+    # #242: on a small corpus an extra predicate can leave the cohort unchanged.
+    case = _case(required_predicates=[("condition", "has", "diabetes mellitus")])
+
+    result = await score_case(case, _requirements(FEMALE, DIABETES))
+
+    assert result.executed and result.mismatch is not None
+    assert result.extra_predicates == "gender = female"
+    assert result.missing_predicates == "" and not result.passed
+
+
+@pytest.mark.asyncio
+@pytest.mark.requires_services
+@live
+async def test_a_missing_requested_predicate_is_reported():
+    result = await score_case(FEMALE_DM, _requirements(DIABETES))
+
+    assert result.missing_predicates == "gender = female" and not result.passed
