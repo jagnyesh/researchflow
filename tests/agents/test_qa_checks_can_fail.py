@@ -95,3 +95,29 @@ async def test_deidentification_records_what_it_checked_when_clean():
     assert check["passed"] is True
     assert check["details"]["columns_inspected"] == ["gender", "patient_id"]
     assert check["details"]["identifiers_found"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_workflow_qa_node_hands_the_phenotype_estimate_to_qa(monkeypatch, tmp_path):
+    # The final check only works if the real QA node passes the estimate stored
+    # at phenotype time; its context used to omit it.
+    from app.langchain_orchestrator.langgraph_workflow import FullWorkflow
+
+    monkeypatch.setenv("DATA_DELIVERY_PATH", str(tmp_path))
+
+    workflow = FullWorkflow(use_real_agents=True)
+    state = {
+        "request_id": "REQ-1",
+        "estimated_cohort_size": 156,
+        "requirements": {"phi_level": "identified", "data_elements": ["demographics"]},
+        "extracted_data_summary": {
+            "cohort": [{"patient_id": f"p{i}"} for i in range(13)],
+            "data_elements": {"demographics": []},
+        },
+    }
+
+    state = await workflow._handle_qa_validation(state)
+
+    check = next(c for c in state["qa_report"]["checks"] if c["check_name"] == "cohort_validation")
+    assert check["details"]["estimated_size"] == 156
+    assert check["passed"] is False
