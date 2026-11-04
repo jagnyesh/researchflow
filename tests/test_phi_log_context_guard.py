@@ -18,6 +18,7 @@ PHI_NAMES = {
     "initial_request",
     "natural_language_query",
     "nl_query",
+    "user_input",
     "requirements",
     "structured_requirements",
     "researcher_email",
@@ -116,7 +117,15 @@ def test_counts_and_ids_are_allowed():
     assert not _leaks('logger.info(f"{len(requirements)} criteria for {request_id}")')
 
 
-def test_the_view_script_prints_no_password(monkeypatch, capsys):
+@pytest.mark.parametrize(
+    "url, shown",
+    [
+        ("postgresql://hapi:s3cr3t-pw@db.internal:5433/hapi", "db.internal:5433/hapi"),
+        ("postgresql+asyncpg://hapi:s3cr3t-pw@db.internal/hapi", "db.internal/hapi"),
+        ("postgresql://hapi:s3cr3t-pw@h1:5433,h2:5434/hapi", "h1:5433,h2:5434/hapi"),
+    ],
+)
+def test_the_view_script_prints_no_password(url, shown):
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
@@ -125,6 +134,4 @@ def test_the_view_script_prints_no_password(monkeypatch, capsys):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
 
-    shown = module._redacted("postgresql://hapi:s3cr3t-pw@db.internal:5433/hapi")
-
-    assert shown == "db.internal:5433/hapi"
+    assert module._redacted(url) == shown

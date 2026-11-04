@@ -539,11 +539,11 @@ Keep it concise and professional."""
         # Sprint 8 Optimization 4: Template-first approach (80% cost savings)
         # Only use LLM for personalized/complex notifications
         if self._is_standard_notification(delivery_info):
-            message = self._generate_notification_template(recipient, delivery_info)
+            email_content = self._generate_notification_template(recipient, delivery_info)
         else:
             # Complex notification - use LLM
             logger.info(f"[{self.agent_id}] Custom notification detected, using LLM for generation")
-            message = await self._generate_notification_llm(recipient, delivery_info)
+            email_content = await self._generate_notification_llm(recipient, delivery_info)
 
         # TODO: Implement MCP email server integration
         # email_server = self.mcp_registry.get_server('email')

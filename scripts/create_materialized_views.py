@@ -226,7 +226,7 @@ def _redacted(url: str) -> str:
     from urllib.parse import urlsplit
 
     parts = urlsplit(url)
-    return f"{parts.hostname}:{parts.port}{parts.path}"
+    return parts.netloc.rpartition("@")[2] + parts.path
 
 
 async def main():
