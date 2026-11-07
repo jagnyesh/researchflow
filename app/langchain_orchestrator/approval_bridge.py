@@ -452,6 +452,7 @@ class ApprovalBridge:
                 ),  # SQL parameters for parameterized queries
                 "feasibility_score": state.get("feasibility_score", 0.0),
                 "estimated_cohort_size": state.get("estimated_cohort_size"),
+                "cohort_estimate": state.get("cohort_estimate"),
                 "data_availability": state.get("data_availability", {}),
                 "estimated_extraction_time_hours": state.get("estimated_extraction_time_hours", 0),
                 "auto_feasibility_assessment": state.get("auto_feasibility_assessment", "unknown"),
@@ -477,14 +478,19 @@ class ApprovalBridge:
             # NEW: Preview QA failure approval (cohort count mismatch)
             preview_package = state.get("preview_package", {})
             actual_cohort = len(preview_package.get("cohort", []))
-            estimated_cohort = state.get("estimated_cohort_size", 0)
+            estimated_cohort = state.get("estimated_cohort_size")
 
             # Calculate tolerance bounds for UI display
             tolerance_pct = 0.50  # 50% tolerance (MVP setting)
             min_tolerance = 5
-            tolerance = max(int(estimated_cohort * tolerance_pct), min_tolerance)
-            lower_bound = max(0, estimated_cohort - tolerance)
-            upper_bound = estimated_cohort + tolerance
+            if estimated_cohort is None:  # no estimate to compare against (#245)
+                tolerance = lower_bound = upper_bound = None
+                expected = "unavailable"
+            else:
+                tolerance = max(int(estimated_cohort * tolerance_pct), min_tolerance)
+                lower_bound = max(0, estimated_cohort - tolerance)
+                upper_bound = estimated_cohort + tolerance
+                expected = estimated_cohort
 
             # Build cohort_check with nested "details" structure that UI expects
             # UI reads from: cohort_check["details"]["actual_cohort_size"]
@@ -500,7 +506,7 @@ class ApprovalBridge:
                     "lower_bound": lower_bound,
                     "upper_bound": upper_bound,
                 },
-                "message": f"Preview QA failed: Cohort count mismatch (expected: {estimated_cohort}, actual: {actual_cohort})",
+                "message": f"Preview QA failed: Cohort count mismatch (expected: {expected}, actual: {actual_cohort})",
             }
 
             return {
@@ -509,7 +515,7 @@ class ApprovalBridge:
                 "actual_cohort": actual_cohort,  # Keep at root for backward compat
                 "preview_qa_report": state.get("preview_qa_report", {}),
                 "cohort_check": cohort_check,  # ← Now has proper nested structure
-                "message": f"Preview QA failed: Cohort count mismatch (expected: {estimated_cohort}, actual: {actual_cohort}). Review required before full extraction.",
+                "message": f"Preview QA failed: Cohort count mismatch (expected: {expected}, actual: {actual_cohort}). Review required before full extraction.",
             }
 
         elif approval_type == "delivery":

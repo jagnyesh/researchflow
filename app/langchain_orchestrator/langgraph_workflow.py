@@ -88,8 +88,11 @@ class FullWorkflowState(TypedDict):
     # ===== Feasibility Phase =====
     phenotype_sql: str | None
     sql_parameters: dict | None  # SQL parameters for parameterized queries
-    feasibility_score: float
+    feasibility_score: float | None
     estimated_cohort_size: int | None
+    # {"status": "ok"} or {"status": "unavailable", "error_ref": ...}: a failed
+    # estimate reaches G2 as unavailable, never as a count (#245).
+    cohort_estimate: dict | None
     feasible: bool
     # Phenotype agent's report, shown to the G2 reviewer. Declared so LangGraph
     # carries them to the review node (it drops undeclared keys, #265).
@@ -742,6 +745,7 @@ class FullWorkflow:
                 state["auto_feasibility_assessment"] = approval_data.get(
                     "auto_feasibility_assessment"
                 )
+                state["cohort_estimate"] = report.get("cohort_estimate")
 
                 logger.info(
                     f"[FullWorkflow] PhenotypeAgent result: feasible={state['feasible']}, cohort={state['estimated_cohort_size']}"
@@ -751,15 +755,17 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "success", result)
 
             except Exception as e:
-                failure = failure_text(logger, "[FullWorkflow] PhenotypeAgent failed", e)
+                ref = log_internal_error(logger, "[FullWorkflow] PhenotypeAgent failed", e)
+                failure = f"{type(e).__name__} (ref: {ref})"
                 # Track agent execution failure
                 await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
-                # Fall back to conservative defaults on error
+                # No estimate exists, so none is shown: G2 says unavailable (#245).
                 state["feasible"] = False
-                state["estimated_cohort_size"] = 0
+                state["estimated_cohort_size"] = None
+                state["cohort_estimate"] = {"status": "unavailable", "error_ref": ref}
                 state["phenotype_sql"] = None
-                state["feasibility_score"] = 0.0
+                state["feasibility_score"] = None
                 # Clear the previous run's report, or a reject-and-retry G2 would
                 # show its warnings and "feasible" next to this run's failure.
                 # The G2 payload's own defaults, not None: the dashboard reads them.
@@ -1423,7 +1429,7 @@ class FullWorkflow:
 
         logger.info(
             f"[FullWorkflow] Routing after feasibility_validation: "
-            f"auto_feasible={feasible_value}, cohort={cohort_size}, score={score:.2f}"
+            f"auto_feasible={feasible_value}, cohort={cohort_size}, score={score}"
         )
         logger.info(
             f"[FullWorkflow] Routing to phenotype_review for human SQL approval "
