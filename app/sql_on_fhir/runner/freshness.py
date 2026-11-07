@@ -7,7 +7,8 @@ the pre/post-approval split inside the Formal Portal workflow:
   Speed-merged — researcher is iterating; fresh data matters.
 - FORMAL_DRAFT: Formal Portal cohort-estimation step (pre-approval
   HITL gate). Speed-merged with metadata — researcher may revise
-  criteria; estimate should reflect today's data.
+  criteria; estimate should reflect today's data. No production caller
+  since #206 (ADR 0033): phenotype_agent counts the approved SQL.
 - FORMAL_EXTRACTION: Formal Portal post-approval extraction.
   Batch-only, citable via batch_anchor_ts — must be reproducible if
   audited; should match the approved-cohort snapshot.

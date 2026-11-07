@@ -20,10 +20,10 @@ nano .env # Change "your-key-here" to your actual key
 pip install -r requirements.txt
 
 # 3. Run the app
-streamlit run app/web_ui/researcher_portal.py --server.port 8501
+streamlit run app/web_ui/researcher_portal.py --server.port 8502
 ```
 
-Open http://localhost:8501
+Open http://localhost:8502
 
 ## File Structure
 
@@ -71,8 +71,7 @@ FHIR_PROJECT/
 
 ```
 new_request → requirements_gathering → requirements_complete →
-feasibility_validation → feasible → schedule_kickoff →
-kickoff_complete → data_extraction → extraction_complete →
+feasibility_validation → feasible → data_extraction → extraction_complete →
 qa_validation → qa_passed → data_delivery → delivered → complete
 ```
 
@@ -95,11 +94,14 @@ Delivered Data
 ## Common Commands
 
 ```bash
-# Run Researcher Portal
-streamlit run app/web_ui/researcher_portal.py --server.port 8501
+# Run Research Notebook (exploratory)
+streamlit run app/web_ui/research_notebook.py --server.port 8501
+
+# Run Researcher Portal (formal)
+streamlit run app/web_ui/researcher_portal.py --server.port 8502
 
 # Run Admin Dashboard
-streamlit run app/web_ui/admin_dashboard.py --server.port 8502
+streamlit run app/web_ui/admin_dashboard.py --server.port 8503
 
 # Run API backend
 make run
@@ -164,7 +166,7 @@ Result:
 |---------|----------|
 | "API key not set" | Edit `.env` file, add your key |
 | "Module not found" | Run `pip install -r requirements.txt` |
-| "Port in use" | Change port: `--server.port 8503` |
+| "Port in use" | Change port: `--server.port 8504` |
 | Import errors | Activate venv: `source .venv/bin/activate` |
 
 ## System Architecture (High-Level)

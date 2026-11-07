@@ -462,14 +462,14 @@ class WorkflowPersistence:
                 feas_report = FeasibilityReport(
                     request_id=request_id,
                     is_feasible=state.get("feasible", False),
-                    feasibility_score=state.get("feasibility_score", 0.0),
+                    feasibility_score=state.get("feasibility_score") or 0.0,  # NOT NULL; #245
                     estimated_cohort_size=state.get("estimated_cohort_size"),
                     phenotype_sql=state.get("phenotype_sql"),
                 )
                 session.add(feas_report)
             else:
                 feas_report.is_feasible = state.get("feasible", False)
-                feas_report.feasibility_score = state.get("feasibility_score", 0.0)
+                feas_report.feasibility_score = state.get("feasibility_score") or 0.0
                 feas_report.estimated_cohort_size = state.get("estimated_cohort_size")
                 feas_report.phenotype_sql = state.get("phenotype_sql")
 

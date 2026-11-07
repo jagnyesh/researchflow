@@ -11,6 +11,7 @@ from datetime import datetime
 import logging
 
 from .base_agent import BaseAgent
+from app.portal_urls import ADMIN_DASHBOARD_URL, FORMAL_PORTAL_URL
 
 logger = logging.getLogger(__name__)
 
@@ -156,6 +157,14 @@ ResearchFlow System
 
         return await handler(context)
 
+    def _deliver_email(self, email_type: str, recipients: List[str], email_body: str) -> None:
+        """Hand a rendered email to the mail service.
+
+        TODO: Integrate with actual email service (MCP email server). Until
+        then this is a no-op; bodies and recipients carry researcher details,
+        so they are never logged instead (#225).
+        """
+
     async def _send_requirements_complete_email(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Send email notification when requirements extraction is complete"""
         request_id = context.get("request_id")
@@ -167,13 +176,12 @@ ResearchFlow System
             request_id=request_id,
             researcher_name=researcher_name,
             researcher_department=researcher_department,
-            dashboard_url="http://localhost:8502",  # TODO: Get from config
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
-        # TODO: Integrate with actual email service (MCP email server)
+        self._deliver_email("requirements_complete", ["informatician@example.com"], email_body)
         logger.info(f"[{self.agent_id}] Sending requirements complete email for {request_id}")
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,
@@ -192,12 +200,12 @@ ResearchFlow System
             request_id=request_id,
             researcher_name=researcher_name,
             estimated_cohort=estimated_cohort,
-            dashboard_url="http://localhost:8502",
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
+        self._deliver_email("phenotype_sql_review", ["informatician@example.com"], email_body)
         logger.info(f"[{self.agent_id}] Sending SQL review email for {request_id}")
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,
@@ -220,8 +228,8 @@ ResearchFlow System
             data_elements=", ".join(data_elements) if data_elements else "N/A",
         )
 
-        logger.info(f"[{self.agent_id}] Sending extraction notice to {researcher_email}")
-        logger.debug(f"Email body: {email_body}")
+        self._deliver_email("extraction_notice", [researcher_email], email_body)
+        logger.info(f"[{self.agent_id}] Sending extraction notice for {request_id}")
 
         return {
             "email_sent": True,
@@ -244,11 +252,11 @@ ResearchFlow System
             qa_status=qa_status,
             cohort_size=cohort_size,
             qa_summary=qa_summary,
-            dashboard_url="http://localhost:8501",  # Researcher portal
+            dashboard_url=FORMAL_PORTAL_URL,
         )
 
-        logger.info(f"[{self.agent_id}] Sending QA complete email to {researcher_email}")
-        logger.debug(f"Email body: {email_body}")
+        self._deliver_email("qa_complete", [researcher_email], email_body)
+        logger.info(f"[{self.agent_id}] Sending QA complete email for {request_id}")
 
         return {"email_sent": True, "email_type": "qa_complete", "recipient": researcher_email}
 
@@ -347,17 +355,17 @@ ResearchFlow System
             original_requirements=str(original_requirements),
             requested_changes=str(requested_changes),
             impact_analysis=str(impact_analysis),
-            dashboard_url="http://localhost:8502",
+            dashboard_url=ADMIN_DASHBOARD_URL,
             approval_id=approval_id,
         )
 
         # Send to informatician and admin
         recipients = ["informatician@example.com", "admin@example.com"]
+        self._deliver_email("scope_change_notification", recipients, email_body)
 
         logger.info(
             f"[{self.agent_id}] Sending scope change notification to {len(recipients)} stakeholders"
         )
-        logger.debug(f"Email body: {email_body}")
 
         return {
             "email_sent": True,

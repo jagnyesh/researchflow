@@ -134,8 +134,9 @@ case "${1:-all}" in
         echo -e "\n${BLUE}Starting all portals in background...${NC}"
         echo ""
 
-        # Kill any existing Streamlit processes
-        pkill -f streamlit || true
+        # Kill existing portals only: a bare `streamlit` pattern matches any
+        # process with the word anywhere in its command line (#220).
+        pkill -f "streamlit run app/web_ui/" || true
         sleep 2
 
         # Start all portals in background
@@ -163,7 +164,7 @@ case "${1:-all}" in
         echo "  tail -f logs/*.log"
         echo ""
         echo "Stop all:"
-        echo "  pkill -f streamlit"
+        echo "  pkill -f 'streamlit run app/web_ui/'"
         ;;
     *)
         echo -e "${RED}Unknown command: $1${NC}"

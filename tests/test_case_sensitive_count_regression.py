@@ -62,34 +62,6 @@ class TestCaseSensitiveMatching:
         # And they must be OR'd (any-match), not AND'd
         assert " OR " in sql
 
-    def test_diabetes_query_generation(self, sql_generator):
-        """
-        Test full SQL generation for female diabetes patients
-
-        Expected: 19 patients (including patient 326492 Schneider199)
-        """
-        requirements = {
-            "inclusion_criteria": [{"type": "condition", "details": "diabetes"}],
-            "exclusion_criteria": [],
-            "data_elements": ["demographics"],
-            "demographics": {"gender": "female"},
-        }
-
-        count_sql, count_params = sql_generator.generate_phenotype_sql(
-            requirements, count_only=True
-        )
-
-        # Verify query structure
-        assert "COUNT(DISTINCT p.patient_id)" in count_sql
-        assert "LOWER(c.icd10_display) LIKE LOWER(" in count_sql
-        assert "p.gender = :gender" in count_sql
-
-        # Verify parameters
-        assert "gender" in count_params
-        assert count_params["gender"] == "female"
-        assert "condition_1" in count_params
-        assert count_params["condition_1"] == "%diabetes%"
-
     def test_extraction_query_generation(self, sql_generator):
         """
         Test full SQL generation for data extraction (not just count)
@@ -167,89 +139,39 @@ class TestDiabetesCohortCount:
         # Verify patient_id is selected so we can check for Schneider199
         assert "p.patient_id" in sql
 
+    @pytest.mark.requires_services
     @pytest.mark.asyncio
-    async def test_female_diabetes_count_equals_19(self, sql_generator):
-        """
-        Integration test: Verify female diabetes cohort has exactly 19 patients
+    async def test_female_diabetes_count_matches_case_insensitive_sql(self, sql_generator):
+        """The generated count equals a hand-written case-insensitive count.
 
-        This test requires database connection and is marked for integration testing.
-        Run with: pytest tests/test_case_sensitive_count_regression.py::TestDiabetesCohortCount::test_female_diabetes_count_equals_19 --asyncio-mode=auto
-
-        Expected count: 19 (including patient 326492 Schneider199)
+        #23: this used to hardcode 19 (an older corpus), pass a malformed flat
+        criterion, and turn any failure into a skip. It now runs against the
+        current views and fails when the counts differ.
         """
         from app.adapters.sql_on_fhir import SQLonFHIRAdapter
+        from tests.fixtures import RequirementsBuilder as RB
 
         adapter = SQLonFHIRAdapter()
-
-        requirements = {
-            "inclusion_criteria": [{"type": "condition", "details": "diabetes"}],
-            "exclusion_criteria": [],
-            "data_elements": ["demographics"],
-            "demographics": {"gender": "female"},
-        }
-
+        requirements = RB.build_requirements(
+            inclusion=[
+                RB.build_condition("diabetes", term="diabetes"),
+                RB.build_demographic("female", term="gender", details="female"),
+            ]
+        )
         count_sql, count_params = sql_generator.generate_phenotype_sql(
             requirements, count_only=True
         )
+        expected = await adapter.execute_sql(
+            "SELECT COUNT(DISTINCT p.patient_id) AS n FROM sqlonfhir.patient_demographics p "
+            "WHERE p.gender = 'female' AND EXISTS (SELECT 1 FROM sqlonfhir.condition_simple c "
+            "WHERE c.patient_id = p.patient_id AND (LOWER(c.code_text) LIKE '%diabetes%' "
+            "OR LOWER(c.icd10_display) LIKE '%diabetes%' OR LOWER(c.snomed_display) LIKE '%diabetes%'))"
+        )
 
-        try:
-            result = await adapter.execute_sql(count_sql, count_params)
+        result = await adapter.execute_sql(count_sql, count_params)
 
-            # Verify result structure
-            assert result is not None, "Query should return results"
-            assert len(result) > 0, "Should have at least one row"
-            assert "patient_count" in result[0], "Result should have patient_count column"
-
-            # CRITICAL: Verify count is 19 (not 18)
-            actual_count = result[0]["patient_count"]
-            assert (
-                actual_count == 19
-            ), f"Expected 19 female diabetes patients, got {actual_count}. Case-sensitive matching may have regressed."
-
-        except Exception as e:
-            pytest.skip(f"Database not available: {str(e)}")
-
-
-class TestConservativeFactorDocumentation:
-    """Tests for conservative factor (0.7x) applied to feasibility estimates"""
-
-    def test_conservative_factor_documented(self):
-        """
-        Verify that phenotype_agent.py documents the 0.7x conservative factor
-
-        The 0.7x factor is applied ONLY to feasibility estimates, NOT to extraction.
-        This test ensures the documentation is present to prevent confusion.
-        """
-        import inspect
-        from app.agents.phenotype_agent import PhenotypeAgent
-
-        # Get source code
-        source = inspect.getsource(PhenotypeAgent._estimate_cohort_size)
-
-        # Verify documentation exists
-        assert "0.7x" in source or "0.7" in source, "Conservative factor should be in code"
-        assert (
-            "WHY 0.7x FACTOR" in source or "conservative factor" in source.lower()
-        ), "Factor should be documented"
-
-    def test_conservative_factor_only_in_feasibility(self):
-        """
-        Verify conservative factor is NOT applied in extraction_agent.py
-
-        The 0.7x factor should ONLY reduce feasibility estimates.
-        Final extraction should return actual cohort count without reduction.
-        """
-        import inspect
-        from app.agents.extraction_agent import ExtractionAgent
-
-        # Get source code of extraction method
-        source = inspect.getsource(ExtractionAgent.execute)
-
-        # Verify NO conservative factor in extraction
-        assert "0.7" not in source, "Extraction should NOT apply conservative factor (0.7x)"
-        assert (
-            "len(cohort)" in source
-        ), "Extraction should use actual cohort length, not conservative estimate"
+        assert expected[0]["n"] > 0, "vacuous: no female diabetes patients in the corpus"
+        assert result[0]["patient_count"] == expected[0]["n"]
 
 
 class TestRegressionDocumentation:

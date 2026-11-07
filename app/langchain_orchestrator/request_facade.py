@@ -224,10 +224,11 @@ class LangGraphRequestFacade:
             audit_entry = AuditLog(
                 request_id=request_id,
                 event_type="request_created",
+                # No name or request text: event_data is a plain JSON column, and
+                # both (the text can hold PHI) live on the row request_id points to.
                 event_data={
-                    "researcher_name": researcher_info.get("name"),
-                    "initial_request": researcher_request,
                     "orchestrator": "LangGraphRequestFacade",
+                    "source": "formal" if from_formal_portal else "exploratory",
                 },
                 triggered_by="facade",
                 severity="info",
@@ -605,6 +606,13 @@ class LangGraphRequestFacade:
                         {"state": state["current_state"], "timestamp": datetime.now().isoformat()}
                     )
                     req.state_history = state_history
+
+                if state.get("error") and not state.get("requirements_complete"):
+                    # The requirements node caught a failure and the graph ended
+                    # there; show it the way a crashed workflow is shown, not as a
+                    # request still gathering requirements forever.
+                    req.current_state = "error"
+                    req.error_message = state["error"]
 
                 await session.commit()
             else:
@@ -1035,7 +1043,7 @@ class LangGraphRequestFacade:
         from sqlalchemy import select
         import asyncio
 
-        logger.info(f"[LangGraphRequestFacade] Getting requests for researcher: {researcher_email}")
+        logger.info("[LangGraphRequestFacade] Getting requests for a researcher")
 
         async with get_db_session() as session:
             result = await session.execute(
@@ -1046,7 +1054,7 @@ class LangGraphRequestFacade:
             researcher_requests = result.scalars().all()
 
             logger.info(
-                f"[LangGraphRequestFacade] Found {len(researcher_requests)} requests for {researcher_email}"
+                f"[LangGraphRequestFacade] Found {len(researcher_requests)} requests for the researcher"
             )
 
             # Use asyncio.gather to properly await all status requests

@@ -204,6 +204,9 @@ class TestQAAgentPreview:
         """Test that preview QA passes with valid preview data"""
         context = {
             "request_id": "REQ-20250104-12345",
+            # #209: the count is checked against the phenotype estimate; with
+            # none, preview QA routes to human review instead of passing.
+            "estimated_cohort": 100,
             "requirements": {
                 "data_elements": ["lab_results", "medications"],
             },

@@ -71,7 +71,7 @@ async def main():
         # Execute query
         print("\n\nExecuting query...")
         try:
-            rows = await client.execute_query(query.sql)
+            rows = await client.execute_query(query.sql, query.params)
             print(f"✓ Query executed successfully!")
             print(f"  Returned {len(rows)} rows")
 
@@ -104,7 +104,7 @@ async def main():
 
         print("\n\nExecuting query...")
         try:
-            rows = await client.execute_query(query_with_params.sql)
+            rows = await client.execute_query(query_with_params.sql, query_with_params.params)
             print(f"✓ Query executed successfully!")
             print(f"  Returned {len(rows)} male patients")
 
@@ -124,16 +124,13 @@ async def main():
         print("\n\n4. Building COUNT query for feasibility check...")
         print("-" * 80)
 
-        count_sql = builder.build_count_query(view_def, search_params={"gender": "female"})
-
-        print("COUNT SQL:")
-        print("-" * 80)
-        print(count_sql)
-        print("-" * 80)
+        count_sql, count_params = builder.build_count_query(
+            view_def, search_params={"gender": "female"}
+        )
 
         print("\n\nExecuting count query...")
         try:
-            count_rows = await client.execute_query(count_sql)
+            count_rows = await client.execute_query(count_sql, count_params)
             count = count_rows[0]["count"]
             print(f"✓ Count query executed successfully!")
             print(f"  Female patients in database: {count}")
@@ -158,7 +155,7 @@ async def main():
 
         print("\n\nExecuting query...")
         try:
-            rows = await client.execute_query(condition_query.sql)
+            rows = await client.execute_query(condition_query.sql, condition_query.params)
             print(f"✓ Query executed successfully!")
             print(f"  Returned {len(rows)} condition records")
 

@@ -185,12 +185,11 @@ async def test_thread_aggregation_sums_per_request():
 
 @pytest.mark.asyncio
 async def test_cache_hit_rate_calculation():
-    """cache_hit_rate = cache_read / (cache_read + non_cached_input).
+    """cache_hit_rate = cache_read / total input_tokens.
 
     Per Sprint 8.4 wire-level verification: LangSmith stores `input_tokens` as
     the TOTAL (cache_read is INSIDE input_tokens). So for an 80% cache hit
-    rate, set input_tokens=5000 with cache_read=4000 — the non-cached portion
-    is 5000 - 4000 = 1000, and the rate is 4000 / (4000 + 1000) = 0.8.
+    rate, set input_tokens=5000 with cache_read=4000: 4000 / 5000 = 0.8.
     """
     base = datetime(2026, 5, 11, 12, 0, 0)
     runs = [
@@ -471,6 +470,132 @@ async def test_cache_read_not_double_charged_against_wire_shape():
     assert summary.median_usd < 0.015, "regression: cache_read appears double-charged"
 
 
+# #271 — Wire-level fixture: cache_write double-charge regression test
+#
+# LangSmith's Run.input_tokens also INCLUDES cache_creation (cache-write)
+# tokens. Subtracting only cache_read priced every written token twice: once
+# at the input rate, once at the cache-write rate. Cold-cache calls (the first
+# call after the 5-minute TTL) write the cache, so spread-out traffic hit this
+# on almost every request.
+
+
+@pytest.mark.asyncio
+async def test_cache_write_not_double_charged_against_wire_shape():
+    """#271 wire-level fixture from a real cold-cache formal request.
+
+    Sonnet and Haiku LLM leaves of production project researchflow-production,
+    runs 8b86206d-49ae-4e23-ad3b-aef8913157ca and
+    786655c3-de16-478d-ba3b-fe43bea963b0 (2026-10-30 21:29). Token counts only.
+    """
+    base = datetime(2026, 10, 30, 21, 29, 54)
+    sonnet_leaf = FakeRun(
+        id="sonnet-cold",
+        name="ChatAnthropic",
+        input_tokens=3339,  # includes cache_creation=3087, per LangSmith accounting
+        output_tokens=284,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=3087,
+        start_time=base,
+        metadata={"thread_id": "REQ-COLD-WIRE", "ls_model_name": "claude-sonnet-4-6"},
+    )
+    haiku_leaf = FakeRun(
+        id="haiku-cold",
+        name="ChatAnthropic",
+        input_tokens=5932,  # includes cache_creation=5850
+        output_tokens=195,
+        cache_read_input_tokens=0,
+        cache_creation_input_tokens=5850,
+        start_time=base + timedelta(seconds=5),
+        metadata={"thread_id": "REQ-COLD-WIRE", "ls_model_name": "claude-haiku-4-5-20251001"},
+    )
+    service = _make_service([sonnet_leaf, haiku_leaf])
+    summary = await service.get_formal_portal_cost_p50(n=1)
+
+    # Sonnet: non_cached = 3339 - 3087 = 252
+    #   252 × $3/M + 284 × $15/M + 0 + 3087 × $3.75/M = $0.01659225
+    # Haiku: non_cached = 5932 - 5850 = 82
+    #   82 × $1/M + 195 × $5/M + 0 + 5850 × $1.25/M = $0.0083695
+    expected_thread_cost = 0.02496175
+    assert summary.n_observed == 1
+    assert (
+        abs(summary.median_usd - expected_thread_cost) < 1e-6
+    ), f"got {summary.median_usd}, expected {expected_thread_cost}"
+    # Double-charged, this fixture prices at $0.04007275 (1.6×).
+    assert summary.median_usd < 0.03, "regression: cache_write appears double-charged"
+
+
+@pytest.mark.asyncio
+async def test_cache_hit_rate_counts_cache_writes_as_uncached_input():
+    """cache_hit_rate = cache_read / total input_tokens. Cache writes are input
+    that did not come from cache, so excluding them from the non-cached price
+    (#271) must not drop them from the hit-rate denominator.
+
+    Real paired exploratory calls (2026-10-30/31): cold 1798 in / 1762 written,
+    warm 1787 in / 1762 read.
+    """
+    base = datetime(2026, 10, 31, 0, 0, 0)
+    cold = FakeRun(
+        id="cold",
+        name="synthesize_sql",
+        input_tokens=1798,
+        output_tokens=155,
+        cache_creation_input_tokens=1762,
+        start_time=base,
+        metadata={"ls_model_name": "claude-sonnet-4-6"},
+    )
+    warm = FakeRun(
+        id="warm",
+        name="synthesize_sql",
+        input_tokens=1787,
+        output_tokens=138,
+        cache_read_input_tokens=1762,
+        start_time=base + timedelta(seconds=30),
+        metadata={"ls_model_name": "claude-sonnet-4-6"},
+    )
+    summary = await _make_service([cold, warm]).get_exploratory_portal_cost_p50(n=2)
+
+    assert abs(summary.cache_hit_rate - 1762 / (1798 + 1787)) < 1e-9
+
+
+@pytest.mark.asyncio
+async def test_formal_cache_hit_rate_counts_cache_writes_as_uncached_input():
+    """Same rule on the formal portal's per-thread path (the cold formal
+    request's two leaves, then a warm request reading the Sonnet cache)."""
+    base = datetime(2026, 10, 30, 21, 29, 54)
+    runs = [
+        FakeRun(
+            id="sonnet-cold",
+            name="ChatAnthropic",
+            input_tokens=3339,
+            output_tokens=284,
+            cache_creation_input_tokens=3087,
+            start_time=base,
+            metadata={"thread_id": "REQ-COLD", "ls_model_name": "claude-sonnet-4-6"},
+        ),
+        FakeRun(
+            id="haiku-cold",
+            name="ChatAnthropic",
+            input_tokens=5932,
+            output_tokens=195,
+            cache_creation_input_tokens=5850,
+            start_time=base + timedelta(seconds=5),
+            metadata={"thread_id": "REQ-COLD", "ls_model_name": "claude-haiku-4-5-20251001"},
+        ),
+        FakeRun(
+            id="sonnet-warm",
+            name="ChatAnthropic",
+            input_tokens=3362,
+            output_tokens=257,
+            cache_read_input_tokens=3087,
+            start_time=base + timedelta(seconds=60),
+            metadata={"thread_id": "REQ-WARM", "ls_model_name": "claude-sonnet-4-6"},
+        ),
+    ]
+    summary = await _make_service(runs).get_formal_portal_cost_p50(n=2)
+
+    assert abs(summary.cache_hit_rate - 3087 / (3339 + 5932 + 3362)) < 1e-9
+
+
 def test_langsmith_schema_contract_input_includes_cache_read():
     """Schema contract: documents the LangSmith accounting we trust.
 
@@ -495,6 +620,24 @@ def test_langsmith_schema_contract_input_includes_cache_read():
     assert 3362 + 257 + 3087 != 3619, (
         "If total ever equals input+output+cache_read, LangSmith has changed "
         "accounting and _run_cost_usd's cache_read subtraction needs revisiting."
+    )
+
+
+def test_langsmith_schema_contract_input_includes_cache_writes():
+    """#271: cache_creation (cache-write) tokens are INSIDE input_tokens too.
+
+    Cold-cache runs pulled 2026-10-30/31 from researchflow-production:
+    Sonnet afd8f196 input=1785 output=138 total=1923 cache_creation=1762;
+    Haiku 786655c3 input=5932 output=195 total=6127 cache_creation=5850.
+    """
+    assert 1785 + 138 == 1923, "Sonnet cold leaf: input + output must equal total"
+    assert 5932 + 195 == 6127, "Haiku cold leaf: input + output must equal total"
+    # The writes fit inside input; added on top they would exceed the total.
+    assert 1762 <= 1785 and 5850 <= 5932
+    assert 1785 + 138 + 1762 != 1923, (
+        "If total ever equals input+output+cache_creation, LangSmith has changed "
+        "accounting and _get_non_cached_input_tokens' cache-write subtraction "
+        "needs revisiting."
     )
 
 

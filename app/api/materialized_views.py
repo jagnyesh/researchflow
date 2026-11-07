@@ -12,7 +12,7 @@ Provides:
 - Batch operations
 """
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 import logging
@@ -209,10 +209,7 @@ async def refresh_view(
 
 
 @router.post("/refresh-all", response_model=RefreshAllResponse)
-async def refresh_all_views(
-    background_tasks: BackgroundTasks,
-    _admin=Depends(require_role("admin")),
-):
+async def refresh_all_views(_admin=Depends(require_role("admin"))):
     """
     Refresh all materialized views in parallel via REFRESH MATERIALIZED VIEW
     CONCURRENTLY (issue #18).

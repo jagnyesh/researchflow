@@ -91,7 +91,7 @@ async def lifespan(app: FastAPI):
         _audit_drain_task = asyncio.create_task(
             audit_drain_loop(_audit_redis_client, _audit_drain_stop)
         )
-        logger.info(f"Audit pipeline initialized (REDIS_AUDIT_URL={audit_redis_url})")
+        logger.info("Audit pipeline initialized")
     else:
         logger.warning(
             "REDIS_AUDIT_URL not set; audit pipeline disabled (PHI routes will fail-closed)"
@@ -149,7 +149,7 @@ app = FastAPI(
 setup_rate_limiting(app)
 
 # Audit middleware (Sprint 6.1 Phase 2.2 — default-deny + fail-closed PHI gate)
-app.middleware("http")(audit_mw.audit_middleware)
+audit_mw.install_audit_middleware(app)  # + AuditBodyGuard inside it (#224)
 
 # Body-size limit middleware (Sprint 6.1 Phase 2.3 CSO Finding 1 fix — defense-in-depth
 # DoS guard). Added AFTER audit_middleware so it runs FIRST (FastAPI middleware order

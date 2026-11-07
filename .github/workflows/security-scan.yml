@@ -66,7 +66,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r config/requirements.lock
-          pip install safety
+          pip install safety==3.8.1
 
       - name: Run Safety check
         run: |
@@ -74,7 +74,7 @@ jobs:
 
       - name: Run pip-audit
         run: |
-          pip install pip-audit
+          pip install pip-audit==2.10.1
           pip-audit --desc || true  # Don't fail build, just report
 
   code-security:
@@ -92,7 +92,7 @@ jobs:
 
       - name: Install bandit
         run: |
-          pip install bandit[toml]
+          pip install 'bandit[toml]==1.9.4'  # matches config/requirements-dev.lock
 
       - name: Run Bandit security linter
         run: |

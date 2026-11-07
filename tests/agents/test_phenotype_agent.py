@@ -493,7 +493,7 @@ def test_phenotype_agent_coverage_summary():
     Integration Coverage (separate files):
     - ViewDefinition mode: test_sql_on_fhir_real_hapi.py
     - Full workflow: test_full_workflow_e2e.py
-    - SQL quality: test_sql_generation_quality.py
+    - SQL quality: test_sql_generator_criteria.py
     """
     print("\n" + "=" * 80)
     print("PRIORITY 0: Phenotype Agent Unit Tests")
