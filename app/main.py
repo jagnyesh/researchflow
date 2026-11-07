@@ -19,7 +19,7 @@ from .api.users import router as users_router
 from .api.analytics import router as analytics_router
 from .api.materialized_views import router as materialized_views_router
 from .api.approvals import router as approvals_router, set_orchestrator as set_approvals_orch
-from .api.research import router as research_router, set_orchestrator as set_research_orch
+from .api.research import router as research_router
 from .langchain_orchestrator.request_facade import LangGraphRequestFacade
 from .database import init_db
 from .security.rate_limit import setup_rate_limiting
@@ -114,7 +114,6 @@ async def lifespan(app: FastAPI):
 
         # Set orchestrator in API routers
         set_approvals_orch(orchestrator)
-        set_research_orch(orchestrator)
         logger.info("Orchestrator connected to API endpoints")
     else:
         logger.info("Orchestrator disabled - running in analytics-only mode")

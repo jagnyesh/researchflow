@@ -402,7 +402,9 @@ Keep it concise and professional."""
             metadata_files["data_dictionary.txt"] = data_dict_content
 
             # 2. QA Report (human-readable summary)
-            qa_content = self._format_qa_report_text(package["documentation"]["qa_summary"])
+            qa_content = self._format_qa_report_text(
+                package["documentation"]["qa_summary"], package["documentation"]
+            )
             metadata_files["qa_report.txt"] = qa_content
 
             # 3. README with citation and extraction methods
@@ -452,7 +454,7 @@ Keep it concise and professional."""
 
         return "\n".join(lines)
 
-    def _format_qa_report_text(self, qa_summary: Dict) -> str:
+    def _format_qa_report_text(self, qa_summary: Dict, documentation: Dict) -> str:
         """Format QA report as human-readable text"""
         lines = ["=" * 80, "QUALITY ASSURANCE REPORT", "=" * 80, ""]
 
@@ -470,6 +472,7 @@ Keep it concise and professional."""
             lines.append("No warnings detected.")
 
         lines.append("")
+        lines.extend(self._extraction_warning_lines(documentation))
         lines.append("=" * 80)
 
         return "\n".join(lines)
@@ -512,17 +515,20 @@ Keep it concise and professional."""
         # Sprint 6.5 honesty patch (2026-05-17): surface extraction_warnings
         # so the researcher knows when a requested data element returned no
         # records (silent failure vs genuine zero-cohort).
-        warnings = documentation.get("extraction_warnings", []) or []
-        if warnings:
-            lines.append("⚠ EXTRACTION WARNINGS:")
-            lines.append("-" * 40)
-            for warning in warnings:
-                lines.append(f"  • {warning}")
-            lines.append("")
-
+        lines.extend(self._extraction_warning_lines(documentation))
         lines.append("=" * 80)
 
         return "\n".join(lines)
+
+    def _extraction_warning_lines(self, documentation: Dict) -> list:
+        # README.txt and qa_report.txt list the same warnings (#205).
+        warnings = documentation.get("extraction_warnings", []) or []
+        if not warnings:
+            return []
+        lines = ["⚠ EXTRACTION WARNINGS:", "-" * 40]
+        lines.extend(f"  • {warning}" for warning in warnings)
+        lines.append("")
+        return lines
 
     async def _send_notification(self, recipient: str, email: str, delivery_info: Dict):
         """

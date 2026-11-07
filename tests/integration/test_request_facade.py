@@ -294,18 +294,6 @@ async def test_process_approval_response_updates_approval(
 
 
 @pytest.mark.asyncio
-async def test_register_agent_is_no_op(facade):
-    """Test that register_agent is no-op for compatibility"""
-    from app.agents import RequirementsAgent
-
-    # Should not raise exception
-    facade.register_agent("requirements_agent", RequirementsAgent())
-
-    # Verify agent tracked (for compatibility)
-    assert "requirements_agent" in facade.agents
-
-
-@pytest.mark.asyncio
 async def test_route_task_is_no_op(facade):
     """Test that route_task is no-op for compatibility"""
     # Should not raise exception

@@ -6,8 +6,8 @@ order and asserts each one fired:
   1. body_size middleware accepted the request                (Phase 2.3 layer 2)
   2. audit middleware emitted PHI_ACCESS_REQUESTED            (Phase 2.2 pre)
   3. JWT was decoded → principal landed on the audit row      (Phase 1.1 + 2.2)
-  4. Pydantic validated the body via PHIInputModel            (Phase 2.3 framework)
-  5. ResearchRequest row written, initial_request encrypted   (Phase 3b)
+  4. (moved to 8: the golden path is now a read; #273 removed /research/submit)
+  5. ResearchRequest row stored with initial_request encrypted (Phase 3b)
   6. audit middleware emitted PHI_ACCESS_COMPLETED            (Phase 2.2 post)
   7. drain task flushed both events to audit_logs             (Phase 2.2 durability)
 
@@ -21,6 +21,7 @@ run after `docker-compose up redis-audit db` (or `make docker-up`).
 
 import asyncio
 import socket
+import uuid
 
 import pytest
 
@@ -70,13 +71,6 @@ async def test_full_phi_request_traverses_all_controls(monkeypatch):
         expires_delta=timedelta(minutes=5),
     )
 
-    body = {
-        "researcher_name": "Dr. Baseline",
-        "researcher_email": "e2e-baseline@example.com",
-        "irb_number": "IRB-2026-0001",
-        "initial_request": PHI_NEEDLE,
-    }
-
     async with lifespan(app):
         # test.db persists across runs; scope assertions to rows this run writes.
         async with get_db_session() as session:
@@ -85,13 +79,28 @@ async def test_full_phi_request_traverses_all_controls(monkeypatch):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             # ---------- (1)–(6) golden path ---------------------------------
-            response = await client.post(
-                "/research/submit",
-                json=body,
+            # Requests are created in-process through the facade since #273, so
+            # the row is seeded through the ORM (encrypting on write) and the
+            # API walk is a PHI read of it.
+            from app.database import ResearchRequest
+
+            request_id = f"REQ-E2E-{uuid.uuid4().hex[:8].upper()}"
+            async with get_db_session() as session:
+                session.add(
+                    ResearchRequest(
+                        id=request_id,
+                        researcher_name="Dr. Baseline",
+                        researcher_email="e2e-baseline@example.com",
+                        irb_number="IRB-2026-0001",
+                        initial_request=PHI_NEEDLE,
+                        current_state="new_request",
+                    )
+                )
+            response = await client.get(
+                f"/research/{request_id}",
                 headers={"authorization": f"Bearer {token}"},
             )
             assert response.status_code == 200, f"got {response.status_code}: {response.text}"
-            request_id = response.json()["request_id"]
 
             # ---------- (5) encryption-at-rest verification -----------------
             # Bypass the ORM column type and read the raw bytes the DB stored.
@@ -147,12 +156,11 @@ async def test_full_phi_request_traverses_all_controls(monkeypatch):
 
             # (8) Negative tracer: malformed body → 422 with `input` stripped
             bad_response = await client.post(
-                "/research/submit",
+                "/approvals/scope-change",
                 json={
-                    # missing required fields + oversize initial_request
-                    "researcher_name": "x",
-                    "initial_request": "Y",
-                    "irb_number": "not-a-real-irb-format",
+                    # missing required fields + a malformed email carrying PHI
+                    "request_id": "REQ-E2E",
+                    "requested_by": PHI_NEEDLE,
                 },
                 headers={"authorization": f"Bearer {token}"},
             )

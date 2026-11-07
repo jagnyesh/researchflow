@@ -66,44 +66,80 @@ def test_internal_error_logs_and_returns_no_exception_text(caplog):
 
 
 @pytest.mark.asyncio
-async def test_submit_db_failure_leaks_nothing_and_keeps_audit_pair(
+async def test_a_failed_insert_leaks_nothing_and_keeps_audit_pair(
     fake_audit_redis, monkeypatch, caplog
 ):
-    """The observed #175 path: a failing INSERT on /research/submit."""
+    """A failing INSERT whose error text embeds every bound param (#175's shape).
+
+    Was /research/submit (removed in #273). POST /users derives the user id from
+    the clock to the second; pinning the clock onto an existing id makes the
+    INSERT raise an IntegrityError carrying the email and name. create_user has
+    no try/except, so this exercises the #180 middleware backstop; the per-site
+    internal_error() helper is covered by the unit test above.
+    """
+    from datetime import datetime
+
     from httpx import ASGITransport, AsyncClient
 
+    from app.api import users as users_api
+    from app.database import get_db_session, init_db
+    from app.database.models import User as UserModel
     from app.main import app
     from app.security import audit_middleware as am
     from app.security.auth import create_access_token
 
-    # The EncryptedText column resolves its key at bind time; removing it makes
-    # the INSERT raise a StatementError whose str() embeds every bound param.
-    monkeypatch.delenv("ENCRYPTION_KEY_PRIMARY", raising=False)
+    pinned = datetime(2026, 1, 1, 0, 0, 0)
+
+    class PinnedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return pinned
+
+    await init_db()
+    user_id = f"USR-{pinned.strftime('%Y%m%d%H%M%S')}"
+    async with get_db_session() as session:
+        if await session.get(UserModel, user_id) is None:
+            session.add(
+                UserModel(
+                    id=user_id,
+                    email="seeded-175@example.org",
+                    full_name="Seeded User",
+                    role="researcher",
+                    hashed_password="x",  # pragma: allowlist secret
+                )
+            )
+    monkeypatch.setattr(users_api, "datetime", PinnedClock)
 
     token = create_access_token(
-        {"sub": EMAIL_NEEDLE, "user_id": "leak-1", "role": "researcher"},
+        {"sub": "admin-175@example.org", "user_id": "leak-1", "role": "admin"},
         expires_delta=timedelta(minutes=5),
     )
     body = {
-        "researcher_name": "Dr. Canary",
-        "researcher_email": EMAIL_NEEDLE,
-        "irb_number": IRB_NEEDLE,
-        "initial_request": PHI_NEEDLE,
+        "email": EMAIL_NEEDLE,
+        "full_name": PHI_NEEDLE,
+        "department": IRB_NEEDLE,
+        "role": "researcher",
+        "password": "a-long-enough-password-1",  # pragma: allowlist secret
     }
     with caplog.at_level(logging.DEBUG):
-        transport = ASGITransport(app=app)
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.post(
-                "/research/submit", json=body, headers={"authorization": f"Bearer {token}"}
+                "/users", json=body, headers={"authorization": f"Bearer {token}"}
             )
 
     assert response.status_code == 500
-    for needle in (PHI_NEEDLE, EMAIL_NEEDLE, IRB_NEEDLE, "INSERT INTO", "parameters"):
+    # The aiosqlite driver logs every statement with its params at DEBUG, on
+    # success too; that is driver config (#331), not this error path.
+    logged = "\n".join(r.getMessage() for r in caplog.records if not r.name.startswith("aiosqlite"))
+    # "[parameters:" is SQLAlchemy's bound-param dump; the logged traceback
+    # frames may name a `parameters` variable, which is code, not data.
+    for needle in (PHI_NEEDLE, EMAIL_NEEDLE, IRB_NEEDLE, "INSERT INTO", "[parameters:"):
         assert needle not in response.text, f"response leaked {needle!r}"
-        assert needle not in caplog.text, f"log leaked {needle!r}"
+        assert needle not in logged, f"log leaked {needle!r}"
 
     ref = re.search(r"ref: ([0-9a-f]{12})", response.json()["detail"]).group(1)
-    assert ref in caplog.text
+    assert ref in logged
 
     events = []
     while (item := await fake_audit_redis.lpop(am.AUDIT_QUEUE_KEY)) is not None:

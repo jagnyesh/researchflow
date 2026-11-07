@@ -50,7 +50,10 @@ from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
-from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
+from app.langchain_orchestrator.request_facade import (
+    ApprovalRefused,
+    LangGraphRequestFacade,
+)
 from app.database import get_db_session, get_engine
 from app.services.gate_telemetry import gate_telemetry_rows, load_gate_telemetry
 from app.database.models import AgentExecution
