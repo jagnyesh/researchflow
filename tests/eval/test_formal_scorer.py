@@ -71,7 +71,7 @@ def _requirements(*criteria, exclusions=()):
 
 
 def test_every_seed_case_documents_its_format_and_signoff():
-    assert len(FORMAL_CASES) == 2
+    assert len(FORMAL_CASES) == 10  # #239's 2 seeds + #241's 8
     for case in FORMAL_CASES:
         assert case.oracle_sql.strip().upper().startswith("SELECT")
         assert "patient_id" in case.oracle_sql
@@ -202,9 +202,9 @@ async def test_an_extra_predicate_fails_on_the_missing_patients():
     assert result.mismatch == result.oracle_count - result.sql_count
 
 
-def test_both_seed_oracles_are_signed_off():
-    # Approved by the repo owner on 2026-11-04 (#239).
-    assert [c.signoff for c in FORMAL_CASES] == ["approved", "approved"]
+def test_every_gold_oracle_is_signed_off():
+    # Repo owner: #239's seeds on 2026-11-04, #241's cases on 2026-11-07.
+    assert [c.signoff for c in FORMAL_CASES] == ["approved"] * 10
 
 
 @pytest.mark.asyncio

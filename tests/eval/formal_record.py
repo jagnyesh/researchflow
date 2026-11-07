@@ -156,8 +156,14 @@ async def replay(evidence: Path) -> List[CaseScore]:
 
 def summary(scores: List[CaseScore]) -> str:
     lines = [f"Pass@1: {pass_at_1(scores):.2f} ({sum(s.passed for s in scores)}/{len(scores)})"]
+    reasons = {c.id: c.expected_fail for c in FORMAL_CASES}
     for s in scores:
-        state = "PASS" if s.passed else ("VACUOUS" if s.vacuous else "FAIL")
+        reason = reasons.get(s.id, "")
+        if reason:
+            # Counted as a fail in Pass@1, listed with why (#241).
+            state = "UNEXPECTED-PASS" if s.passed else f"EXPECTED-FAIL ({reason})"
+        else:
+            state = "PASS" if s.passed else ("VACUOUS" if s.vacuous else "FAIL")
         lines.append(
             f"  {s.id}: {state} sql={s.sql_count} oracle={s.oracle_count} mismatch={s.mismatch}"
             + ("" if s.cost_usd is None else f" cost=${s.cost_usd:.6f}")

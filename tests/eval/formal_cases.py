@@ -147,11 +147,10 @@ FORMAL_CASES: List[FormalCase] = [
     ),
 ]
 
-# #241 drafts: written by an agent, not yet signed off, and never recorded or
-# scored. Signing one off moves it into FORMAL_CASES with signoff="approved".
+# #241: agent-drafted cases, signed off by the repo owner on 2026-11-07.
 # Age cases count living patients only (repo owner, 2026-11-07); the request
 # text doesn't say so, but a research cohort by age means patients alive now.
-DRAFT_CASES: List[FormalCase] = [
+FORMAL_CASES += [
     FormalCase(
         id="hypertension_65_or_older",
         # Inclusive boundary: 2 living local patients are exactly 65 (16 at >= 65 vs 14 at > 65).
@@ -167,6 +166,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("age", ">=", 65),
             ("condition", "has", "hypertension"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=16,
         seed_count=1,
         expected_fail="the generator doesn't exclude deceased patients; no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
@@ -185,6 +185,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("condition", "has", "diabetes mellitus"),
             ("condition", "has", "hypertension"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=43,
         seed_count=1,
     ),
@@ -203,6 +204,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("condition", "has", "diabetes mellitus"),
             ("medication", "lacks", "insulin"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=31,
         seed_count=2,
         expected_fail="no medication concept: generation fails on the insulin exclusion",
@@ -226,6 +228,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("lab", "has", "a1c"),
             ("lab_date", "between", ("2025-01-01", "2025-12-31")),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=55,
         seed_count=2,
         expected_fail="time_period becomes p.lastUpdated, which isn't a view column (the SQL errors)",
@@ -242,6 +245,7 @@ DRAFT_CASES: List[FormalCase] = [
                   AND o.value_quantity::numeric > 8)
         """,
         required_predicates=[("lab_value", ">", ("a1c", 8))],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=4,
         seed_count=1,
         expected_fail="lab criteria match by name only; there's no value threshold",
@@ -263,6 +267,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("age", ">", 40),
             ("condition", "lacks", "hypertension"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=42,
         seed_count=1,
         expected_fail="the generator doesn't exclude deceased patients",
@@ -284,6 +289,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("age", "<", 50),
             ("condition", "has", "hypertension"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=2,
         seed_count=1,
         expected_fail="the generator doesn't exclude deceased patients",
@@ -304,6 +310,7 @@ DRAFT_CASES: List[FormalCase] = [
             ("age", "between", (50, 60)),
             ("condition", "has", "hypertension"),
         ],
+        signoff="approved",  # repo owner, 2026-11-07
         verified_count=15,
         seed_count=1,
         expected_fail="the generator doesn't exclude deceased patients; #242's predicate check has no BETWEEN template",
