@@ -348,10 +348,10 @@ body {
       <div class="layer-port">:8000 · uvicorn · async</div>
     </div>
     <div class="layer-body">
-      <div class="node a-api" data-tip="POST /research/submit|Entry point for the full multi-agent workflow. Creates ResearchRequest row, fires the orchestrator. Also: GET /{id} for status polling, GET /active for active requests list.">
+      <div class="node a-api" data-tip="GET /research|Read side of the formal workflow: GET /{id} for status polling, GET / for the caller's requests, and the delivery and download routes. Requests are created in-process through LangGraphRequestFacade (#273).">
         <div class="node-accent" style="background:var(--api)"></div>
         <div class="node-title">/research</div>
-        <div class="node-sub">submit · status · active</div>
+        <div class="node-sub">status · list · download</div>
       </div>
       <div class="node a-api" data-tip="Approval endpoints|GET /pending lists all unreviewed gates. POST /{id}/respond with decision=approve|reject|modify resumes the paused workflow. POST /scope-change re-routes to requirements agent.">
         <div class="node-accent" style="background:var(--api)"></div>
