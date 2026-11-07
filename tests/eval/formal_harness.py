@@ -23,6 +23,7 @@ from app.schemas._errors import log_internal_error
 from app.utils.sql_generator import SQLGenerator
 
 from tests.eval.formal_cases import FormalCase
+from tests.eval.formal_predicates import check_predicates
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,22 @@ class CaseScore:
     oracle_count: Optional[int] = None
     mismatch: Optional[int] = None
     error_ref: Optional[str] = None
+    # #242: "; "-joined canonical predicates (no patient data), "" when none.
+    missing_predicates: str = ""
+    extra_predicates: str = ""
+
+
+def _label(predicate) -> str:
+    kind, op, value = predicate
+    if kind == "unrecognized":
+        return f"unrecognized: {op}"
+    if kind == "condition":
+        return f"condition {op} {value}"
+    return f"{kind} {op} {value}"
+
+
+def _labels(predicates) -> str:
+    return "; ".join(sorted(_label(p) for p in predicates))
 
 
 def _comparison_sql(phenotype_sql: str, oracle_sql: str) -> str:
@@ -53,6 +70,12 @@ def _comparison_sql(phenotype_sql: str, oracle_sql: str) -> str:
     """  # nosec B608
 
 
+def case_passes(mismatch: int, vacuous: bool, missing, extra) -> bool:
+    """Every rule passes: same patients, a non-empty oracle, and exactly the
+    requested predicates (#242)."""
+    return mismatch == 0 and not vacuous and not missing and not extra
+
+
 async def score_case(case: FormalCase, requirements: Dict) -> CaseScore:
     try:
         sql, params = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
@@ -64,14 +87,17 @@ async def score_case(case: FormalCase, requirements: Dict) -> CaseScore:
         return CaseScore(id=case.id, executed=False, passed=False, vacuous=False, error_ref=ref)
 
     vacuous = row["oracle_count"] == 0
+    missing, extra = check_predicates(case, sql, params)
     return CaseScore(
         id=case.id,
         executed=True,
-        passed=row["mismatch"] == 0 and not vacuous,
+        passed=case_passes(row["mismatch"], vacuous, missing, extra),
         vacuous=vacuous,
         sql_count=row["sql_count"],
         oracle_count=row["oracle_count"],
         mismatch=row["mismatch"],
+        missing_predicates=_labels(missing),
+        extra_predicates=_labels(extra),
     )
 
 

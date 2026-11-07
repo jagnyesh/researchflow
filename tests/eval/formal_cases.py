@@ -10,8 +10,10 @@ Case format:
   - oracle_sql: hand-written SQL over sqlonfhir.* selecting the correct
     cohort's patient_id. It runs against the same database as the generated
     SQL (same-run oracle), so counts are never hardcoded.
-  - required_predicates: what the request requires, in words. The predicate
-    check slice (#242) scores against this list.
+  - required_predicates: what the request requires, as canonical predicates
+    (see formal_predicates.py): ("gender", "=", v), ("age", op, n),
+    ("condition", "has" | "lacks", term). The phenotype SQL must carry exactly
+    these, no more and no fewer (#242).
   - signoff: "pending" until an informatician approves the oracle's cohort
     definition; only "approved" cases count toward the gold-set score.
   - verified_count: the oracle's count on the local Synthea corpus when it was
@@ -19,7 +21,7 @@ Case format:
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -27,7 +29,7 @@ class FormalCase:
     id: str
     request: Dict
     oracle_sql: str
-    required_predicates: List[str] = field(default_factory=list)
+    required_predicates: List[Tuple[str, str, object]] = field(default_factory=list)
     signoff: str = "pending"
     verified_count: Optional[int] = None
 
@@ -61,7 +63,11 @@ FORMAL_CASES: List[FormalCase] = [
                   WHERE c.patient_id = p.patient_id AND {_DIABETES_MELLITUS}
               )
         """,
-        required_predicates=["gender = female", "age > 65", "condition: diabetes mellitus"],
+        required_predicates=[
+            ("gender", "=", "female"),
+            ("age", ">", 65),
+            ("condition", "has", "diabetes mellitus"),
+        ],
         signoff="approved",  # repo owner, 2026-11-04
         verified_count=13,
     ),
@@ -91,7 +97,10 @@ FORMAL_CASES: List[FormalCase] = [
                   WHERE c.patient_id = p.patient_id AND {_DIABETES_MELLITUS}
               )
         """,
-        required_predicates=["condition: hypertension", "exclude condition: diabetes mellitus"],
+        required_predicates=[
+            ("condition", "has", "hypertension"),
+            ("condition", "lacks", "diabetes mellitus"),
+        ],
         signoff="approved",  # repo owner, 2026-11-04
         verified_count=37,
     ),
