@@ -166,23 +166,21 @@ Each agent:
 4. Orchestrator routes to next agent
 5. Workflow engine manages state transitions
 
-### Workflow States (15 total):
+### Workflow States (13 total):
 
 1. `new_request` - Initial submission
 2. `requirements_gathering` - LLM conversation
 3. `requirements_complete` - Structured data extracted
 4. `feasibility_validation` - Checking if feasible
 5. `feasible` / `not_feasible` - Validation result
-6. `schedule_kickoff` - Calendar scheduling
-7. `kickoff_complete` - Meeting scheduled
-8. `data_extraction` - Retrieving data
-9. `extraction_complete` - Data retrieved
-10. `qa_validation` - Quality checks
-11. `qa_passed` / `qa_failed` - QA result
-12. `data_delivery` - Packaging data
-13. `delivered` - Data sent to researcher
-14. `complete` - Workflow finished
-15. `failed` / `human_review` - Error states
+6. `data_extraction` - Retrieving data
+7. `extraction_complete` - Data retrieved
+8. `qa_validation` - Quality checks
+9. `qa_passed` / `qa_failed` - QA result
+10. `data_delivery` - Packaging data
+11. `delivered` - Data sent to researcher
+12. `complete` - Workflow finished
+13. `failed` / `human_review` - Error states
 
 ## NOTE: Tips
 

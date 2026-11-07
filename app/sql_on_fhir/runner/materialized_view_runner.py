@@ -28,14 +28,31 @@ Performance:
 """
 
 import logging
+import re
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from langsmith import traceable
 
 from app.clients.hapi_db_client import HAPIDBClient
 from app.schemas._errors import log_internal_error
+from app.sql_on_fhir.errors import UnsupportedSearchParamError
 
 logger = logging.getLogger(__name__)
+
+
+# A batch-layer view is a materialized view (custom path) or a plain table
+# (sqlonfhir backend, ADR 0026); a pg_matviews-only check missed the
+# tables (#263).
+BATCH_VIEW_EXISTS_SQL = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = $1
+          AND c.relname = $2
+          AND c.relkind IN ('m', 'r')
+    ) as exists
+"""
 
 
 class MaterializedViewRunner:
@@ -78,6 +95,18 @@ class MaterializedViewRunner:
         # Observation-specific
         "date": "effective_date",
         "value-quantity": "value",
+    }
+
+    # Coded values and ids: a substring match is wrong ('%male%' matches
+    # 'female', '%active%' matches 'inactive', '%12%' matches '312').
+    EXACT_MATCH_PARAMS = {
+        "gender",
+        "clinical-status",
+        "status",
+        "code",
+        "patient",
+        "subject",
+        "_id",
     }
 
     def __init__(self, db_client: HAPIDBClient):
@@ -137,7 +166,7 @@ class MaterializedViewRunner:
             )
 
         # Step 2: Build SQL query
-        sql = self._build_query(view_name, search_params, max_resources)
+        sql, params = self._build_query(view_name, search_params, max_resources)
 
         logger.debug(f"Built SQL query: {len(sql)} characters")
         logger.debug(f"SQL:\n{sql}")
@@ -147,7 +176,7 @@ class MaterializedViewRunner:
         self._last_executed_sql = sql
 
         try:
-            rows = await self.db_client.execute_query(sql)
+            rows = await self.db_client.execute_query(sql, params)
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             self._total_queries += 1
@@ -190,10 +219,10 @@ class MaterializedViewRunner:
             raise ValueError(f"Materialized view '{self.SCHEMA_NAME}.{view_name}' does not exist")
 
         # Build COUNT query
-        sql = self._build_count_query(view_name, search_params)
+        sql, params = self._build_count_query(view_name, search_params)
 
         try:
-            result = await self.db_client.execute_query(sql)
+            result = await self.db_client.execute_query(sql, params)
             count = result[0]["count"] if result else 0
 
             logger.info(f"✓ COUNT query returned: {count:,} rows")
@@ -277,7 +306,10 @@ class MaterializedViewRunner:
 
     async def _check_view_exists(self, view_name: str) -> bool:
         """
-        Check if materialized view exists
+        Check if the batch-layer view exists
+
+        Materialized views (custom path) and plain tables (sqlonfhir backend,
+        ADR 0026) both count (#263).
 
         Args:
             view_name: Name of the view
@@ -285,17 +317,11 @@ class MaterializedViewRunner:
         Returns:
             True if view exists, False otherwise
         """
-        sql = f"""
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_matviews
-                WHERE schemaname = '{self.SCHEMA_NAME}'
-                  AND matviewname = '{view_name}'
-            ) as exists
-        """
 
         try:
-            result = await self.db_client.execute_query(sql)
+            result = await self.db_client.execute_query(
+                BATCH_VIEW_EXISTS_SQL, [self.SCHEMA_NAME, view_name]
+            )
             return result[0]["exists"] if result else False
         except Exception as e:
             log_internal_error(logger, "Failed to check view existence", e, level=logging.WARNING)
@@ -306,7 +332,7 @@ class MaterializedViewRunner:
         view_name: str,
         search_params: Optional[Dict[str, Any]] = None,
         max_resources: Optional[int] = None,
-    ) -> str:
+    ) -> Tuple[str, List[Any]]:
         """
         Build SQL SELECT query for materialized view
 
@@ -316,26 +342,27 @@ class MaterializedViewRunner:
             max_resources: Row limit
 
         Returns:
-            SQL query string
+            SQL query string and its bound parameters
         """
         # Base SELECT
         sql = f"SELECT * FROM {self.SCHEMA_NAME}.{view_name}"
 
         # Add WHERE clause from search_params
-        where_clauses = self._build_where_clauses(search_params)
+        where_clauses, params = self._build_where_clauses(search_params)
 
         if where_clauses:
             sql += "\nWHERE " + " AND ".join(where_clauses)
 
         # Add LIMIT clause
         if max_resources:
-            sql += f"\nLIMIT {max_resources}"
+            params.append(int(max_resources))
+            sql += f"\nLIMIT ${len(params)}"
 
-        return sql
+        return sql, params
 
     def _build_count_query(
         self, view_name: str, search_params: Optional[Dict[str, Any]] = None
-    ) -> str:
+    ) -> Tuple[str, List[Any]]:
         """
         Build SQL COUNT query
 
@@ -344,62 +371,86 @@ class MaterializedViewRunner:
             search_params: Filter parameters
 
         Returns:
-            SQL COUNT query string
+            SQL COUNT query string and its bound parameters
         """
         # Base COUNT
         sql = f"SELECT COUNT(*) as count FROM {self.SCHEMA_NAME}.{view_name}"
 
         # Add WHERE clause
-        where_clauses = self._build_where_clauses(search_params)
+        where_clauses, params = self._build_where_clauses(search_params)
 
         if where_clauses:
             sql += "\nWHERE " + " AND ".join(where_clauses)
 
-        return sql
+        return sql, params
 
-    def _build_where_clauses(self, search_params: Optional[Dict[str, Any]] = None) -> List[str]:
+    def _build_where_clauses(
+        self, search_params: Optional[Dict[str, Any]] = None
+    ) -> Tuple[List[str], List[Any]]:
         """
         Build WHERE clause conditions from search parameters
+
+        Values are bound as $n parameters, never pasted into the SQL text.
+        Every mapped column is text, so values bind as strings.
 
         Args:
             search_params: Dictionary of search parameters
 
         Returns:
-            List of WHERE clause strings
-        """
-        if not search_params:
-            return []
+            List of WHERE clause strings and their bound parameters
 
-        clauses = []
+        Raises:
+            UnsupportedSearchParamError: for a key outside SEARCH_PARAM_MAPPINGS
+        """
+        clauses: List[str] = []
+        params: List[Any] = []
+        if not search_params:
+            return clauses, params
+
+        def bind(value: Any) -> str:
+            params.append(value)
+            return f"${len(params)}"
 
         for param_name, param_value in search_params.items():
-            # Map FHIR search param to column name
-            column_name = self.SEARCH_PARAM_MAPPINGS.get(param_name, param_name)
+            if param_name not in self.SEARCH_PARAM_MAPPINGS:
+                raise UnsupportedSearchParamError(param_name)
+            column = f"{self.SEARCH_PARAM_MAPPINGS[param_name]}::text"
+            exact = param_name in self.EXACT_MATCH_PARAMS
 
-            # Build condition based on value type
-            if isinstance(param_value, str):
-                # String comparison (case-insensitive LIKE)
-                clauses.append(f"{column_name} ILIKE '%{param_value}%'")
+            if isinstance(param_value, str) and exact:
+                clauses.append(f"LOWER({column}) = LOWER({bind(param_value)})")
 
-            elif isinstance(param_value, (int, float)):
-                # Numeric comparison
-                clauses.append(f"{column_name} = {param_value}")
+            elif isinstance(param_value, str):
+                pattern = "%" + re.sub(r"([\\%_])", r"\\\1", param_value) + "%"
+                clauses.append(f"{column} ILIKE {bind(pattern)}")
+
+            elif isinstance(param_value, (int, float)) and not isinstance(param_value, bool):
+                clauses.append(f"{column} = {bind(str(param_value))}")
 
             elif isinstance(param_value, list):
-                # IN clause for multiple values
-                if all(isinstance(v, str) for v in param_value):
-                    values_str = "', '".join(param_value)
-                    clauses.append(f"{column_name} IN ('{values_str}')")
+                values = [str(v) for v in param_value]
+                if exact:
+                    values = [v.lower() for v in values]
+                    clauses.append(f"LOWER({column}) = ANY({bind(values)}::text[])")
                 else:
-                    values_str = ", ".join(str(v) for v in param_value)
-                    clauses.append(f"{column_name} IN ({values_str})")
+                    clauses.append(f"{column} = ANY({bind(values)}::text[])")
 
             elif isinstance(param_value, dict):
-                # Handle complex parameters (e.g., date ranges)
-                if "start" in param_value or "end" in param_value:
-                    if "start" in param_value:
-                        clauses.append(f"{column_name} >= '{param_value['start']}'")
-                    if "end" in param_value:
-                        clauses.append(f"{column_name} <= '{param_value['end']}'")
+                # Date ranges; the mapped date columns hold ISO-8601 text.
+                bounds = {"start", "end"}
+                if (
+                    not param_value
+                    or param_value.keys() - bounds
+                    or any(v is None for v in param_value.values())
+                ):
+                    # Anything else would silently drop or garble part of the filter.
+                    raise UnsupportedSearchParamError(param_name)
+                if "start" in param_value:
+                    clauses.append(f"{column} >= {bind(str(param_value['start']))}")
+                if "end" in param_value:
+                    clauses.append(f"{column} <= {bind(str(param_value['end']))}")
 
-        return clauses
+            else:
+                raise UnsupportedSearchParamError(param_name)
+
+        return clauses, params

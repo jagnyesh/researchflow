@@ -274,7 +274,7 @@ class CostTelemetryService:
             _RequestPoint(
                 cost_usd=_sum_thread_cost_usd(thread_runs),
                 cache_read_tokens=sum(_get_cache_read_tokens(r) for r in thread_runs),
-                non_cached_input_tokens=sum(_get_non_cached_input_tokens(r) for r in thread_runs),
+                input_tokens=sum(_get_input_tokens(r) for r in thread_runs),
                 start_time=max(_run_start_time(r) for r in thread_runs),
             )
             for _, thread_runs in threads.items()
@@ -297,7 +297,7 @@ class CostTelemetryService:
             _RequestPoint(
                 cost_usd=_run_cost_usd(root),
                 cache_read_tokens=_get_cache_read_tokens(root),
-                non_cached_input_tokens=_get_non_cached_input_tokens(root),
+                input_tokens=_get_input_tokens(root),
                 start_time=_run_start_time(root),
             )
             for root in roots
@@ -321,7 +321,7 @@ class _RequestPoint:
 
     cost_usd: float
     cache_read_tokens: int
-    non_cached_input_tokens: int
+    input_tokens: int  # total, cache reads and writes included
     start_time: datetime
 
 
@@ -350,9 +350,9 @@ def _summarize_points(
 
     median = statistics.median(p.cost_usd for p in recent)
 
+    # Share of all input tokens served from cache; cache writes count as uncached.
     total_cache_read = sum(p.cache_read_tokens for p in recent)
-    total_input_excl_cache = sum(p.non_cached_input_tokens for p in recent)
-    denom = total_cache_read + total_input_excl_cache
+    denom = sum(p.input_tokens for p in recent)
     cache_hit_rate = (total_cache_read / denom) if denom > 0 else 0.0
 
     if n_observed < target_n:
@@ -389,26 +389,30 @@ def _run_start_time(run: Any) -> datetime:
 
 
 def _get_input_tokens(run: Any) -> int:
-    """Total input tokens, INCLUDING cache_read.
+    """Total input tokens, INCLUDING cache reads and cache writes.
 
     Despite the Anthropic API returning input_tokens as the non-cached portion,
     LangSmith's `Run.input_tokens` stores the TOTAL (verified Sprint 8.4 wire
-    pull on 2026-05-14: every observed LLM leaf satisfied
-    `total_tokens == input_tokens + output_tokens` with cache_read inside
-    input_tokens). Callers that need the non-cached portion must subtract
-    cache_read_tokens themselves via `_get_non_cached_input_tokens` below.
+    pull on 2026-05-14 for cache_read, and 2026-10-30/31 for cache_creation,
+    #271: every observed LLM leaf satisfied
+    `total_tokens == input_tokens + output_tokens` with both inside
+    input_tokens). Callers that need the non-cached portion use
+    `_get_non_cached_input_tokens` below.
     """
     return int(getattr(run, "input_tokens", 0) or 0)
 
 
 def _get_non_cached_input_tokens(run: Any) -> int:
-    """Non-cached input tokens: input_tokens minus cache_read.
+    """Non-cached input tokens: input_tokens minus cache reads and cache writes.
 
-    This is the value that should be priced at the full input rate; cache_read
-    is priced separately at the discounted cache rate. Used by `_run_cost_usd`
-    and by cache_hit_rate computation in `_summarize_points`.
+    This is the value priced at the full input rate. LangSmith's input_tokens
+    includes both cache_read (Sprint 8.4, #46) and cache_creation (#271), and
+    each is priced separately at its own cache rate.
     """
-    return max(0, _get_input_tokens(run) - _get_cache_read_tokens(run))
+    return max(
+        0,
+        _get_input_tokens(run) - _get_cache_read_tokens(run) - _get_cache_creation_tokens(run),
+    )
 
 
 def _get_output_tokens(run: Any) -> int:
@@ -459,8 +463,10 @@ def _run_cost_usd(run: Any) -> float:
     LangSmith's accounting (verified Sprint 8.4 wire-level pull on 2026-05-14):
     `Run.input_tokens` already includes `cache_read_input_tokens` — i.e.,
     `total_tokens == input_tokens + output_tokens` and cache_read is INSIDE
-    input_tokens, not added on top. The non-cached portion is
-    `input_tokens - cache_read`. The schema-contract test in
+    input_tokens, not added on top. The same holds for cache writes
+    (`cache_creation_input_tokens`; real cold-cache pull 2026-10-30/31, #271).
+    The non-cached portion is `input_tokens - cache_read - cache_creation`.
+    The schema-contract test in
     `tests/test_cost_telemetry_service.py` documents this invariant; if
     LangSmith ever changes accounting, the test breaks and forces a revisit.
     """

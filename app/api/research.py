@@ -4,7 +4,7 @@ Research Request API Endpoints
 Provides REST API for submitting and managing research data requests.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from typing import Optional
 from datetime import datetime
@@ -17,11 +17,25 @@ from ..schemas._errors import internal_error
 from ..database.workflow_states import WorkflowState
 from ..services.file_storage import FileStorageService
 from ..schemas.research import ResearchRequestSubmission, RequestProcessingTrigger
-from sqlalchemy import select
+from sqlalchemy import func, select
+
+from ..security.dependencies import User, get_current_active_user
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/research", tags=["research"])
+
+# Default-deny: any other role (researcher or unknown) sees only its own requests.
+ALL_REQUESTS_ROLES = {"admin", "data_steward"}
+
+
+def _visible_requests(user: User):
+    """SELECT over the research requests `user` may see."""
+    query = select(ResearchRequest)
+    if user.role not in ALL_REQUESTS_ROLES:
+        query = query.where(func.lower(ResearchRequest.researcher_email) == user.email.lower())
+    return query
+
 
 # Global orchestrator reference (set by main.py)
 orchestrator = None
@@ -99,7 +113,9 @@ async def submit_research_request(submission: ResearchRequestSubmission):
 
 @router.post("/process/{request_id}")
 async def process_research_request(
-    request_id: str, trigger: Optional[RequestProcessingTrigger] = None
+    request_id: str,
+    trigger: Optional[RequestProcessingTrigger] = None,
+    user: User = Depends(get_current_active_user),
 ):
     """
     Trigger processing of a research request.
@@ -119,7 +135,7 @@ async def process_research_request(
         # Get the research request
         async with get_db_session() as session:
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == request_id)
+                _visible_requests(user).where(ResearchRequest.id == request_id)
             )
             request = result.scalar_one_or_none()
 
@@ -167,14 +183,14 @@ async def process_research_request(
 
 
 @router.get("/{request_id}")
-async def get_request_status(request_id: str):
+async def get_request_status(request_id: str, user: User = Depends(get_current_active_user)):
     """
     Get the status of a research request.
     """
     try:
         async with get_db_session() as session:
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == request_id)
+                _visible_requests(user).where(ResearchRequest.id == request_id)
             )
             request = result.scalar_one_or_none()
 
@@ -201,14 +217,14 @@ async def get_request_status(request_id: str):
 
 
 @router.get("/")
-async def list_active_requests():
+async def list_active_requests(user: User = Depends(get_current_active_user)):
     """
     List all active research requests.
     """
     try:
         async with get_db_session() as session:
             result = await session.execute(
-                select(ResearchRequest).order_by(ResearchRequest.created_at.desc()).limit(50)
+                _visible_requests(user).order_by(ResearchRequest.created_at.desc()).limit(50)
             )
             requests = result.scalars().all()
 
@@ -234,7 +250,7 @@ async def list_active_requests():
 
 
 @router.get("/{request_id}/delivery")
-async def get_delivery_info(request_id: str):
+async def get_delivery_info(request_id: str, user: User = Depends(get_current_active_user)):
     """
     Get data delivery information for a research request.
 
@@ -255,7 +271,7 @@ async def get_delivery_info(request_id: str):
         async with get_db_session() as session:
             # Get research request
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == request_id)
+                _visible_requests(user).where(ResearchRequest.id == request_id)
             )
             request = result.scalar_one_or_none()
 
@@ -263,10 +279,8 @@ async def get_delivery_info(request_id: str):
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
             # Check if request is delivered
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 return {
                     "request_id": request_id,
                     "delivered": False,
@@ -312,7 +326,7 @@ async def get_delivery_info(request_id: str):
 
 
 @router.get("/{request_id}/download")
-async def download_data_package(request_id: str):
+async def download_data_package(request_id: str, user: User = Depends(get_current_active_user)):
     """
     Download complete data package as ZIP file.
 
@@ -328,17 +342,15 @@ async def download_data_package(request_id: str):
         async with get_db_session() as session:
             # Verify request exists and is delivered
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == request_id)
+                _visible_requests(user).where(ResearchRequest.id == request_id)
             )
             request = result.scalar_one_or_none()
 
             if not request:
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Data not yet delivered. Current state: {request.current_state}",
@@ -372,7 +384,9 @@ async def download_data_package(request_id: str):
 
 
 @router.get("/{request_id}/download/{filename}")
-async def download_specific_file(request_id: str, filename: str):
+async def download_specific_file(
+    request_id: str, filename: str, user: User = Depends(get_current_active_user)
+):
     """
     Download a specific file from the data package.
 
@@ -387,17 +401,15 @@ async def download_specific_file(request_id: str, filename: str):
         async with get_db_session() as session:
             # Verify request exists and is delivered
             result = await session.execute(
-                select(ResearchRequest).where(ResearchRequest.id == request_id)
+                _visible_requests(user).where(ResearchRequest.id == request_id)
             )
             request = result.scalar_one_or_none()
 
             if not request:
                 raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
 
-            if request.current_state not in [
-                WorkflowState.DELIVERED.value,
-                WorkflowState.COMPLETE.value,
-            ]:
+            # "complete" is LangGraph's only delivered state (#53).
+            if request.current_state != WorkflowState.COMPLETE.value:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Data not yet delivered. Current state: {request.current_state}",

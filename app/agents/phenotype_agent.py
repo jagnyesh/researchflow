@@ -8,23 +8,23 @@ Validates feasibility of research requests by:
 - Providing recommendations
 """
 
-from typing import Dict, Any, List
+from typing import Dict, Any
 import logging
 from app.schemas._errors import log_internal_error
-import os
 from langsmith import traceable
 from .base_agent import BaseAgent
 from ..utils.sql_generator import SQLGenerator
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
-from ..clients.fhir_client import create_fhir_client
-from ..clients.hapi_db_client import HAPIDBClient
-from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
-from ..sql_on_fhir.runner.in_memory_runner import InMemoryRunner
-from ..sql_on_fhir.runner.hybrid_runner import HybridRunner
-from ..sql_on_fhir.runner.freshness import FreshnessAnnotation
-from ..cache.redis_client import RedisClient
 
 logger = logging.getLogger(__name__)
+
+
+class CohortEstimateUnavailable(Exception):
+    """The cohort count could not be computed; `ref` points at the log line."""
+
+    def __init__(self, ref: str):
+        super().__init__(f"cohort estimate unavailable (ref: {ref})")
+        self.ref = ref
 
 
 class PhenotypeValidationAgent(BaseAgent):
@@ -42,51 +42,14 @@ class PhenotypeValidationAgent(BaseAgent):
     def __init__(self, orchestrator=None, database_url: str = None):
         super().__init__(agent_id="phenotype_agent", orchestrator=orchestrator)
         self.sql_generator = SQLGenerator(use_materialized_views=True)
+        # The estimate counts the phenotype SQL itself on the batch tables
+        # (#206): one cohort definition for the estimate, the G2 review and the
+        # extraction. Replaced the HybridRunner FORMAL_DRAFT path (ADR 0033).
         self.sql_adapter = SQLonFHIRAdapter(database_url)
-        self.view_definition_manager = ViewDefinitionManager()
-
-        # Sprint 6.5 Phase 2B (#70): wire cohort-estimation reads through
-        # HybridRunner with FORMAL_DRAFT mode. The pre-approval workflow
-        # step iterates on criteria; FORMAL_DRAFT speed-merges so the
-        # researcher sees today's reality including patients arriving
-        # since the last batch refresh. batch_anchor_ts is surfaced as
-        # citation metadata in the hybrid_runner_metrics row.
-        #
-        # Default flipped to True (was False since Sprint 6.2 with comment
-        # claiming "ViewDefinition Python filtering is broken - returns 0").
-        # Pre-flight empirical check 2026-05-17 confirmed the comment was
-        # stale: patient_simple returns 366 (Synthea baseline), condition_simple
-        # returns 14,832 (matches Sprint 6.4 oracle), search_params filtering
-        # narrows correctly. The Sprint 6.2 transpiler bugs (#10-#16) and
-        # Sprint 6.4's sqlonfhir integration fixed the underlying issues.
-        self.use_view_definitions = True
-
-        if self.use_view_definitions and database_url:
-            logger.info(f"[{self.agent_id}] Initializing HybridRunner for HAPI FHIR database")
-
-            # HAPIDBClient uses asyncpg directly, which doesn't understand SQLAlchemy URL schemes
-            # Strip '+asyncpg' suffix if present
-            hapi_url = database_url.replace("postgresql+asyncpg://", "postgresql://")
-
-            self.hapi_db_client = HAPIDBClient(connection_url=hapi_url)
-            self.hybrid_runner = HybridRunner(
-                db_client=self.hapi_db_client,
-                redis_client=RedisClient(),
-                enable_cache=True,
-                cache_ttl_seconds=300,
-            )
-        else:
-            self.hapi_db_client = None
-            self.hybrid_runner = None
 
     @traceable(tags=["phenotype-agent", "agent-execution", "portal:formal"])
     async def execute_task(self, task: str, context: Dict[str, Any]) -> Dict[str, Any]:
         """Execute phenotype validation task"""
-        # Ensure database connection is established if using ViewDefinitions
-        if self.use_view_definitions and self.hapi_db_client and not self.hapi_db_client.pool:
-            logger.info(f"[{self.agent_id}] Establishing HAPI database connection")
-            await self.hapi_db_client.connect()
-
         if task == "validate_feasibility":
             return await self._validate_feasibility(context)
         else:
@@ -116,9 +79,8 @@ class PhenotypeValidationAgent(BaseAgent):
             f"[{self.agent_id}] Requirements structure being passed to SQL generator:"
             f"\n  Inclusion criteria count: {len(requirements.get('inclusion_criteria', []))}"
             f"\n  Exclusion criteria count: {len(requirements.get('exclusion_criteria', []))}"
-            f"\n  Data elements: {requirements.get('data_elements', [])}"
+            f"\n  Data elements count: {len(requirements.get('data_elements', []))}"
         )
-        logger.debug(f"[{self.agent_id}] Full requirements: {requirements}")
 
         # Step 1: Generate phenotype SQL (with parameters for security)
         phenotype_sql, sql_params = self.sql_generator.generate_phenotype_sql(
@@ -128,8 +90,14 @@ class PhenotypeValidationAgent(BaseAgent):
             f"[{self.agent_id}] Generated SQL with {len(sql_params)} parameters: {list(sql_params.keys())}"
         )
 
-        # Step 2: Estimate cohort size
-        estimated_count = await self._estimate_cohort_size(phenotype_sql, sql_params, requirements)
+        # Step 2: Estimate cohort size. A failed estimate stays None: an error
+        # must never reach G2 as a count (ADR 0028 honest-failure invariant).
+        estimate_error_ref = None
+        try:
+            estimated_count = await self._estimate_cohort_size(phenotype_sql, sql_params)
+        except CohortEstimateUnavailable as unavailable:
+            estimated_count = None
+            estimate_error_ref = unavailable.ref
 
         # Step 3: Check data availability
         data_availability = await self._check_data_availability(
@@ -137,8 +105,10 @@ class PhenotypeValidationAgent(BaseAgent):
         )
 
         # Step 4: Calculate feasibility score
-        feasibility_score = self._calculate_feasibility_score(
-            estimated_count, data_availability, requirements
+        feasibility_score = (
+            None
+            if estimated_count is None
+            else self._calculate_feasibility_score(estimated_count, data_availability, requirements)
         )
 
         # Step 5: Generate full SQL (not count-only) with parameters
@@ -147,15 +117,27 @@ class PhenotypeValidationAgent(BaseAgent):
         )
 
         # Step 6: Build feasibility report
+        estimated = estimated_count is not None
         feasibility_report = {
-            "feasible": feasibility_score > 0.6,
+            "feasible": estimated and feasibility_score > 0.6,
             "feasibility_score": feasibility_score,
             "estimated_cohort_size": estimated_count,
-            "confidence_interval": (int(estimated_count * 0.85), int(estimated_count * 1.15)),
+            "cohort_estimate": (
+                {"status": "ok"}
+                if estimated
+                else {"status": "unavailable", "error_ref": estimate_error_ref}
+            ),
+            "confidence_interval": (
+                (int(estimated_count * 0.85), int(estimated_count * 1.15)) if estimated else None
+            ),
             "data_availability": data_availability,
             "phenotype_sql": full_phenotype_sql,
-            "estimated_extraction_time_hours": self._estimate_extraction_time(
-                estimated_count, requirements.get("data_elements", [])
+            "estimated_extraction_time_hours": (
+                self._estimate_extraction_time(
+                    estimated_count, requirements.get("data_elements", [])
+                )
+                if estimated
+                else None
             ),
             "warnings": [],
             "recommendations": [],
@@ -163,7 +145,15 @@ class PhenotypeValidationAgent(BaseAgent):
 
         # Step 7: Add warnings and recommendations
         min_cohort = requirements.get("minimum_cohort_size", 50)
-        if estimated_count < min_cohort:
+        if not estimated:
+            feasibility_report["warnings"].append(
+                {
+                    "type": "cohort_estimate_unavailable",
+                    "message": f"Cohort estimate unavailable: the count query failed (ref: {estimate_error_ref})",
+                    "suggestion": "Review the SQL on its own; no cohort size is known",
+                }
+            )
+        elif estimated_count < min_cohort:
             feasibility_report["warnings"].append(
                 {
                     "type": "small_cohort",
@@ -194,7 +184,7 @@ class PhenotypeValidationAgent(BaseAgent):
 
         logger.info(
             f"[{self.agent_id}] Feasibility: {feasibility_report['feasible']}, "
-            f"Score: {feasibility_score:.2f}, Cohort: {estimated_count}"
+            f"Score: {feasibility_score}, Cohort: {estimated_count}"
         )
 
         # Step 9: Determine next step
@@ -203,7 +193,12 @@ class PhenotypeValidationAgent(BaseAgent):
         # whether the SQL is appropriate to run, regardless of cohort size
         feasible = feasibility_report["feasible"]
 
-        if feasible:
+        if not estimated:
+            logger.warning(
+                f"[{self.agent_id}] SQL generated without a cohort estimate "
+                f"(ref={estimate_error_ref}), requesting informatician review"
+            )
+        elif feasible:
             logger.info(
                 f"[{self.agent_id}] SQL generated with adequate cohort (score {feasibility_score:.2f}), "
                 f"requesting informatician approval"
@@ -237,7 +232,11 @@ class PhenotypeValidationAgent(BaseAgent):
                     "data_availability": data_availability,
                     "warnings": feasibility_report["warnings"],
                     "recommendations": feasibility_report["recommendations"],
-                    "auto_feasibility_assessment": "feasible" if feasible else "not_feasible",
+                    "auto_feasibility_assessment": (
+                        "unavailable"
+                        if not estimated
+                        else "feasible" if feasible else "not_feasible"
+                    ),
                     # Include research request context for informatician review
                     "initial_request": context.get("initial_request", ""),
                     "structured_requirements": requirements,
@@ -245,477 +244,23 @@ class PhenotypeValidationAgent(BaseAgent):
             },
         }
 
-    async def _estimate_cohort_size(
-        self, count_sql: str, sql_params: Dict[str, Any], requirements: Dict[str, Any] = None
-    ) -> int:
-        """
-        Execute COUNT query to estimate cohort size using ViewDefinitions or legacy SQL
+    async def _estimate_cohort_size(self, count_sql: str, sql_params: Dict[str, Any]) -> int:
+        """Count the patients the phenotype SQL selects, on the batch tables.
 
-        Args:
-            count_sql: SQL query with COUNT(*) (used only if use_view_definitions=False)
-            sql_params: SQL parameters dict for parameterized query (security)
-            requirements: Structured requirements for filtering (used with ViewDefinitions)
-
-        Returns:
-            Estimated patient count
+        The same SQL and bound parameters the G2 reviewer approves, so the
+        estimate can't disagree with the extraction (#206). A failure raises
+        CohortEstimateUnavailable (#245), never a number.
         """
         try:
-            if self.use_view_definitions and self.hybrid_runner:
-                # Sprint 6.5 Phase 2B (#70): cohort estimation goes through
-                # HybridRunner with FORMAL_DRAFT mode. The Formal Portal's
-                # pre-approval workflow iterates on criteria — speed-merged
-                # results so the researcher sees today's reality including
-                # patients arriving since the last batch refresh.
-                logger.info(f"[{self.agent_id}] Using ViewDefinition to estimate cohort size")
-
-                # Build search parameters from requirements
-                search_params = {}
-                if requirements:
-                    search_params = self._build_search_params_from_requirements(requirements)
-                    logger.info(
-                        f"[{self.agent_id}] Filtering patients with search_params: {search_params}"
-                    )
-
-                # Load patient_simple ViewDefinition
-                view_def = self.view_definition_manager.load("patient_simple")
-
-                # Execute via HybridRunner with FORMAL_DRAFT mode
-                results = await self.hybrid_runner.execute(
-                    view_definition=view_def,
-                    search_params=search_params,
-                    max_resources=None,  # No limit - get full count
-                    mode=FreshnessAnnotation.FORMAL_DRAFT,
-                    caller="phenotype_agent",
-                )
-
-                logger.info(
-                    f"[{self.agent_id}] ViewDefinition returned {len(results)} patients after SQL filtering"
-                )
-
-                # Apply Python post-filtering for criteria not supported by search_params
-                if requirements:
-                    filtered_results = await self._filter_patients_by_requirements(
-                        results, requirements
-                    )
-                    count = len(filtered_results)
-                    logger.info(
-                        f"[{self.agent_id}] After Python filtering: {count} patients match all criteria"
-                    )
-                else:
-                    count = len(results)
-
-                # Conservative factor REMOVED (Bug #8 fix - Nov 11, 2025)
-                #
-                # HISTORICAL CONTEXT:
-                # - Previously applied 0.7x factor assuming 30% data loss
-                # - Analysis showed current data has 0% loss (materialized views complete)
-                # - Factor was overcorrecting: 28 actual → 19 estimate (off by 47%)
-                #
-                # Current implementation returns actual count for accurate feasibility estimates
-                logger.info(
-                    f"[{self.agent_id}] Estimated cohort size: {count} patients (no conservative factor)"
-                )
-
-                return count
-
-            else:
-                # Use legacy SQL approach with parameterized query (security)
-                logger.info(f"[{self.agent_id}] Using legacy SQL to estimate cohort size")
-                result = await self.sql_adapter.execute_sql(count_sql, sql_params)
-
-                if result and len(result) > 0:
-                    count = result[0].get("patient_count", 0)
-                    logger.info(
-                        f"[{self.agent_id}] Estimated cohort size (legacy SQL): {count} patients (no conservative factor)"
-                    )
-                    # Conservative factor removed (Bug #8 fix) - see ViewDefinition path above for explanation
-                    return count
-                else:
-                    logger.warning(f"[{self.agent_id}] No results from count query")
-                    return 0
-
+            result = await self.sql_adapter.execute_sql(count_sql, sql_params)
+            if not result:
+                raise LookupError("count query returned no rows")
+            count = result[0]["patient_count"]
+            logger.info(f"[{self.agent_id}] Estimated cohort size: {count} patients")
+            return count
         except Exception as e:
-            log_internal_error(logger, f"[{self.agent_id}] Failed to estimate cohort", e)
-            # Return 0 instead of failing - will mark as not feasible
-            return 0
-
-    async def _filter_patients_by_requirements(
-        self, patients: List[Dict[str, Any]], requirements: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """
-        Apply Python post-filtering for criteria not supported by SQL search_params
-
-        Handles:
-        - Age range filtering (calculate from birthDate)
-        - Condition filtering (diabetes, hypertension, etc.)
-        - Additional demographic filters
-
-        Args:
-            patients: List of patient records from ViewDefinition
-            requirements: Structured requirements
-
-        Returns:
-            Filtered list of patients matching all criteria
-        """
-        from datetime import datetime, date
-
-        filtered = patients.copy()
-        inclusion_criteria = requirements.get("inclusion_criteria", [])
-
-        # Check if any condition filtering is needed
-        condition_patient_ids = None
-        has_condition_criteria = False
-
-        for criterion in inclusion_criteria:
-            concepts = criterion.get("concepts", [])
-
-            for concept in concepts:
-                if concept.get("type") == "condition":
-                    has_condition_criteria = True
-                    term = concept.get("term", "").lower()
-                    details = concept.get("details", "").lower()
-
-                    # Get patient IDs with this condition
-                    patient_ids = await self._get_patients_with_condition(term, details)
-
-                    if condition_patient_ids is None:
-                        condition_patient_ids = patient_ids
-                    else:
-                        # Intersection - patients must have ALL conditions
-                        condition_patient_ids = condition_patient_ids.intersection(patient_ids)
-
-                    logger.info(
-                        f"[{self.agent_id}] Condition filter '{term}': {len(patient_ids)} patients have this condition"
-                    )
-
-        # Apply condition filtering if needed
-        if has_condition_criteria and condition_patient_ids is not None:
-            # Filter patients to only those with the condition(s)
-            filtered = [p for p in filtered if p.get("id") in condition_patient_ids]
-            logger.info(
-                f"[{self.agent_id}] After condition filtering: {len(filtered)} patients remain"
-            )
-
-        # Apply demographic filtering
-        for criterion in inclusion_criteria:
-            concepts = criterion.get("concepts", [])
-
-            for concept in concepts:
-                if concept.get("type") == "demographic":
-                    term = concept.get("term", "").lower()
-                    details = concept.get("details", "").lower()
-
-                    # Age filtering
-                    if "age" in term:
-                        filtered = self._filter_by_age(filtered, details)
-                        logger.info(
-                            f"[{self.agent_id}] Age filter applied: {len(filtered)} patients remain"
-                        )
-
-        return filtered
-
-    def _filter_by_age(
-        self, patients: List[Dict[str, Any]], age_criterion: str
-    ) -> List[Dict[str, Any]]:
-        """
-        Filter patients by age criterion
-
-        Args:
-            patients: List of patient records
-            age_criterion: Age criterion string (e.g., "between 20 and 30", "over 18")
-
-        Returns:
-            Filtered list of patients
-        """
-        from datetime import datetime, date
-        import re
-
-        filtered = []
-
-        # Parse age criterion
-        if "between" in age_criterion and "and" in age_criterion:
-            # "between 20 and 30"
-            match = re.search(r"between\s+(\d+)\s+and\s+(\d+)", age_criterion)
-            if match:
-                min_age = int(match.group(1))
-                max_age = int(match.group(2))
-
-                for patient in patients:
-                    age = self._calculate_age(patient.get("birth_date"))
-                    if age is not None and min_age <= age <= max_age:
-                        filtered.append(patient)
-
-        elif "over" in age_criterion or "above" in age_criterion:
-            # "over 18" or "above 18"
-            match = re.search(r"(?:over|above)\s+(\d+)", age_criterion)
-            if match:
-                min_age = int(match.group(1))
-
-                for patient in patients:
-                    age = self._calculate_age(patient.get("birth_date"))
-                    if age is not None and age > min_age:
-                        filtered.append(patient)
-
-        elif "under" in age_criterion or "below" in age_criterion:
-            # "under 18" or "below 18"
-            match = re.search(r"(?:under|below)\s+(\d+)", age_criterion)
-            if match:
-                max_age = int(match.group(1))
-
-                for patient in patients:
-                    age = self._calculate_age(patient.get("birth_date"))
-                    if age is not None and age < max_age:
-                        filtered.append(patient)
-
-        else:
-            # No recognized age criterion - return all
-            filtered = patients
-
-        return filtered
-
-    def _calculate_age(self, birth_date_str: str) -> int:
-        """
-        Calculate age from birth date string
-
-        Args:
-            birth_date_str: Birth date in ISO format (YYYY-MM-DD)
-
-        Returns:
-            Age in years, or None if invalid
-        """
-        from datetime import datetime, date
-
-        if not birth_date_str:
-            return None
-
-        try:
-            # Handle various date formats
-            if "T" in birth_date_str:
-                # ISO datetime format
-                birth_date = datetime.fromisoformat(birth_date_str.replace("Z", "+00:00")).date()
-            else:
-                # Simple date format
-                birth_date = datetime.strptime(birth_date_str, "%Y-%m-%d").date()
-
-            today = date.today()
-            age = (
-                today.year
-                - birth_date.year
-                - ((today.month, today.day) < (birth_date.month, birth_date.day))
-            )
-            return age
-        except Exception as e:
-            # The birth_date value is PHI, so it stays out of the log (#181).
-            log_internal_error(
-                logger, f"[{self.agent_id}] Failed to parse birth_date", e, level=logging.WARNING
-            )
-            return None
-
-    async def _get_patients_with_condition(
-        self, condition_term: str, condition_details: str
-    ) -> set:
-        """
-        Get set of patient IDs who have a specific condition
-
-        Args:
-            condition_term: Condition name (e.g., "diabetes", "hypertension")
-            condition_details: Additional details about the condition
-
-        Returns:
-            Set of patient IDs (as strings)
-        """
-        try:
-            if not self.use_view_definitions or not self.hybrid_runner:
-                logger.warning(
-                    f"[{self.agent_id}] ViewDefinitions not enabled, skipping condition filtering"
-                )
-                return set()
-
-            # Load condition_simple ViewDefinition
-            view_def = self.view_definition_manager.load("condition_simple")
-
-            # Execute via HybridRunner with FORMAL_DRAFT mode (Sprint 6.5 #70).
-            # Condition filtering happens during cohort estimation in the
-            # pre-approval phenotype-validation step; same freshness rationale
-            # as the patient_simple read above.
-            logger.info(f"[{self.agent_id}] Querying conditions...")  # term is PHI-derived
-            results = await self.hybrid_runner.execute(
-                view_definition=view_def,
-                search_params={},
-                max_resources=None,
-                mode=FreshnessAnnotation.FORMAL_DRAFT,
-                caller="phenotype_agent",
-            )
-
-            logger.info(f"[{self.agent_id}] Found {len(results)} total conditions in database")
-
-            # Filter for specific condition and extract patient IDs
-            patient_ids = set()
-            for condition in results:
-                # Check if this condition matches the term
-                if self._matches_condition(condition, condition_term, condition_details):
-                    # Extract patient ID from reference
-                    patient_ref = condition.get("patient_ref", "")
-                    patient_id = self._extract_patient_id(patient_ref)
-                    if patient_id:
-                        patient_ids.add(patient_id)
-
-            logger.info(
-                f"[{self.agent_id}] Found {len(patient_ids)} unique patients for the condition"
-            )
-            return patient_ids
-
-        except Exception as e:
-            # No condition_term in the context: it is criterion text derived from the
-            # PHI-tagged initial_request (#181).
-            log_internal_error(
-                logger, f"[{self.agent_id}] Error getting patients with condition", e
-            )
-            return set()
-
-    def _extract_patient_id(self, patient_ref: str) -> str:
-        """
-        Extract patient ID from FHIR reference
-
-        Args:
-            patient_ref: FHIR reference (e.g., "Patient/123" or "urn:uuid:...")
-
-        Returns:
-            Patient ID string, or None if invalid
-        """
-        if not patient_ref:
-            return None
-
-        try:
-            # Handle "Patient/123" format
-            if "Patient/" in patient_ref:
-                return patient_ref.split("Patient/")[-1]
-
-            # Handle other reference formats
-            if "/" in patient_ref:
-                return patient_ref.split("/")[-1]
-
-            # Already just an ID
-            return patient_ref
-
-        except Exception as e:
-            # The patient reference itself is not logged (#181).
-            log_internal_error(
-                logger,
-                f"[{self.agent_id}] Failed to extract patient ID from reference",
-                e,
-                level=logging.WARNING,
-            )
-            return None
-
-    def _matches_condition(self, condition: Dict[str, Any], term: str, details: str) -> bool:
-        """
-        Check if a condition record matches the search term
-
-        Args:
-            condition: Condition record from database
-            term: Condition term (e.g., "diabetes")
-            details: Additional details
-
-        Returns:
-            True if condition matches
-        """
-        term_lower = term.lower()
-        details_lower = details.lower()
-
-        # Check for diabetes
-        if "diabetes" in term_lower or "diabetes" in details_lower:
-            return self._is_diabetes_code(condition)
-
-        # Check for hypertension
-        if "hypertension" in term_lower or "hypertension" in details_lower:
-            return self._is_hypertension_code(condition)
-
-        # Generic text matching in code_text
-        code_text = (condition.get("code_text") or "").lower()
-        icd10_display = (condition.get("icd10_display") or "").lower()
-        snomed_display = (condition.get("snomed_display") or "").lower()
-
-        if term_lower in code_text or term_lower in icd10_display or term_lower in snomed_display:
-            return True
-
-        return False
-
-    def _is_diabetes_code(self, condition: Dict[str, Any]) -> bool:
-        """
-        Check if condition represents diabetes
-
-        Args:
-            condition: Condition record
-
-        Returns:
-            True if diabetes-related
-        """
-        # ICD-10 codes for diabetes: E10-E14
-        icd10_code = condition.get("icd10_code", "")
-        if icd10_code and icd10_code.startswith(("E10", "E11", "E12", "E13", "E14")):
-            return True
-
-        # SNOMED codes for diabetes (common ones)
-        snomed_code = condition.get("snomed_code", "")
-        diabetes_snomed_codes = [
-            "73211009",  # Diabetes mellitus
-            "44054006",  # Type 2 diabetes mellitus
-            "46635009",  # Type 1 diabetes mellitus
-            "111552007",  # Diabetes mellitus without complication
-            "190330002",  # Type 1 diabetes mellitus with ketoacidosis
-        ]
-        if snomed_code in diabetes_snomed_codes:
-            return True
-
-        # Text matching as fallback
-        code_text = (condition.get("code_text") or "").lower()
-        icd10_display = (condition.get("icd10_display") or "").lower()
-        snomed_display = (condition.get("snomed_display") or "").lower()
-
-        if "diabetes" in code_text or "diabetes" in icd10_display or "diabetes" in snomed_display:
-            return True
-
-        return False
-
-    def _is_hypertension_code(self, condition: Dict[str, Any]) -> bool:
-        """
-        Check if condition represents hypertension
-
-        Args:
-            condition: Condition record
-
-        Returns:
-            True if hypertension-related
-        """
-        # ICD-10 codes for hypertension: I10-I16
-        icd10_code = condition.get("icd10_code", "")
-        if icd10_code and icd10_code.startswith(("I10", "I11", "I12", "I13", "I14", "I15", "I16")):
-            return True
-
-        # SNOMED codes for hypertension (common ones)
-        snomed_code = condition.get("snomed_code", "")
-        hypertension_snomed_codes = [
-            "38341003",  # Hypertensive disorder
-            "59621000",  # Essential hypertension
-            "194783001",  # Secondary hypertension
-        ]
-        if snomed_code in hypertension_snomed_codes:
-            return True
-
-        # Text matching as fallback
-        code_text = (condition.get("code_text") or "").lower()
-        icd10_display = (condition.get("icd10_display") or "").lower()
-        snomed_display = (condition.get("snomed_display") or "").lower()
-
-        if (
-            "hypertension" in code_text
-            or "hypertension" in icd10_display
-            or "hypertension" in snomed_display
-        ):
-            return True
-
-        return False
+            ref = log_internal_error(logger, f"[{self.agent_id}] Failed to estimate cohort", e)
+            raise CohortEstimateUnavailable(ref) from e
 
     async def _check_data_availability(self, data_elements: list, time_period: Dict) -> Dict:
         """
@@ -736,7 +281,7 @@ class PhenotypeValidationAgent(BaseAgent):
         # When using ViewDefinitions OR materialized views, skip detailed data availability checks
         # (legacy SQL queries expect HAPI FHIR schema tables that don't exist)
         # Assume high availability for HAPI FHIR materialized views (conservatively 0.9)
-        if self.use_view_definitions or self.sql_generator.use_materialized_views:
+        if self.sql_generator.use_materialized_views:
             logger.info(
                 f"[{self.agent_id}] Skipping detailed data availability checks (using materialized views)"
             )
@@ -900,8 +445,12 @@ class PhenotypeValidationAgent(BaseAgent):
             )
             existing = result.scalar_one_or_none()
 
+            # feasibility_score is NOT NULL; an unavailable estimate (#245) is
+            # marked by the NULL cohort, not by this placeholder.
+            score = feasibility_report.get("feasibility_score") or 0.0
+
             # Extract confidence interval
-            confidence_interval = feasibility_report.get("confidence_interval", [])
+            confidence_interval = feasibility_report.get("confidence_interval") or []
             conf_low = confidence_interval[0] if len(confidence_interval) > 0 else None
             conf_high = confidence_interval[1] if len(confidence_interval) > 1 else None
 
@@ -914,8 +463,8 @@ class PhenotypeValidationAgent(BaseAgent):
             if existing:
                 # Update existing record
                 existing.is_feasible = feasibility_report.get("feasible", False)
-                existing.feasibility_score = feasibility_report.get("feasibility_score", 0.0)
-                existing.estimated_cohort_size = feasibility_report.get("estimated_cohort_size", 0)
+                existing.feasibility_score = score
+                existing.estimated_cohort_size = feasibility_report.get("estimated_cohort_size")
                 existing.confidence_interval_low = conf_low
                 existing.confidence_interval_high = conf_high
                 existing.phenotype_sql = feasibility_report.get("phenotype_sql", "")
@@ -931,8 +480,8 @@ class PhenotypeValidationAgent(BaseAgent):
                 feasibility = FeasibilityReport(
                     request_id=request_id,
                     is_feasible=feasibility_report.get("feasible", False),
-                    feasibility_score=feasibility_report.get("feasibility_score", 0.0),
-                    estimated_cohort_size=feasibility_report.get("estimated_cohort_size", 0),
+                    feasibility_score=score,
+                    estimated_cohort_size=feasibility_report.get("estimated_cohort_size"),
                     confidence_interval_low=conf_low,
                     confidence_interval_high=conf_high,
                     phenotype_sql=feasibility_report.get("phenotype_sql", ""),
@@ -948,195 +497,3 @@ class PhenotypeValidationAgent(BaseAgent):
             logger.info(
                 f"[{self.agent_id}] Successfully saved feasibility report to database for {request_id}"
             )
-
-    async def _estimate_cohort_size_with_view_definitions(
-        self, requirements: Dict[str, Any]
-    ) -> int:
-        """
-        Estimate cohort size using SQL-on-FHIR v2 ViewDefinitions
-
-        Args:
-            requirements: Structured requirements
-
-        Returns:
-            Estimated patient count
-        """
-        try:
-            # Create FHIR client
-            fhir_client = await create_fhir_client()
-
-            try:
-                # Use patient_demographics ViewDefinition for cohort estimation
-                view_def = self.view_definition_manager.load("patient_demographics")
-
-                # Build search parameters from requirements
-                search_params = self._build_search_params_from_requirements(requirements)
-
-                # Execute ViewDefinition with in-memory runner
-                runner = InMemoryRunner(fhir_client)
-
-                logger.info(
-                    f"[{self.agent_id}] Estimating cohort using ViewDefinition 'patient_demographics'"
-                )
-
-                rows = await runner.execute(
-                    view_def,
-                    search_params=search_params,
-                    max_resources=10000,  # Limit for estimation
-                )
-
-                # Apply additional filters based on requirements
-                filtered_rows = self._filter_rows_by_requirements(rows, requirements)
-
-                cohort_size = len(filtered_rows)
-                logger.info(
-                    f"[{self.agent_id}] ViewDefinition-based cohort estimation: {cohort_size} patients"
-                )
-
-                return cohort_size
-
-            finally:
-                await fhir_client.close()
-
-        except Exception as e:
-            log_internal_error(
-                logger, f"[{self.agent_id}] Failed to estimate cohort with ViewDefinitions", e
-            )
-            # Fallback to legacy SQL method
-            logger.info(f"[{self.agent_id}] Falling back to legacy SQL estimation")
-            return 0
-
-    def _build_search_params_from_requirements(
-        self, requirements: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Build FHIR search parameters from requirements
-
-        Args:
-            requirements: Structured requirements
-
-        Returns:
-            FHIR search parameters dict
-        """
-        params = {}
-
-        # Extract demographic criteria
-        inclusion_criteria = requirements.get("inclusion_criteria", [])
-
-        for criterion in inclusion_criteria:
-            concepts = criterion.get("concepts", [])
-
-            for concept in concepts:
-                if concept.get("type") == "demographic":
-                    term = concept.get("term", "").lower()
-                    details = concept.get("details", "")
-
-                    # Gender filter
-                    if term in ["male", "female"]:
-                        params["gender"] = term
-
-                    # Age filter (approximate with birthdate)
-                    if "age" in term and ">" in details:
-                        # Example: "age > 18" -> birthdate before X years ago
-                        try:
-                            age = int(details.split(">")[1].strip())
-                            # Could calculate birthdate range here
-                            # For now, we'll filter in memory
-                        except:
-                            pass
-
-        logger.debug(f"[{self.agent_id}] Built search params: {params}")
-        return params
-
-    def _filter_rows_by_requirements(self, rows: list, requirements: Dict[str, Any]) -> list:
-        """
-        Apply additional filters to ViewDefinition results based on requirements
-
-        Args:
-            rows: ViewDefinition result rows
-            requirements: Structured requirements
-
-        Returns:
-            Filtered rows
-        """
-        filtered = rows
-
-        # Apply age filters
-        inclusion_criteria = requirements.get("inclusion_criteria", [])
-
-        for criterion in inclusion_criteria:
-            concepts = criterion.get("concepts", [])
-
-            for concept in concepts:
-                if concept.get("type") == "demographic":
-                    term = concept.get("term", "").lower()
-                    details = concept.get("details", "")
-
-                    if "age" in term:
-                        # Apply age filter
-                        # This would require calculating age from birth_date
-                        # For now, we'll keep all rows
-                        pass
-
-        logger.debug(f"[{self.agent_id}] Filtered {len(rows)} -> {len(filtered)} rows")
-        return filtered
-
-    async def execute_view_definition_for_phenotype(
-        self, view_name: str, requirements: Dict[str, Any], max_resources: int = None
-    ) -> list:
-        """
-        Execute a ViewDefinition with requirements-based filtering
-
-        Args:
-            view_name: Name of ViewDefinition to execute
-            requirements: Structured requirements for filtering
-            max_resources: Maximum resources to process
-
-        Returns:
-            List of result rows
-
-        Example:
-            # Get all conditions for cohort
-            conditions = await agent.execute_view_definition_for_phenotype(
-                "condition_diagnoses",
-                requirements,
-                max_resources=5000
-            )
-        """
-        try:
-            # Load ViewDefinition
-            view_def = self.view_definition_manager.load(view_name)
-
-            # Create FHIR client and runner
-            fhir_client = await create_fhir_client()
-
-            try:
-                runner = InMemoryRunner(fhir_client)
-
-                # Build search parameters
-                search_params = self._build_search_params_from_requirements(requirements)
-
-                logger.info(
-                    f"[{self.agent_id}] Executing ViewDefinition '{view_name}' "
-                    f"for phenotype validation"
-                )
-
-                # Execute ViewDefinition
-                rows = await runner.execute(
-                    view_def, search_params=search_params, max_resources=max_resources
-                )
-
-                logger.info(
-                    f"[{self.agent_id}] ViewDefinition '{view_name}' returned " f"{len(rows)} rows"
-                )
-
-                return rows
-
-            finally:
-                await fhir_client.close()
-
-        except Exception as e:
-            log_internal_error(
-                logger, f"[{self.agent_id}] Failed to execute ViewDefinition '{view_name}'", e
-            )
-            raise

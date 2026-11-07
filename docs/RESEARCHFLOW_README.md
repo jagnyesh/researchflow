@@ -166,7 +166,6 @@ Data Delivered
 - requirements_complete
 - feasibility_validation
 - feasible / not_feasible
-- schedule_kickoff
 - data_extraction
 - qa_validation
 - qa_passed / qa_failed

@@ -26,6 +26,7 @@ from app.clients.hapi_db_client import HAPIDBClient
 from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column_extractor
 from app.sql_on_fhir.query_builder import create_sql_query_builder
 from app.schemas._errors import log_internal_error
+from app.sql_on_fhir.errors import UnsupportedSearchParamError, UnsupportedViewDefinitionError
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +42,11 @@ class PostgresRunner:
     """
 
     def __init__(
-        self, db_client: HAPIDBClient, enable_cache: bool = True, cache_ttl_seconds: int = 300
+        self,
+        db_client: HAPIDBClient,
+        enable_cache: bool = True,
+        cache_ttl_seconds: int = 300,
+        strict: bool = False,
     ):
         """
         Initialize PostgreSQL runner
@@ -50,13 +55,14 @@ class PostgresRunner:
             db_client: HAPI database client
             enable_cache: Enable query result caching (default: True)
             cache_ttl_seconds: Cache TTL in seconds (default: 300 = 5 minutes)
+            strict: Refuse a ViewDefinition the transpiler can't express (#263)
         """
         self.db_client = db_client
         self.enable_cache = enable_cache
         self.cache_ttl_seconds = cache_ttl_seconds
 
         # Initialize SQL generation components
-        self.transpiler = create_fhirpath_transpiler()
+        self.transpiler = create_fhirpath_transpiler(strict=strict)
         self.extractor = create_column_extractor(self.transpiler)
         self.builder = create_sql_query_builder(self.transpiler, self.extractor)
 
@@ -138,6 +144,8 @@ class PostgresRunner:
             )
             logger.debug(f"Generated SQL:\n{query.sql}")
 
+        except (UnsupportedSearchParamError, UnsupportedViewDefinitionError):
+            raise
         except Exception as e:
             log_internal_error(logger, f"Failed to build SQL query for '{view_name}'", e)
             raise ValueError("SQL generation failed") from e
@@ -149,7 +157,7 @@ class PostgresRunner:
         self._last_executed_sql = query.sql
 
         try:
-            rows = await self.db_client.execute_query(query.sql)
+            rows = await self.db_client.execute_query(query.sql, query.params)
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000
             self._total_queries += 1
@@ -190,7 +198,9 @@ class PostgresRunner:
 
         # Build COUNT query
         try:
-            count_sql = self.builder.build_count_query(view_definition, search_params)
+            count_sql, count_params = self.builder.build_count_query(view_definition, search_params)
+        except (UnsupportedSearchParamError, UnsupportedViewDefinitionError):
+            raise
         except Exception as e:
             log_internal_error(logger, f"Failed to build COUNT query for '{view_name}'", e)
             raise ValueError("COUNT query generation failed") from e
@@ -199,7 +209,7 @@ class PostgresRunner:
         start_time = datetime.now()
 
         try:
-            rows = await self.db_client.execute_query(count_sql)
+            rows = await self.db_client.execute_query(count_sql, count_params)
             count = rows[0]["count"]
 
             execution_time = (datetime.now() - start_time).total_seconds() * 1000

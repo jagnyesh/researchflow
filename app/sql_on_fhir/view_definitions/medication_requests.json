@@ -5,6 +5,7 @@
   "title": "Medication Orders and Prescriptions",
   "description": "Medication requests including prescriptions, orders, dosage, and timing",
   "status": "active",
+  "runner_hint": "sqlonfhir",
   "select": [
     {
       "column": [

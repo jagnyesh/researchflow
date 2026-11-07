@@ -67,3 +67,12 @@ synth-vs-oracle equivalences are seed-fragile (e.g.
 only because every glucose>125 here is mg/dL). The #99 gate run re-recorded on the full local
 corpus (`scripts/sprint_6_7_gate.py`), not the seed replay alone.
 - **adversarial** (8) — PHI-extraction / injection prompts; scored as escape count.
+
+## Formal gold set (#239)
+
+Scores the **Formal Portal's** phenotype SQL against an informatician's cohort definition.
+
+- **Cases:** `formal_cases.py`. The case format is documented in its header. Only cases with `signoff="approved"` are recorded or scored. Each case has a same-run oracle over `sqlonfhir.*`.
+- **Scoring:** `formal_harness.py`. The generated SQL runs with its bound params, and its patient set is compared with the oracle's inside Postgres. Only three counts come back, never patient ids. A case passes when the SQL executes and the symmetric difference is 0. An error fails, with a log ref and no count. An oracle that selects nobody makes the case vacuous, which is never a pass.
+- **Record:** `python -m tests.eval.run_formal_record` sends each approved request through the live Requirements Agent (billed calls). It writes `fixtures/recorded_requirements_formal.json` and `logs/formal_gold_set.jsonl`.
+- **Replay:** `test_formal_replay.py` replays the fixture without an API key. It fails if any approved case is unrecorded or doesn't execute.

@@ -68,6 +68,7 @@ sys.path.insert(0, project_root)
 # refuses to start and emits the same clean RuntimeError as `uvicorn`.
 from app.security.encryption_keys import assert_encryption_key_present_if_production
 from app.schemas._errors import log_internal_error
+from app.portal_urls import FORMAL_PORTAL_URL
 
 assert_encryption_key_present_if_production()
 
@@ -202,10 +203,10 @@ async def handle_user_input(user_input: str):
         if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
             # User confirmed feasibility results - direct to formal portal
             if await st.session_state.conversation_manager.is_confirmation(user_input):
-                response = """### ✅ Great! Let's move to the Formal Portal
+                response = f"""### ✅ Great! Let's move to the Formal Portal
 
 **Next Steps:**
-1. Open the **Formal Request Portal** at http://localhost:8501
+1. Open the **Formal Request Portal** at {FORMAL_PORTAL_URL}
 2. Fill out the complete research request form
 3. Your feasibility results will help inform the request
 
@@ -234,7 +235,7 @@ async def handle_user_input(user_input: str):
 
 **Request ID:** {st.session_state.pending_request_id}
 
-Check detailed status in the **Formal Request Portal** at http://localhost:8501
+Check detailed status in the **Formal Request Portal** at {FORMAL_PORTAL_URL}
 
 *Tip: The Exploratory Portal is for feasibility checks only. Full request tracking is in the Formal Portal.*"""
         else:
@@ -495,7 +496,7 @@ def render_sidebar():
 
         # Portal info
         st.info(
-            "**🚀 Need Full Data Extraction?**\n\nUse the [Formal Portal](http://localhost:8501) for:\n- Complete approval workflow\n- Data extraction & QA\n- Secure delivery"
+            f"**🚀 Need Full Data Extraction?**\n\nUse the [Formal Portal]({FORMAL_PORTAL_URL}) for:\n- Complete approval workflow\n- Data extraction & QA\n- Secure delivery"
         )
 
         # Session info

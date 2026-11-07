@@ -5,6 +5,8 @@ Unified design tokens, CSS styles, and reusable components for all Streamlit app
 Provides consistency across Researcher Portal, Admin Dashboard, and Research Notebook.
 """
 
+from app.portal_urls import ADMIN_DASHBOARD_URL, EXPLORATORY_PORTAL_URL, FORMAL_PORTAL_URL
+
 # ============================================================================
 # DESIGN TOKENS
 # ============================================================================
@@ -794,14 +796,12 @@ def render_app_navigation_links(role: str = "researcher") -> str:
         HTML string with navigation links (no JavaScript)
     """
     portal_link = (
-        f'<a href="http://localhost:8501" target="_blank" class="nav-link">🔬 Researcher Portal</a>'
+        f'<a href="{FORMAL_PORTAL_URL}" target="_blank" class="nav-link">🔬 Researcher Portal</a>'
     )
     admin_link = (
-        f'<a href="http://localhost:8502" target="_blank" class="nav-link">⚙️ Admin Dashboard</a>'
+        f'<a href="{ADMIN_DASHBOARD_URL}" target="_blank" class="nav-link">⚙️ Admin Dashboard</a>'
     )
-    notebook_link = (
-        f'<a href="http://localhost:8503" target="_blank" class="nav-link">🤖 Research Notebook</a>'
-    )
+    notebook_link = f'<a href="{EXPLORATORY_PORTAL_URL}" target="_blank" class="nav-link">🤖 Research Notebook</a>'
 
     links = portal_link
     if role == "admin":

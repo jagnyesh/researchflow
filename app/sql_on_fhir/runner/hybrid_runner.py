@@ -33,13 +33,15 @@ from langsmith import traceable
 from langsmith.run_helpers import get_current_run_tree
 
 from app.clients.hapi_db_client import HAPIDBClient
-from app.sql_on_fhir.runner.materialized_view_runner import MaterializedViewRunner
-from app.sql_on_fhir.transpiler import create_fhirpath_transpiler, create_column_extractor
-from app.sql_on_fhir.query_builder import create_sql_query_builder
+from app.sql_on_fhir.runner.materialized_view_runner import (
+    BATCH_VIEW_EXISTS_SQL,
+    MaterializedViewRunner,
+)
 from app.cache.redis_client import RedisClient
 from app.sql_on_fhir.runner.speed_layer_runner import SpeedLayerRunner
 from app.sql_on_fhir.runner.freshness import FreshnessAnnotation
 from app.schemas._errors import log_internal_error
+from app.sql_on_fhir.errors import UnsupportedSearchParamError
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +240,9 @@ class HybridRunner:
                 batch_result = await self.materialized_runner.execute(
                     view_definition, search_params=search_params, max_resources=max_resources
                 )
+            except UnsupportedSearchParamError:
+                # A client error, not a batch-layer failure: no fallback.
+                raise
             except Exception as e:
                 log_internal_error(
                     logger,
@@ -383,6 +388,8 @@ class HybridRunner:
                 return await self.materialized_runner.execute_count(
                     view_definition, search_params=search_params
                 )
+            except UnsupportedSearchParamError:
+                raise
             except Exception as e:
                 log_internal_error(
                     logger,
@@ -605,18 +612,10 @@ class HybridRunner:
         if view_name in self._view_exists_cache:
             return self._view_exists_cache[view_name]
 
-        # Query database
-        sql = f"""
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_matviews
-                WHERE schemaname = '{self.SCHEMA_NAME}'
-                  AND matviewname = '{view_name}'
-            ) as exists
-        """
-
         try:
-            result = await self.db_client.execute_query(sql)
+            result = await self.db_client.execute_query(
+                BATCH_VIEW_EXISTS_SQL, [self.SCHEMA_NAME, view_name]
+            )
             exists = result[0]["exists"] if result else False
 
             # Cache result
@@ -645,16 +644,13 @@ class HybridRunner:
             # Lazy import to avoid circular dependency
             from app.sql_on_fhir.runner.postgres_runner import PostgresRunner
 
-            # Initialize components for PostgresRunner
-            transpiler = create_fhirpath_transpiler()
-            extractor = create_column_extractor(transpiler)
-            builder = create_sql_query_builder(transpiler, extractor)
-
-            # Create PostgresRunner
+            # Strict: a view the transpiler can't express raises instead of
+            # serving a NULL-filtered 0 as a real result (#263).
             self._postgres_runner = PostgresRunner(
                 self.db_client,
                 enable_cache=self.enable_cache,
                 cache_ttl_seconds=self.cache_ttl_seconds,
+                strict=True,
             )
 
             logger.debug("Initialized PostgresRunner for fallback")

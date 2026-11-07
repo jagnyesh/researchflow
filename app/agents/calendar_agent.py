@@ -16,6 +16,17 @@ from ..utils.multi_llm_client import MultiLLMClient
 logger = logging.getLogger(__name__)
 
 
+def _cohort_size_text(report: Dict) -> str:
+    # A failed estimate is None, never a count (#245).
+    size = report.get("estimated_cohort_size", "TBD")
+    return "unavailable" if size is None else f"{size} patients"
+
+
+def _score_text(report: Dict) -> str:
+    score = report.get("feasibility_score", 0)
+    return "unavailable" if score is None else f"{score:.1%}"
+
+
 class CalendarAgent(BaseAgent):
     """
     Agent for scheduling and coordinating meetings
@@ -124,8 +135,8 @@ class CalendarAgent(BaseAgent):
         )
 
         # Add biostatistician if cohort is large or complex
-        cohort_size = feasibility_report.get("estimated_cohort_size", 0)
-        if cohort_size > 200:
+        cohort_size = feasibility_report.get("estimated_cohort_size")
+        if cohort_size is not None and cohort_size > 200:
             attendees["optional"].append(
                 {
                     "name": "Biostatistician",
@@ -175,8 +186,8 @@ Study Details:
 - IRB Number: {requirements.get('irb_number', 'TBD')}
 
 Cohort Information:
-- Estimated Size: {feasibility_report.get('estimated_cohort_size', 'TBD')} patients
-- Feasibility Score: {feasibility_report.get('feasibility_score', 0):.1%}
+- Estimated Size: {_cohort_size_text(feasibility_report)}
+- Feasibility Score: {_score_text(feasibility_report)}
 
 Requested Data Elements:
 {chr(10).join('- ' + elem for elem in requirements.get('data_elements', []))}
@@ -222,8 +233,8 @@ Keep it professional and concise."""
 - IRB: {requirements.get('irb_number', 'TBD')}
 
 ## Cohort Summary
-- Estimated Size: {feasibility_report.get('estimated_cohort_size', 'TBD')} patients
-- Feasibility Score: {feasibility_report.get('feasibility_score', 0):.1%}
+- Estimated Size: {_cohort_size_text(feasibility_report)}
+- Feasibility Score: {_score_text(feasibility_report)}
 
 ## Requested Data Elements
 {chr(10).join('- ' + elem for elem in requirements.get('data_elements', []))}

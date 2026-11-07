@@ -73,7 +73,6 @@ NODES = [
     ("_handle_feasibility_validation", "phenotype_agent"),
     ("_handle_preview_extraction", "extraction_agent"),
     ("_handle_preview_qa", "qa_agent"),
-    ("_handle_schedule_kickoff", "calendar_agent"),
     ("_handle_data_extraction", "extraction_agent"),
     ("_handle_qa_validation", "qa_agent"),
     ("_handle_data_delivery", "delivery_agent"),
@@ -117,6 +116,11 @@ ALLOWED = {
         1,
         "sqlglot parse-error text is the LLM's self-correction feedback and quotes "
         "the LLM's own SQL, not row data; changing it is LLM-touching (eval-gated)",
+    ),
+    ("app/agents/phenotype_agent.py", "_validate_feasibility"): (
+        1,
+        "reads CohortEstimateUnavailable.ref, the 12-hex log ref log_internal_error "
+        "returned; the exception carries no other text (#245)",
     ),
 }
 
