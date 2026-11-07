@@ -2,20 +2,22 @@
 
 The cycles 1-3 added backend dispatching that routes view-defs marked
 with `runner_hint: "sqlonfhir"` through the new sqlonfhir backend. The
-4 custom-path MVs (patient_simple, patient_demographics, condition_simple,
-medication_requests) have NO runner_hint and must continue to materialize
-correctly via the legacy custom-FHIRPath-transpiler path.
+3 custom-path MVs (patient_simple, patient_demographics, condition_simple)
+have NO runner_hint and must continue to materialize correctly via the
+legacy custom-FHIRPath-transpiler path. medication_requests moved to
+sqlonfhir in #111 (the custom transpiler emitted NULL for its ofType
+columns).
 
 Sprint 6.4 #40 gate #2 requires verification that the dispatch refactor
 didn't regress the custom path. This file is that verification — one
 parametrized end-to-end test per custom-path MV.
 
 Gates exercised:
-  - #2: 4 custom-path MVs continue to materialize with no regression
+  - #2: the custom-path MVs continue to materialize with no regression
   - #5: dispatch routing (unmarked view-def → custom path)
 
 The pattern matches tests/test_sqlonfhir_integration.py but anchors
-against raw resource counts (no view-def WHERE clauses on these 4 MVs;
+against raw resource counts (no view-def WHERE clauses on these MVs;
 1 row per stored resource of the matching resource_type).
 """
 
@@ -57,10 +59,6 @@ CUSTOM_PATH_MV_ANCHORS = {
     "condition_simple": {
         "resource_type": "Condition",
         "expected_count": 14832,
-    },
-    "medication_requests": {
-        "resource_type": "MedicationRequest",
-        "expected_count": 20116,
     },
 }
 

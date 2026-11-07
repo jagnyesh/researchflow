@@ -50,25 +50,26 @@ async def test_materialized_view_exists():
         assert len(result) > 0, "❌ sqlonfhir schema does not exist"
         print("✓ sqlonfhir schema exists")
 
-        # List all materialized views
+        # Every view definition has a batch relation: a materialized view
+        # (custom path) or a plain table (sqlonfhir backend, ADR 0026).
+        from pathlib import Path
+
+        view_dir = Path(__file__).resolve().parents[1] / "app/sql_on_fhir/view_definitions"
+        expected = sorted(p.stem for p in view_dir.glob("*.json"))
         sql = """
-            SELECT matviewname, pg_size_pretty(pg_total_relation_size(schemaname||'.'||matviewname)) as size
-            FROM pg_matviews
-            WHERE schemaname = 'sqlonfhir'
-            ORDER BY matviewname
+            SELECT c.relname AS name, c.relkind AS kind
+            FROM pg_class c
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'sqlonfhir' AND c.relkind IN ('m', 'r')
         """
-        views = await db_client.execute_query(sql)
+        views = {row["name"]: row["kind"] for row in await db_client.execute_query(sql)}
 
-        print(f"\nFound {len(views)} materialized views:")
-        for view in views:
-            # Get row count
-            count_sql = f"SELECT COUNT(*) as count FROM sqlonfhir.{view['matviewname']}"
-            count_result = await db_client.execute_query(count_sql)
-            row_count = count_result[0]["count"] if count_result else 0
+        print(f"\nFound {len(views)} batch relations:")
+        for name in expected:
+            print(f"  • {name}: {views.get(name, 'MISSING')}")
 
-            print(f"  • {view['matviewname']}: {row_count:,} rows, {view['size']}")
-
-        assert len(views) >= 4, f"❌ Expected at least 4 views, found {len(views)}"
+        missing = [name for name in expected if name not in views]
+        assert not missing, f"❌ View definitions with no batch relation: {missing}"
         print("\n✅ TEST PASSED: Materialized views exist")
 
     finally:
