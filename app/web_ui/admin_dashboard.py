@@ -111,10 +111,18 @@ def humanize(value) -> str:
 
 
 def timestamp(value) -> str:
-    """ISO timestamp as 'YYYY-MM-DD HH:MM:SS'; anything else passes through."""
+    """First 19 characters of the value with the ISO 'T' as a space; '—' when empty.
+
+    Any UTC offset is cut, so callers label the zone themselves.
+    """
     if not value:
         return "—"
     return str(value).replace("T", " ")[:19]
+
+
+def _no_latex(text: str) -> str:
+    """Escape $ so two amounts in one markdown body never pair up as LaTeX."""
+    return str(text).replace("$", "\\$")
 
 
 def stamp(text: str) -> None:
@@ -1424,13 +1432,18 @@ def display_sql_approval(data):
     if warnings:
         st.warning(
             "**Warnings**\n"
-            + "\n".join(f"- {w.get('message', w) if isinstance(w, dict) else w}" for w in warnings)
+            + "\n".join(
+                _no_latex(f"- {w.get('message', w) if isinstance(w, dict) else w}")
+                for w in warnings
+            )
         )
 
     # Recommendations
     recommendations = data.get("recommendations", [])
     if recommendations:
-        st.info("**Recommendations**\n" + "\n".join(f"- {rec}" for rec in recommendations))
+        st.info(
+            "**Recommendations**\n" + "\n".join(_no_latex(f"- {rec}") for rec in recommendations)
+        )
 
 
 def display_preview_qa_approval(data):
@@ -1738,12 +1751,14 @@ def show_cost_telemetry():
     st.header("Cost telemetry")
     st.caption(
         "Median LLM cost over the last 30 requests per portal, against a band of 1.3 × the "
-        "measured baseline. Source: LangSmith runs tagged by portal (ADR 0018, ADR 0025)"
+        "measured baseline. Source: LangSmith runs tagged by portal (ADR 0018; ceilings "
+        "from ADR 0025 and, for the exploratory portal, ADR 0028)"
     )
     st.info(
         "**Corrected 2026-05-14 (ADR 0023).** Before this fix the figures were about 3 × too "
         "high while caching was active, because `cache_read` tokens were charged twice in "
-        "`_run_cost_usd`. The $0.009026 baseline was unaffected (cache hit rate was 0% then).\n\n"
+        "`_run_cost_usd`. The original formal-portal baseline of $0.009026 was unaffected (cache hit rate "
+        "was 0% then).\n\n"
         "**Corrected 2026-11-03 (#271).** Cache-write tokens were also charged twice (input "
         "rate plus cache-write rate), inflating cold-cache calls about 1.6 ×. Warm, cache-read "
         "calls were unaffected.",
@@ -1867,7 +1882,8 @@ def show_cost_telemetry():
                 f"No active alarms. {len(views_in_log)} view(s) reporting; "
                 f"the last {len(recent)} records are within threshold"
             )
-        stamp(f"Data as of {timestamp(max(r.get('ts', '') for r in recent))}")
+        # The health log writes UTC (mv_health_check), so the stamp says so.
+        stamp(f"Data as of {timestamp(max(r.get('ts', '') for r in recent))} UTC")
 
         # Render last 20 records as a dataframe. Newest LAST per file order
         # so the table reads chronologically.

@@ -134,7 +134,7 @@ def _summary(status: str) -> CostSummary:
 
 
 def _run(approvals=(), fail_db: bool = False, health=None) -> AppTest:
-    async def pending(self, approval_type=None):
+    async def pending(self, approval_type=None, user_role=None):
         return list(approvals)
 
     async def gates():
@@ -224,7 +224,7 @@ def test_user_and_llm_text_is_never_rendered_as_raw_html():
 
     assert not at.exception, at.exception
     html_blocks = [m.value for m in at.markdown if m.allow_html]
-    assert any("Data as of" in h for h in html_blocks), html_blocks
+    assert any("Data as of" in h and "UTC" in h for h in html_blocks), html_blocks
     assert not [h for h in html_blocks if "<img" in h], html_blocks
 
 
@@ -250,6 +250,24 @@ def test_only_the_first_sql_review_opens_expanded():
 
     cards = [e for e in at.expander if "BBBB000" in e.label]
     assert [e.proto.expanded for e in cards] == [True, False, False], [e.label for e in cards]
+
+
+def test_a_past_timeout_reads_as_overdue():
+    approval = _sql_approval(1, "REQ-20261107-CCCC0001")
+    approval.timeout_at = datetime.now() - timedelta(hours=3)
+    at = _run(approvals=[approval])
+
+    labels = [e.label for e in at.expander if "CCCC0001" in e.label]
+    assert labels and "overdue" in labels[0] and ":red[●]" in labels[0], labels
+
+
+def test_dollar_amounts_in_warnings_do_not_pair_into_latex():
+    approval = _sql_approval(1, "REQ-20261107-DDDD0001")
+    approval.approval_data["warnings"] = [{"message": "Costs $5"}, {"message": "and $6"}]
+    at = _run(approvals=[approval])
+
+    shown = " ".join(w.value for w in at.warning)
+    assert "\\$5" in shown and "\\$6" in shown, shown
 
 
 def test_a_sql_review_card_shows_the_sql_and_its_estimate():
