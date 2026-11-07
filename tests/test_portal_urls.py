@@ -3,7 +3,6 @@
 exploratory (Research Notebook) 8501, formal (Researcher Portal) 8502, admin 8503.
 """
 
-import logging
 import re
 from pathlib import Path
 
@@ -62,7 +61,7 @@ def test_notebook_points_users_to_the_formal_portal():
         ("_send_qa_complete_email", FORMAL),
     ],
 )
-async def test_notification_emails_link_the_portal_their_reader_uses(caplog, method, expected):
+async def test_notification_emails_link_the_portal_their_reader_uses(monkeypatch, method, expected):
     from app.agents.coordinator_agent import CoordinatorAgent
 
     context = {
@@ -74,8 +73,13 @@ async def test_notification_emails_link_the_portal_their_reader_uses(caplog, met
         "qa_report": {"overall_status": "passed"},
         "requested_changes": {},
     }
-    with caplog.at_level(logging.DEBUG, logger="app.agents.coordinator_agent"):
-        await getattr(CoordinatorAgent(), method)(context)
+    bodies = []
+    monkeypatch.setattr(
+        CoordinatorAgent,
+        "_deliver_email",
+        lambda self, email_type, recipients, body: bodies.append(body),
+    )
 
-    bodies = [r.getMessage() for r in caplog.records if "Email body" in r.getMessage()]
-    assert bodies and expected in bodies[-1]
+    await getattr(CoordinatorAgent(), method)(context)
+
+    assert len(bodies) == 1 and expected in bodies[0]
