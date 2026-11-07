@@ -2,7 +2,7 @@
 # lane.sh — parallel-lane harness for the workflow doc's multi-lane mode (§3 Stage 2+).
 #
 # Automates docs/DAILY_DEV_WORKFLOW.md §3 Stage 2 (worktree add + env copy + dep sync)
-# and the multi-lane day shape (§4.2: one agent/tmux window per lane), with the §10 WIP=2 guardrail enforced.
+# and the multi-lane day shape (§4.2: one agent/tmux window per lane), with the WIP cap enforced (4 under the §3 override of 2026-11-07).
 #
 # A "lane" is a git worktree on its own per-issue branch, running an agent in
 # its own tmux window. One branch per issue, one PR per issue (§2).
@@ -18,7 +18,7 @@
 set -euo pipefail
 
 TMUX_SESSION="researchflow"
-WIP_LIMIT=2
+WIP_LIMIT=4
 
 die()  { echo "lane: $*" >&2; exit 1; }
 info() { echo "  $*"; }
