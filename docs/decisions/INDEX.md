@@ -8,6 +8,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 - **0033** — [The phenotype estimate counts the approved SQL (#206)](0033-phenotype-estimate-counts-approved-sql.md) (2026-11-04, accepted; amends 0027 for its FORMAL_DRAFT caller)
 - **0031** — [Sprint 6.7 gate: which layer stopped the adversarial cases (#276)](0031-sprint-6-7-adversarial-gate-attribution.md) (2026-11-03, accepted; corrects 0028's attribution)
+- **0032** — [Audit COMPLETED is written after the response body (#224)](0032-audit-completed-after-body.md) (2026-11-04, accepted; amends 0011 post-event)
 - **0030** — [ViewDefinition writes are admin-only; execution stays open (#178)](0030-viewdefinition-write-admin-only.md) (2026-10-21, accepted)
 - **0029** — [API error paths: PHI-safe 500s through a per-site helper (#175)](0029-api-error-path-phi-safe-500s.md) (2026-10-21, accepted)
 - **0028** — [Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md) (2026-07-11, shipped)
@@ -58,6 +59,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0007 — HIPAA security baseline](0007-sprint-6-1-hipaa-security-baseline.md)
 - [0029 — API error paths: PHI-safe 500s through a per-site helper](0029-api-error-path-phi-safe-500s.md)
 - [0030 — ViewDefinition writes are admin-only](0030-viewdefinition-write-admin-only.md)
+- [0032 — Audit COMPLETED after the response body; post-event no longer 503s](0032-audit-completed-after-body.md)
 - [0008 — Durable audit pipeline via Redis queue](0008-sprint-6-1-audit-pipeline-redis-queue.md)
 - [0009 — Split human/agent auth, not unified JWT](0009-sprint-6-1-split-human-agent-auth.md)
 - [0010 — Documentation reorg (CLAUDE.md split + mattpocock skills)](0010-sprint-6-1-documentation-reorg.md)

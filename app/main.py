@@ -149,7 +149,7 @@ app = FastAPI(
 setup_rate_limiting(app)
 
 # Audit middleware (Sprint 6.1 Phase 2.2 — default-deny + fail-closed PHI gate)
-app.middleware("http")(audit_mw.audit_middleware)
+audit_mw.install_audit_middleware(app)  # + AuditBodyGuard inside it (#224)
 
 # Body-size limit middleware (Sprint 6.1 Phase 2.3 CSO Finding 1 fix — defense-in-depth
 # DoS guard). Added AFTER audit_middleware so it runs FIRST (FastAPI middleware order
