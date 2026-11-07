@@ -8,6 +8,7 @@ dirty. Real facade (stub agents, no LLM) and the real (test) database.
 import uuid
 
 import pytest
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from sqlalchemy import select
 
 from app.database import ResearchRequest, get_db_session, init_db
@@ -22,6 +23,23 @@ def _delivery_dir(monkeypatch, tmp_path):
     monkeypatch.setenv("DATA_DELIVERY_PATH", str(tmp_path))
 
 
+@pytest.fixture
+async def facade(tmp_path):
+    # A per-test saver, closed with the test: the default checkpointer is a
+    # process-wide aiosqlite connection whose non-daemon thread keeps pytest
+    # from exiting.
+    async with AsyncSqliteSaver.from_conn_string(str(tmp_path / "checkpoints.db")) as saver:
+        f = LangGraphRequestFacade(use_real_agents=False)
+        await f._ensure_initialized()  # it resets checkpointer_factory
+
+        async def checkpointer():
+            return saver
+
+        f.checkpointer_factory = checkpointer
+        yield f
+        await f.close()
+
+
 async def _history(request_id: str) -> list:
     async with get_db_session() as session:
         req = (
@@ -31,9 +49,8 @@ async def _history(request_id: str) -> list:
 
 
 @pytest.mark.asyncio
-async def test_a_request_records_each_state_it_passes_through():
+async def test_a_request_records_each_state_it_passes_through(facade):
     await init_db()
-    facade = LangGraphRequestFacade(use_real_agents=False)
     request_id = await facade.process_new_request(
         "female patients over 50 with diabetes", {"name": "Dr. Synthetic", "email": "s@example.org"}
     )
