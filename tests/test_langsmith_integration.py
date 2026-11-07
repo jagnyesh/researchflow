@@ -158,17 +158,15 @@ class TestBaseAgentTracing:
 
     @pytest.mark.asyncio
     async def test_all_production_agents_traced(self):
-        """Verify all 6 production agents inherit @traceable from BaseAgent"""
+        """Verify the production agents inherit @traceable from BaseAgent"""
         from app.agents.requirements_agent import RequirementsAgent
         from app.agents.phenotype_agent import PhenotypeValidationAgent
-        from app.agents.calendar_agent import CalendarAgent
         from app.agents.extraction_agent import DataExtractionAgent
         from app.agents.qa_agent import QualityAssuranceAgent
         from app.agents.delivery_agent import DeliveryAgent
 
         agents = [
             RequirementsAgent(),
-            CalendarAgent(),
             QualityAssuranceAgent(),
             DeliveryAgent(),
         ]

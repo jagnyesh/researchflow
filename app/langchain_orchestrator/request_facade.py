@@ -554,9 +554,6 @@ class LangGraphRequestFacade:
             "qa_validation": "qa_agent",
             "qa_review": "qa_agent",
             "data_delivery": "delivery_agent",
-            # Calendar scheduling (optional, moved to after delivery)
-            "schedule_kickoff": "calendar_agent",
-            "kickoff_scheduled": "calendar_agent",
             "delivered": "delivery_agent",
             "complete": None,
             "failed": None,

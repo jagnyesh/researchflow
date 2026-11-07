@@ -2,7 +2,7 @@
 Delivery Agent
 
 Packages and delivers data to researcher with documentation.
-Uses MultiLLMClient for generating personalized notifications and documentation.
+Citation and notification text come from templates; no LLM call.
 """
 
 from typing import Dict, Any
@@ -12,7 +12,6 @@ import json
 from datetime import datetime
 from langsmith import traceable
 from .base_agent import BaseAgent
-from ..utils.multi_llm_client import MultiLLMClient
 from ..services.file_storage import FileStorageService
 from ..database import get_db_session, DataDelivery
 
@@ -34,7 +33,6 @@ class DeliveryAgent(BaseAgent):
 
     def __init__(self, orchestrator=None):
         super().__init__(agent_id="delivery_agent", orchestrator=orchestrator)
-        self.llm_client = MultiLLMClient()  # Use multi-provider client for non-critical tasks
         self.file_storage = FileStorageService()
 
     @traceable(tags=["delivery-agent", "agent-execution", "portal:formal"])
@@ -215,44 +213,11 @@ class DeliveryAgent(BaseAgent):
         }
 
     async def _generate_citation_info(self, requirements: Dict) -> str:
-        """
-        Generate citation information for publications
-
-        Sprint 8 Optimization: Uses template-based generation (90% of cases)
-        with LLM fallback for custom citations.
-
-        Cost savings: ~$0.002 per request → $2,000/year
-        """
-        # Sprint 8 Optimization 3: Template-first approach (90% cost savings)
-        # Only use LLM for complex/custom citations
-        if self._is_standard_citation(requirements):
-            return self._generate_citation_template(requirements)
-        else:
-            # Complex citation - use LLM
-            logger.info(f"[{self.agent_id}] Custom citation detected, using LLM for generation")
-            return await self._generate_citation_llm(requirements)
-
-    def _is_standard_citation(self, requirements: Dict) -> bool:
-        """
-        Check if citation follows standard format (90% of cases)
-
-        Standard citations have:
-        - Study title present
-        - IRB number present
-        - No custom citation requirements in metadata
-        """
-        has_title = bool(requirements.get("study_title"))
-        has_irb = bool(requirements.get("irb_number"))
-        no_custom_citation = "custom_citation" not in requirements.get("metadata", {})
-
-        return has_title and has_irb and no_custom_citation
+        """Generate citation information for publications"""
+        return self._generate_citation_template(requirements)
 
     def _generate_citation_template(self, requirements: Dict) -> str:
-        """
-        Generate citation using Jinja2 template (instant, $0 cost)
-
-        Template covers 90% of standard citations.
-        """
+        """Generate citation using Jinja2 template (instant, $0 cost)"""
         # Extract study info
         study_title = requirements.get("study_title", "Untitled Study")
         pi_name = requirements.get("principal_investigator", "Not specified")
@@ -281,52 +246,6 @@ de-identified according to the specified PHI level."""
 
         logger.info(f"[{self.agent_id}] Generated citation using template (instant, $0)")
         return citation.strip()
-
-    async def _generate_citation_llm(self, requirements: Dict) -> str:
-        """
-        Generate custom citation using LLM (10% of cases)
-
-        Fallback for complex citations that don't fit template.
-        """
-        prompt = f"""Generate professional citation information for a clinical research data extract.
-
-Study Information:
-- Title: {requirements.get('study_title', 'Untitled Study')}
-- Principal Investigator: {requirements.get('principal_investigator', 'Unknown')}
-- IRB Number: {requirements.get('irb_number', 'Unknown')}
-- Extraction Date: {datetime.now().strftime('%Y-%m-%d')}
-
-Create a professional citation block that includes:
-1. Data source acknowledgment
-2. Study details
-3. Proper citation format
-4. Any necessary disclaimers
-
-Keep it concise and professional."""
-
-        system_prompt = (
-            "You are a research librarian creating citation information for clinical data extracts."
-        )
-
-        try:
-            # Use secondary provider for this non-critical task
-            citation = await self.llm_client.complete(
-                prompt=prompt,
-                task_type="delivery",  # Non-critical task
-                temperature=0.5,
-                system=system_prompt,
-            )
-            logger.info(f"[{self.agent_id}] Generated custom citation using LLM")
-            return citation.strip()
-        except Exception as e:
-            log_internal_error(
-                logger,
-                f"[{self.agent_id}] LLM citation failed (using template fallback)",
-                e,
-                level=logging.WARNING,
-            )
-            # Final fallback to template
-            return self._generate_citation_template(requirements)
 
     def _summarize_qa_report(self, qa_report: Dict) -> Dict:
         """Summarize QA report for researcher"""
@@ -534,50 +453,20 @@ Keep it concise and professional."""
         """
         Send notification email to researcher
 
-        Sprint 8 Optimization: Uses template-based generation (80% of cases)
-        with LLM fallback for personalized/complex notifications.
-
-        Cost savings: ~$0.002 per request → $2,400/year
-
         In production: Use MCP email server
         For now: Log the notification
         """
-        # Sprint 8 Optimization 4: Template-first approach (80% cost savings)
-        # Only use LLM for personalized/complex notifications
-        if self._is_standard_notification(delivery_info):
-            email_content = self._generate_notification_template(recipient, delivery_info)
-        else:
-            # Complex notification - use LLM
-            logger.info(f"[{self.agent_id}] Custom notification detected, using LLM for generation")
-            email_content = await self._generate_notification_llm(recipient, delivery_info)
+        email_content = self._generate_notification_template(recipient, delivery_info)
 
         # TODO: Implement MCP email server integration
         # email_server = self.mcp_registry.get_server('email')
         # await email_server.send_email(...)
 
         logger.info(f"[{self.agent_id}] Notification sent for {delivery_info['request_id']}")
-
-    def _is_standard_notification(self, delivery_info: Dict) -> bool:
-        """
-        Check if notification follows standard format (80% of cases)
-
-        Standard notifications have:
-        - No escalations or special instructions
-        - No custom message requirements
-        - Standard delivery workflow
-        """
-        has_escalation = delivery_info.get("escalated", False)
-        has_custom_message = "custom_message" in delivery_info
-        has_special_instructions = "special_instructions" in delivery_info
-
-        return not (has_escalation or has_custom_message or has_special_instructions)
+        return email_content
 
     def _generate_notification_template(self, recipient: str, delivery_info: Dict) -> str:
-        """
-        Generate notification using template (instant, $0 cost)
-
-        Template covers 80% of standard notifications.
-        """
+        """Generate notification using template (instant, $0 cost)"""
         request_id = delivery_info.get("request_id", "Unknown")
         cohort_size = delivery_info.get("cohort_size", 0)
         data_elements = delivery_info.get("data_elements", [])
@@ -607,52 +496,6 @@ Research Data Services
 
         logger.info(f"[{self.agent_id}] Generated notification using template (instant, $0)")
         return message.strip()
-
-    async def _generate_notification_llm(self, recipient: str, delivery_info: Dict) -> str:
-        """
-        Generate personalized notification using LLM (20% of cases)
-
-        Fallback for complex notifications with special requirements.
-        """
-        prompt = f"""Generate a professional email notification to a researcher that their data request is ready.
-
-Recipient: {recipient}
-Request ID: {delivery_info['request_id']}
-Cohort Size: {delivery_info['cohort_size']} patients
-Data Elements: {', '.join(delivery_info['data_elements'])}
-Download Location: {delivery_info['location']}
-
-The email should:
-1. Be professional and friendly
-2. Inform them their data is ready
-3. Provide key statistics
-4. Include download location
-5. Remind them to review the data dictionary and QA report
-6. Include appropriate sign-off
-
-Keep it concise and professional."""
-
-        system_prompt = "You are a clinical research data coordinator sending delivery notifications to researchers."
-
-        try:
-            # Use secondary provider for this non-critical task
-            message = await self.llm_client.complete(
-                prompt=prompt,
-                task_type="delivery",  # Non-critical task
-                temperature=0.7,
-                system=system_prompt,
-            )
-            logger.info(f"[{self.agent_id}] Generated personalized notification using LLM")
-            return message.strip()
-        except Exception as e:
-            log_internal_error(
-                logger,
-                f"[{self.agent_id}] LLM notification failed (using template fallback)",
-                e,
-                level=logging.WARNING,
-            )
-            # Final fallback to template
-            return self._generate_notification_template(recipient, delivery_info)
 
     async def _log_delivery(
         self, request_id: str, location: str, package: Dict, csv_filenames: list[str] = None

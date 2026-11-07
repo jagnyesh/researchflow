@@ -174,7 +174,7 @@ http://localhost:8502
    - `new_request`
    - `requirements_gathering`
    - `feasibility_validation`
-   - `schedule_kickoff`
+   - `phenotype_review`
    - etc.
 
 ### Step 4: Check LangSmith for Full Workflow
@@ -183,7 +183,6 @@ http://localhost:8502
 3. Should see **multiple traces** for each agent:
    - Requirements Agent: `gather_requirements`
    - Phenotype Agent: `validate_feasibility`
-   - Calendar Agent: `schedule_kickoff_meeting`
 
 **What to Look For**:
 
@@ -194,9 +193,6 @@ Trace 1: RequirementsAgent
 
 Trace 2: PhenotypeAgent
 └─ LLM Call (SQL generation)
-
-Trace 3: CalendarAgent
-└─ LLM Call (meeting scheduling)
 ```
 - Each agent = 1 trace with 1-2 LLM calls
 - No inter-agent communication visible
@@ -218,13 +214,6 @@ Trace 2: validate_feasibility
 │  └─ Database: SELECT COUNT(*)
 ├─ calculate_feasibility_score
 └─ save_report
-
-Trace 3: schedule_kickoff_meeting
-├─ extract_meeting_requirements
-│  └─ LLM Call: Claude 3.5 Sonnet
-├─ generate_calendar_invite
-├─ save_meeting_record
-└─ return_confirmation
 ```
 - Full method breakdown for each agent
 - Database calls visible

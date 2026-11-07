@@ -157,23 +157,12 @@ async def test_happy_path_langgraph_workflow(workflow, persistence, test_request
     state_after_sql_approval = await workflow.run(state_with_sql_approval)
 
     print(f"  ✓ State after phenotype approval: {state_after_sql_approval['current_state']}")
-    assert state_after_sql_approval["current_state"] in ["schedule_kickoff", "extraction_approval"]
-
-    # ===== Step 7: Schedule Kickoff Meeting =====
-    print("\\n[7/11] Scheduling kickoff meeting...")
-
-    if state_after_sql_approval["current_state"] == "schedule_kickoff":
-        state_after_kickoff = await workflow.run(state_after_sql_approval)
-        print(f"  ✓ Kickoff meeting scheduled")
-    else:
-        state_after_kickoff = state_after_sql_approval
-
-    assert state_after_kickoff["current_state"] == "extraction_approval"
+    assert state_after_sql_approval["current_state"] == "extraction_approval"
 
     # ===== Step 8: Approve Extraction =====
     print("\\n[8/11] Approving data extraction...")
 
-    state_with_extraction_approval = {**state_after_kickoff, "extraction_approved": True}
+    state_with_extraction_approval = {**state_after_sql_approval, "extraction_approved": True}
 
     state_after_extraction_approval = await workflow.run(state_with_extraction_approval)
 

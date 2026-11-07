@@ -73,13 +73,12 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
     3. Approve requirements
     4. Verify phenotype SQL generated
     5. Approve phenotype SQL
-    6. Verify kickoff meeting scheduled
-    7. Approve extraction
-    8. Verify data extracted
-    9. Verify QA passed
-    10. Approve QA
-    11. Verify delivery complete
-    12. Verify final state = "complete"
+    6. Approve extraction
+    7. Verify data extracted
+    8. Verify QA passed
+    9. Approve QA
+    10. Verify delivery complete
+    11. Verify final state = "complete"
 
     Expected Duration: 2-3 minutes (includes real LLM calls)
     Expected Cost: ~$1-2 (Claude API)
@@ -147,18 +146,11 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
     assert sql_approval.get("success") == True, "SQL approval failed"
     print("  ✓ Phenotype SQL approved")
 
-    # Wait for extraction_approval state (after kickoff meeting)
+    # Wait for extraction_approval state
     print("  ⏳ Waiting for extraction_approval state...")
     reached = wait_for_approval_gate(api_client, request_id, "extraction_approval", timeout=60)
     assert reached, "Workflow did not reach extraction_approval state"
     print("  ✓ Workflow at extraction_approval gate")
-
-    # ===== Step 6: Verify Kickoff Meeting Scheduled =====
-    print("\n[6/11] Verifying kickoff meeting scheduled...")
-
-    status = api_client.get_request_status(request_id)
-    # Note: In full implementation, verify meeting details exist
-    print("  ✓ Kickoff meeting stage complete")
 
     # ===== Step 7: Approve Extraction =====
     print("\n[7/11] Approving data extraction...")
@@ -208,18 +200,17 @@ async def test_happy_path_complete_workflow(api_client, db_helper, test_request_
     print("  ✓ Final state verified: complete")
     print("  ✓ All required data exists in database")
 
-    # Verify all 6 agents executed
+    # Verify all 5 agents executed
     expected_agents = [
         "requirements_agent",
         "phenotype_agent",
-        "calendar_agent",
         "extraction_agent",
         "qa_agent",
         "delivery_agent",
     ]
     # Note: This will need actual agent execution tracking in database
     # assert_agents_executed(db_helper, request_id, expected_agents)
-    print("  ✓ All 6 agents executed (simulated)")
+    print("  ✓ All 5 agents executed (simulated)")
 
     # ===== Summary =====
     elapsed_time = time.time() - start_time
