@@ -62,15 +62,48 @@ The binding constraint on everything else is **how many review streams one perso
 
 ## 3. The ramp (parallelism is optional and, here, unproven)
 
-**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated: Stage 2 has been tried, not held, and Stage 3 has not been entered.** Parallel lanes have run on two days (§0): two at once on 2026-10-30, and four on 2026-11-07, past Stage 2's WIP = 2 by explicit choice. Neither is a logged week, so Stage 2's exit is unmet; the 2026-11-07 run used Stage 3's lane count without that exit — do not climb for its own sake.
+**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated: Stage 2 has been tried, not held, and Stage 3 has not been entered.** Parallel lanes have run on two days (§0): two at once on 2026-10-30, and four on 2026-11-07, past Stage 2's WIP = 2 by explicit choice. Neither is a logged week, so Stage 2's exit is unmet; the 2026-11-07 run used Stage 3's lane count without that exit — do not climb for its own sake. **The cap is now 4 under a recorded override (2026-11-07, below the stages), with conditions.**
 
 **Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
 
 **Stage 1 — The pipeline.** `/validate-and-ship` end to end; per-issue branches; continuous merge. *Exit:* three consecutive issues where your only post-handoff involvement was escalated decisions.
 
-**Stage 2 — Two lanes (only when the trigger fires).** *Trigger:* a lane is mid-run on a long autonomous task **and** a second independent, well-specified issue is ready **and** review is keeping up. If any clause is false, a second lane is negative throughput (§10). *Substrate, lightest first:* native `claude --worktree <name>` → `scripts/lane.sh` (WIP guard + dep-sync) → raw `git worktree`. WIP = 2. *Exit:* one logged week where no PR waited on you > 1 day.
+**Stage 2 — Two lanes (only when the trigger fires).** *Trigger:* a lane is mid-run on a long autonomous task **and** a second independent, well-specified issue is ready **and** review is keeping up. If any clause is false, a second lane is negative throughput (§10). *Substrate, lightest first:* native `claude --worktree <name>` → `scripts/lane.sh` (WIP guard + dep-sync) → raw `git worktree`. WIP = 2 (4 under the override below). *Exit:* one logged week where no PR waited on you > 1 day.
 
 **Stage 3 — Scale.** 3–5 lanes; native worktrees + background/cloud agents before any external pool tool. No external worktree-pool or "overnight" binary unless it clears §9. *Exit:* none — cruising altitude, only while §10 holds.
+
+**Override, 2026-11-07: up to 4 lanes before Stage 2's exit is met.** This is your decision, recorded as a deliberate override: ADR 0000's pattern of setting a pre-commitment aside on purpose and writing it down. It accepts the review-bandwidth risk Stage 2's exit guards against. That exit is unmet. In the week to 2026-11-07, all 16 merged PRs numbered #317–#338 waited 58–72 h on you, measured as defined below. `scripts/dials.sh 70` shows only 14 of them, at 55–64 h, because later pushes restarted its clock on the other two.
+
+The new information lowers collision risk and re-review churn, not review load:
+- "Require branches to be up to date" is back on, so PRs can no longer merge on stale bases. Stale bases caused both 2026-11-06 red-main incidents (§0).
+- Validate-and-ship Step 7.4 carries a review attestation across an update from `main` when three things hold: the update is a merge, the root verdict is `SHIP`, and `main` changed none of the PR's files. Any other update still needs a fresh review.
+
+Review load is what the rules below bound.
+
+*Waiting on you* runs from a PR's first attestation comment with a `SHIP` or `SHIP-WITH-FIXES` verdict until it merges, or until now if it's still open. dials.sh's green→merge can't measure it: its clock restarts whenever a branch is updated from `main`, which strict protection makes routine. For example, #294 shows open→green 608m and green→merge 0m.
+
+Before opening a lane, all of these must hold:
+- Fewer than 2 PRs await your decision (§10, unchanged).
+- No open PR has waited on you more than 24 h. That's the same bar as Stage 2's exit, and §10 uses the same number.
+- Fewer than 4 lanes are open. Count every worktree other than the main checkout whose PR isn't merged or closed, including a lane opened so recently it has no commits yet, and every cloud session. `scripts/lane.sh` refuses a fifth `feat/<n>-` or `fix/<n>-` worktree, but it doesn't see other branch names or cloud sessions.
+- The new lane wouldn't be a second High-tier lane.
+- Once more than two lanes are open, every lane beyond the second is Low or Medium and shares no planned file with any other open lane.
+- Every lane beyond the first meets Stage 2's trigger: a lane is mid-run on a long autonomous task, the new issue is independent and well-specified, and review is keeping up.
+
+Two exceptions:
+- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain until `main` is fixed.
+- **"Require up to date" is off:** this override's premise is gone. The cap is Stage 2's 2 until you turn it back on.
+
+*Revert to WIP = 2* as soon as any of these happens after this block lands on `main`:
+- a PR waits on you more than 24 h before merging;
+- a push workflow on `main` fails on a merge commit. A failure doesn't count if it passed on a re-run, or if you attribute it to something outside the merged PRs, such as a new advisory or a runner outage. Write that attribution in the log;
+- an escape (§6) traces to a PR merged under this override: a `Revert` of it, an issue it closed reopening, or a bug filed against it.
+
+To revert, open one PR that replaces this block with a dated one-line note and sets `WIP_LIMIT=2` back in `scripts/lane.sh` with its test. It touches `tests/**`, so you merge it.
+
+The log is `docs/audits/lane-cap-override.md`, kept for as long as this override stands. It holds each merged PR's wait (as defined above), main's failed push runs with any attribution, and `scripts/dials.sh` output.
+
+The first 7 days after this block lands are the logged week Stage 2's exit asks for. That week counts only if at least 5 PRs merged in it and you ran 3 or more lanes at once on at least one day; note when in the log. Otherwise, extend it until both are true. If the week passes, Stage 2's exit is met and the cap stays at 4, inside Stage 3's 3–5. Going past 4 is a separate decision.
 
 ---
 
@@ -94,7 +127,7 @@ write-back                 → any correction this change needed → one dated l
 
 ### 4.2 Multi-lane day shape — tried on two days, not a steady state
 
-> Two runs so far (§0): 2026-10-30 at WIP = 2, and 2026-11-07 at four lanes by explicit choice; no logged week. Adopt it as your workflow only after the §3 Stage-2 exit is met. Until then this is design intent tried twice.
+> Two runs so far (§0): 2026-10-30 at WIP = 2, and 2026-11-07 at four lanes by explicit choice; no logged week. It runs at up to four lanes under the §3 override of 2026-11-07, and only on that override's conditions. The first qualifying week (§3) is the logged week; until then this is design intent tried twice.
 
 PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
 
@@ -192,8 +225,8 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
 - **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
-- **WIP = review streams you can actually unblock.** Model-independent ceiling. Scale to N+1 only when escalations-per-lane are low and nothing waits overnight.
-- **Review-debt rule:** no new lane while ≥ 2 PRs await your decision.
+- **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3).
+- **Review-debt rule:** no new lane while ≥ 2 PRs await your decision, except the one lane fixing a red `main` (§3).
 - **Never scale past validation:** pipeline red/flaky → one lane until green.
 - **Queue health:** refill to lanes × 2; starvation means the plan block was thin.
 - **The memory loop is the ceiling-raiser:** write-backs, ADRs, retros, generated status — the compounding practices are what make month three faster than month one.
