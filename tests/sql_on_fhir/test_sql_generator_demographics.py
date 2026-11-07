@@ -130,3 +130,70 @@ class TestDemographicTypeStringTolerance:
         assert (
             "p.gender" in sql
         ), f"type='{concept_type}' should produce gender predicate; sql=\n{sql}"
+
+
+class TestExclusionDemographicsAreNegated:
+    """#310: an exclusion demographic removes matching patients instead of selecting them.
+
+    Exclusion wraps the predicate in ``IS NOT TRUE`` so a patient whose gender or
+    birth date is unknown is kept: they are not known to match the exclusion.
+    The NULL behavior itself is pinned live in test_sql_generator_criteria.py.
+    """
+
+    def _sql(self, gen, inclusion, exclusion):
+        return gen.generate_phenotype_sql(
+            RB.build_requirements(inclusion=inclusion, exclusion=exclusion), count_only=True
+        )
+
+    def test_excluded_gender_is_negated(self, gen):
+        sql, params = self._sql(
+            gen,
+            [RB.build_condition("diabetes")],
+            [RB.build_demographic("Male patients", term="male")],
+        )
+        assert "(p.gender = :gender_2) IS NOT TRUE" in sql, sql
+        assert params["gender_2"] == "male"
+
+    def test_excluded_age_comparison_is_negated(self, gen):
+        sql, params = self._sql(
+            gen,
+            [RB.build_condition("diabetes")],
+            [RB.build_demographic("Age < 18 years", term="age", details="< 18 years")],
+        )
+        assert (
+            "(EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) < :age_2) IS NOT TRUE" in sql
+        ), sql
+        assert params["age_2"] == 18
+
+    def test_excluded_age_range_is_negated(self, gen):
+        sql, params = self._sql(
+            gen,
+            [RB.build_condition("diabetes")],
+            [RB.build_demographic("Age 40-65", term="age", details="between 40 and 65")],
+        )
+        assert (
+            "(EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) "
+            "BETWEEN :age_lo_2 AND :age_hi_3) IS NOT TRUE" in sql
+        ), sql
+        assert (params["age_lo_2"], params["age_hi_3"]) == (40, 65)
+
+    def test_included_demographics_are_not_negated(self, gen):
+        sql, _ = self._sql(
+            gen,
+            [
+                RB.build_demographic("Male patients", term="male"),
+                RB.build_demographic("Age > 18", term="age", details="> 18"),
+            ],
+            [],
+        )
+        assert "IS NOT TRUE" not in sql, sql
+        assert "p.gender = :gender_1" in sql, sql
+
+    def test_excluded_condition_still_uses_not_exists(self, gen):
+        sql, _ = self._sql(
+            gen,
+            [RB.build_condition("diabetes")],
+            [RB.build_condition("hypertension"), RB.build_demographic("Males", term="male")],
+        )
+        assert sql.count("NOT EXISTS") == 1, sql
+        assert "IS NOT TRUE" in sql, sql
