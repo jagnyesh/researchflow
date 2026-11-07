@@ -61,11 +61,13 @@ async def test_polling_caches_patients_by_fhir_id():
     await redis.connect()
     await redis.flush_all()  # clean slate
 
-    # Find the most-recently-updated patient — that's guaranteed to be in the
-    # LIMIT 100 window the polling SQL uses.
+    # Find the most-recently-updated live patient — that's guaranteed to be in
+    # the LIMIT 100 window the polling SQL uses. HAPI soft-deletes (rows stay
+    # with res_deleted_at set and the newest res_updated), and the service
+    # rightly skips those, so the target must skip them too (#74).
     rows = await hapi.execute_query(
         "SELECT fhir_id FROM hfj_resource WHERE res_type='Patient' "
-        "ORDER BY res_updated DESC LIMIT 1"
+        "AND res_deleted_at IS NULL ORDER BY res_updated DESC LIMIT 1"
     )
     target_fhir_id = rows[0]["fhir_id"]
 
