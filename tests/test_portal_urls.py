@@ -77,7 +77,7 @@ async def test_notification_emails_link_the_portal_their_reader_uses(monkeypatch
     monkeypatch.setattr(
         CoordinatorAgent,
         "_deliver_email",
-        lambda self, email_type, recipients, body: bodies.append(body),
+        lambda self, email_type, recipients, email_body: bodies.append(email_body),
     )
 
     await getattr(CoordinatorAgent(), method)(context)

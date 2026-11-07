@@ -22,6 +22,7 @@ PHI_NAMES = {
     "requirements",
     "structured_requirements",
     "researcher_email",
+    "recipients",
     "email_body",
     "email_content",
     "birth_date",

@@ -157,7 +157,7 @@ ResearchFlow System
 
         return await handler(context)
 
-    def _deliver_email(self, email_type: str, recipients: List[str], body: str) -> None:
+    def _deliver_email(self, email_type: str, recipients: List[str], email_body: str) -> None:
         """Hand a rendered email to the mail service.
 
         TODO: Integrate with actual email service (MCP email server). Until
