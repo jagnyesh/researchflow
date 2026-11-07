@@ -5,29 +5,30 @@ How the engineering skills should consume this repo's domain documentation when 
 ## Before exploring, read these
 
 - **`CONTEXT.md`** at the repo root — current state, domain vocabulary, active sprint, in-progress work
-- **`DECISIONS.md`** at the repo root — **this project's ADR log** (one append-only file, NOT per-decision files under `docs/adr/`). Each ADR entry is headed by a sprint number; the file is in chronological-append order with the most recent decision at the bottom. Read entries that touch the area you're about to work in.
+- **`docs/decisions/INDEX.md`** — the index of **this project's ADR (architecture decision record) log**, most recent first and by topic. Each decision is its own file, `docs/decisions/NNNN-<slug>.md`. Read the ADRs that touch the area you're about to work in.
 - **`BACKLOG.md`** at the repo root — forward plan + filed follow-ups
 
-**Flag missing files explicitly — do NOT proceed silently.** If any of `CONTEXT.md`, `DECISIONS.md`, or `BACKLOG.md` don't exist in this repo specifically, that's an anomaly — these files are foundational and should always be present. The skill seed templates' general "proceed silently" rule is for projects where these conventions haven't been established yet; ResearchFlow has had them since Sprint 4. Their absence likely means an accidental deletion, a partial checkout, or a tree-corruption event worth surfacing before continuing.
+**Flag missing files explicitly — do NOT proceed silently.** If `CONTEXT.md` or `BACKLOG.md` doesn't exist in this repo specifically, that's an anomaly — these files are foundational and should always be present. The skill seed templates' general "proceed silently" rule is for projects where these conventions haven't been established yet; ResearchFlow has had them since Sprint 4. Their absence likely means an accidental deletion, a partial checkout, or a tree-corruption event worth surfacing before continuing.
 
-## Non-standard ADR location (READ THIS BEFORE LOOKING IN `docs/adr/`)
+## ADR location (READ THIS BEFORE LOOKING IN `docs/adr/`)
 
-This project does NOT use `docs/adr/0001-*.md` per-decision files. The Matt Pocock skills' default convention assumes per-file ADRs; ResearchFlow uses a single append-only `DECISIONS.md` at the repo root with one entry per sprint. The file spans Sprint 4 through current.
+The Matt Pocock skills' default convention puts per-decision ADR files under `docs/adr/`. ResearchFlow keeps them under `docs/decisions/` instead, one file per decision, numbered in append order. The filename pattern, the YAML frontmatter and the append-only rule (a correction is a new ADR that names what it corrects) are in `INDEX.md`'s Conventions section.
 
-Why: CLAUDE.md `@`-imports `DECISIONS.md` directly so its content auto-loads into the agent's context every session. Per-file ADRs would defeat that pattern. See CLAUDE.md's "Living state" section and the Sprint 6.1 "Documentation reorg" ADR in DECISIONS.md.
+CLAUDE.md `@`-imports `docs/decisions/INDEX.md`, so the index auto-loads every session; read individual ADRs on demand. The log used to be a single root `DECISIONS.md`; #90 deleted its last stub on 2026-05-24. Older docs and code comments still cite that file by name; read those mentions as the matching file under `docs/decisions/`.
 
-When a skill says "read ADRs that touch this area," grep DECISIONS.md for the area's domain terms (e.g. `LangGraph`, `HybridRunner`, `cost_telemetry`, `audit middleware`).
+When a skill says "read ADRs that touch this area," start from the index's "By topic" section, then grep `docs/decisions/` for the area's domain terms (e.g. `LangGraph`, `HybridRunner`, `cost_telemetry`, `audit middleware`).
 
 ## File structure
 
-Single-context. One `CONTEXT.md` at the root. One `DECISIONS.md` at the root. One `BACKLOG.md` at the root. No `CONTEXT-MAP.md`, no `docs/adr/`, no monorepo splits.
+Single-context. One `CONTEXT.md` at the root. One ADR log under `docs/decisions/`. One `BACKLOG.md` at the root. No `CONTEXT-MAP.md`, no `docs/adr/`, no monorepo splits.
 
 ```
 /
-├── CLAUDE.md                  ← bootstraps + imports CONTEXT/DECISIONS/BACKLOG
+├── CLAUDE.md                  ← bootstraps + imports CONTEXT, the ADR index, BACKLOG
 ├── CONTEXT.md                 ← living state, domain vocabulary
-├── DECISIONS.md               ← append-only ADR log (single file)
 ├── BACKLOG.md                 ← forward plan + follow-ups
+├── docs/decisions/            ← append-only ADR log, one file per decision
+│   └── INDEX.md               ← index: most recent first, then by topic
 ├── docs/architecture/         ← architectural snapshots (frozen at timestamp)
 └── app/                       ← code
 ```
@@ -50,9 +51,9 @@ If the concept you need isn't in the glossary yet, that's a signal — either yo
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts the Sprint 6.3 spike GO sqlonfhir verdict in DECISIONS.md — but worth reopening because…_
+> _Contradicts ADR 0020 (Sprint 6.3 verdict revision: GO sqlonfhir) — but worth reopening because…_
 
-Cite the sprint number when referencing DECISIONS.md entries (e.g. "Sprint 6.1 — Durable audit pipeline via Redis queue") since the file isn't numbered ADR-0001-style.
+Cite an ADR by its number, linked to its file with a path relative to the citing file (`docs/decisions/NNNN-<slug>.md` from a root-level file, `NNNN-<slug>.md` from another ADR), and add the sprint when it has one.
 
 ---
 

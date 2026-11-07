@@ -2,7 +2,7 @@
 
 **Status:** current workflow doc — supersedes the prior *Throughput Edition* (pre-2026-10 version lives in git history). One workflow doc only, by design (two is drift).
 **Recast for:** everyday coding on ResearchFlow, optimized for *verified* merges per week.
-**What changed from the prior (Throughput) edition:** planning weight is now **conditional on risk**, not uniform; the social rules (fresh-context review, test integrity) get **mechanical enforcement**; the uncorroborated external "68%" stat is **replaced by a metric you measure here**; parallelism is marked **never-yet-exercised in this repo**; sourcing leans on the primary Anthropic *AI-Native SDLC* course rather than an unverifiable secondary synthesis.
+**What changed from the prior (Throughput) edition:** planning weight is now **conditional on risk**, not uniform; the social rules (fresh-context review, test integrity) get **mechanical enforcement**; the uncorroborated external "68%" stat is **replaced by a metric you measure here**; parallelism was marked **never-yet-exercised in this repo** (the claim when this edition landed in #164; §0 records the runs since); sourcing leans on the primary Anthropic *AI-Native SDLC* course rather than an unverifiable secondary synthesis.
 
 ---
 
@@ -12,7 +12,8 @@ This doc's claims are only as good as the repo's own numbers. Before adding a la
 
 - `scripts/dials.sh` — open→green (pipeline health) and green→merge (merge-gate latency), per merge day.
 - Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target. Not started yet; begin it before trusting any claim that leans on it.
-- Honest baseline, recorded here so nobody mistakes aspiration for practice: **parallel lanes have never run in this repo.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. Everything in §4 about multiple lanes is therefore design intent, not observed steady-state. Treat §4 as untested until the §3 trigger actually fires and you log a week of it.
+- Honest baseline as of 2026-11-07 (dates in US Central), recorded here so nobody mistakes aspiration for practice: **parallel lanes have run on two days, and neither is a steady state.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. On 2026-10-30 two worktree lanes ran at once (#212 → PR #215, #213 → PR #216), at Stage 2's WIP = 2. On 2026-11-07 four ran at once (#289, #310 slice 1, #344, #306 → PRs #357–#360), past WIP = 2 by explicit choice. Later that day #362, #363 and #365 (PRs #366, #369, #370) ran alongside #361 (PR #371). `main`'s Tests workflow stayed green after each of those eight merges, although four of them (#358, #360, #370, #371) merged on bases behind `main` while "require branches to be up to date" was still off. Two days are not the logged week Stage 2's exit asks for (§3), so the multi-lane parts of §4 are design intent tried twice, not observed steady state.
+- On the evening of 2026-11-06, `main` went red twice. Both times, PRs opened on 2026-11-04, from a batch authored concurrently over 2026-11-03/04, merged in a batch on stale bases: #332 vs `tests/test_portal_urls.py` (fixed by #347), and #339 vs #319 (fixed by #351). More PRs in flight put more of them on older bases. "Require branches to be up to date" went back on after #371 merged on 2026-11-07, together with validate-and-ship Step 7.4, which carries a review attestation across a clean merge from `main` (#361, #371).
 
 ---
 
@@ -61,7 +62,7 @@ The binding constraint on everything else is **how many review streams one perso
 
 ## 3. The ramp (parallelism is optional and, here, unproven)
 
-**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated and have never fired in this repo** — do not climb for its own sake.
+**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated: Stage 2 has been tried, not held, and Stage 3 has not been entered.** Parallel lanes have run on two days (§0): two at once on 2026-10-30, and four on 2026-11-07, past Stage 2's WIP = 2 by explicit choice. Neither is a logged week, so Stage 2's exit is unmet; the 2026-11-07 run used Stage 3's lane count without that exit — do not climb for its own sake.
 
 **Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
 
@@ -91,9 +92,9 @@ write-back                 → any correction this change needed → one dated l
                              CLAUDE.md before the next issue
 ```
 
-### 4.2 Multi-lane day shape — ASPIRATIONAL (never exercised here)
+### 4.2 Multi-lane day shape — tried on two days, not a steady state
 
-> Adopt only after the §3 Stage-2 trigger fires and you've logged it. Until then this is design intent, not your workflow.
+> Two runs so far (§0): 2026-10-30 at WIP = 2, and 2026-11-07 at four lanes by explicit choice; no logged week. Adopt it as your workflow only after the §3 Stage-2 exit is met. Until then this is design intent tried twice.
 
 PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
 
