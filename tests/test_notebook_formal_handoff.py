@@ -77,23 +77,10 @@ def test_the_notebook_payload_sends_only_what_it_knows():
     assert payload["time_period"] == {"start": None, "end": None}
 
 
-@pytest.mark.asyncio
-async def test_criteria_survive_a_failed_llm_call(monkeypatch):
-    from app.agents.requirements_agent import RequirementsAgent
+async def _notebook_gather(agent, query):
     from app.web_ui.research_notebook import formal_structured_requirements
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
-    agent = RequirementsAgent()
-
-    async def outage(*_a, **_k):
-        raise ConnectionError("provider down")
-
-    monkeypatch.setattr(agent.llm_client, "extract_requirements", outage)
-    monkeypatch.setattr(agent.llm_client, "extract_medical_concepts_batch", outage)
-    monkeypatch.setattr(agent.llm_client, "extract_medical_concepts", outage)
-
-    query = "How many patients with type 2 diabetes?"
-    result = await agent.execute_task(
+    return await agent.execute_task(
         "gather_requirements",
         {
             "request_id": "REQ-273-PAYLOAD",
@@ -108,5 +95,47 @@ async def test_criteria_survive_a_failed_llm_call(monkeypatch):
         },
     )
 
+
+async def _outage(*_a, **_k):
+    raise ConnectionError("provider down")
+
+
+@pytest.mark.asyncio
+async def test_criteria_survive_a_failed_validation_call(monkeypatch):
+    from app.agents.requirements_agent import RequirementsAgent
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    agent = RequirementsAgent()
+    # A stand-in client, so the validation call is made and fails, not skipped.
+    monkeypatch.setattr(agent.llm_client, "client", object())
+    monkeypatch.setattr(agent.llm_client, "extract_requirements", _outage)
+
+    async def concepts(criteria):
+        return [{"concepts": [{"term": "type 2 diabetes", "type": "condition"}]} for _ in criteria]
+
+    monkeypatch.setattr(agent.llm_client, "extract_medical_concepts_batch", concepts)
+
+    query = "How many patients with type 2 diabetes?"
+    result = await _notebook_gather(agent, query)
+
     inclusion = result["structured_requirements"]["inclusion_criteria"]
     assert query in str(inclusion), inclusion
+
+
+@pytest.mark.asyncio
+async def test_a_concept_extraction_outage_fails_visibly(monkeypatch):
+    # Unstructured criteria build no SQL condition, so the cohort would silently
+    # ignore them (#264); the hand-off must fail instead.
+    from app.agents.requirements_agent import CriteriaNotStructuredError, RequirementsAgent
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "")
+    agent = RequirementsAgent()
+    for name in (
+        "extract_requirements",
+        "extract_medical_concepts_batch",
+        "extract_medical_concepts",
+    ):
+        monkeypatch.setattr(agent.llm_client, name, _outage)
+
+    with pytest.raises(CriteriaNotStructuredError):
+        await _notebook_gather(agent, "How many patients with type 2 diabetes?")
