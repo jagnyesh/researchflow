@@ -86,7 +86,11 @@ _AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date))"
 
 @pytest.mark.asyncio
 async def test_excluding_males_and_minors_keeps_the_rest_of_the_cohort():
-    """#310: the portal's own "Age < 18 years" placeholder as an exclusion."""
+    """#310: the portal's own "Age < 18 years" placeholder as an exclusion.
+
+    Only the gender leg bites on the local corpus and the CI seed (neither has a
+    diabetic minor); the age leg's negation is pinned by the VALUES test below.
+    """
     requirements = RB.build_requirements(
         inclusion=[RB.build_condition("diabetes", term="diabetes")],
         exclusion=[
