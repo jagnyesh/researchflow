@@ -40,6 +40,21 @@ from app.sql_on_fhir.errors import UnsupportedSearchParamError
 logger = logging.getLogger(__name__)
 
 
+# A batch-layer view is a materialized view (custom path) or a plain table
+# (sqlonfhir backend, ADR 0026); a pg_matviews-only check missed the
+# tables (#263).
+BATCH_VIEW_EXISTS_SQL = """
+    SELECT EXISTS (
+        SELECT 1
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = $1
+          AND c.relname = $2
+          AND c.relkind IN ('m', 'r')
+    ) as exists
+"""
+
+
 class MaterializedViewRunner:
     """
     Runner for querying pre-computed materialized views
@@ -291,7 +306,10 @@ class MaterializedViewRunner:
 
     async def _check_view_exists(self, view_name: str) -> bool:
         """
-        Check if materialized view exists
+        Check if the batch-layer view exists
+
+        Materialized views (custom path) and plain tables (sqlonfhir backend,
+        ADR 0026) both count (#263).
 
         Args:
             view_name: Name of the view
@@ -299,17 +317,11 @@ class MaterializedViewRunner:
         Returns:
             True if view exists, False otherwise
         """
-        sql = f"""
-            SELECT EXISTS (
-                SELECT 1
-                FROM pg_matviews
-                WHERE schemaname = '{self.SCHEMA_NAME}'
-                  AND matviewname = '{view_name}'
-            ) as exists
-        """
 
         try:
-            result = await self.db_client.execute_query(sql)
+            result = await self.db_client.execute_query(
+                BATCH_VIEW_EXISTS_SQL, [self.SCHEMA_NAME, view_name]
+            )
             return result[0]["exists"] if result else False
         except Exception as e:
             log_internal_error(logger, "Failed to check view existence", e, level=logging.WARNING)
