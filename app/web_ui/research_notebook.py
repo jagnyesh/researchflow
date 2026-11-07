@@ -30,6 +30,7 @@ nest_asyncio.apply(_streamlit_loop)
 # NOW safe to import modules
 import streamlit as st
 
+import html
 import logging
 from datetime import datetime
 from typing import List, Dict, Any
@@ -90,50 +91,106 @@ def run_async(coroutine):
 # Page config
 st.set_page_config(
     page_title="ResearchFlow - Interactive Research Assistant",
-    page_icon="🤖",
+    page_icon=":material/query_stats:",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Custom CSS
+# Page-scoped styles (#362). The shared .streamlit/config.toml theme also
+# styles the formal and admin dashboards, so this page overrides it locally.
 st.markdown(
     """
 <style>
-    .chat-message {
-        padding: 1.5rem;
-        border-radius: 0.5rem;
-        margin-bottom: 1rem;
-        display: flex;
-        flex-direction: column;
+    :root {
+        --rf-ink: #14181f;
+        --rf-ink-2: #4a515c;
+        --rf-ink-3: #6b727d;
+        --rf-line: rgba(20, 24, 31, 0.08);
+        --rf-raised: #f6f7f8;
+        --rf-accent: #0b4fa8;
+        --rf-mono: "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    .user-message {
-        background-color: #e3f2fd;
-        border-left: 5px solid #2196f3;
+    [data-testid="stMainBlockContainer"] h1 {
+        font-size: 32px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        color: var(--rf-ink);
+        padding-bottom: 4px;
     }
-    .assistant-message {
-        background-color: #f5f5f5;
-        border-left: 5px solid #4caf50;
+    [data-testid="stSidebar"] {
+        border-right: 1px solid var(--rf-line);
     }
-    .feasibility-card {
-        background-color: #fff;
-        border: 2px solid #1f77b4;
-        border-radius: 10px;
-        padding: 20px;
-        margin: 15px 0;
+    [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] {
+        justify-content: flex-start;
+        text-align: left;
+        min-height: 36px;
+        padding: 8px 12px;
+        border: 1px solid var(--rf-line);
+        border-radius: 8px;
+        color: var(--rf-ink-2);
+        background: #fff;
+        transition: background-color 120ms ease-out, color 120ms ease-out;
     }
-    .warning-box {
-        background-color: #fff3cd;
-        border-left: 5px solid #ffc107;
-        padding: 15px;
-        margin: 10px 0;
-        border-radius: 5px;
+    [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"]:hover {
+        background: var(--rf-raised);
+        border-color: var(--rf-line);
+        color: var(--rf-ink);
     }
-    .success-box {
-        background-color: #d4edda;
-        border-left: 5px solid #28a745;
-        padding: 15px;
-        margin: 10px 0;
-        border-radius: 5px;
+    [data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] p {
+        text-align: left;
+    }
+    [data-testid="stChatMessage"] {
+        background: transparent;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--rf-line);
+        border-radius: 0;
+    }
+    [data-testid="stChatMessage"] [data-testid^="stChatMessageAvatar"] {
+        background: var(--rf-raised);
+        color: var(--rf-ink-2);
+        border: 1px solid var(--rf-line);
+    }
+    .rf-brand { font-size: 18px; font-weight: 500; color: var(--rf-ink); }
+    .rf-sub, .rf-label { font-size: 13px; color: var(--rf-ink-3); }
+    .rf-sub { margin-bottom: 24px; }
+    .rf-label { margin: 24px 0 8px; }
+    .rf-mono { font-family: var(--rf-mono); font-size: 13px; color: var(--rf-ink-2); }
+    .rf-steps { margin: 32px 0 0; padding: 0; list-style: none; max-width: 640px; }
+    .rf-steps li {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        margin: 0;
+        padding: 12px 0;
+        border-top: 1px solid var(--rf-line);
+        color: var(--rf-ink-2);
+    }
+    .rf-steps li span { font-family: var(--rf-mono); color: var(--rf-ink-3); }
+    .rf-result { padding: 4px 0 8px; }
+    .rf-result .rf-label { margin: 0 0 4px; }
+    .rf-figure {
+        font-family: var(--rf-mono);
+        font-size: 56px;
+        font-weight: 500;
+        line-height: 1.1;
+        font-variant-numeric: tabular-nums;
+        color: var(--rf-accent);
+    }
+    .rf-unit {
+        font-family: "Source Sans", sans-serif;
+        font-size: 16px;
+        color: var(--rf-ink-3);
+        margin-left: 8px;
+    }
+    .rf-criteria { margin-top: 8px; color: var(--rf-ink); max-width: 640px; }
+    .rf-stamp {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 2px 8px;
+        font-family: var(--rf-mono);
+        font-size: 12px;
+        color: var(--rf-ink-3);
+        border: 1px solid var(--rf-line);
+        border-radius: 4px;
     }
 </style>
 """,
@@ -203,29 +260,22 @@ async def handle_user_input(user_input: str):
         if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
             # User confirmed feasibility results - direct to formal portal
             if await st.session_state.conversation_manager.is_confirmation(user_input):
-                response = f"""### ✅ Great! Let's move to the Formal Portal
+                response = f"""### Take this to the Formal Portal
 
-**Next Steps:**
-1. Open the **Formal Request Portal** at {FORMAL_PORTAL_URL}
-2. Fill out the complete research request form
-3. Your feasibility results will help inform the request
+1. Open the Formal Portal at {FORMAL_PORTAL_URL}
+2. Fill in the research request form
+3. Use this count to size the request
 
-**What the Formal Portal Provides:**
-- Full approval workflow with informaticians
-- Data extraction and QA validation
-- Secure data delivery
-- Complete audit trail
-
-*The Exploratory Portal is designed for fast feasibility checks only. Full data extraction requires the formal approval workflow.*"""
+The Formal Portal runs informatician review, data extraction, QA and delivery, with a full audit trail. This portal only returns counts."""
             else:
                 # User rejected - offer to refine
-                response = "No problem! Would you like to refine your search criteria? Just tell me what you'd like to change."
+                response = "Tell me what to change in the criteria."
                 st.session_state.conversation_state = ConversationState.INITIAL
 
             st.session_state.messages.append({"role": "assistant", "content": response})
         else:
             # No pending confirmation
-            response = "I'm not sure what you're confirming. Could you ask a specific question about patient data?"
+            response = "There is no count to confirm yet. Ask a question about the patient population first."
             st.session_state.messages.append({"role": "assistant", "content": response})
 
     elif intent == UserIntent.STATUS_CHECK:
@@ -237,9 +287,9 @@ async def handle_user_input(user_input: str):
 
 Check detailed status in the **Formal Request Portal** at {FORMAL_PORTAL_URL}
 
-*Tip: The Exploratory Portal is for feasibility checks only. Full request tracking is in the Formal Portal.*"""
+Full request tracking is in the Formal Portal."""
         else:
-            response = "You don't have any pending requests. Ask me a question about patient data to get started!"
+            response = "You have no pending requests. Ask a question about the patient population to start."
 
         st.session_state.messages.append({"role": "assistant", "content": response})
 
@@ -252,9 +302,7 @@ Check detailed status in the **Formal Request Portal** at {FORMAL_PORTAL_URL}
         response = """I can help you with:
 - **Data queries**: "How many patients with diabetes?"
 - **Status checks**: "What's my request status?"
-- **Help**: "What can you do?"
-
-Try asking a question about patient data!"""
+- **Help**: "What can you do?\""""
         st.session_state.messages.append({"role": "assistant", "content": response})
 
 
@@ -266,7 +314,7 @@ def _freshness_caption(feasibility_data: Dict[str, Any]) -> str:
     if not anchor:
         return ""
     ts = str(anchor).replace("T", " ")[:19]  # ISO → "YYYY-MM-DD HH:MM:SS"
-    return f"📅 Data as of {ts} (batch snapshot)"
+    return f"Data as of {ts} (batch snapshot)"
 
 
 def _render_freshness(feasibility_data: Dict[str, Any]) -> None:
@@ -282,7 +330,7 @@ def _error_card_markdown(feasibility_data: Dict[str, Any]) -> str:
     reason = feasibility_data.get("reason", "unknown reason")
     rejected_sql = feasibility_data.get("rejected_sql", "")
     parts = [
-        "## ⚠️ Query could not be run",
+        "## Query could not be run",
         "",
         f"**What was attempted:** {explanation}",
         "",
@@ -290,12 +338,12 @@ def _error_card_markdown(feasibility_data: Dict[str, Any]) -> str:
     ]
     if rejected_sql:
         parts += ["", "**Rejected SQL:**", "```sql", rejected_sql, "```"]
-    parts += ["", "_No cohort estimate is shown — an error never renders as a count._"]
+    parts += ["", "_No cohort estimate is shown. An error never renders as a count._"]
     return "\n".join(parts)
 
 
 def _render_error_card(feasibility_data: Dict[str, Any]) -> None:
-    st.error("⚠️ Query could not be run — no cohort estimate.")
+    st.error("Query could not be run, so there is no cohort estimate")
     st.markdown(f"**What was attempted:** {feasibility_data.get('explanation', '—')}")
     st.markdown(f"**Why it was rejected:** {feasibility_data.get('reason', 'unknown reason')}")
     rejected_sql = feasibility_data.get("rejected_sql")
@@ -313,12 +361,12 @@ async def handle_query(user_input: str):
     2. Show results and ask for confirmation
     """
     # Show status
-    with st.status("Processing your query...", expanded=True) as status:
+    with st.status("Working on your question", expanded=True) as status:
         # #100: the synthesis path reads the raw NL directly (NL -> LLM SQL ->
         # validate -> execute inside execute_feasibility_check). The legacy
         # QueryInterpreter/QueryIntent pre-parse was retired; query_intent is
         # kept only as a vestigial carrier (no UI source for time_period → {}).
-        st.write("🔍 Analyzing your research question...")
+        st.write("Writing SQL for your question")
         query_intent = {}
 
         # Step 2: Execute feasibility check (LLM-synthesized COUNT query)
@@ -333,7 +381,7 @@ async def handle_query(user_input: str):
         # Create fresh FeasibilityService with new connection pool
         st.session_state.feasibility_service = FeasibilityService()
 
-        st.write("📊 Calculating feasibility (using SQL-on-FHIR)...")
+        st.write("Running the count on the batch views")
         feasibility_data = await st.session_state.feasibility_service.execute_feasibility_check(
             query_intent,
             # #100: raw NL is the synthesis input — the researcher's actual words,
@@ -355,10 +403,10 @@ async def handle_query(user_input: str):
             st.session_state.conversation_state = ConversationState.INITIAL
             return
 
-        st.write(f"✅ Found approximately {feasibility_data['estimated_cohort']} patients")
+        st.write(f"Counted {feasibility_data['estimated_cohort']:,} patients")
         _render_freshness(feasibility_data)
 
-        status.update(label="Feasibility analysis complete!", state="complete")
+        status.update(label="Count ready", state="complete")
 
     # Store for later
     st.session_state.pending_feasibility = feasibility_data
@@ -367,26 +415,16 @@ async def handle_query(user_input: str):
     # #100: the synthesis path returns a single scalar count (or the honest-error
     # variant, handled above). Breakdown / count-distinct result shapes belonged
     # to the retired legacy path and are never produced now.
+    # The message carries the result itself, so every count keeps its own SQL
+    # and anchor; content is the plain-text fallback.
     cohort_size = feasibility_data["estimated_cohort"]
-    feasibility_response = f"""
-## Feasibility Analysis
-
-**Estimated Cohort Size**: {cohort_size} patients
-
-{"✅ This appears to be a good cohort size for your study." if cohort_size >= 30 else "⚠️ Small cohort size - consider broadening criteria."}
-
-**Next Steps:**
-- Type **"proceed"** to submit to the Formal Portal for full data extraction
-- Or ask another question to refine your search
-"""
-
-    # #97: "data as of <ts>" freshness disclosure on every result shape
-    # (scalar / breakdown / count-distinct) whenever an anchor is present.
-    freshness = _freshness_caption(feasibility_data)
-    if freshness:
-        feasibility_response = f"{feasibility_response}\n\n_{freshness}_"
-
-    st.session_state.messages.append({"role": "assistant", "content": feasibility_response})
+    st.session_state.messages.append(
+        {
+            "role": "assistant",
+            "content": f"Estimated cohort: {cohort_size:,} patients",
+            "result": feasibility_data,
+        }
+    )
 
     # Set conversation state to awaiting confirmation
     st.session_state.conversation_state = ConversationState.AWAITING_CONFIRMATION
@@ -455,58 +493,70 @@ async def submit_research_request():
         st.session_state.pending_request_id = request_id
 
         # Show confirmation message
-        confirmation_message = f"""### ✅ Research Request Submitted!
+        confirmation_message = f"""### Request submitted
 
-**Request ID:** {request_id}
+**Request ID:** `{request_id}`
 
-Your data request has been submitted and is now entering the approval workflow:
+It is now in the approval workflow:
 
-1. ✅ Requirements extracted
-2. ⏸️ **Awaiting informatician SQL review** (CRITICAL)
-3. ⏸️ Data extraction (after approval)
-4. ⏸️ Quality assurance
-5. ⏸️ Data delivery
+1. Requirements extracted
+2. **Waiting for informatician SQL review**
+3. Data extraction, after approval
+4. Quality assurance
+5. Data delivery
 
-**Estimated Time:** 1-24 hours (depending on informatician availability)
-
-💡 **Tip:** Type **'status'** anytime to check progress. I'll notify you when approved!
-
-You can continue using the notebook for other queries while waiting."""
+Review usually takes 1 to 24 hours, depending on informatician availability. Type **status** to check progress. You can keep asking questions here while you wait."""
 
         st.session_state.messages.append({"role": "assistant", "content": confirmation_message})
 
     except Exception as e:
         ref = log_internal_error(logger, "Error submitting request", e)
         error_message = (
-            f"❌ **Error submitting request** (ref: {ref}).\n\n"
+            f"**Could not submit the request** (ref: {ref}).\n\n"
             "Please try again or contact support with that reference."
         )
         st.session_state.messages.append({"role": "assistant", "content": error_message})
 
 
+EXAMPLE_QUERIES = [
+    "How many patients are available?",
+    "Patients with diabetes and HbA1c > 8%",
+    "Female patients with hypertension under 65",
+]
+
+SMALL_COHORT = 30
+
+
 def render_sidebar():
     """Render sidebar"""
     with st.sidebar:
-        st.header("🔍 Exploratory Portal")
-        st.caption("Fast feasibility checks")
-
-        # Portal info
-        st.info(
-            f"**🚀 Need Full Data Extraction?**\n\nUse the [Formal Portal]({FORMAL_PORTAL_URL}) for:\n- Complete approval workflow\n- Data extraction & QA\n- Secure delivery"
+        st.markdown(
+            '<div class="rf-brand">ResearchFlow</div>'
+            '<div class="rf-sub">Exploratory portal · counts only</div>',
+            unsafe_allow_html=True,
         )
 
-        # Session info
-        st.metric("Messages", len(st.session_state.messages))
+        st.markdown('<div class="rf-label">Try a question</div>', unsafe_allow_html=True)
+        for example in EXAMPLE_QUERIES:
+            if st.button(example, key=f"ex_{example[:20]}", use_container_width=True):
+                st.session_state.example_query = example
+                st.rerun()
 
-        # Pending request
         if st.session_state.pending_request_id:
-            st.metric("Active Request", st.session_state.pending_request_id)
+            st.markdown(
+                '<div class="rf-label">Active request</div>'
+                f'<div class="rf-mono">{html.escape(str(st.session_state.pending_request_id))}</div>',
+                unsafe_allow_html=True,
+            )
 
-        # Quick actions
-        st.markdown("---")
-        st.markdown("### Quick Actions")
+        st.markdown('<div class="rf-label">Patient rows</div>', unsafe_allow_html=True)
+        st.caption(
+            "This portal returns counts only. Extracting patient data goes through "
+            f"informatician review in the [Formal Portal]({FORMAL_PORTAL_URL})"
+        )
 
-        if st.button("🗑️ Clear Chat", use_container_width=True):
+        st.markdown('<div class="rf-label"></div>', unsafe_allow_html=True)
+        if st.button("Clear conversation", icon=":material/delete:", type="tertiary"):
             st.session_state.messages = []
             st.session_state.pending_feasibility = None
             st.session_state.pending_request_id = None
@@ -514,29 +564,46 @@ def render_sidebar():
             st.session_state.conversation_state = ConversationState.INITIAL
             st.rerun()
 
-        # Example queries
-        st.markdown("### 💡 Example Queries")
-        examples = [
-            "How many patients are available?",
-            "Patients with diabetes and HbA1c > 8%",
-            "Female patients with hypertension under 65",
-        ]
 
-        for example in examples:
-            if st.button(example, key=f"ex_{example[:20]}", use_container_width=True):
-                st.session_state.example_query = example
-                st.rerun()
+def _render_steps() -> None:
+    """Empty state: how a count is made (ADR 0028), so the first screen says
+    what the portal will and won't return."""
+    st.markdown(
+        '<ol class="rf-steps">'
+        "<li><span>1</span>Claude writes one SQL query for your question</li>"
+        "<li><span>2</span>A validator lets through aggregate counts only, never patient rows</li>"
+        "<li><span>3</span>The count runs read-only on the batch views and says when they were refreshed</li>"
+        "</ol>",
+        unsafe_allow_html=True,
+    )
 
-        # Portal capabilities
-        st.markdown("---")
-        st.caption("**Exploratory Portal:**")
-        st.caption("✅ Instant cohort counts")
-        st.caption("✅ Natural language queries")
-        st.caption("✅ SQL-on-FHIR execution")
-        st.caption("")
-        st.caption("**Formal Portal:**")
-        st.caption("🔐 Full approval workflow")
-        st.caption("📦 Data extraction & delivery")
+
+def _render_result(feasibility_data: Dict[str, Any], is_last: bool) -> None:
+    """A successful count: the figure, what it counted, its batch anchor and
+    the SQL that ran. Only ever called for status == "ok" (#96)."""
+    cohort = feasibility_data["estimated_cohort"]
+    stamp = _freshness_caption(feasibility_data)
+    criteria = feasibility_data.get("filter_summary") or ""
+    st.markdown(
+        '<div class="rf-result">'
+        '<div class="rf-label">Estimated cohort</div>'
+        f'<div class="rf-figure">{cohort:,}<span class="rf-unit">patients</span></div>'
+        + (f'<div class="rf-criteria">{html.escape(criteria)}</div>' if criteria else "")
+        + (f'<span class="rf-stamp">{html.escape(stamp)}</span>' if stamp else "")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+    if cohort < SMALL_COHORT:
+        st.caption(f"Fewer than {SMALL_COHORT} patients. Consider broadening the criteria")
+
+    sql = feasibility_data.get("generated_sql")
+    if sql:
+        with st.expander("SQL that ran"):
+            st.code(sql, language="sql")
+            st.caption(f"{feasibility_data.get('execution_time_ms', 0):.1f} ms · read-only")
+
+    if is_last:
+        st.markdown("Type **proceed** to take this to the Formal Portal, or refine the question")
 
 
 def main():
@@ -544,77 +611,30 @@ def main():
     # Initialize
     initialize_session_state()
 
-    # Header
-    st.title("🔍 ResearchFlow - Exploratory Portal")
+    st.title("Count a cohort before you request it")
     st.caption(
-        "**Fast Feasibility Checks** • Ask questions, get instant cohort counts • For full data extraction, use the Formal Portal"
+        "Ask in plain words. You get an aggregate patient count from the "
+        "SQL-on-FHIR batch views, never patient rows."
     )
 
-    # Sidebar
     render_sidebar()
 
-    # Display chat messages
+    if not st.session_state.messages:
+        _render_steps()
+
+    last = len(st.session_state.messages) - 1
     for idx, message in enumerate(st.session_state.messages):
-        role = message["role"]
-        content = message["content"]
-
-        if role == "user":
-            st.markdown(
-                f"""
-<div class="chat-message user-message">
-    <strong>👤 You:</strong><br/>
-    {content}
-</div>
-            """,
-                unsafe_allow_html=True,
-            )
+        if message["role"] == "user":
+            with st.chat_message("user", avatar=":material/person:"):
+                st.markdown(message["content"])
         else:
-            st.markdown(
-                f"""
-<div class="chat-message assistant-message">
-    <strong>🤖 ResearchFlow:</strong><br/>
-            """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(content)
+            with st.chat_message("assistant", avatar=":material/query_stats:"):
+                if message.get("result"):
+                    _render_result(message["result"], is_last=idx == last)
+                else:
+                    st.markdown(message["content"])
 
-            # Display SQL expander INSIDE the chat bubble if this is the last message and we have feasibility data
-            # IMPORTANT: This shows the ACTUAL SQL executed by the backend (LLM-synthesized)
-            # - Uses sqlonfhir schema (e.g., FROM sqlonfhir.patient_demographics)
-            # - Can be copy-pasted and run directly in database tool
-            # - Never shows LLM-generated "friendly" SQL
-            if (
-                idx == len(st.session_state.messages) - 1
-                and st.session_state.pending_feasibility
-                and st.session_state.pending_feasibility.get("generated_sql")
-            ):
-
-                feasibility_data = st.session_state.pending_feasibility
-
-                with st.expander("🔍 View Actual SQL Query (Backend)", expanded=False):
-                    st.code(feasibility_data["generated_sql"], language="sql")
-
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric(
-                            "Execution Time",
-                            f"{feasibility_data.get('execution_time_ms', 0):.1f} ms",
-                        )
-                    with col2:
-                        st.metric(
-                            "Query Type",
-                            "JOIN" if feasibility_data.get("used_join_query") else "Single View",
-                        )
-                    with col3:
-                        st.metric("Result Count", feasibility_data["estimated_cohort"])
-
-                    if feasibility_data.get("filter_summary"):
-                        st.info(f"**Filters Applied:** {feasibility_data['filter_summary']}")
-
-            st.markdown("</div>", unsafe_allow_html=True)
-
-    # Chat input
-    user_input = st.chat_input("Ask about patient data, check status, or get help...")
+    user_input = st.chat_input("Ask a cohort question")
 
     # Handle example query from sidebar
     if "example_query" in st.session_state:

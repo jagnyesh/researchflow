@@ -264,65 +264,45 @@ Intent:"""
 
     def get_introduction(self) -> str:
         """Get introduction message"""
-        return """Hello! I'm **ResearchFlow**, your AI-powered research assistant for clinical data requests.
+        return """This is the ResearchFlow exploratory portal. Ask a cohort question in plain words and you get an aggregate patient count, never patient rows.
 
-### What I Can Do:
+### How a count is made
 
-🔍 **Explore Data**
-- Answer questions about patient populations
-- Show summary statistics and cohort sizes
-- Calculate data availability and completeness
+1. Claude writes one SQL query for your question
+2. A validator lets through aggregate counts only
+3. The count runs read-only on the batch views and says when they were refreshed
 
-📊 **Submit Data Requests**
-- Extract structured requirements from your research questions
-- Generate SQL queries with informatician review
-- Coordinate approval workflows automatically
+### When you need the data
 
-🔐 **Ensure Compliance**
-- All extractions require informatician approval
-- Complete audit trail for regulatory compliance
-- De-identification support for PHI protection
+Type **proceed** after a count to take it to the Formal Portal, where an informatician reviews the SQL before any extraction.
 
-### How It Works:
-
-1. **Ask a question** - I'll analyze your research criteria
-2. **Review feasibility** - See cohort size and data availability
-3. **Confirm extraction** - Approve submission for formal data request
-4. **Track progress** - Monitor approval status in real-time
-5. **Receive data** - Download when informatician approves
-
-### Example Questions:
+### Questions to try
 
 - "How many patients with diabetes are available?"
-- "Show me patients with HbA1c > 8.5% in the last 6 months"
-- "Get female patients with hypertension under age 65"
-
-**What would you like to explore today?**"""
+- "Patients with HbA1c > 8.5% in the last 6 months"
+- "Female patients with hypertension under 65\""""
 
     def get_help_message(self) -> str:
         """Get help message"""
-        return """### ResearchFlow Commands:
+        return """### What you can ask
 
-**Data Exploration:**
-- Ask questions in natural language
-- Use specific criteria (age, gender, conditions, labs)
-- Include time periods when relevant
+**Counts**
+- Ask in plain words
+- Name the criteria: age, gender, conditions, labs, time period
+- You get one aggregate count, never patient rows
 
-**Status Checks:**
+**Status**
 - "What's the status of my request?"
-- "When will my data be ready?"
 
-**Refinement:**
-- Answer "no" or "refine" to adjust criteria
-- Modify inclusion/exclusion criteria
-- Change data elements or time periods
+**Refining**
+- Answer "no" or "refine" after a count to change the criteria
 
-**Examples:**
-- ✅ "Patients with diabetes and HbA1c > 7.0%"
-- ✅ "Show me hypertensive patients under 50"
-- ✅ "Get all lab results for diabetic patients in 2023"
+**Examples**
+- "Patients with diabetes and HbA1c > 7.0%"
+- "Hypertensive patients under 50"
+- "Diabetic patients with a lab result in 2023"
 
-Need more help? Contact your informatician."""
+For anything else, contact your informatician."""
 
     def format_feasibility_response(
         self, cohort_size: int, feasibility_data: Dict[str, Any]
