@@ -97,6 +97,9 @@ def test_the_summary_lists_expected_fail_cases_with_their_reason():
     assert f"{case.id}: EXPECTED-FAIL" in text and case.expected_fail in text
     assert f"{other.id}: PASS" in text
 
+    scores[0].passed = True
+    assert f"{case.id}: UNEXPECTED-PASS" in summary(scores)
+
 
 def test_a_case_whose_sql_cant_be_generated_still_anchors_on_its_oracle():
     from tests.eval.formal_record import touched_views

@@ -144,6 +144,7 @@ FORMAL_CASES: List[FormalCase] = [
         ],
         signoff="approved",  # repo owner, 2026-11-04
         verified_count=37,
+        seed_count=3,
     ),
 ]
 

@@ -233,10 +233,13 @@ async def test_each_seed_oracle_executes(case):
     from app.adapters.sql_on_fhir import SQLonFHIRAdapter
 
     [row] = await SQLonFHIRAdapter().execute_sql(
-        f"SELECT count(*) AS n FROM ({case.oracle_sql}) AS oracle"  # nosec B608 - checked-in oracle
+        f"SELECT (SELECT count(*) FROM ({case.oracle_sql}) AS oracle) AS n,"  # nosec B608 - checked-in oracle
+        " (SELECT count(*) FROM sqlonfhir.patient_demographics) AS patients"
     )
 
-    assert row["n"] >= 0  # 0 is fine on CI's 5-patient seed
+    assert row["n"] >= 0
+    if row["patients"] == 5:  # CI's seed bundle: the hand-worked count must hold (#241)
+        assert row["n"] == case.seed_count
 
 
 @pytest.mark.asyncio
