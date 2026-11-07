@@ -49,8 +49,8 @@ if [[ "$path" == *"/app/agents/"*.py ]] || [[ "$path" == *"/app/sql_on_fhir/"*.p
 fi
 
 # 2. Sync check on living-state docs
-case "$(basename "$path")" in
-  CLAUDE.md|CONTEXT.md|DECISIONS.md|BACKLOG.md|architecture.rules)
+case "/$path" in
+  */CLAUDE.md|*/CONTEXT.md|*/docs/decisions/*.md|*/BACKLOG.md|*/architecture.rules)
     echo "[$(ts)] STATE FILE CHANGED: $path — verify CONTEXT.md still matches git log -10" >&2
     ;;
 esac
