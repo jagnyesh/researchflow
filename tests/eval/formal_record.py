@@ -88,9 +88,13 @@ def touched_views(case: FormalCase, requirements: Dict) -> set:
     """The sqlonfhir views the case's generated SQL and oracle read."""
     from app.utils.sql_generator import SQLGenerator
 
-    sql, _ = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
-        requirements, count_only=False
-    )
+    try:
+        sql, _ = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+            requirements, count_only=False
+        )
+    except ValueError:
+        # score_case records this as a failed case; the oracle still anchors it.
+        sql = ""
     return set(re.findall(r"sqlonfhir\.(\w+)", sql + case.oracle_sql))
 
 

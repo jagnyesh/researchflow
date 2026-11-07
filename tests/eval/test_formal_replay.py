@@ -96,3 +96,28 @@ def test_the_summary_lists_expected_fail_cases_with_their_reason():
     assert "Pass@1: 0.50 (1/2)" in text  # expected-fail stays in the denominator
     assert f"{case.id}: EXPECTED-FAIL" in text and case.expected_fail in text
     assert f"{other.id}: PASS" in text
+
+
+def test_a_case_whose_sql_cant_be_generated_still_anchors_on_its_oracle():
+    from tests.eval.formal_record import touched_views
+
+    case = next(c for c in approved_cases() if c.id == "diabetes_mellitus_not_on_insulin")
+    unbuildable = {
+        "inclusion_criteria": [
+            {
+                "description": "diabetes mellitus",
+                "concepts": [{"type": "condition", "term": "diabetes mellitus"}],
+            }
+        ],
+        "exclusion_criteria": [
+            {"description": "insulin", "concepts": [{"type": "medication", "term": "insulin"}]}
+        ],
+        "data_elements": ["demographics"],
+        "time_period": {"start": None, "end": None},
+    }
+
+    assert touched_views(case, unbuildable) == {
+        "patient_demographics",
+        "condition_simple",
+        "medication_requests",
+    }
