@@ -101,9 +101,6 @@ class LangGraphRequestFacade:
         database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
         self.approval_bridge = ApprovalBridge(database_url=database_url)
 
-        # For compatibility: track "registered" agents (though LangGraph manages them)
-        self.agents = {}
-
         logger.info(
             f"[LangGraphRequestFacade] Initialized (real_agents={use_real_agents}, "
             f"persistence={use_persistence})"
@@ -138,21 +135,6 @@ class LangGraphRequestFacade:
             f"[LangGraphRequestFacade] Initialized "
             f"(persistence={'enabled' if self.use_persistence else 'disabled'})"
         )
-
-    def register_agent(self, agent_id: str, agent_instance):
-        """
-        Register an agent (for API compatibility).
-
-        Note: LangGraph workflow internally manages agents, so this is just
-        for compatibility with old orchestrator API. The facade doesn't use
-        these registered agents.
-
-        Args:
-            agent_id: Agent identifier (e.g., "phenotype_agent")
-            agent_instance: Agent instance (ignored by facade)
-        """
-        self.agents[agent_id] = agent_instance
-        logger.debug(f"[LangGraphRequestFacade] Registered agent: {agent_id} (for compatibility)")
 
     async def process_new_request(
         self,
