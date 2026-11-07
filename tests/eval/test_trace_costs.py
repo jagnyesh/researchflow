@@ -129,3 +129,35 @@ async def test_trace_that_never_completes_stays_unpriced_not_zero(fake_langsmith
     )
 
     assert costs == {"a": _cost(full)}
+
+
+async def test_leaf_missing_from_both_leaves_and_rollup_is_not_priced(fake_langsmith):
+    full = [_leaf(5000, 200), _leaf(3000, 400)]
+    fake_langsmith(
+        {
+            "t1": [
+                # Poll 1 looks complete: root closed, and its roll-up agrees with the
+                # one leaf that landed, because the second leaf is in neither yet.
+                ([full[0]], _root(full[:1])),
+                (full, _root(full)),
+            ]
+        }
+    )
+
+    assert await harness._trace_costs({"case": "t1"}) == {"case": _cost(full)}
+
+
+async def test_a_complete_looking_snapshot_must_repeat_before_it_is_priced(fake_langsmith):
+    full = [_leaf(5000, 200), _leaf(3000, 400)]
+    fake_langsmith({"t1": [([full[0]], _root(full[:1])), (full, _root(full))]})
+
+    # Two polls, two different snapshots: neither has been seen twice.
+    assert await harness._trace_costs({"case": "t1"}, attempts=2) == {}
+
+
+async def test_usage_still_landing_on_the_same_leaf_is_not_priced_early(fake_langsmith):
+    states = [_leaf(100, 0), _leaf(200, 0), _leaf(5000, 200)]
+    fake_langsmith({"t1": [([r], _root([r])) for r in states]})
+
+    # One leaf every poll; only its token count is still changing.
+    assert await harness._trace_costs({"case": "t1"}) == {"case": _cost(states[-1:])}
