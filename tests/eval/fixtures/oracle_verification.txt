@@ -12,6 +12,7 @@ cond_hypertension                       80  condition
 female_hypertension_under_65            13  gender+age+condition
 male_over_18_diabetes                  109  gender+age+condition
 med_any                                356  medication
+med_metformin                           15  medication  (2026-11-07, after #111 re-materialization)
 proc_any                               362  procedure
 lab_any                                363  lab
 lab_glucose                            215  lab

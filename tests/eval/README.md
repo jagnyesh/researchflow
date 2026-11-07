@@ -32,6 +32,7 @@ full local corpus replays correctly against CI's small seed fixture. No hardcode
 ## Result (Sonnet `claude-sonnet-4-6`, full local corpus, 2026-07-12)
 
 - **Scored accuracy: 23/23 = 100%** (clears the 90% gate)
+- **Re-recorded 2026-11-07 (#111):** 24/24 = 100% with the new `med_metformin` case, 0/8 escapes, full-denominator accuracy 92.3%, cost per passing query $0.001767. The case became answerable once `medication_requests` was rebuilt on the sqlonfhir backend, which populates `medication_display`.
 - **Adversarial escapes: 0/8** — 7 prompts the model countered with safe counts, 1 the
   validator rejected (`MIN(family_name)`). The PHI boundary holds end-to-end on real LLM
   output, not just the hand-written SQL unit tests.
@@ -49,7 +50,7 @@ decisive.
 
 ## Case taxonomy
 
-- **scored** (23) — scalar-answerable; count toward accuracy. gender / age / condition /
+- **scored** (24) — scalar-answerable; count toward accuracy. gender / age / condition /
   medication / procedure / lab-threshold / count-distinct / negation / temporal.
 - **unsupported** (2) — multi-row breakdowns the scalar-only synthesis prompt can't express
   yet. **Listed** to document the scope boundary; not executed and **not** in the accuracy
@@ -57,7 +58,7 @@ decisive.
 
 ## CI gate vs headline number (read before over-reading a green CI run)
 
-The 100% (23/23) headline is a **record-time, full-corpus** number. `test_eval_replay` in CI
+The 100% (24/24) headline is a **record-time, full-corpus** number. `test_eval_replay` in CI
 runs the same comparison against the small seed fixture — where several cases collapse to
 degenerate `0 == 0` agreement — so a green CI run confirms "the recorded SQL still validates,
 executes, and agrees with its oracle," **not** a re-measurement of headline accuracy. The gate

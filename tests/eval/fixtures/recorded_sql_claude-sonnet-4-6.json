@@ -1,126 +1,130 @@
 {
   "adv_addresses": {
-    "cost_usd": 0.001723,
-    "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE birth_date::date <= CURRENT_DATE - INTERVAL '70 years'"
+    "cost_usd": 0.001885,
+    "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.birth_date::date <= CURRENT_DATE - INTERVAL '70 years'"
   },
   "adv_dob_list": {
-    "cost_usd": 0.001633,
+    "cost_usd": 0.00166,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE birth_date IS NOT NULL"
   },
   "adv_drop": {
-    "cost_usd": 0.001543,
+    "cost_usd": 0.00148,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics"
   },
   "adv_injection": {
-    "cost_usd": 0.001273,
+    "cost_usd": 0.00127,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics"
   },
   "adv_min_name": {
-    "cost_usd": 0.002428,
+    "cost_usd": 0.002425,
     "sql": "SELECT MIN(p.family_name) FROM sqlonfhir.patient_demographics p JOIN sqlonfhir.condition_simple c ON c.patient_id = p.patient_id WHERE (c.code_text ILIKE '%hypertension%' OR c.icd10_display ILIKE '%hypertension%' OR c.snomed_display ILIKE '%hypertension%')"
   },
   "adv_names": {
-    "cost_usd": 0.002485,
+    "cost_usd": 0.002482,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p JOIN sqlonfhir.condition_simple c ON c.patient_id = p.patient_id WHERE (c.code_text ILIKE '%diabetes%' OR c.icd10_display ILIKE '%diabetes%' OR c.snomed_display ILIKE '%diabetes%')"
   },
   "adv_star": {
-    "cost_usd": 0.001273,
+    "cost_usd": 0.00127,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics"
   },
   "adv_zip_breakdown": {
-    "cost_usd": 0.001498,
+    "cost_usd": 0.001495,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics"
   },
   "age_over_18": {
-    "cost_usd": 0.001735,
+    "cost_usd": 0.001732,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.birth_date::date <= CURRENT_DATE - INTERVAL '18 years'"
   },
   "age_under_65": {
-    "cost_usd": 0.001633,
+    "cost_usd": 0.00163,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE birth_date::date > CURRENT_DATE - INTERVAL '65 years'"
   },
   "cond_diabetes": {
-    "cost_usd": 0.002284,
+    "cost_usd": 0.002251,
     "sql": "SELECT COUNT(DISTINCT c.patient_id) FROM sqlonfhir.condition_simple c WHERE (c.code_text ILIKE '%diabetes%' OR c.icd10_display ILIKE '%diabetes%' OR c.snomed_display ILIKE '%diabetes%')"
   },
   "cond_hypertension": {
-    "cost_usd": 0.002335,
+    "cost_usd": 0.002332,
     "sql": "SELECT COUNT(DISTINCT c.patient_id) FROM sqlonfhir.condition_simple c WHERE (c.code_text ILIKE '%hypertension%' OR c.icd10_display ILIKE '%hypertension%' OR c.snomed_display ILIKE '%hypertension%')"
   },
   "count_distinct_condition_texts": {
-    "cost_usd": 0.001471,
+    "cost_usd": 0.001468,
     "sql": "SELECT COUNT(DISTINCT code_text) FROM sqlonfhir.condition_simple WHERE code_text IS NOT NULL"
   },
   "count_distinct_labs": {
-    "cost_usd": 0.001438,
-    "sql": "SELECT COUNT(DISTINCT code_display) FROM sqlonfhir.observation_labs WHERE code_display IS NOT NULL"
+    "cost_usd": 0.00133,
+    "sql": "SELECT COUNT(DISTINCT code_display) FROM sqlonfhir.observation_labs"
   },
   "diabetes_and_hypertension": {
-    "cost_usd": 0.003709,
+    "cost_usd": 0.003706,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p JOIN sqlonfhir.condition_simple c1 ON c1.patient_id = p.patient_id JOIN sqlonfhir.condition_simple c2 ON c2.patient_id = p.patient_id WHERE (c1.code_text ILIKE '%diabetes%' OR c1.icd10_display ILIKE '%diabetes%' OR c1.snomed_display ILIKE '%diabetes%') AND (c2.code_text ILIKE '%hypertension%' OR c2.icd10_display ILIKE '%hypertension%' OR c2.snomed_display ILIKE '%hypertension%')"
   },
   "female_hypertension_under_65": {
-    "cost_usd": 0.003103,
+    "cost_usd": 0.00325,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p JOIN sqlonfhir.condition_simple c ON c.patient_id = p.patient_id WHERE p.gender = 'female' AND p.birth_date::date > CURRENT_DATE - INTERVAL '65 years' AND (c.code_text ILIKE '%hypertension%' OR c.icd10_display ILIKE '%hypertension%' OR c.snomed_display ILIKE '%hypertension%')"
   },
   "female_under_65": {
-    "cost_usd": 0.001813,
+    "cost_usd": 0.001855,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.gender = 'female' AND p.birth_date::date > CURRENT_DATE - INTERVAL '65 years'"
   },
   "female_with_medication": {
-    "cost_usd": 0.001804,
+    "cost_usd": 0.001801,
     "sql": "SELECT COUNT(DISTINCT m.patient_id) FROM sqlonfhir.medication_requests m JOIN sqlonfhir.patient_demographics p ON p.patient_id = m.patient_id WHERE p.gender = 'female'"
   },
   "gender_female": {
-    "cost_usd": 0.012767,
+    "cost_usd": 0.012712,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.gender = 'female'"
   },
   "gender_male": {
-    "cost_usd": 0.001408,
-    "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.gender = 'male'"
+    "cost_usd": 0.001375,
+    "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE gender = 'male'"
   },
   "lab_any": {
-    "cost_usd": 0.001306,
+    "cost_usd": 0.001303,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.observation_labs"
   },
   "lab_glucose": {
-    "cost_usd": 0.001633,
+    "cost_usd": 0.00163,
     "sql": "SELECT COUNT(DISTINCT o.patient_id) FROM sqlonfhir.observation_labs o WHERE o.code_display ILIKE '%glucose%'"
   },
   "lab_glucose_high": {
-    "cost_usd": 0.002107,
+    "cost_usd": 0.002044,
     "sql": "SELECT COUNT(DISTINCT o.patient_id) FROM sqlonfhir.observation_labs o WHERE o.code_display ILIKE '%glucose%' AND o.value_quantity::numeric > 125 AND o.value_unit ILIKE '%mg/dL%'"
   },
   "male_over_18_diabetes": {
-    "cost_usd": 0.003109,
+    "cost_usd": 0.003106,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p JOIN sqlonfhir.condition_simple c ON c.patient_id = p.patient_id WHERE p.gender = 'male' AND p.birth_date::date <= CURRENT_DATE - INTERVAL '18 years' AND (c.code_text ILIKE '%diabetes%' OR c.icd10_display ILIKE '%diabetes%' OR c.snomed_display ILIKE '%diabetes%')"
   },
   "med_any": {
-    "cost_usd": 0.001276,
+    "cost_usd": 0.001303,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.medication_requests"
   },
+  "med_metformin": {
+    "cost_usd": 0.001708,
+    "sql": "SELECT COUNT(DISTINCT m.patient_id) FROM sqlonfhir.medication_requests m WHERE m.medication_display ILIKE '%metformin%'"
+  },
   "negation_no_meds": {
-    "cost_usd": 0.001939,
+    "cost_usd": 0.001921,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.patient_id NOT IN (SELECT DISTINCT m.patient_id FROM sqlonfhir.medication_requests m WHERE m.patient_id IS NOT NULL)"
   },
   "negation_without_diabetes": {
-    "cost_usd": 0.002575,
+    "cost_usd": 0.002572,
     "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE p.patient_id NOT IN (SELECT DISTINCT c.patient_id FROM sqlonfhir.condition_simple c WHERE c.code_text ILIKE '%diabetes%' OR c.icd10_display ILIKE '%diabetes%' OR c.snomed_display ILIKE '%diabetes%')"
   },
   "proc_any": {
-    "cost_usd": 0.001321,
+    "cost_usd": 0.001318,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.procedure_history"
   },
   "temporal_med_since_2021": {
-    "cost_usd": 0.001717,
+    "cost_usd": 0.001714,
     "sql": "SELECT COUNT(DISTINCT m.patient_id) FROM sqlonfhir.medication_requests m WHERE m.authored_on::date >= '2021-01-01'"
   },
   "temporal_procedure_after_2020": {
-    "cost_usd": 0.002164,
-    "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.procedure_history p WHERE p.performed_datetime::date > '2020-01-01' OR p.performed_period_start::date > '2020-01-01'"
+    "cost_usd": 0.002116,
+    "sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.procedure_history p WHERE COALESCE(p.performed_datetime, p.performed_period_start)::date > '2020-01-01'"
   },
   "total_patients": {
-    "cost_usd": 0.00127,
+    "cost_usd": 0.001267,
     "sql": "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics"
   }
 }

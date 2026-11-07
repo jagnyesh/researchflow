@@ -131,6 +131,14 @@ _SCORED: List[EvalCase] = [
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.medication_requests",
     ),
     EvalCase(
+        "med_metformin",
+        "medication",
+        "scored",
+        "How many patients have been prescribed metformin?",
+        "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.medication_requests "
+        "WHERE medication_display ILIKE '%metformin%' OR medication_text ILIKE '%metformin%'",
+    ),
+    EvalCase(
         "proc_any",
         "procedure",
         "scored",
