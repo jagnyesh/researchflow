@@ -17,7 +17,7 @@ from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 # JWT Configuration
 _DEV_SECRET_KEY = "dev-secret-key-change-in-production"  # nosec B105  # pragma: allowlist secret
@@ -139,9 +139,12 @@ def decode_access_token(token: str) -> Optional[TokenData]:
         user_id: str = payload.get("user_id")
         role: str = payload.get("role")
 
-        if email is None:
+        # Every caller needs both identities; a token missing either is invalid (#227).
+        if not email or not user_id:
             return None
 
         return TokenData(email=email, user_id=user_id, role=role)
-    except JWTError:
+    except (JWTError, ValidationError):
+        # A signed token with mistyped claims is still an invalid token (#227);
+        # the ValidationError text would echo the claim values, so it is dropped.
         return None
