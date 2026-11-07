@@ -46,7 +46,7 @@ _STATUS = {
 }
 
 EMPTY_STATE_MSG = "Select a request from the sidebar to view details"
-DOWNLOAD_READY_MSG = "Your data is ready for download!"
+DOWNLOAD_READY_MSG = "Your data is ready for download"
 
 
 class _FakeOrchestrator:
@@ -139,7 +139,7 @@ def _tab_shows_empty_state(at):
 def _tab_shows_download_ui(at):
     if any(DOWNLOAD_READY_MSG in (s.value or "") for s in at.success):
         return True
-    return any("Download Options" in (m.value or "") for m in at.markdown)
+    return any("Download options" in (m.value or "") for m in at.markdown)
 
 
 class TestDownloadUiReachability:
