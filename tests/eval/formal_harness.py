@@ -70,6 +70,12 @@ def _comparison_sql(phenotype_sql: str, oracle_sql: str) -> str:
     """  # nosec B608
 
 
+def case_passes(mismatch: int, vacuous: bool, missing, extra) -> bool:
+    """Every rule passes: same patients, a non-empty oracle, and exactly the
+    requested predicates (#242)."""
+    return mismatch == 0 and not vacuous and not missing and not extra
+
+
 async def score_case(case: FormalCase, requirements: Dict) -> CaseScore:
     try:
         sql, params = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
@@ -85,9 +91,7 @@ async def score_case(case: FormalCase, requirements: Dict) -> CaseScore:
     return CaseScore(
         id=case.id,
         executed=True,
-        # Every rule passes: same patients, a non-empty oracle, and exactly the
-        # requested predicates (#242).
-        passed=row["mismatch"] == 0 and not vacuous and not missing and not extra,
+        passed=case_passes(row["mismatch"], vacuous, missing, extra),
         vacuous=vacuous,
         sql_count=row["sql_count"],
         oracle_count=row["oracle_count"],

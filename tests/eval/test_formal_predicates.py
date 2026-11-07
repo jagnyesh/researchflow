@@ -13,6 +13,7 @@ import pytest
 
 from app.utils.sql_generator import SQLGenerator
 from tests.eval.formal_cases import FORMAL_CASES
+from tests.eval.formal_harness import case_passes
 from tests.eval.formal_predicates import check_predicates, extract_predicates
 from tests.eval.formal_record import load_recording
 
@@ -99,3 +100,63 @@ def test_required_predicates_are_json_safe_tuples():
     for case in FORMAL_CASES:
         assert all(isinstance(p, tuple) and len(p) == 3 for p in case.required_predicates)
         json.dumps([list(p) for p in case.required_predicates])
+
+
+_CORRELATION = "WHERE c.patient_id = p.patient_id"
+_LIKE = "LOWER(c.code_text) LIKE LOWER(:condition_3)"
+_ALL_COLUMNS = (
+    "(LOWER(c.code_text) LIKE LOWER(:condition_3) OR LOWER(c.icd10_display) LIKE "
+    "LOWER(:condition_3) OR LOWER(c.snomed_display) LIKE LOWER(:condition_3))"
+)
+_AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) > :age_2"
+_FROM = "FROM sqlonfhir.patient_demographics p\n"
+
+# Each rewrite keeps the required predicate set's labels but narrows or
+# broadens the cohort; the shape match must flag every one (#242 review).
+_SHAPE_ESCAPES = {
+    "extra_inner_filter": (_CORRELATION, _CORRELATION + " AND c.clinical_status = 'active'"),
+    "missing_correlation": (_CORRELATION + "\n        AND ", "WHERE "),
+    "like_or_true": (_ALL_COLUMNS, "(" + _ALL_COLUMNS + " OR 1 = 1)"),
+    "negated_like": (_ALL_COLUMNS, "NOT " + _ALL_COLUMNS),
+    "one_column": (_ALL_COLUMNS, "(" + _LIKE + ")"),
+    "birth_year_not_age": (_AGE, "EXTRACT(YEAR FROM p.birth_date) > :age_2"),
+    "months_not_years": (_AGE, _AGE.replace("YEAR FROM AGE", "MONTH FROM AGE")),
+    "compound_threshold": (_AGE, _AGE + " + 10"),
+    "other_alias_gender": ("p.gender = :gender_1", "c.gender = :gender_1"),
+    "join_filter": (
+        _FROM,
+        _FROM.rstrip("\n")
+        + " JOIN sqlonfhir.condition_simple c ON c.patient_id = p.patient_id"
+        + " AND c.clinical_status = 'active'\n",
+    ),
+    "from_subquery": (
+        _FROM,
+        "FROM (SELECT * FROM sqlonfhir.patient_demographics WHERE deceased IS NULL) p\n",
+    ),
+}
+
+
+@pytest.mark.parametrize("old,new", _SHAPE_ESCAPES.values(), ids=list(_SHAPE_ESCAPES))
+def test_a_reshaped_predicate_is_not_matched(old, new):
+    sql, params = _sql(_recorded(CASE_1))
+    assert old in sql
+    sql = sql.replace(old, new, 1)
+
+    missing, extra = check_predicates(CASE_1, sql, params)
+
+    assert missing or extra, sql
+
+
+def test_a_prefix_pattern_is_not_the_requested_contains_match():
+    sql, params = _sql(_recorded(CASE_1))
+    params = {k: "diabetes mellitus%" if "diabetes" in str(v) else v for k, v in params.items()}
+
+    missing, extra = check_predicates(CASE_1, sql, params)
+
+    assert ("condition", "has", "diabetes mellitus") in missing and extra
+
+
+def test_a_missing_predicate_alone_fails_the_case():
+    assert case_passes(0, False, set(), set())
+    assert not case_passes(0, False, {("gender", "=", "female")}, set())
+    assert not case_passes(0, False, set(), {("gender", "=", "female")})
