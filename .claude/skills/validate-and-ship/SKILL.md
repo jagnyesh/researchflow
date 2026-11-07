@@ -64,12 +64,15 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
    ```bash
    old=<sha the newest attestation names>; new=$(git rev-parse HEAD); main=$(git rev-parse HEAD^2)
+   git fetch -q origin
+   git merge-base --is-ancestor "$main" origin/main && echo main-ok        # what was merged is main
+   git merge-base --is-ancestor "$old" "$new" && echo lineage-ok         # no rewrite since the review
    git rev-list --no-merges "$old..$new" "^$main"                         # must print nothing
    a=$(git diff "$main...$old" | git patch-id --stable | cut -d' ' -f1)
    b=$(git diff "$main...$new" | git patch-id --stable | cut -d' ' -f1)   # must equal $a
    ```
 
-   If both hold, the PR's own diff is byte-for-byte what was reviewed: post a NEW attestation comment instead of re-reviewing.
+   If both `-ok` lines print, the rev-list is empty and the patch-ids match, the PR's own diff is byte-for-byte what was reviewed: post a NEW attestation comment instead of re-reviewing.
 
    ```
    ## Review attestation
@@ -81,7 +84,7 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    - Findings: as in the Carried-From attestation
    ```
 
-   If either check fails, it is a fresh review (Step 2). That includes a conflict resolved by hand: #330's first merge from main had no own commits but changed the PR's diff, and the patch-id check catches exactly that. CI on the new head is still required. It covers integration with main's changes, which a diff review never did (#339 vs #319).
+   If any check fails, it is a fresh review (Step 2). That includes a conflict resolved by hand: #330's first merge from main had no own commits but changed the PR's diff, and the patch-id check catches exactly that. CI on the new head is still required. It covers integration with main's changes, which a diff review never did (#339 vs #319).
 
 Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
