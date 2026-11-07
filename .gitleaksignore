@@ -11,3 +11,8 @@ f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/ALL_FIXES_COMPLETE_SUMMAR
 f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/ALL_FIXES_COMPLETE_SUMMARY.md:generic-api-key:193
 f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/COMPLETE_SESSION_FIX_SUMMARY.md:generic-api-key:163
 f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/COMPLETE_SESSION_FIX_SUMMARY.md:generic-api-key:170
+# Reviewed 2026-11-07: generic-api-key hits in ff66a4f are test-only HMAC keys
+# ("0123456789abcdef" * 3 and its reverse); replaced with string-constant keys
+# in the next commit (#306).
+ff66a4f2839418e0c81b24864bd621b3a4687977:tests/agents/test_deidentification.py:generic-api-key:26
+ff66a4f2839418e0c81b24864bd621b3a4687977:tests/agents/test_deidentification.py:generic-api-key:189
