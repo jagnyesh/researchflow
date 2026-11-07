@@ -10,12 +10,16 @@ from typing import Optional
 from datetime import datetime
 import logging
 
-from ..database import get_db_session
+from sqlalchemy import select
+
+from ..database import Approval, ResearchRequest, get_db_session
 from ..schemas._errors import internal_error
 from ..services.approval_service import ApprovalService
 from ..services.scope_change import analyze_scope_change_impact
 from ..langchain_orchestrator.request_facade import LangGraphRequestFacade
 from ..schemas.approvals import ApprovalResponse, ScopeChangeRequest
+from ..security.dependencies import User, get_current_active_user
+from .research import ALL_REQUESTS_ROLES, _visible_requests
 
 logger = logging.getLogger(__name__)
 
@@ -38,27 +42,36 @@ def set_orchestrator(orch: LangGraphRequestFacade):
     orchestrator = orch
 
 
+def _visible_approvals(user: User):
+    """SELECT over the approvals `user` may see: those of requests they may see (#289)."""
+    query = select(Approval)
+    if user.role not in ALL_REQUESTS_ROLES:
+        query = query.where(
+            Approval.request_id.in_(_visible_requests(user).with_only_columns(ResearchRequest.id))
+        )
+    return query
+
+
 @router.get("/pending")
 async def get_pending_approvals(
-    approval_type: Optional[str] = None, user_role: Optional[str] = None
+    approval_type: Optional[str] = None, user: User = Depends(get_current_active_user)
 ):
     """
-    Get all pending approvals
+    Get the pending approvals the caller may see
 
     Args:
         approval_type: Filter by approval type (requirements, phenotype_sql, etc.)
-        user_role: Filter by user role (informatician, admin)
 
     Returns:
         List of pending approvals
     """
     try:
         async with get_db_session() as session:
-            approval_service = ApprovalService(session)
-
-            approvals = await approval_service.get_pending_approvals(
-                user_role=user_role, approval_type=approval_type
-            )
+            query = _visible_approvals(user).where(Approval.status == "pending")
+            if approval_type:
+                query = query.where(Approval.approval_type == approval_type)
+            result = await session.execute(query.order_by(Approval.submitted_at.desc()))
+            approvals = result.scalars().all()
 
             return {
                 "count": len(approvals),
@@ -83,7 +96,7 @@ async def get_pending_approvals(
 
 
 @router.get("/{approval_id}")
-async def get_approval(approval_id: int):
+async def get_approval(approval_id: int, user: User = Depends(get_current_active_user)):
     """
     Get a specific approval by ID
 
@@ -95,8 +108,10 @@ async def get_approval(approval_id: int):
     """
     try:
         async with get_db_session() as session:
-            approval_service = ApprovalService(session)
-            approval = await approval_service.get_approval(approval_id)
+            result = await session.execute(
+                _visible_approvals(user).where(Approval.id == approval_id)
+            )
+            approval = result.scalar_one_or_none()
 
             if not approval:
                 raise HTTPException(status_code=404, detail=f"Approval {approval_id} not found")
@@ -186,7 +201,7 @@ async def respond_to_approval(approval_id: int, response: ApprovalResponse):
 
 
 @router.get("/request/{request_id}")
-async def get_approvals_for_request(request_id: str):
+async def get_approvals_for_request(request_id: str, user: User = Depends(get_current_active_user)):
     """
     Get all approvals for a research request
 
@@ -198,8 +213,15 @@ async def get_approvals_for_request(request_id: str):
     """
     try:
         async with get_db_session() as session:
-            approval_service = ApprovalService(session)
-            approvals = await approval_service.get_approvals_for_request(request_id)
+            result = await session.execute(
+                _visible_requests(user)
+                .where(ResearchRequest.id == request_id)
+                .with_only_columns(ResearchRequest.id)
+            )
+            if result.scalar_one_or_none() is None:
+                raise HTTPException(status_code=404, detail=f"Request {request_id} not found")
+
+            approvals = await ApprovalService(session).get_approvals_for_request(request_id)
 
             return {
                 "request_id": request_id,
@@ -220,6 +242,8 @@ async def get_approvals_for_request(request_id: str):
                 ],
             }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise internal_error(logger, f"Error retrieving approvals for request {request_id}", e)
 
