@@ -297,6 +297,29 @@ async def test_qa_still_allows_dates_and_raw_ids_in_a_limited_dataset():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["safe_harbor", None, "Deidentified"])
+async def test_an_unrecognized_phi_level_gets_the_deidentified_treatment(monkeypatch, level):
+    # The workflow's fallback stub sends "safe_harbor"; it used to skip every rule.
+    package = _package(await _extract(monkeypatch, level))
+
+    assert package["metadata"]["phi_level"] == "de-identified"
+    assert (await _qa(package, "de-identified"))["passed"] is True
+    for record in _records(package):
+        assert "family_name" not in record and "birth_date" not in record
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("level", ["safe_harbor", None])
+async def test_qa_applies_the_date_rule_to_an_unrecognized_phi_level(level):
+    check = await _qa(
+        _deid_package({"patient_id": _pseudonym("patient_id", "1"), "onset_datetime": None}),
+        level,
+    )
+
+    assert check["passed"] is False
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("label", ["Date of Birth", "Demographics (age, gender, race)"])
 async def test_the_consolidated_demographics_csv_carries_only_the_birth_year(
     monkeypatch, _delivery_dir, label

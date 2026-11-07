@@ -559,7 +559,7 @@ class QualityAssuranceAgent(BaseAgent):
         column, any full-date or non-scalar value, a year column holding more
         than a year, and any id that is not an HMAC pseudonym (#306).
         """
-        deidentified = phi_level == "de-identified"
+        deidentified = phi_level != "limited_dataset"
         inspected, found, issues = set(), set(), []
         for element_name, records in data_package.get("data_elements", {}).items():
             columns = {key for record in records for key in record}

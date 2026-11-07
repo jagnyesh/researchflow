@@ -298,7 +298,11 @@ class DataExtractionAgent(BaseAgent):
             )
 
         # Step 3: Apply de-identification if needed
-        phi_level = requirements.get("phi_level", "de-identified")
+        phi_level = requirements.get("phi_level")
+        # Any level other than the two named exceptions gets the strictest
+        # treatment: the workflow's fallback stub sends "safe_harbor" (#306).
+        if phi_level not in ("identified", "limited_dataset"):
+            phi_level = "de-identified"
         if phi_level != "identified":
             extraction_results = await self._deidentify_data(extraction_results, phi_level)
 
