@@ -1,6 +1,91 @@
 {
+  "diabetes_mellitus_and_hypertension": {
+    "cost_usd": 0.006814,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "DM, unspecified type",
+              "term": "diabetes mellitus",
+              "type": "condition"
+            }
+          ],
+          "description": "diabetes mellitus"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN, primary hypertension",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Comorbid Diabetes Mellitus and Hypertension Patient Cohort",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
+  "diabetes_mellitus_not_on_insulin": {
+    "cost_usd": 0.007248,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "any insulin type, any dose, active use",
+              "term": "insulin",
+              "type": "medication"
+            }
+          ],
+          "description": "insulin use"
+        }
+      ],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "DM, unspecified type (T1DM or T2DM)",
+              "term": "diabetes mellitus",
+              "type": "condition"
+            }
+          ],
+          "description": "diabetes mellitus"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Diabetic Patients Without Insulin Prescription",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
   "female_over_65_diabetes_mellitus": {
-    "cost_usd": 0.024477,
+    "cost_usd": 0.024222,
     "requirements": {
       "data_elements": [
         "demographics"
@@ -52,8 +137,154 @@
       }
     }
   },
+  "hba1c_above_8": {
+    "cost_usd": 0.006259,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "> 8%",
+              "term": "hemoglobin A1c",
+              "type": "lab"
+            }
+          ],
+          "description": "HbA1c > 8%"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Patients with Elevated HbA1c Above 8%",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
+  "hba1c_result_in_2025": {
+    "cost_usd": 0.006729,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HbA1c, glycemic control marker, any result",
+              "term": "hemoglobin A1c",
+              "type": "lab"
+            }
+          ],
+          "description": "hemoglobin A1c result"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Patients with HbA1c Result in 2025",
+      "time_period": {
+        "end": "2025-12-31",
+        "start": "2025-01-01"
+      }
+    }
+  },
+  "hypertension_65_or_older": {
+    "cost_usd": 0.006764,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": ">= 65",
+              "term": "age",
+              "type": "demographic"
+            }
+          ],
+          "description": "65 or older"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN diagnosis",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Elderly Hypertensive Patient Cohort Aged 65 and Older",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
+  "hypertension_aged_50_to_60": {
+    "cost_usd": 0.00683,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "between 50 and 60",
+              "term": "age",
+              "type": "demographic"
+            }
+          ],
+          "description": "between 50 and 60 years old"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN diagnosis",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Hypertension Cohort Aged 50 to 60",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
   "hypertension_without_diabetes_mellitus": {
-    "cost_usd": 0.007569,
+    "cost_usd": 0.007594,
     "requirements": {
       "data_elements": [
         "demographics"
@@ -64,7 +295,7 @@
           "codes": [],
           "concepts": [
             {
-              "details": "DM, unspecified type (type 1, type 2, or other)",
+              "details": "DM, unspecified type (T1DM or T2DM)",
               "term": "diabetes mellitus",
               "type": "condition"
             }
@@ -89,6 +320,113 @@
       "phi_level": "limited_dataset",
       "principal_investigator": "Gold Set",
       "study_title": "Hypertensive Patients Without Diabetes Mellitus",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
+  "men_over_40_without_hypertension": {
+    "cost_usd": 0.007847,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN, any stage or severity",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "male",
+              "term": "gender",
+              "type": "demographic"
+            }
+          ],
+          "description": "male"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "> 40",
+              "term": "age",
+              "type": "demographic"
+            }
+          ],
+          "description": "older than 40"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Male Patients Over 40 Without Hypertension",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
+  },
+  "women_under_50_with_hypertension": {
+    "cost_usd": 0.007064,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "female",
+              "term": "gender",
+              "type": "demographic"
+            }
+          ],
+          "description": "female"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "< 50",
+              "term": "age",
+              "type": "demographic"
+            }
+          ],
+          "description": "younger than 50"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN diagnosis",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Female Patients Under 50 with Hypertension",
       "time_period": {
         "end": null,
         "start": null

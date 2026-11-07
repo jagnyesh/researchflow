@@ -88,9 +88,13 @@ def touched_views(case: FormalCase, requirements: Dict) -> set:
     """The sqlonfhir views the case's generated SQL and oracle read."""
     from app.utils.sql_generator import SQLGenerator
 
-    sql, _ = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
-        requirements, count_only=False
-    )
+    try:
+        sql, _ = SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+            requirements, count_only=False
+        )
+    except ValueError:
+        # score_case records this as a failed case; the oracle still anchors it.
+        sql = ""
     return set(re.findall(r"sqlonfhir\.(\w+)", sql + case.oracle_sql))
 
 
@@ -156,8 +160,14 @@ async def replay(evidence: Path) -> List[CaseScore]:
 
 def summary(scores: List[CaseScore]) -> str:
     lines = [f"Pass@1: {pass_at_1(scores):.2f} ({sum(s.passed for s in scores)}/{len(scores)})"]
+    reasons = {c.id: c.expected_fail for c in FORMAL_CASES}
     for s in scores:
-        state = "PASS" if s.passed else ("VACUOUS" if s.vacuous else "FAIL")
+        reason = reasons.get(s.id, "")
+        if reason:
+            # Counted as a fail in Pass@1, listed with why (#241).
+            state = "UNEXPECTED-PASS" if s.passed else f"EXPECTED-FAIL ({reason})"
+        else:
+            state = "PASS" if s.passed else ("VACUOUS" if s.vacuous else "FAIL")
         lines.append(
             f"  {s.id}: {state} sql={s.sql_count} oracle={s.oracle_count} mismatch={s.mismatch}"
             + ("" if s.cost_usd is None else f" cost=${s.cost_usd:.6f}")

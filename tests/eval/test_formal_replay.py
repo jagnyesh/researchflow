@@ -42,9 +42,15 @@ def test_only_approved_cases_are_scored():
 async def test_replay_runs_every_approved_case(tmp_path):
     scores = await replay(evidence=tmp_path / "formal_gold_set.jsonl")
 
-    assert len(scores) == len(approved_cases()) == 2
-    assert all(s.executed for s in scores), [s.error_ref for s in scores]
-    assert (tmp_path / "formal_gold_set.jsonl").read_text().count("\n") == 2
+    assert len(scores) == len(approved_cases()) == 10
+    # An expected-fail case may fail by erroring (its SQL can't run); it still
+    # counts as a fail in Pass@1. Every other case must execute (#241).
+    expected_fail = {c.id for c in approved_cases() if c.expected_fail}
+    assert all(s.executed for s in scores if s.id not in expected_fail), [
+        s.error_ref for s in scores
+    ]
+    assert not any(s.passed for s in scores if s.id in expected_fail)
+    assert (tmp_path / "formal_gold_set.jsonl").read_text().count("\n") == 10
 
 
 @pytest.mark.asyncio
@@ -72,3 +78,49 @@ async def test_the_anchor_covers_only_the_views_a_case_touches():
     views = touched_views(FORMAL_CASES[0], load_recording()[FORMAL_CASES[0].id])
 
     assert views == {"patient_demographics", "condition_simple"}
+
+
+def test_the_summary_lists_expected_fail_cases_with_their_reason():
+    from tests.eval.formal_harness import CaseScore
+    from tests.eval.formal_record import summary
+
+    case = next(c for c in approved_cases() if c.expected_fail)
+    other = next(c for c in approved_cases() if not c.expected_fail)
+    scores = [
+        CaseScore(id=case.id, executed=False, passed=False, vacuous=False),
+        CaseScore(id=other.id, executed=True, passed=True, vacuous=False),
+    ]
+
+    text = summary(scores)
+
+    assert "Pass@1: 0.50 (1/2)" in text  # expected-fail stays in the denominator
+    assert f"{case.id}: EXPECTED-FAIL" in text and case.expected_fail in text
+    assert f"{other.id}: PASS" in text
+
+    scores[0].passed = True
+    assert f"{case.id}: UNEXPECTED-PASS" in summary(scores)
+
+
+def test_a_case_whose_sql_cant_be_generated_still_anchors_on_its_oracle():
+    from tests.eval.formal_record import touched_views
+
+    case = next(c for c in approved_cases() if c.id == "diabetes_mellitus_not_on_insulin")
+    unbuildable = {
+        "inclusion_criteria": [
+            {
+                "description": "diabetes mellitus",
+                "concepts": [{"type": "condition", "term": "diabetes mellitus"}],
+            }
+        ],
+        "exclusion_criteria": [
+            {"description": "insulin", "concepts": [{"type": "medication", "term": "insulin"}]}
+        ],
+        "data_elements": ["demographics"],
+        "time_period": {"start": None, "end": None},
+    }
+
+    assert touched_views(case, unbuildable) == {
+        "patient_demographics",
+        "condition_simple",
+        "medication_requests",
+    }
