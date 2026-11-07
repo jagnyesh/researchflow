@@ -8,8 +8,9 @@ Mocks the LangSmith client and asserts the service correctly:
   band_ceiling_usd, gate_status)
 - Status logic: gray when n_observed < target, green/red on the band
 
-Reference: DECISIONS.md "Sprint 8.1 — LangSmith is source-of-truth for LLM
-cost; explicit portal tags promote domain language into trace data."
+Reference: docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md
+"Sprint 8.1 — LangSmith is source-of-truth for LLM cost; explicit portal tags
+promote domain language into trace data."
 """
 
 from dataclasses import dataclass
@@ -675,15 +676,17 @@ def test_band_ceilings_pinned_to_sprint_8_3_derivation():
         2. Manually verify aggregator output via trace-tree walk (Sprint 8.4 pattern)
         3. Update the constants as `new_median × 1.3`
         4. Update the expected values in this test to match
-        5. Append a new ADR to DECISIONS.md explaining the re-derivation
-           (what shifted, why, sample size, traffic pattern)
+        5. Append a new ADR file under docs/decisions/ explaining the
+           re-derivation (what shifted, why, sample size, traffic pattern);
+           follow the Conventions section of docs/decisions/INDEX.md
         6. Commit message must reference the new measurement
 
     Silent regression to the projection-based Sprint 8.1 ceilings (0.0039 /
     0.00091) means the gate fires red on traffic that's actually at the
     current operating point — a false alarm cascading into "lower the
-    ceiling" pressure with no measurement to back it up. See DECISIONS.md
-    Sprint 8.3 ADR for the full derivation rationale.
+    ceiling" pressure with no measurement to back it up. See
+    docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md for the full
+    derivation rationale.
     """
     assert FORMAL_BAND_CEILING_USD == pytest.approx(0.010080, abs=1e-6), (
         f"FORMAL_BAND_CEILING_USD changed from 0.010080 to {FORMAL_BAND_CEILING_USD}. "
