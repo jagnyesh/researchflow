@@ -113,7 +113,6 @@ class TestGraphConstruction:
             "requirements_review",
             "feasibility_validation",
             "phenotype_review",
-            "schedule_kickoff",
             "extraction_approval",
             "data_extraction",
             "qa_validation",

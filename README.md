@@ -35,7 +35,7 @@ Detailed long-form write-ups for each arc — covering the problem, the design d
 
 ![ResearchFlow Architecture](docs/images/architecture-overview.png)
 
-ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (FastAPI) → Orchestration (LangGraph) → Agents (6 specialized) → Core Services → Infrastructure (Lambda Architecture) → Data → External integrations.
+ResearchFlow's architecture spans 8 layers: UI (3 Streamlit ports) → API (FastAPI) → Orchestration (LangGraph) → Agents (5 specialized) → Core Services → Infrastructure (Lambda Architecture) → Data → External integrations.
 
 [View interactive architecture diagram →](https://jagnyesh.github.io/researchflow/architecture.html)
 
@@ -113,21 +113,21 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 >
 > [`docs/architecture/05-24architecturereview.md`](docs/architecture/05-24architecturereview.md) predates Sprint 6.7. Where it disagrees with this note, this note wins.
 
-### Multi-Agent System (6 Specialized Agents)
+### Multi-Agent System (5 Specialized Agents)
 
 ```
 ┌───────────────────────────────────────────────────────┐
 │                   Orchestrator                        │
-│  (LangGraph FSM | 17 nodes | A2A retired Sprint 7.2)  │
+│  (LangGraph FSM | 16 nodes | A2A retired Sprint 7.2)  │
 └────────────────────┬──────────────────────────────────┘
                      │
-     ┌───────────────┼───────────────┐
-     │               │               │
-     ▼               ▼               ▼
-┌──────────┐  ┌────────────┐  ┌────────────┐
-│Requirements│ │ Phenotype  │  │  Calendar  │
-│   Agent   │─→│   Agent    │─→│   Agent    │
-└──────────┘  └────────────┘  └────────────┘
+     ┌───────────────┐
+     │               │
+     ▼               ▼
+┌──────────┐  ┌────────────┐
+│Requirements│ │ Phenotype  │
+│   Agent   │─→│   Agent    │
+└──────────┘  └────────────┘
                      │
      ┌───────────────┼───────────────┐
      ▼               ▼               ▼
@@ -143,7 +143,6 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 |-------|------|----------|-----------------|
 | **Requirements** | Extract structured requirements | Conversation flow | Medical accuracy |
 | **Phenotype** | Generate SQL-on-FHIR queries | Query generation | SQL correctness |
-| **Calendar** | Schedule stakeholder meetings | Meeting coordination | N/A (automated) |
 | **Extraction** | Multi-source data retrieval | Data fetching | Authorization |
 | **QA** | Quality validation | Automated checks | Quality approval |
 | **Delivery** | Data packaging & distribution | Packaging | Final approval |
@@ -182,7 +181,7 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
 
 The dominant cost lever turned out to be **caching architecture + scope discipline**, not provider switching. The actual story (corrected post-Sprint-8 series):
 
-- **Scope:** 5 of 6 agents are procedural (no LLM). Only the **Requirements Agent** invokes LLMs — Sonnet for cohort-spec extraction (`extract_requirements`), Haiku for medical-concept extraction (`extract_medical_concepts`).
+- **Scope:** 4 of 5 agents are procedural (no LLM). Only the **Requirements Agent** invokes LLMs — Sonnet for cohort-spec extraction (`extract_requirements`), Haiku for medical-concept extraction (`extract_medical_concepts`).
 - **Caching sized to threshold:** Sonnet system prompts ~3,000 tokens, Haiku ~5,185 tokens — deliberately above Anthropic's prompt-caching thresholds (1,024 / 4,096). System prompts are byte-stable across calls.
 - **Wire-level discipline:** caught a 6-month silent `langchain-anthropic` bug where `cache_control` was dropped for plain-string SystemMessage content — see [Engineering discipline](#engineering-discipline--what-the-sprint-8-series-taught) below for the lessons-distilled version.
 - **Measured outcome:** 94.88% Sonnet hit rate / 100% Haiku hit rate after warmup. Median formal-portal cost: **$0.008 per request** ([ADR 0025](docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)).
@@ -200,7 +199,7 @@ The dominant cost lever turned out to be **caching architecture + scope discipli
 **2. Formal Request Portal** (http://localhost:8502)
 - Form-based IRB-approved data requests
 - Full approval workflow with human gates
-- Multi-agent orchestration (6 agents)
+- Multi-agent orchestration (5 agents)
 - Use case: "Extract full dataset for IRB-2025-001"
 
 ---
@@ -521,9 +520,9 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 | Metric | Value |
 |--------|-------|
 | **Lines of Code** | ~36,000 (application code under `app/`) |
-| **AI Agents** | 6 specialized agents (1 LLM-using, 5 procedural) |
+| **AI Agents** | 5 specialized agents |
 | **Database Tables** | 10 tables |
-| **Workflow Nodes** | 17 nodes (LangGraph FSM) |
+| **Workflow Nodes** | 16 nodes (LangGraph FSM) |
 | **API Endpoints** | 25+ REST endpoints |
 | **Test Files** | 88 test files |
 | **Documentation** | 150+ markdown files, including 27 ADRs in `docs/decisions/` |
