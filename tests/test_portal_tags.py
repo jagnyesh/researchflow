@@ -11,8 +11,9 @@ because the regression we're guarding against ("a refactor silently drops a
 portal tag") is best caught by a tight string-level assertion that runs in
 milliseconds and has zero dependencies.
 
-Reference: DECISIONS.md "Sprint 8.1 — LangSmith is source-of-truth for LLM
-cost; explicit portal tags promote domain language into trace data."
+Reference: docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md
+"Sprint 8.1 — LangSmith is source-of-truth for LLM cost; explicit portal tags
+promote domain language into trace data."
 """
 
 from pathlib import Path
@@ -45,7 +46,8 @@ def test_formal_site_has_portal_tag(file_path):
     assert "portal:formal" in content, (
         f"{file_path}: source is missing the 'portal:formal' tag string. "
         f"Add it to the @traceable decorator's tags list. "
-        f"See Sprint 8.1 ADR in DECISIONS.md."
+        f"See the Sprint 8.1 ADR in "
+        f"docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md."
     )
 
 
@@ -56,5 +58,6 @@ def test_exploratory_site_has_portal_tag(file_path):
     assert "portal:exploratory" in content, (
         f"{file_path}: source is missing the 'portal:exploratory' tag string. "
         f"Add it to the @traceable decorator's tags list (or add the "
-        f"decorator itself if absent). See Sprint 8.1 ADR in DECISIONS.md."
+        f"decorator itself if absent). See the Sprint 8.1 ADR in "
+        f"docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md."
     )

@@ -4,7 +4,8 @@ Reads LangSmith run data and aggregates it into per-portal cost-per-request
 medians. The dashboard's "Cost Telemetry" tile renders the output.
 
 Architecture choice: LangSmith is the source-of-truth for LLM cost data (no
-parallel `QueryTelemetry` Postgres table). Per the ADR in DECISIONS.md
+parallel `QueryTelemetry` Postgres table). Per the ADR in
+docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md
 ("Sprint 8.1 — LangSmith is source-of-truth..."), this service queries
 LangSmith via the `langsmith` SDK and computes cost from per-run token
 counts using a local pricing table (Anthropic published prices, last
