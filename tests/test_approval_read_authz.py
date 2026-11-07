@@ -152,3 +152,56 @@ async def test_unauthenticated_caller_is_rejected(setup, path):
     response = await client.get(path)
 
     assert response.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_owner_match_ignores_email_case(setup):
+    client, *_ = setup
+    owner = f"Carol-{uuid.uuid4().hex[:6]}@Example.ORG"
+    request_id, approval_id = await _seed(owner)
+    headers = _token(owner.lower(), "researcher")
+
+    by_id = await client.get(f"/approvals/{approval_id}", headers=headers)
+    by_request = await client.get(f"/approvals/request/{request_id}", headers=headers)
+    pending = await client.get("/approvals/pending", headers=headers)
+
+    assert by_id.status_code == 200
+    assert by_request.status_code == 200
+    assert request_id in _pending_request_ids(pending)
+
+
+@pytest.mark.asyncio
+async def test_approval_without_a_request_is_staff_only(setup):
+    client, alice, *_ = setup
+    async with get_db_session() as session:
+        orphan = Approval(
+            request_id=None,
+            approval_type="phenotype_sql",
+            submitted_by="phenotype_agent",
+            approval_data={"sql_query": "SELECT 1"},
+            status="pending",
+        )
+        session.add(orphan)
+        await session.flush()
+        orphan_id = orphan.id
+
+    researcher = await client.get(f"/approvals/{orphan_id}", headers=_token(alice, "researcher"))
+    admin = await client.get(
+        f"/approvals/{orphan_id}", headers=_token("staff@example.org", "admin")
+    )
+
+    assert researcher.status_code == 404
+    assert admin.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_token_without_a_role_claim_is_owner_only(setup):
+    client, alice, bob, seeded = setup
+    token = create_access_token({"sub": alice, "user_id": "USR-norole"})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    other = await client.get(f"/approvals/{seeded[bob][1]}", headers=headers)
+    own = await client.get(f"/approvals/{seeded[alice][1]}", headers=headers)
+
+    assert other.status_code == 404
+    assert own.status_code == 200
