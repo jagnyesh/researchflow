@@ -8,6 +8,9 @@ import pytest
 
 from app.agents.qa_agent import QualityAssuranceAgent
 
+# A de-identified delivery carries HMAC pseudonyms, never source ids (#306).
+PSEUDONYM = "DEID-" + "0" * 32
+
 
 def _preview_package(full_cohort_size: int, preview_rows: int = 10) -> dict:
     return {
@@ -70,7 +73,7 @@ async def test_final_cohort_check_compares_against_the_stored_estimate():
 @pytest.mark.asyncio
 async def test_deidentification_fails_on_the_name_columns_extraction_emits():
     records = [
-        {"patient_id": "p0", "family_name": "Synthetic", "given_name": "Person", "gender": "f"}
+        {"patient_id": PSEUDONYM, "family_name": "Synthetic", "given_name": "Person", "gender": "f"}
     ]
     result = await QualityAssuranceAgent().execute_task(
         "validate_extracted_data",
@@ -85,7 +88,7 @@ async def test_deidentification_fails_on_the_name_columns_extraction_emits():
 
 @pytest.mark.asyncio
 async def test_deidentification_records_what_it_checked_when_clean():
-    records = [{"patient_id": "p0", "gender": "f"}]
+    records = [{"patient_id": PSEUDONYM, "gender": "f"}]
     result = await QualityAssuranceAgent().execute_task(
         "validate_extracted_data",
         _final_context(cohort_size=1, estimate=1, phi_level="de-identified", records=records),

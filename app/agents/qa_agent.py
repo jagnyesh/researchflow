@@ -4,8 +4,11 @@ Quality Assurance Agent
 Validates extracted data quality before delivery to researcher.
 """
 
+from datetime import date
 from typing import Dict, Any, Optional
 import logging
+import numbers
+import re
 from langsmith import traceable
 from .base_agent import BaseAgent
 
@@ -18,8 +21,8 @@ PREVIEW_COHORT_MIN_TOLERANCE = 5
 FINAL_COHORT_TOLERANCE_PCT = 0.20
 
 # Columns that must not reach a de-identified or limited-dataset delivery.
-# Dates are allowed in a limited data set, so full dates are checked only for
-# de-identified requests (HIPAA Safe Harbor).
+# Dates are allowed in a limited data set, so dates are checked only for
+# de-identified requests (HIPAA Safe Harbor), below.
 DIRECT_IDENTIFIER_COLUMNS = frozenset(
     {
         "patient_name",
@@ -33,7 +36,65 @@ DIRECT_IDENTIFIER_COLUMNS = frozenset(
         "email",
     }
 )
-DATE_IDENTIFIER_COLUMNS = frozenset({"birth_date", "dob"})
+# Safe Harbor allows only the year of a date: a full date fails under any
+# column name, and a date column fails as unclassified.
+FULL_DATE_VALUE = re.compile(r"\d{4}-\d{2}-\d{2}|\d{1,2}/\d{1,2}/\d{2,4}")
+# A de-identified id column must hold an HMAC pseudonym, never a source id.
+PSEUDONYM_VALUE = re.compile(r"DEID-[0-9a-f]{32}")
+
+# The de-identified output is an allowlist (#306): a column ships only if it is
+# classified here, so a new view column is dropped and fails QA until someone
+# decides how to treat it. Names are matched exactly, case included.
+DEIDENTIFIED_PASSTHROUGH_COLUMNS = frozenset(
+    {
+        "gender",
+        "clinical_status",
+        "status",
+        "icd10_code",
+        "icd10_display",
+        "snomed_code",
+        "snomed_display",
+        "cpt_code",
+        "cpt_display",
+        "code",
+        "code_display",
+        "code_text",
+        "value_quantity",
+        "value_unit",
+        "value_string",
+    }
+)
+DEIDENTIFIED_ID_COLUMNS = frozenset(
+    {"patient_id", "condition_id", "procedure_id", "observation_id"}
+)
+# Source date column -> the year-only column that replaces it.
+DEIDENTIFIED_YEAR_COLUMNS = {
+    "birth_date": "birth_year",
+    "onset_datetime": "onset_year",
+    "recorded_date": "recorded_year",
+    "performed_datetime": "performed_year",
+    "performed_period_start": "performed_period_start_year",
+    "effective_datetime": "effective_year",
+}
+_YEAR_OUTPUT_COLUMNS = frozenset(DEIDENTIFIED_YEAR_COLUMNS.values())
+
+
+def _carries_full_date(value) -> bool:
+    return isinstance(value, date) or (
+        isinstance(value, str) and bool(FULL_DATE_VALUE.search(value))
+    )
+
+
+def _deidentified_value_ok(column: str, value) -> bool:
+    if value is None:
+        return True
+    if column in DEIDENTIFIED_ID_COLUMNS:
+        return isinstance(value, str) and bool(PSEUDONYM_VALUE.fullmatch(value))
+    if column in _YEAR_OUTPUT_COLUMNS:
+        return isinstance(value, int) and not isinstance(value, bool) and 1000 <= value <= 9999
+    if isinstance(value, bool) or not isinstance(value, (str, numbers.Number)):
+        return False
+    return not _carries_full_date(value)
 
 
 class QualityAssuranceAgent(BaseAgent):
@@ -493,17 +554,25 @@ class QualityAssuranceAgent(BaseAgent):
         Fails on any present identifying column, populated or not, and records
         the columns inspected and the identifiers found (#209). The names are
         the ones extraction actually emits (family_name, given_name,
-        birth_date), not only the generic ones.
+        birth_date), not only the generic ones. A de-identified delivery also
+        fails on any column outside the de-identified allowlist, any date
+        column, any full-date or non-scalar value, a year column holding more
+        than a year, and any id that is not an HMAC pseudonym (#306).
         """
-        identifying = set(DIRECT_IDENTIFIER_COLUMNS)
-        if phi_level == "de-identified":
-            identifying |= DATE_IDENTIFIER_COLUMNS
-
+        deidentified = phi_level != "limited_dataset"
         inspected, found, issues = set(), set(), []
         for element_name, records in data_package.get("data_elements", {}).items():
             columns = {key for record in records for key in record}
             inspected |= columns
-            for column in sorted(columns & identifying):
+            flagged = columns & DIRECT_IDENTIFIER_COLUMNS
+            if deidentified:
+                allowed = DEIDENTIFIED_PASSTHROUGH_COLUMNS | DEIDENTIFIED_ID_COLUMNS
+                flagged |= columns - allowed - _YEAR_OUTPUT_COLUMNS
+                for record in records:
+                    for column, value in record.items():
+                        if not _deidentified_value_ok(column, value):
+                            flagged.add(column)
+            for column in sorted(flagged):
                 found.add(column)
                 issues.append(
                     {

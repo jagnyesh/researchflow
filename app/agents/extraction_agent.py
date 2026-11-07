@@ -6,7 +6,11 @@ Executes data extraction from clinical data warehouse using multi-source orchest
 
 from datetime import date, timedelta
 from typing import Dict, Any, Optional
+import hashlib
+import hmac
 import logging
+import numbers
+import os
 import re
 from app.schemas._errors import log_internal_error
 import pandas as pd
@@ -14,6 +18,21 @@ from langsmith import traceable
 from .base_agent import BaseAgent
 from ..adapters.sql_on_fhir import SQLonFHIRAdapter
 from ..services.file_storage import FileStorageService
+from .qa_agent import (
+    DIRECT_IDENTIFIER_COLUMNS,
+    DEIDENTIFIED_ID_COLUMNS,
+    DEIDENTIFIED_PASSTHROUGH_COLUMNS,
+    DEIDENTIFIED_YEAR_COLUMNS,
+)
+
+DEIDENTIFICATION_KEY_ENV = "DEIDENTIFICATION_HMAC_KEY"
+_MIN_KEY_LENGTH = 32
+_MIN_KEY_DISTINCT_CHARS = 10
+_TIME = r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?"
+# A whole value that is a full date, as the views emit them.
+_FULL_DATE = re.compile(r"(\d{4})-\d{2}-\d{2}" + _TIME)
+# A date column may hold FHIR partial dates (YYYY, YYYY-MM), full dates or YYYYMMDD.
+_DATE_COLUMN_VALUE = re.compile(r"(\d{4})(?:-\d{2}(?:-\d{2}" + _TIME + r")?|\d{4})?")
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +111,68 @@ def canonical_data_element(name: str) -> Optional[str]:
     key = re.sub(r"\(.*?\)", "", name).lower()
     key = re.sub(r"[^a-z]+", " ", key).strip()
     return _DATA_ELEMENT_ALIASES.get(key)
+
+
+def _deidentification_key() -> bytes:
+    # Checked at the call site, not at startup, so the API, the Streamlit
+    # portals and scripts all fail the same way. No default: a guessable key
+    # lets anyone re-derive pseudonyms from sequential FHIR ids.
+    key = os.getenv(DEIDENTIFICATION_KEY_ENV, "").strip()
+    if len(key) < _MIN_KEY_LENGTH or len(set(key)) < _MIN_KEY_DISTINCT_CHARS:
+        message = (
+            f"{DEIDENTIFICATION_KEY_ENV} must be a random secret of at least "
+            f"{_MIN_KEY_LENGTH} characters to deliver a de-identified extract. "
+            "Generate one with: python -c 'import secrets; print(secrets.token_hex(32))'"
+        )
+        # The workflow's PHI-safe failure log drops exception text; say it here.
+        logger.error(message)
+        raise RuntimeError(message)
+    return key.encode()
+
+
+def _pseudonym(key: bytes, column: str, value) -> str:
+    digest = hmac.new(key, f"{column}:{value}".encode(), hashlib.sha256).hexdigest()
+    return f"DEID-{digest[:32]}"
+
+
+def _date_column_year(column: str, value) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value.year
+    match = _DATE_COLUMN_VALUE.fullmatch(value.strip()) if isinstance(value, str) else None
+    if match:
+        return int(match.group(1))
+    # Dropping the value is safe; say so, since the researcher loses it.
+    logger.warning(f"De-identification dropped an unparseable {column} value")
+    return None
+
+
+def _passthrough_value(value):
+    if isinstance(value, date):
+        return value.year
+    if isinstance(value, str):
+        match = _FULL_DATE.fullmatch(value.strip())
+        return int(match.group(1)) if match else value
+    if value is None or (isinstance(value, numbers.Number) and not isinstance(value, bool)):
+        return value
+    return None
+
+
+def _deidentify_record(record: Dict, key: bytes, dropped: set) -> Dict:
+    """HIPAA Safe Harbor floor (#306), as an allowlist: dates become the year,
+    ids become keyed pseudonyms, listed clinical columns pass, the rest is dropped."""
+    out = {}
+    for column, value in record.items():
+        if column in DEIDENTIFIED_YEAR_COLUMNS:
+            out[DEIDENTIFIED_YEAR_COLUMNS[column]] = _date_column_year(column, value)
+        elif column in DEIDENTIFIED_ID_COLUMNS:
+            out[column] = None if value is None else _pseudonym(key, column, value)
+        elif column in DEIDENTIFIED_PASSTHROUGH_COLUMNS:
+            out[column] = _passthrough_value(value)
+        elif column not in DIRECT_IDENTIFIER_COLUMNS:
+            dropped.add(column)
+    return out
 
 
 class DataExtractionAgent(BaseAgent):
@@ -217,7 +298,11 @@ class DataExtractionAgent(BaseAgent):
             )
 
         # Step 3: Apply de-identification if needed
-        phi_level = requirements.get("phi_level", "de-identified")
+        phi_level = requirements.get("phi_level")
+        # Any level other than the two named exceptions gets the strictest
+        # treatment: the workflow's fallback stub sends "safe_harbor" (#306).
+        if phi_level not in ("identified", "limited_dataset"):
+            phi_level = "de-identified"
         if phi_level != "identified":
             extraction_results = await self._deidentify_data(extraction_results, phi_level)
 
@@ -515,18 +600,16 @@ class DataExtractionAgent(BaseAgent):
 
         logger.info(f"[{self.agent_id}] Applying {phi_level} de-identification")
 
-        # Simplified de-identification: remove/mask sensitive fields
         if phi_level == "de-identified":
-            # Remove all PHI
+            key = _deidentification_key()
+            dropped = set()
             for element_name, records in data.items():
-                for record in records:
-                    # Remove direct identifiers
-                    record.pop("patient_name", None)
-                    record.pop("mrn", None)
-                    record.pop("ssn", None)
-                    # Mask patient_id
-                    if "patient_id" in record:
-                        record["patient_id"] = f"DEIDENTIFIED_{hash(record['patient_id']) % 100000}"
+                data[element_name] = [_deidentify_record(r, key, dropped) for r in records]
+            if dropped:
+                logger.warning(
+                    f"[{self.agent_id}] De-identification dropped unclassified columns: "
+                    f"{sorted(dropped)}"
+                )
 
         elif phi_level == "limited_dataset":
             # Remove some PHI, keep dates
@@ -610,10 +693,12 @@ class DataExtractionAgent(BaseAgent):
                                             elif element_name_lower == "given name":
                                                 patient_record["given_name"] = value
                                             elif element_name_lower == "date of birth":
-                                                patient_record["birth_date"] = value
+                                                # birth_year after de-identification (#306)
+                                                patient_record[key] = value
                                             elif key in [
                                                 "gender",
                                                 "birth_date",
+                                                "birth_year",
                                                 "family_name",
                                                 "given_name",
                                             ]:
@@ -634,6 +719,7 @@ class DataExtractionAgent(BaseAgent):
                             "given_name",
                             "gender",
                             "birth_date",
+                            "birth_year",
                         ]
                         actual_columns = [
                             col for col in desired_columns if col in demographics_df.columns
