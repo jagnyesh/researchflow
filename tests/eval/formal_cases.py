@@ -92,7 +92,8 @@ FORMAL_CASES: List[FormalCase] = [
         oracle_sql=f"""
             SELECT p.patient_id
             FROM sqlonfhir.patient_demographics p
-            WHERE p.gender = 'female'
+            WHERE p.deceased IS NOT TRUE
+              AND p.gender = 'female'
               AND p.birth_date::date <= CURRENT_DATE - INTERVAL '66 years'
               AND EXISTS (
                   SELECT 1 FROM sqlonfhir.condition_simple c
@@ -100,12 +101,16 @@ FORMAL_CASES: List[FormalCase] = [
               )
         """,
         required_predicates=[
+            ("deceased", "=", False),
             ("gender", "=", "female"),
             ("age", ">", 65),
             ("condition", "has", "diabetes mellitus"),
         ],
-        signoff="approved",  # repo owner, 2026-11-04
-        verified_count=13,
+        # Repo owner, 2026-11-04; re-approved living-only 2026-11-07 (#241).
+        signoff="approved",
+        verified_count=6,
+        seed_count=0,  # no woman over 65 with diabetes on the seed: vacuous in CI
+        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="hypertension_without_diabetes_mellitus",

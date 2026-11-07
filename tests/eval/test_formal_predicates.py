@@ -8,6 +8,7 @@ case's required predicates. Pure: no database.
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -17,7 +18,17 @@ from tests.eval.formal_harness import case_passes
 from tests.eval.formal_predicates import check_predicates, extract_predicates
 from tests.eval.formal_record import load_recording
 
-CASE_1, CASE_2 = FORMAL_CASES
+# The checker tests below pin these predicate sets, so they keep testing the
+# checker when a gold case's requirements change (#241 made case 1 living-only).
+CASE_1 = replace(
+    FORMAL_CASES[0],
+    required_predicates=[
+        ("gender", "=", "female"),
+        ("age", ">", 65),
+        ("condition", "has", "diabetes mellitus"),
+    ],
+)
+CASE_2 = FORMAL_CASES[1]
 
 
 def _sql(requirements):
@@ -39,7 +50,18 @@ def _without(requirements, term):
     return {**requirements, "inclusion_criteria": keep}
 
 
-@pytest.mark.parametrize("case", FORMAL_CASES, ids=lambda c: c.id)
+@pytest.mark.parametrize(
+    "case",
+    [
+        (
+            pytest.param(c, marks=pytest.mark.xfail(strict=True, reason=c.expected_fail))
+            if c.expected_fail
+            else c
+        )
+        for c in FORMAL_CASES
+    ],
+    ids=lambda c: c.id,
+)
 def test_the_recorded_sql_carries_exactly_the_required_predicates(case):
     sql, params = _sql(_recorded(case))
 
