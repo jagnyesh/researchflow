@@ -46,7 +46,7 @@ def _all_text(at: AppTest) -> list:
     return texts
 
 
-def _ask(at: AppTest, question: str, result: dict) -> AppTest:
+def _ask(at: AppTest, question: str, result: dict, settle: bool = True) -> AppTest:
     async def intent(self, text):
         return UserIntent.QUERY
 
@@ -64,7 +64,7 @@ def _ask(at: AppTest, question: str, result: dict) -> AppTest:
         at.chat_input[0].set_value(question).run()
     # The processing run leaves its st.status writes in the element tree;
     # one more run shows only what the page renders from history.
-    return at.run()
+    return at.run() if settle else at
 
 
 def test_user_text_is_never_rendered_as_html():
@@ -123,12 +123,15 @@ def test_an_error_still_never_renders_a_number():
         "reason": "non-aggregate select item",
         "rejected_sql": "SELECT family_name FROM sqlonfhir.patient_demographics",
     }
-    at = _ask(_app().run(), "List the patients", error)
+    at = _ask(_app().run(), "List the patients", error, settle=False)
 
-    assert not at.exception
-    text = "\n".join(_all_text(at))
-    assert "could not be run" in text
-    assert not re.search(r"\d[\d,]* patients", text)
+    # Both while the question is processed and once the page settles.
+    for _ in range(2):
+        assert not at.exception
+        text = "\n".join(_all_text(at))
+        assert "could not be run" in text
+        assert not re.search(r"\d[\d,]* patients", text)
+        at.run()
 
 
 def test_llm_criteria_text_is_escaped():
