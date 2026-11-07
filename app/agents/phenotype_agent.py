@@ -79,9 +79,8 @@ class PhenotypeValidationAgent(BaseAgent):
             f"[{self.agent_id}] Requirements structure being passed to SQL generator:"
             f"\n  Inclusion criteria count: {len(requirements.get('inclusion_criteria', []))}"
             f"\n  Exclusion criteria count: {len(requirements.get('exclusion_criteria', []))}"
-            f"\n  Data elements: {requirements.get('data_elements', [])}"
+            f"\n  Data elements count: {len(requirements.get('data_elements', []))}"
         )
-        logger.debug(f"[{self.agent_id}] Full requirements: {requirements}")
 
         # Step 1: Generate phenotype SQL (with parameters for security)
         phenotype_sql, sql_params = self.sql_generator.generate_phenotype_sql(

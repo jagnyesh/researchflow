@@ -161,7 +161,7 @@ class ConversationManager:
 
         if has_negation:
             # Negative context detected - use LLM for accurate classification
-            logger.debug(f"Negation detected in: '{user_input}' - using LLM")
+            logger.debug("Negation detected - using LLM")
             self._llm_fallbacks += 1
             return await self._llm_fallback(user_input)
 
@@ -192,19 +192,19 @@ class ConversationManager:
         # Step 3: Resolve matches
         if len(matches) == 0:
             # No pattern match - use LLM
-            logger.debug(f"No pattern match for: '{user_input}' - using LLM")
+            logger.debug("No pattern match - using LLM")
             self._llm_fallbacks += 1
             return await self._llm_fallback(user_input)
 
         elif len(matches) == 1:
             # Unambiguous - return immediately (FAST PATH)
-            logger.debug(f"Pattern match: '{user_input}' -> {matches[0].value}")
+            logger.debug(f"Pattern match -> {matches[0].value}")
             self._pattern_matches += 1
             return matches[0]
 
         else:
             # Ambiguous (multiple matches) - use LLM
-            logger.debug(f"Ambiguous intent for: '{user_input}' (matches: {matches}) - using LLM")
+            logger.debug(f"Ambiguous intent (matches: {matches}) - using LLM")
             self._llm_fallbacks += 1
             return await self._llm_fallback(user_input)
 

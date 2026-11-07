@@ -430,7 +430,6 @@ class RequirementsAgent(BaseAgent):
     async def _save_requirements(self, request_id: str, requirements: Dict):
         """Save requirements to database"""
         logger.info(f"[{self.agent_id}] Saving requirements for {request_id}")
-        logger.debug(f"Requirements: {requirements}")
 
         from app.database import get_db_session, RequirementsData
         from sqlalchemy import select

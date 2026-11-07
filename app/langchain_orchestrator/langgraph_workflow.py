@@ -220,8 +220,12 @@ class FullWorkflow:
             )
             healthcare_db_url = os.getenv("HEALTHCARE_DB_URL")
 
-            logger.info(f"[FullWorkflow] HAPI DB URL: {hapi_db_url}")
-            logger.info(f"[FullWorkflow] Healthcare DB URL: {healthcare_db_url}")
+            # Whether each is set, not the URLs: they carry credentials (#225).
+            logger.info(
+                "[FullWorkflow] HAPI DB URL set: %s; Healthcare DB URL set: %s",
+                bool(hapi_db_url),
+                bool(healthcare_db_url),
+            )
 
             # Initialize all 5 workflow agents with appropriate database connections
             self.requirements_agent = RequirementsAgent()

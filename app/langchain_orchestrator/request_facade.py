@@ -1036,7 +1036,7 @@ class LangGraphRequestFacade:
         from sqlalchemy import select
         import asyncio
 
-        logger.info(f"[LangGraphRequestFacade] Getting requests for researcher: {researcher_email}")
+        logger.info("[LangGraphRequestFacade] Getting requests for a researcher")
 
         async with get_db_session() as session:
             result = await session.execute(
@@ -1047,7 +1047,7 @@ class LangGraphRequestFacade:
             researcher_requests = result.scalars().all()
 
             logger.info(
-                f"[LangGraphRequestFacade] Found {len(researcher_requests)} requests for {researcher_email}"
+                f"[LangGraphRequestFacade] Found {len(researcher_requests)} requests for the researcher"
             )
 
             # Use asyncio.gather to properly await all status requests
