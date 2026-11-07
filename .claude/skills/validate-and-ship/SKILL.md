@@ -56,7 +56,32 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    - Findings: <one per line: finding → disposition (fixed / accepted / routed to #issue)>
    ```
 
-3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit the old one; comment ordering is the audit trail. Never merge on a stale attestation.
+   Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
+
+3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit the old one; comment ordering is the audit trail. Never merge on a stale attestation. The one exception is 7.4.
+
+4. **Carry-forward across a clean merge from main.** Bringing the branch up to date adds a merge commit, which would void the attestation without changing anything that was reviewed. #283, #287, #290, #291, #292 and #294 merged on attestations voided that way (#361). After attesting, update from main only by merging it (never rebase or force-push), with the merge from main as the last commit. Then check:
+
+   ```bash
+   old=<sha the newest attestation names>; new=$(git rev-parse HEAD); main=$(git rev-parse HEAD^2)
+   git rev-list --no-merges "$old..$new" "^$main"                         # must print nothing
+   a=$(git diff "$main...$old" | git patch-id --stable | cut -d' ' -f1)
+   b=$(git diff "$main...$new" | git patch-id --stable | cut -d' ' -f1)   # must equal $a
+   ```
+
+   If both hold, the PR's own diff is byte-for-byte what was reviewed: post a NEW attestation comment instead of re-reviewing.
+
+   ```
+   ## Review attestation
+   - Verdict: <the Carried-From verdict> (carried forward)
+   - Reviewed-Commit: <$new, full 40-char sha>
+   - Carried-From: <$old, full 40-char sha>
+   - Basis: clean merge from main <$main>; no own commits since Carried-From; PR diff patch-id <$a> unchanged
+   - Reviewer: no new review; carried from the Carried-From attestation
+   - Findings: as in the Carried-From attestation
+   ```
+
+   If either check fails, it is a fresh review (Step 2). That includes a conflict resolved by hand: #330's first merge from main had no own commits but changed the PR's diff, and the patch-id check catches exactly that. CI on the new head is still required. It covers integration with main's changes, which a diff review never did (#339 vs #319).
 
 Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
@@ -76,7 +101,7 @@ gh run list --commit <attested-sha> --json name,conclusion -q 'if length == 0 th
 gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 then "NO CHECKS" else (map(select(.completedAt == "0001-01-01T00:00:00Z" or ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL") | not)) | .name // .context) | if length == 0 then "CHECKS OK" else .[] end) end'
 ```
 
-The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
+The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid` (a 7.4 carry-forward attestation counts); mismatch → back to Step 7, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
 
 - **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By` — and merge:
   `gh pr merge <n> --squash --delete-branch --match-head-commit <attested-sha> --body-file <file>`
