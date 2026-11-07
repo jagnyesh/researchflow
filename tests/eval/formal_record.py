@@ -13,15 +13,20 @@ are recorded or scored.
 """
 
 import json
+import logging
 import re
 import subprocess  # nosec B404 - fixed git command, no input
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+from app.schemas._errors import log_internal_error
+
 from tests.eval.formal_cases import FORMAL_CASES, FormalCase
 from tests.eval.formal_harness import CaseScore, cost_summary, pass_at_1, score_case, write_jsonl
 from tests.eval.harness import _trace_costs
+
+logger = logging.getLogger(__name__)
 
 RECORDING = Path(__file__).parent / "fixtures" / "recorded_requirements_formal.json"
 
@@ -133,7 +138,12 @@ async def record(evidence: Path) -> List[CaseScore]:
             tags=["eval", "portal:formal", case.id],
         ):
             recording[case.id] = await _requirements_from_agent(case)
-    costs = await _trace_costs(run_ids)
+    try:
+        costs = await _trace_costs(run_ids)
+    except Exception as exc:
+        # The agent calls are already billed; keep their requirements, unpriced.
+        log_internal_error(logger, "Pricing the gold-set traces failed", exc)
+        costs = {}
     entries = {i: {"requirements": req, "cost_usd": costs.get(i)} for i, req in recording.items()}
     RECORDING.parent.mkdir(parents=True, exist_ok=True)
     RECORDING.write_text(json.dumps(entries, indent=2, sort_keys=True, default=str) + "\n")
@@ -155,6 +165,8 @@ def summary(scores: List[CaseScore]) -> str:
         )
     costs = cost_summary(scores)
     median, per_pass = costs["median_cost_per_attempt_usd"], costs["cost_per_passing_sql_usd"]
+    priced = sum(s.cost_usd is not None for s in scores)
+    lines.append(f"priced attempts: {priced}/{len(scores)}")
     if median is None:
         lines += ["median cost per attempt: unknown", "cost per passing SQL: unknown"]
     else:

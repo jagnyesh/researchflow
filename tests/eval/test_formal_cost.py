@@ -100,3 +100,32 @@ def test_unpriced_attempts_report_as_unknown_not_zero():
 
     assert s["median_cost_per_attempt_usd"] is None and s["cost_per_passing_sql_usd"] is None
     assert "cost per passing SQL: unknown" in formal_record.summary(scores)
+
+
+@pytest.mark.asyncio
+async def test_a_pricing_failure_keeps_the_billed_recording(tmp_path, monkeypatch):
+    recorded = load_recording()
+    fixture = tmp_path / "rec.json"
+    monkeypatch.setattr(formal_record, "RECORDING", fixture)
+
+    async def agent(case):
+        return recorded[case.id]
+
+    async def langsmith_down(run_ids):
+        raise ConnectionError("langsmith down")
+
+    monkeypatch.setattr(formal_record, "_requirements_from_agent", agent)
+    monkeypatch.setattr(formal_record, "_trace_costs", langsmith_down)
+
+    scores = await formal_record.record(tmp_path / "evidence.jsonl")
+
+    ids = {c.id for c in approved_cases()}
+    assert formal_record.load_recording(fixture) == {i: recorded[i] for i in ids}
+    assert formal_record.load_costs(fixture) == {i: None for i in ids}
+    assert all(s.cost_usd is None for s in scores)
+
+
+def test_the_summary_says_how_many_attempts_were_priced():
+    scores = [_score(True, 0.002), _score(True, None)]
+
+    assert "priced attempts: 1/2" in formal_record.summary(scores)
