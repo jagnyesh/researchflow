@@ -103,10 +103,11 @@ ResearchFlow implements a **Lambda Architecture** for FHIR analytics as a learni
          └─────────────────────────────────────────┘
 ```
 
-> ⚠️ **HybridRunner wiring — the current statement (2026-10-20).** This is the one authoritative answer; other mentions defer to it.
-> - **Routes through `HybridRunner`:** `phenotype_agent` cohort estimation, both call sites (`app/agents/phenotype_agent.py:283`, `:542`), in `FORMAL_DRAFT` mode (speed-merged). The analytics API (`app/api/analytics.py` `/execute`, `/count`, `/query`) also uses it, in the default `EXPLORATORY` mode.
+> ⚠️ **HybridRunner wiring — the current statement (2026-11-04).** This is the one authoritative answer; other mentions defer to it.
+> - **Routes through `HybridRunner`:** the analytics API (`app/api/analytics.py` `/execute`, `/count`, `/query`), in the default `EXPLORATORY` mode.
+> - **No longer routes through it:** `phenotype_agent` cohort estimation now counts the approved phenotype SQL on the batch tables, so the estimate, the G2 review and the extraction use one cohort definition ([ADR 0033](docs/decisions/0033-phenotype-estimate-counts-approved-sql.md), #206). `FORMAL_DRAFT` has no production caller.
 > - **Uses only the freshness helper:** `feasibility_service` (the exploratory portal) runs the LLM-synthesized, validator-approved SQL directly. It runs under `rf_readonly` via `EXPLORATORY_DB_URL`. Only in dev and test does it fall back to `HAPI_DB_URL`; in production a missing `EXPLORATORY_DB_URL` raises an error. It calls `HybridRunner.get_batch_anchor_ts_for_views` only for the "data as of" disclosure. This path is batch-only by design ([ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md) decision 3).
-> - **Bypasses it:** `extraction_agent` calls `SQLonFHIRAdapter.execute_sql` directly at three sites (`app/agents/extraction_agent.py:314`, `:402`, `:526`). `phenotype_agent` also has two `InMemoryRunner` methods outside HybridRunner (`_estimate_cohort_size_with_view_definitions`, `execute_view_definition_for_phenotype`), but nothing calls either one.
+> - **Bypasses it:** `extraction_agent` calls `SQLonFHIRAdapter.execute_sql` directly at three sites (`app/agents/extraction_agent.py:314`, `:402`, `:526`).
 > - **`FORMAL_EXTRACTION` has no production caller.** The citability contract (skip the speed merge, pin to `batch_anchor_ts`) is implemented in `HybridRunner` and unit-tested, but no delivery path invokes it yet ([ADR 0027](docs/decisions/0027-sprint-6-5-differential-freshness-routing.md)).
 > - [#71](https://github.com/jagnyesh/researchflow/issues/71) is **closed by decision**, not deferred. Sprint 6.7 (#100) deleted the `feasibility_service` half, and extraction stays batch-only under the citability contract. A real freshness requirement for extraction would get a new, narrowly scoped issue.
 >
@@ -531,7 +532,7 @@ See **[docs/README.md](docs/README.md)** for comprehensive documentation index o
 
 For headline performance numbers (speedup, turnaround, LLM cost) see the [Performance](#performance) section. The shipping milestones:
 
-- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — `HybridRunner` is now a production caller via `phenotype_agent` with three-mode `FreshnessAnnotation` routing (Sprint 6.5)
+- 📊 **Lambda Architecture** (Batch + Speed + Serving) shipped — three-mode `FreshnessAnnotation` routing in `HybridRunner` (Sprint 6.5); its production caller is the analytics API, since `phenotype_agent` now counts the approved SQL ([ADR 0033](docs/decisions/0033-phenotype-estimate-counts-approved-sql.md))
 - 🛡️ **Human-in-Loop** — 4 routine HITL gates + 1 escalation terminal; each gate pauses the LangGraph graph until the reviewer's DB decision re-runs its router (`FullWorkflow.apply_approval_decision`)
 
 ### Roadmap (Phase 2 nearly complete; Phases 3–4 ahead)
@@ -593,7 +594,7 @@ Most portfolio READMEs hide their gaps. This section enumerates the architecture
 
 | Gap | Detail | Closing sprint |
 |---|---|---|
-| **HybridRunner partial wiring** | `phenotype_agent` (`FORMAL_DRAFT`) and the analytics API (`EXPLORATORY`) route through `HybridRunner`. `extraction_agent` bypasses it at three `SQLonFHIRAdapter` sites, and `FORMAL_EXTRACTION` has no production caller. Full statement under Architecture. | Open by design. [#71](https://github.com/jagnyesh/researchflow/issues/71) closed by decision (Sprint 6.7); a new issue will be filed if extraction needs freshness |
+| **HybridRunner partial wiring** | Only the analytics API (`EXPLORATORY`) routes through `HybridRunner`; `phenotype_agent` counts the approved SQL (ADR 0033). `extraction_agent` bypasses it at three `SQLonFHIRAdapter` sites, and `FORMAL_EXTRACTION` has no production caller. Full statement under Architecture. | Open by design. [#71](https://github.com/jagnyesh/researchflow/issues/71) closed by decision (Sprint 6.7); a new issue will be filed if extraction needs freshness |
 | **Streamlit dashboard auth** | 3 Streamlit ports have zero authentication. Anyone reaching the bound port can approve HITL escalations and scrape researcher PII. Today only `localhost` bind protects them. | **Phase 3c** ([#39](https://github.com/jagnyesh/researchflow/issues/39)) |
 | **Cost telemetry calibrated for bursty traffic only** | The `$0.008/request` measurement and the rolling-30 cost-band gate ceilings are calibrated against 30 requests fired in 6-7 minutes (within Anthropic's 5-minute cache TTL). Sparse real-world traffic with gaps > 5 min would shift the median toward cache-create cost. | **Sprint 8.5** candidate |
 | **HAPI FHIR Docker healthcheck broken** | The `docker inspect hapi-fhir-server` healthcheck reports `unhealthy` because the distroless image's healthcheck CMD invokes `/bin/sh`, which doesn't exist in distroless. The container serves traffic correctly (HAPI returns 200 on `/fhir/metadata`); only the healthcheck signal is broken. CI / monitoring would see HAPI as down even when it's up. | Cosmetic — fix when monitoring/CI matters |

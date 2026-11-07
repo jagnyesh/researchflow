@@ -36,7 +36,7 @@ Shipped-sprint narratives (6.5 and earlier): `docs/sprints/archive/CONTEXT_HISTO
 ### Differential freshness routing (Sprint 6.5, 2026-05-17)
 
 - **FreshnessAnnotation** — three-value enum (`EXPLORATORY`, `FORMAL_DRAFT`, `FORMAL_EXTRACTION`) passed to `HybridRunner.execute(..., mode=...)`. Each mode produces a semantically distinct read: speed-merged vs batch-only, citation-anchor surfaced or not. See `app/sql_on_fhir/runner/freshness.py`.
-- **FORMAL_DRAFT** — Formal Portal pre-approval cohort estimation mode. Speed-merged so the researcher sees today's reality (including new patients arriving since last batch refresh) while iterating on criteria. `batch_anchor_ts` surfaced for citation metadata in `hybrid_runner_metrics` row.
+- **FORMAL_DRAFT** — Formal Portal pre-approval cohort estimation mode. Speed-merged so the researcher sees today's reality (including new patients arriving since last batch refresh) while iterating on criteria. `batch_anchor_ts` surfaced for citation metadata in `hybrid_runner_metrics` row. **No production caller since #206** ([ADR 0033](docs/decisions/0033-phenotype-estimate-counts-approved-sql.md)): the estimate counts the approved phenotype SQL on the batch tables.
 - **FORMAL_EXTRACTION** — Formal Portal post-approval extraction mode. Batch-only, no speed merge. The citability contract: re-running the same SQL against the same `batch_anchor_ts` produces a bit-identical row-set. Researcher approves a cohort *definition* (SQL/criteria), not a row-set; the row-set materializes at extraction time against the current batch.
 - **batch_anchor_ts** — `MAX(refreshed_at)` across the views a HybridRunner query touched, read from `sqlonfhir.mv_refresh_metadata`. The citation anchor that makes `FORMAL_EXTRACTION` reproducible.
 
