@@ -105,7 +105,17 @@ def summarize(results: List[Dict], *, n_unsupported: int) -> Dict:
 async def _trace_costs(run_ids: Dict[str, str], attempts: int = 12) -> Dict[str, float]:
     """Price each case's trace from its LLM leaf runs (CostTelemetryService pricing).
 
-    LangSmith ingests asynchronously, so poll until every trace has its LLM runs.
+    LangSmith ingests asynchronously, so a trace polled mid-ingestion can show a
+    subset of its leaves. The main guard is the root's end_time: the SDK closes the
+    root only after its children. As a consistency check, the leaves' summed
+    tokens must also equal the root's server-side roll-up. That catches a roll-up
+    ahead of the leaf query, but not a leaf missing from both, so the same root
+    total must also be seen on two complete polls in a row: a leaf or its usage
+    landing in between changes it. That narrows the gap to a leaf stalled for a
+    whole poll interval; it doesn't close it. Tokens rather than cost, so the
+    check doesn't depend on LangSmith's price table agreeing with ours (#354). A
+    trace that never completes within `attempts` polls is left out: unpriced,
+    never 0.
     """
     from langsmith import Client
 
@@ -113,13 +123,25 @@ async def _trace_costs(run_ids: Dict[str, str], attempts: int = 12) -> Dict[str,
 
     client = Client()
     costs: Dict[str, float] = {}
+    last_seen: Dict[str, int] = {}
     for _ in range(attempts):
         for case_id, trace_id in run_ids.items():
             if case_id in costs:
                 continue
             leaves = list(client.list_runs(trace_id=trace_id, run_type="llm"))
-            if leaves and all(r.end_time for r in leaves):
-                costs[case_id] = round(sum(_run_cost_usd(r) for r in leaves), 6)
+            roots = list(client.list_runs(trace_id=trace_id, is_root=True))
+            root = roots[0] if roots else None
+            if (
+                leaves
+                and all(r.end_time for r in leaves)
+                and root is not None
+                and root.end_time
+                and root.total_tokens
+                and sum(r.total_tokens or 0 for r in leaves) == root.total_tokens
+            ):
+                if last_seen.get(case_id) == root.total_tokens:
+                    costs[case_id] = round(sum(_run_cost_usd(r) for r in leaves), 6)
+                last_seen[case_id] = root.total_tokens
         if len(costs) == len(run_ids):
             break
         await asyncio.sleep(5)
