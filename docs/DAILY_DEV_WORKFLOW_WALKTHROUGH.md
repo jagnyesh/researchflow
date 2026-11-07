@@ -61,7 +61,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **How to use it:** don't add a second lane until the Stage-2 trigger is literally true — *a lane is mid-run on a long task AND a second ready issue exists AND review is keeping up.* Any clause false → a second lane makes things worse, not better.
 
-Past that, the doc's §3 override of 2026-11-07 governs: up to four lanes, with launch conditions, exceptions, a wait measure and revert triggers. Read them there. This walkthrough deliberately doesn't restate them, so it can't drift from them.
+While it stands, the doc's §3 override of 2026-11-07 governs every lane launch, the first included, up to four lanes. It sets the launch conditions, exceptions, wait measure and revert triggers. Read them there. This walkthrough deliberately doesn't restate them, so it can't drift from them.
 
 ### §4 — The daily workflow
 
@@ -110,7 +110,7 @@ The §5.5 bar from CLAUDE.md: read the whole SKILL.md + scripts, grep for networ
 
 ### §10 — Throughput guardrails
 
-The honest-number rules: verified merges/week is the metric; cycle time is the second dial; WIP = streams you can unblock (cap 4 under the §3 override, 2 if it's reverted); no new lane while ≥2 PRs await you, except the one lane fixing a red `main`; never scale past a red pipeline; keep the queue at lanes × 2; and the memory loop (write-backs, ADRs, retros, generated status) is what compounds.
+The honest-number rules: verified merges/week is the metric; cycle time is the second dial; WIP = streams you can unblock (cap 4 under the §3 override and its conditions, 2 if it's reverted); no new lane while ≥2 PRs await you, except the one lane fixing a red `main`; never scale past a red pipeline; keep the queue at lanes × 2; and the memory loop (write-backs, ADRs, retros, generated status) is what compounds.
 
 ### §11 — Not adopted, and the honest cons
 
@@ -145,4 +145,4 @@ Same one-command pipeline each time; the tier dials the rigor up or down. That's
 2. **Stage 0 foundations (§3):** evidence-PR template (§6), the vetting bar (§9), and the golden-file lock + generated-counts check (§7) — these are cheap and high-leverage.
 3. **Build the eval gate** (#136/#137/#142) so LLM-touching changes have more than the replay test. CI already runs real tests, including docker compose, on every PR.
 4. **Start the catch-rate log (§6)** from day one — it's the metric that later justifies (or refuses) a second lane.
-5. **Leave parallelism alone** until §3's Stage-2 trigger is literally true, and go past two lanes only under the doc's §3 override.
+5. **Leave parallelism alone** until §3's Stage-2 trigger is literally true, and open any lane only on the doc's §3 override.
