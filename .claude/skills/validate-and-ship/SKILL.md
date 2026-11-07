@@ -60,28 +60,30 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
 3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit the old one; comment ordering is the audit trail. Never merge on a stale attestation. The one exception is 7.4.
 
-4. **Carry-forward across a clean merge from main.** Bringing the branch up to date adds a merge commit, which would void the attestation without changing anything that was reviewed. #283, #287, #290, #291, #292 and #294 merged on attestations voided that way (#361). After attesting, update from main only by merging it (never rebase or force-push), with the merge from main as the last commit and pushed (GitHub's "Update branch" button does exactly this). Then check the PR's head on GitHub, not a local HEAD:
+4. **Carry-forward across a clean merge from main.** Bringing the branch up to date adds a merge commit, which would void the attestation without changing anything that was reviewed. #283, #287, #290, #291, #292 and #294 merged on attestations voided that way (#361). After attesting, update from main only by merging it (never rebase or force-push), with the merge from main as the last commit and pushed. GitHub's "Update branch" button in its merge mode does exactly this; "Update with rebase" doesn't qualify. Then check the PR's head on GitHub, not a local HEAD.
+
+   `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (no `Carried-From` line), i.e. the last real Step 2 review. Its verdict must be SHIP. Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
 
    ```bash
-   n=<PR number>; old=<Reviewed-Commit of the newest attestation>
-   git fetch -q origin main "pull/$n/head"
+   n=<PR number>; old=<Reviewed-Commit of the root attestation>
    new=$(gh pr view "$n" --json headRefOid -q .headRefOid)
+   git fetch -q origin main "pull/$n/head"
    main=$(git rev-parse --verify -q "$new^2") || echo NOT-A-MERGE
    git merge-base --is-ancestor "$main" origin/main && echo main-ok          # what was merged is main
    git merge-base --is-ancestor "$old" "$new" && echo lineage-ok           # no rewrite since the review
-   t=$(git merge-tree --write-tree "$old" "$main") && [ "$t" = "$(git rev-parse "$new^{tree}")" ] && echo tree-ok
+   [ -z "$(git diff --name-only "$(git merge-base "$old" "$main")" "$old" | git check-attr --stdin --source "$new" merge | grep -v ': merge: unspecified$')" ] && t=$(git merge-tree --write-tree "$old" "$main") && [ "$t" = "$(git rev-parse "$new^{tree}")" ] && echo tree-ok
    ```
 
-   `tree-ok` means the new head's content is exactly what git produces by merging the reviewed commit with that main commit, with no conflict: the reviewed diff plus main, nothing else. Only when all three `-ok` lines print, post a NEW attestation comment instead of re-reviewing:
+   `tree-ok` means none of the PR's paths has a `merge` attribute (a `merge=union` driver turns a real conflict into a "clean" merge), and the new head's content is exactly what git produces by merging the reviewed commit with that main commit, with no conflict. One known trade-off: if main renamed or replaced a file the PR edits, git's rename detection can apply the reviewed line to the new file. The final GitHub merge does the same, so this rule adds no new risk, but CI is what checks it. Only when all three `-ok` lines print, post a NEW attestation comment instead of re-reviewing:
 
    ```
    ## Review attestation
-   - Verdict: <the Carried-From verdict> (carried forward)
+   - Verdict: SHIP (carried forward)
    - Reviewed-Commit: <$new, full 40-char sha>
-   - Carried-From: <$old, full 40-char sha>
+   - Carried-From: <$old, the root's Reviewed-Commit, full 40-char sha>
    - Basis: merge from main <$main>; tree <$t> equals merge-tree(Carried-From, main)
-   - Reviewer: no new review; carried from the Carried-From attestation
-   - Findings: as in the Carried-From attestation
+   - Reviewer: no new review; carried from the root attestation
+   - Findings: as in the root attestation
    ```
 
    Anything else is a fresh review (Step 2), including any conflict, even one resolved correctly by hand. Don't use `git patch-id` for this: it ignores whitespace and hunk position, so a merge commit that re-indents a `raise` or moves a hunk keeps the same patch-id. The #361 review reproduced both. CI on the new head is still required. It covers integration with main's changes, which a diff review never did (#339 vs #319).
@@ -104,7 +106,7 @@ gh run list --commit <attested-sha> --json name,conclusion -q 'if length == 0 th
 gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 then "NO CHECKS" else (map(select(.completedAt == "0001-01-01T00:00:00Z" or ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL") | not)) | .name // .context) | if length == 0 then "CHECKS OK" else .[] end) end'
 ```
 
-The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. If that newest attestation is a 7.4 carry-forward, don't take it on trust: its `Carried-From` must be the `Reviewed-Commit` of an earlier attestation comment on this PR, and the 7.4 block, re-run now with `old` set to that `Carried-From`, must print all three `-ok` lines. Otherwise → fresh review, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
+The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. If that newest attestation is a 7.4 carry-forward, don't take it on trust. Find the root (7.4): the newest attestation without a `Carried-From` line. Its verdict must be SHIP, the carry's `Carried-From` must equal the root's `Reviewed-Commit`, and the 7.4 block, re-run now with `old` set to that `Reviewed-Commit`, must print all three `-ok` lines. Otherwise → fresh review, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
 
 - **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By` — and merge:
   `gh pr merge <n> --squash --delete-branch --match-head-commit <attested-sha> --body-file <file>`
