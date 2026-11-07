@@ -570,7 +570,7 @@ def _render_steps() -> None:
     what the portal will and won't return."""
     st.markdown(
         '<ol class="rf-steps">'
-        "<li><span>1</span>Claude writes one SQL query for your question</li>"
+        "<li><span>1</span>Claude writes SQL for your question</li>"
         "<li><span>2</span>A validator lets through aggregate counts only, never patient rows</li>"
         "<li><span>3</span>The count runs read-only on the batch views and says when they were refreshed</li>"
         "</ol>",
@@ -600,10 +600,12 @@ def _render_result(feasibility_data: Dict[str, Any], is_last: bool) -> None:
     if sql:
         with st.expander("SQL that ran"):
             st.code(sql, language="sql")
-            st.caption(f"{feasibility_data.get('execution_time_ms', 0):.1f} ms · read-only")
+            st.caption(f"{feasibility_data.get('execution_time_ms') or 0:.1f} ms · read-only")
 
     if is_last:
-        st.markdown("Type **proceed** to take this to the Formal Portal, or refine the question")
+        st.markdown(
+            "Type **proceed** to see how to take this to the Formal Portal, or refine the question"
+        )
 
 
 def main():

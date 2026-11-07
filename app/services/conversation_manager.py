@@ -268,13 +268,13 @@ Intent:"""
 
 ### How a count is made
 
-1. Claude writes one SQL query for your question
+1. Claude writes SQL for your question
 2. A validator lets through aggregate counts only
 3. The count runs read-only on the batch views and says when they were refreshed
 
 ### When you need the data
 
-Type **proceed** after a count to take it to the Formal Portal, where an informatician reviews the SQL before any extraction.
+Type **proceed** after a count to see how to take it to the Formal Portal, where an informatician reviews the SQL before any extraction.
 
 ### Questions to try
 
@@ -295,7 +295,7 @@ Type **proceed** after a count to take it to the Formal Portal, where an informa
 - "What's the status of my request?"
 
 **Refining**
-- Answer "no" or "refine" after a count to change the criteria
+- Ask again with the criteria changed
 
 **Examples**
 - "Patients with diabetes and HbA1c > 7.0%"

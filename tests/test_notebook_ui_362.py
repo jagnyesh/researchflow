@@ -62,7 +62,9 @@ def _ask(at: AppTest, question: str, result: dict) -> AppTest:
         patch.object(FeasibilityService, "close", close),
     ):
         at.chat_input[0].set_value(question).run()
-    return at
+    # The processing run leaves its st.status writes in the element tree;
+    # one more run shows only what the page renders from history.
+    return at.run()
 
 
 def test_user_text_is_never_rendered_as_html():
@@ -127,3 +129,12 @@ def test_an_error_still_never_renders_a_number():
     text = "\n".join(_all_text(at))
     assert "could not be run" in text
     assert not re.search(r"\d[\d,]* patients", text)
+
+
+def test_llm_criteria_text_is_escaped():
+    hostile = dict(OK_RESULT, filter_summary="<img src=x onerror=alert(1)>")
+    at = _ask(_app().run(), "Women with hypertension under 65", hostile)
+
+    html_md = [m.value for m in at.markdown if m.allow_html]
+    assert not [v for v in html_md if "<img src=x" in v]
+    assert [v for v in html_md if "&lt;img src=x" in v]
