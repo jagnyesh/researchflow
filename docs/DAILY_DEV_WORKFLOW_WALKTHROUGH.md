@@ -61,22 +61,13 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **How to use it:** don't add a second lane until the Stage-2 trigger is literally true — *a lane is mid-run on a long task AND a second ready issue exists AND review is keeping up.* Any clause false → a second lane makes things worse, not better.
 
-Going past two lanes (up to four) needs all of the override's conditions:
-- fewer than 2 PRs are waiting on you;
-- no open PR has waited more than 24 h since its first SHIP attestation;
-- at most one lane is High-tier;
-- any lane beyond the second is Low or Medium and shares no files with another lane;
-- each extra lane meets the Stage-2 trigger too.
-
-A red or flaky `main` still means one lane, the fix. With "require branches to be up to date" off, the cap is 2.
-
-The cap goes back to 2 if a revert trigger fires: a PR waits on you more than 24 h, a push run on `main` fails on a merge commit (a failure that passes on re-run, or that you attribute to something outside the merged PRs, doesn't count), or an escape traces to a PR merged under the override.
+Past that, the doc's §3 override of 2026-11-07 governs: up to four lanes, with launch conditions, exceptions, a wait measure and revert triggers. Read them there. This walkthrough deliberately doesn't restate them, so it can't drift from them.
 
 ### §4 — The daily workflow
 
 **§4.1 is your actual mode today:** branch → **classify** → plan to the tier → `/tdd` (tests committed and then locked) → `/validate-and-ship` → merge by tier → memory write-back. Notice classify is step two — it gates everything after.
 
-**§4.2 is marked "tried on two days, not a steady state"** — the multi-lane "manager of a team" day. It runs at up to four lanes under the §3 override, on that override's conditions. Its first qualifying week is the logged week Stage 2's exit asks for.
+**§4.2 is marked "tried on two days, not a steady state"** — the multi-lane "manager of a team" day. It runs at up to four lanes under the §3 override, on that override's conditions. Its first qualifying week is the logged week Stage 2's exit asks for; until then this is design intent tried twice.
 
 **§4.3 / §4.4:** sprint start fills a queue of pre-classified issues; sprint end is a *quality + learning* event (integration QA + retro), since shipping already happened continuously.
 
@@ -154,4 +145,4 @@ Same one-command pipeline each time; the tier dials the rigor up or down. That's
 2. **Stage 0 foundations (§3):** evidence-PR template (§6), the vetting bar (§9), and the golden-file lock + generated-counts check (§7) — these are cheap and high-leverage.
 3. **Build the eval gate** (#136/#137/#142) so LLM-touching changes have more than the replay test. CI already runs real tests, including docker compose, on every PR.
 4. **Start the catch-rate log (§6)** from day one — it's the metric that later justifies (or refuses) a second lane.
-5. **Leave parallelism alone** until §3's Stage-2 trigger is literally true, and go past two lanes only on the §3 override's conditions.
+5. **Leave parallelism alone** until §3's Stage-2 trigger is literally true, and go past two lanes only under the doc's §3 override.
