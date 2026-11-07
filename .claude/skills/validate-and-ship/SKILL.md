@@ -71,11 +71,11 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    main=$(git rev-parse --verify -q "$new^2") || echo NOT-A-MERGE
    git merge-base --is-ancestor "$main" origin/main && echo main-ok          # what was merged is main
    git merge-base --is-ancestor "$old" "$new" && echo lineage-ok           # no rewrite since the review
-   mb=$(git merge-base "$old" "$main") && [ -z "$(LC_ALL=C comm -12 <(git diff --no-renames --name-only "$mb" "$old" | LC_ALL=C sort) <(git diff --no-renames --name-only "$mb" "$main" | LC_ALL=C sort))" ] && t=$(git merge-tree --write-tree "$old" "$main") && [ "$t" = "$(git rev-parse "$new^{tree}")" ] && echo tree-ok
+   mb=$(git merge-base "$old" "$main") && [ -z "$(LC_ALL=C comm -12 <(git diff --no-renames --ignore-submodules=none --name-only "$mb" "$old" | LC_ALL=C sort) <(git diff --no-renames --ignore-submodules=none --name-only "$mb" "$main" | LC_ALL=C sort))" ] && t=$(git -c merge.directoryRenames=false merge-tree --write-tree "$old" "$main") && [ "$t" = "$(git rev-parse "$new^{tree}")" ] && echo tree-ok
    ```
 
    `tree-ok` means two things:
-   - **No file was changed by both the PR and main since they diverged.** So git never had to merge file contents, and no merge driver, `merge.default` setting, `.gitattributes` or rename-following can shape the result. The #361 review got a real conflict to pass as "clean" through each of those, until this guard replaced an attribute check.
+   - **No file was changed by both the PR and main since they diverged.** So git never had to merge file contents, and no merge driver, `merge.default` setting, `.gitattributes` or rename-following can shape the result. `-c merge.directoryRenames=false` stops git moving a file the PR added into a directory that main renamed. The #361 review got a real conflict to pass as "clean" through each of those, until this guard replaced an attribute check.
    - **The new head's tree is exactly what git produces by merging the reviewed commit with that main commit.**
 
    If main touched any of the PR's files, that's a fresh review, even when git merged them cleanly. Only when all three `-ok` lines print, post a NEW attestation comment instead of re-reviewing:
