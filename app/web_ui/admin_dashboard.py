@@ -50,7 +50,11 @@ from app.schemas._errors import log_internal_error
 
 assert_encryption_key_present_if_production()
 
-from app.langchain_orchestrator.request_facade import ApprovalRefused, LangGraphRequestFacade
+from app.langchain_orchestrator.request_facade import (
+    ApprovalRefused,
+    LangGraphRequestFacade,
+    record_state_transition,
+)
 from app.database import get_db_session, get_engine
 from app.services.gate_telemetry import gate_telemetry_rows, load_gate_telemetry
 from app.database.models import AgentExecution, ResearchRequest
@@ -496,17 +500,12 @@ def show_preview_data_section(request_id: str, status: dict):
                                 request.current_state = "data_extraction"
                                 request.current_agent = "extraction_agent"
 
-                                # Update state history
-                                state_history = request.state_history or []
-                                state_history.append(
-                                    {
-                                        "state": "data_extraction",
-                                        "timestamp": datetime.now().isoformat(),
-                                        "approved_by": "admin_dashboard",
-                                        "notes": "Preview approved - proceeding to full data extraction",
-                                    }
+                                record_state_transition(
+                                    request,
+                                    "data_extraction",
+                                    approved_by="admin_dashboard",
+                                    notes="Preview approved - proceeding to full data extraction",
                                 )
-                                request.state_history = state_history
 
                                 await session.commit()
 
