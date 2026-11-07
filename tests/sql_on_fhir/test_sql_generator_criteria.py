@@ -79,3 +79,47 @@ async def test_the_full_query_returns_one_row_per_cohort_patient_with_demographi
 
     assert len(rows) == len({r["patient_id"] for r in rows}) == await _count(_has("diabetes"))
     assert {"gender", "birth_date"} <= set(rows[0])
+
+
+_AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date))"
+
+
+@pytest.mark.asyncio
+async def test_excluding_males_and_minors_keeps_the_rest_of_the_cohort():
+    """#310: the portal's own "Age < 18 years" placeholder as an exclusion."""
+    requirements = RB.build_requirements(
+        inclusion=[RB.build_condition("diabetes", term="diabetes")],
+        exclusion=[
+            RB.build_demographic("Male patients", term="male"),
+            RB.build_demographic("Age < 18 years", term="age", details="< 18 years"),
+        ],
+    )
+    everyone = await _count(_has("diabetes"))
+    excluded = await _count(f"{_has('diabetes')} AND (p.gender = 'male' OR {_AGE} < 18)")
+    expected = everyone - excluded
+
+    assert 0 < expected < everyone, "the exclusion must bite and leave a cohort"
+    assert await _generated_count(requirements) == expected
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_gender_or_birth_date_is_not_excluded():
+    """An exclusion removes patients known to match; NULL is not known to match."""
+    gen = SQLGenerator(use_materialized_views=True)
+    gen._reset_param_counter()
+    conditions, params = gen._build_criteria_conditions(
+        [
+            RB.build_demographic("Male patients", term="male"),
+            RB.build_demographic("Age < 18 years", term="age", details="< 18 years"),
+        ],
+        include=False,
+    )
+    rows = await SQLonFHIRAdapter().execute_sql(
+        "SELECT p.id FROM (VALUES "  # nosec B608 - generated clauses, bound params
+        "('null_both', NULL::text, NULL::text), ('female_adult', 'female', '1980-01-01'), "
+        "('male_adult', 'male', '1980-01-01'), ('female_minor', 'female', CURRENT_DATE::text)"
+        ") AS p(id, gender, birth_date) WHERE " + " AND ".join(conditions),
+        params,
+    )
+
+    assert sorted(r["id"] for r in rows) == ["female_adult", "null_both"]

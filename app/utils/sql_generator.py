@@ -335,6 +335,10 @@ class SQLGenerator:
                     condition, demo_params = self._build_demographic_clause(
                         term, concept.get("details", "")
                     )
+                    if condition and not include:
+                        # IS NOT TRUE, not NOT: a NULL gender or birth date is not
+                        # known to match the exclusion, so the patient stays (#310).
+                        condition = f"({condition}) IS NOT TRUE"
                     logger.debug(
                         f"Demographic clause result: condition='{condition}', params={demo_params}"
                     )
