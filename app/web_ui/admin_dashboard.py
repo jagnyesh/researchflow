@@ -1732,8 +1732,9 @@ def show_cost_telemetry():
     30 requests vs the 1.3× projected band ceiling. Gate badge fires green
     when the sprint's pre-committed verification criterion is met.
 
-    Data source: LangSmith API (see ADR in DECISIONS.md "Sprint 8.1 —
-    LangSmith is source-of-truth for LLM cost"). The service queries runs
+    Data source: LangSmith API (see ADR in
+    docs/decisions/0018-sprint-8-1-langsmith-cost-source-of-truth.md
+    "Sprint 8.1 — LangSmith is source-of-truth for LLM cost"). The service queries runs
     tagged `portal:formal` / `portal:exploratory` (added in #29), groups
     formal-portal runs by `thread_id` metadata for cost-per-request
     aggregation, and computes USD cost from token counts via the local

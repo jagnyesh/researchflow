@@ -12,7 +12,8 @@ routes to the custom transpiler unchanged. New view-defs added in future
 sprints should declare `runner_hint: "sqlonfhir"` explicitly; the
 convention is documented in the Sprint 6.4 ADR.
 
-See issue #40 (Sprint 6.4 pre-committed gate #5) and DECISIONS.md
+See issue #40 (Sprint 6.4 pre-committed gate #5) and
+docs/decisions/0020-sprint-6-3-verdict-revision-go-sqlonfhir.md
 "Sprint 6.3 — VERDICT REVISION 2026-05-14: GO sqlonfhir" for the
 rationale behind the two-backend dispatch design.
 """
