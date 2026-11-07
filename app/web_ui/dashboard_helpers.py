@@ -22,7 +22,6 @@ from ..database.workflow_states import WorkflowState
 AGENT_IDS = [
     "requirements_agent",
     "phenotype_agent",
-    "calendar_agent",
     "extraction_agent",
     "qa_agent",
     "delivery_agent",

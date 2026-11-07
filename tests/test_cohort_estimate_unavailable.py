@@ -282,29 +282,6 @@ UNAVAILABLE_REPORT = {
 }
 
 
-@pytest.mark.asyncio
-async def test_the_kickoff_meeting_handles_an_unavailable_estimate(monkeypatch):
-    from app.agents.calendar_agent import CalendarAgent
-
-    agent = CalendarAgent()
-    prompts = []
-
-    async def complete(prompt, **_kwargs):
-        prompts.append(prompt)
-        raise ConnectionError("provider down")  # exercise the template fallback too
-
-    monkeypatch.setattr(agent.llm_client, "complete", complete)
-
-    attendees = await agent._identify_stakeholders({}, UNAVAILABLE_REPORT)
-    agenda = await agent._generate_meeting_agenda({}, UNAVAILABLE_REPORT)
-
-    assert "Biostatistician" not in str(attendees)
-    for text in (prompts[0], agenda):
-        assert "Estimated Size: unavailable" in text
-        assert "Feasibility Score: unavailable" in text
-        assert "None patients" not in text
-
-
 def test_the_preview_spinner_message_handles_a_missing_time():
     from app.web_ui.admin_dashboard import preview_time_message
 

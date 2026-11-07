@@ -392,30 +392,6 @@ def show_request_details_modal(request_id: str):
                 "Please contact the data team directly to schedule a meeting."
             )
             st.info("📧 Email: data-team@hospital.org")
-
-            # TODO: Implement meeting scheduling as part of LangGraph workflow
-            # Option 1: Add as workflow state after delivery
-            # Option 2: Use separate API endpoint for post-delivery meetings
-            # Option 3: Manually schedule via email/calendar
-
-            # OLD CODE (commented out - doesn't work with LangGraphRequestFacade):
-            # try:
-            #     meeting_scheduled = run_async(
-            #         st.session_state.orchestrator.trigger_agent_task(
-            #             request_id=request_id,
-            #             agent_id="calendar_agent",
-            #             task="schedule_kickoff_meeting",
-            #             context={"meeting_type": "post_delivery_kickoff"},
-            #         )
-            #     )
-            #
-            #     if meeting_scheduled.get("meeting_scheduled"):
-            #         st.success(f"✅ Meeting scheduled! Check your email for details.")
-            #     else:
-            #         st.info("📧 Meeting request sent. You'll receive a calendar invite shortly.")
-            # except Exception as e:
-            #     st.warning(f"Could not schedule meeting: {str(e)}")
-            #     st.info("Please contact the data team directly to schedule a meeting.")
     else:
         current_state = status["current_state"]
         st.info(

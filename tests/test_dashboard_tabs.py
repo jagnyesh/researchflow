@@ -186,10 +186,10 @@ class TestAgentMetricsTab:
         assert pheno_metrics["success_rate"] == 1.0
 
         # Check agents with no executions
-        calendar_metrics = metrics["calendar_agent"]
-        assert calendar_metrics["total_tasks"] == 0
-        assert calendar_metrics["successful_tasks"] == 0
-        assert calendar_metrics["success_rate"] == 0
+        delivery_metrics = metrics["delivery_agent"]
+        assert delivery_metrics["total_tasks"] == 0
+        assert delivery_metrics["successful_tasks"] == 0
+        assert delivery_metrics["success_rate"] == 0
 
     @pytest.mark.asyncio
     async def test_agent_state_determination(self, setup_test_data):

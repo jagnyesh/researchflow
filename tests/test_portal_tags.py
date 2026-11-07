@@ -26,7 +26,6 @@ FORMAL_SITES = [
     "app/agents/base_agent.py",
     "app/agents/requirements_agent.py",
     "app/agents/phenotype_agent.py",
-    "app/agents/calendar_agent.py",
     "app/agents/extraction_agent.py",
     "app/agents/qa_agent.py",
     "app/agents/delivery_agent.py",

@@ -5,12 +5,12 @@ Conventions and constraints that apply across the codebase. Extracted from the s
 ## Agent pattern
 
 - All agents inherit `BaseAgent` (`app/agents/base_agent.py`) — gives retry-with-exponential-backoff (3 max), state machine (`idle`/`working`/`failed`/`waiting`), task history, and human escalation.
-- Never instantiate Claude SDK or HTTP clients directly inside an agent. Use `LLMClient` (`app/utils/llm_client.py`) for critical medical reasoning, `MultiLLMClient` (`app/utils/multi_llm_client.py`) for non-critical (calendar text, delivery notifications).
+- Never instantiate Claude SDK or HTTP clients directly inside an agent. Use `LLMClient` (`app/utils/llm_client.py`); non-critical prose (delivery citation, notification) is template-only.
 - A2A messages between agents follow this shape (orchestrator routes by `next_agent`/`next_task`):
   ```python
   {"agent_id": "phenotype_agent", "task": "validate_feasibility",
    "context": {...}, "result": {...},
-   "next_agent": "calendar_agent", "next_task": "schedule_kickoff"}
+   "next_agent": "extraction_agent", "next_task": "extract_preview"}
   ```
 - LangGraph (`app/langchain_orchestrator/`) is the only orchestrator.
 

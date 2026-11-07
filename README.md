@@ -185,8 +185,8 @@ The dominant cost lever turned out to be **caching architecture + scope discipli
 - **Caching sized to threshold:** Sonnet system prompts ~3,000 tokens, Haiku ~5,185 tokens — deliberately above Anthropic's prompt-caching thresholds (1,024 / 4,096). System prompts are byte-stable across calls.
 - **Wire-level discipline:** caught a 6-month silent `langchain-anthropic` bug where `cache_control` was dropped for plain-string SystemMessage content — see [Engineering discipline](#engineering-discipline--what-the-sprint-8-series-taught) below for the lessons-distilled version.
 - **Measured outcome:** 94.88% Sonnet hit rate / 100% Haiku hit rate after warmup. Median formal-portal cost: **$0.008 per request** ([ADR 0025](docs/decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)).
-- **`MultiLLMClient` exists** as fallback infrastructure (Anthropic primary; OpenAI/Ollama for non-critical paths) but provider routing is **not** the primary cost driver. Multi-provider routing was the original Sprint 8 hypothesis; Sprint 8.1–8.3 measurement falsified that framing.
-- **LangSmith observability:** `@traceable` on all 6 agents + `MultiLLMClient.complete`; per-portal tagging (`portal:formal`, `portal:exploratory`) drives Cost Telemetry Service aggregation.
+- **Single LLM stack:** provider routing was the original Sprint 8 hypothesis; Sprint 8.1–8.3 measurement falsified that framing. The second, multi-provider client was removed in #344 (delivery citation and notification text are template-only).
+- **LangSmith observability:** `@traceable` on all 5 agents; per-portal tagging (`portal:formal`, `portal:exploratory`) drives Cost Telemetry Service aggregation.
 
 ### 📱 Two Researcher Interfaces
 
@@ -409,12 +409,6 @@ Complete API documentation: **http://localhost:8000/docs** (Swagger UI)
 ```bash
 # Required
 ANTHROPIC_API_KEY=sk-ant-api03-your-key-here
-
-# Optional: Multi-Provider LLM fallback (not the primary cost lever — see "LLM Cost Discipline" section above)
-SECONDARY_LLM_PROVIDER=openai  # or ollama
-OPENAI_API_KEY=sk-your-openai-key
-OLLAMA_BASE_URL=http://localhost:11434
-ENABLE_LLM_FALLBACK=true
 
 # Database (SQLite for dev, PostgreSQL for production)
 DATABASE_URL=sqlite+aiosqlite:///./dev.db

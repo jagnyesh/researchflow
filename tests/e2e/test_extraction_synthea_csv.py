@@ -164,15 +164,15 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
     print(f"  ✓ Feasibility complete: {state_after_feasibility['current_state']}")
     print(f"  ✓ Cohort size: {state_after_feasibility.get('estimated_cohort_size')}")
 
-    # ===== Step 4: Approve Phenotype and Schedule Kickoff =====
-    print("\n[4/7] Approving phenotype and scheduling kickoff...")
+    # ===== Step 4: Approve Phenotype =====
+    print("\n[4/7] Approving phenotype...")
 
     state_with_phenotype_approval = {**state_after_feasibility, "phenotype_approved": True}
 
-    state_after_kickoff = await workflow.run(state_with_phenotype_approval)
+    state_after_phenotype_approval = await workflow.run(state_with_phenotype_approval)
 
-    print(f"  ✓ State: {state_after_kickoff['current_state']}")
-    assert state_after_kickoff["current_state"] == "extraction_approval"
+    print(f"  ✓ State: {state_after_phenotype_approval['current_state']}")
+    assert state_after_phenotype_approval["current_state"] == "extraction_approval"
 
     # ===== Step 5: Run REAL Data Extraction =====
     print("\n[5/7] Running REAL data extraction...")
@@ -180,7 +180,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
 
     extraction_start = time.time()
 
-    state_with_extraction_approval = {**state_after_kickoff, "extraction_approved": True}
+    state_with_extraction_approval = {**state_after_phenotype_approval, "extraction_approved": True}
 
     state_after_extraction = await workflow.run(state_with_extraction_approval)
 
@@ -308,7 +308,7 @@ async def test_deidentification_safe_harbor(persistence, diabetes_extraction_req
     state = await workflow.run(state)  # feasibility_validation → phenotype_review
 
     state["phenotype_approved"] = True
-    state = await workflow.run(state)  # schedule_kickoff → extraction_approval
+    state = await workflow.run(state)  # phenotype_review → extraction_approval
 
     state["extraction_approved"] = True
     state = await workflow.run(state)  # data_extraction
