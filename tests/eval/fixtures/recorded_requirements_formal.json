@@ -1,92 +1,98 @@
 {
   "female_over_65_diabetes_mellitus": {
-    "data_elements": [
-      "Demographics"
-    ],
-    "delivery_format": "CSV",
-    "exclusion_criteria": [],
-    "inclusion_criteria": [
-      {
-        "codes": [],
-        "concepts": [
-          {
-            "details": "female",
-            "term": "gender",
-            "type": "demographic"
-          }
-        ],
-        "description": "Sex: female"
-      },
-      {
-        "codes": [],
-        "concepts": [
-          {
-            "details": "> 65",
-            "term": "age",
-            "type": "demographic"
-          }
-        ],
-        "description": "Age > 65"
-      },
-      {
-        "codes": [],
-        "concepts": [
-          {
-            "details": "DM, unspecified type",
-            "term": "diabetes mellitus",
-            "type": "condition"
-          }
-        ],
-        "description": "Diagnosis: diabetes mellitus"
+    "cost_usd": 0.024477,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "female",
+              "term": "gender",
+              "type": "demographic"
+            }
+          ],
+          "description": "female"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "> 65",
+              "term": "age",
+              "type": "demographic"
+            }
+          ],
+          "description": "older than 65"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "DM, unspecified type",
+              "term": "diabetes mellitus",
+              "type": "condition"
+            }
+          ],
+          "description": "diabetes mellitus"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Female Patients Over 65 with Diabetes Mellitus",
+      "time_period": {
+        "end": null,
+        "start": null
       }
-    ],
-    "irb_number": "IRB-GOLD-0001",
-    "phi_level": "limited_dataset",
-    "principal_investigator": "Gold Set",
-    "study_title": "Female Patients Over 65 with Diabetes Mellitus",
-    "time_period": {
-      "end": null,
-      "start": null
     }
   },
   "hypertension_without_diabetes_mellitus": {
-    "data_elements": [
-      "Demographics"
-    ],
-    "delivery_format": "CSV",
-    "exclusion_criteria": [
-      {
-        "codes": [],
-        "concepts": [
-          {
-            "details": "DM, unspecified type",
-            "term": "diabetes mellitus",
-            "type": "condition"
-          }
-        ],
-        "description": "Diagnosis: diabetes mellitus"
+    "cost_usd": 0.007569,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "DM, unspecified type (type 1, type 2, or other)",
+              "term": "diabetes mellitus",
+              "type": "condition"
+            }
+          ],
+          "description": "diabetes mellitus"
+        }
+      ],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN, any stage or severity",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Hypertensive Patients Without Diabetes Mellitus",
+      "time_period": {
+        "end": null,
+        "start": null
       }
-    ],
-    "inclusion_criteria": [
-      {
-        "codes": [],
-        "concepts": [
-          {
-            "details": "HTN diagnosis",
-            "term": "hypertension",
-            "type": "condition"
-          }
-        ],
-        "description": "Diagnosis: hypertension"
-      }
-    ],
-    "irb_number": "IRB-GOLD-0001",
-    "phi_level": "limited_dataset",
-    "principal_investigator": "Gold Set",
-    "study_title": "Hypertensive Patients Without Diabetes Mellitus",
-    "time_period": {
-      "end": null,
-      "start": null
     }
   }
 }

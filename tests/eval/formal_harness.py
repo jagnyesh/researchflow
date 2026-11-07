@@ -14,6 +14,7 @@ record/replay) is a separate step; score_case takes the requirements.
 
 import json
 import logging
+import statistics
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -41,6 +42,9 @@ class CaseScore:
     # #242: "; "-joined canonical predicates (no patient data), "" when none.
     missing_predicates: str = ""
     extra_predicates: str = ""
+    # #243: the case's LLM cost, priced from its LangSmith trace at record time
+    # and replayed from the fixture. None when unknown, never 0.
+    cost_usd: Optional[float] = None
 
 
 def _label(predicate) -> str:
@@ -104,6 +108,21 @@ async def score_case(case: FormalCase, requirements: Dict) -> CaseScore:
 def pass_at_1(scores: List[CaseScore]) -> float:
     """Passed cases over all cases run: vacuous and failed cases count against it."""
     return sum(s.passed for s in scores) / len(scores) if scores else 0.0
+
+
+def cost_summary(scores: List[CaseScore]) -> Dict[str, Optional[float]]:
+    """Median LLM cost per attempt over the priced cases, and cost per passing
+    SQL = that median / Pass@1 (#243). None when no attempt is priced, and
+    cost per passing SQL is None (undefined) when Pass@1 is 0."""
+    costs = [s.cost_usd for s in scores if s.cost_usd is not None]
+    median = round(statistics.median(costs), 6) if costs else None
+    rate = pass_at_1(scores)
+    return {
+        "median_cost_per_attempt_usd": median,
+        "cost_per_passing_sql_usd": (
+            round(median / rate, 6) if median is not None and rate else None
+        ),
+    }
 
 
 def write_jsonl(
