@@ -22,6 +22,7 @@ nest_asyncio.apply(_streamlit_loop)
 # NOW safe to import modules that create database connections
 import streamlit as st
 
+import html
 import pandas as pd
 import httpx
 from datetime import datetime, timedelta
@@ -75,30 +76,188 @@ def _render_db_unreachable(exc: Exception, what: str) -> None:
     # Type + ref only: DB driver messages can carry row values (#183).
     ref = log_internal_error(logger, f"Failed to load {what}", exc)
     st.error(
-        f"⚠️ Could not load {what} — the database isn't reachable. "
+        f"Could not load {what}: the database isn't reachable. "
         "Check that PostgreSQL is running and DATABASE_URL is correct."
     )
     with st.expander("Error details"):
         st.code(f"{type(exc).__name__} (ref: {ref})")
 
 
+def dot(tone: str) -> str:
+    """A status dot as Streamlit colored-text markdown (no HTML)."""
+    return f":{tone}[●]"
+
+
 def get_status_badge(state: str) -> str:
-    """Get colored status badge for request state"""
-    state_colors = {
-        "delivered": "🟢",
-        "complete": "🟢",
-        "data_delivery": "🟡",
-        "delivery_review": "🟠",  # NEW: Awaiting delivery approval
-        "qa_validation": "🟡",
-        "data_extraction": "🟡",
-        "preview_qa": "🔵",  # NEW: Preview QA validation
-        "preview_extraction": "🔵",  # NEW: Preview extraction
-        "feasibility_validation": "🔵",
-        "requirements_gathering": "🔵",
-        "failed": "🔴",
-        "not_feasible": "🔴",
+    """Status dot for a request state: done, moving, waiting on a person, failed."""
+    state = (state or "").lower()
+    if state in ("delivered", "complete"):
+        return dot("green")
+    if state in ("failed", "not_feasible"):
+        return dot("red")
+    if state.endswith("_review") or state == "human_review":
+        return dot("orange")
+    if state in ("", "new_request"):
+        return dot("gray")
+    return dot("blue")
+
+
+def humanize(value) -> str:
+    """'phenotype_review' -> 'Phenotype review'; None -> '—'."""
+    if not value:
+        return "—"
+    text = str(value).replace("_", " ").strip()
+    return text[:1].upper() + text[1:]
+
+
+def timestamp(value) -> str:
+    """ISO timestamp as 'YYYY-MM-DD HH:MM:SS'; anything else passes through."""
+    if not value:
+        return "—"
+    return str(value).replace("T", " ")[:19]
+
+
+def stamp(text: str) -> None:
+    """The mono stamp: a quiet, exact record of when something was read."""
+    st.markdown(f'<span class="rf-stamp">{html.escape(text)}</span>', unsafe_allow_html=True)
+
+
+# Page-scoped styles (#365). The shared .streamlit/config.toml theme also styles
+# the two portals, so this page overrides it locally. Tokens match #362.
+PAGE_CSS = """
+<style>
+    :root {
+        --rf-ink: #14181f;
+        --rf-ink-2: #4a515c;
+        --rf-ink-3: #6b727d;
+        --rf-line: rgba(20, 24, 31, 0.08);
+        --rf-raised: #f6f7f8;
+        --rf-accent: #0b4fa8;
+        --rf-accent-2: #093f86;
+        --rf-mono: "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, monospace;
     }
-    return state_colors.get(state.lower(), "⚪")
+    [data-testid="stMainBlockContainer"] {
+        max-width: 1600px;
+        padding-top: 48px;
+    }
+    [data-testid="stMainBlockContainer"] h1 {
+        font-size: 32px;
+        font-weight: 500;
+        letter-spacing: -0.01em;
+        color: var(--rf-ink);
+        padding-bottom: 4px;
+    }
+    [data-testid="stMainBlockContainer"] h2 {
+        font-size: 24px;
+        font-weight: 500;
+        color: var(--rf-ink);
+        padding: 8px 0 4px;
+    }
+    [data-testid="stMainBlockContainer"] h3,
+    [data-testid="stDialog"] h3 {
+        font-size: 18px;
+        font-weight: 500;
+        color: var(--rf-ink);
+        padding: 16px 0 4px;
+    }
+    [data-testid="stMainBlockContainer"] h4 {
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--rf-ink-2);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        gap: 24px;
+        border-bottom: 1px solid var(--rf-line);
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"] p {
+        font-size: 14px;
+        color: var(--rf-ink-3);
+        transition: color 120ms ease-out;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab"][aria-selected="true"] p {
+        color: var(--rf-ink);
+        font-weight: 500;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+        background-color: var(--rf-accent);
+        height: 2px;
+    }
+    [data-testid="stTabs"] [data-baseweb="tab-border"] {
+        display: none;
+    }
+    [data-testid="stMetric"] [data-testid="stMetricLabel"] p {
+        font-size: 13px;
+        color: var(--rf-ink-3);
+    }
+    [data-testid="stMetric"] [data-testid="stMetricValue"] {
+        font-size: 28px;
+        font-weight: 500;
+        color: var(--rf-ink);
+        font-variant-numeric: tabular-nums;
+    }
+    [data-testid="stExpander"] details {
+        border: 1px solid var(--rf-line);
+        border-radius: 8px;
+    }
+    [data-testid="stExpander"] summary p {
+        font-size: 14px;
+        color: var(--rf-ink);
+    }
+    [data-testid="stExpander"] summary code,
+    [data-testid="stMarkdownContainer"] p code {
+        font-family: var(--rf-mono);
+        font-size: 12px;
+        color: var(--rf-ink-2);
+        background: var(--rf-raised);
+        border: 1px solid var(--rf-line);
+        border-radius: 4px;
+        padding: 1px 4px;
+    }
+    [data-testid="stCode"] pre {
+        background: var(--rf-raised);
+        border: 1px solid var(--rf-line);
+        border-radius: 8px;
+    }
+    [data-testid="stBaseButton-primary"] {
+        background: var(--rf-accent);
+        border-color: var(--rf-accent);
+        transition: background-color 120ms ease-out;
+    }
+    [data-testid="stBaseButton-primary"]:hover {
+        background: var(--rf-accent-2);
+        border-color: var(--rf-accent-2);
+    }
+    [data-testid="stBaseButton-secondary"] {
+        border: 1px solid var(--rf-line);
+        color: var(--rf-ink-2);
+        transition: background-color 120ms ease-out, color 120ms ease-out;
+    }
+    [data-testid="stBaseButton-secondary"]:hover {
+        background: var(--rf-raised);
+        border-color: var(--rf-line);
+        color: var(--rf-ink);
+    }
+    [data-testid="stBaseButton-primary"]:focus-visible,
+    [data-testid="stBaseButton-secondary"]:focus-visible {
+        outline: 2px solid var(--rf-accent);
+        outline-offset: 2px;
+    }
+    [data-testid="stDataFrame"] {
+        border: 1px solid var(--rf-line);
+        border-radius: 8px;
+    }
+    .rf-stamp {
+        display: inline-block;
+        padding: 2px 8px;
+        font-family: var(--rf-mono);
+        font-size: 12px;
+        color: var(--rf-ink-3);
+        border: 1px solid var(--rf-line);
+        border-radius: 4px;
+        font-variant-numeric: tabular-nums;
+    }
+</style>
+"""
 
 
 def check_delivery_status(request_id: str) -> dict:
@@ -125,7 +284,7 @@ def check_delivery_status(request_id: str) -> dict:
         # take; demote the errno to a parenthetical for whoever debugs it (#77).
         log_internal_error(logger, "Delivery-status check could not reach the API backend", e)
         st.error(
-            f"⚠️ Can't reach the ResearchFlow API server at {api_url}. "
+            f"Can't reach the ResearchFlow API server at {api_url}. "
             "The backend service is likely stopped — ask the platform team to "
             "start it (or run `make run`), then refresh this page. "
             f"(Technical: {type(e).__name__} — connection refused on the API port.)"
@@ -135,7 +294,7 @@ def check_delivery_status(request_id: str) -> dict:
         # Reachable but slow — distinct from "down". Retry framing, not "contact us".
         logger.warning("Delivery-status check timed out against %s", api_url)
         st.error(
-            f"⚠️ The API server at {api_url} is reachable but didn't respond within 10s. "
+            f"The API server at {api_url} is reachable but didn't respond within 10s. "
             "It may be under load — wait ~30 seconds and refresh to retry. "
             f"(Technical: {type(e).__name__}.)"
         )
@@ -146,7 +305,7 @@ def check_delivery_status(request_id: str) -> dict:
         # stays researcher-readable (#77).
         ref = log_internal_error(logger, "Delivery-status check failed unexpectedly", e)
         st.error(
-            "⚠️ Couldn't check delivery status right now. Please retry; if it "
+            "Couldn't check delivery status right now. Please retry; if it "
             f"keeps happening, contact platform support with code DELIV-{request_id} "
             f"(ref: {ref})."
         )
@@ -200,7 +359,7 @@ def initialize_orchestrator():
 
 def show_requests_sidebar():
     """Show all submitted requests in sidebar"""
-    st.header("📋 All Requests")
+    st.subheader("Requests")
 
     # Get all requests (FIXED: include completed requests for search)
     try:
@@ -213,7 +372,7 @@ def show_requests_sidebar():
 
     # Search box
     search_term = st.text_input(
-        "🔍 Search", key="search_requests", placeholder="Search by ID or researcher"
+        "Search", key="search_requests", placeholder="Request ID or researcher"
     )
 
     # Status filter (all possible workflow states)
@@ -237,7 +396,7 @@ def show_requests_sidebar():
         "failed",
     ]
     status_filter = st.multiselect(
-        "Filter by Status", options=all_statuses, default=[], key="status_filter"
+        "Status", options=all_statuses, default=[], key="status_filter", format_func=humanize
     )
 
     # Filter requests
@@ -256,25 +415,22 @@ def show_requests_sidebar():
             if r.get("current_state", "").lower() in [s.lower() for s in status_filter]
         ]
 
-    st.caption(f"Showing {len(filtered_requests)} of {len(requests)} requests")
+    st.caption(f"{len(filtered_requests):,} of {len(requests):,} requests")
 
     # Display requests
     if filtered_requests:
         for idx, req in enumerate(filtered_requests):
             badge = get_status_badge(req.get("current_state", ""))
             req_id = req.get("request_id", "Unknown")
-            req_short = req_id[:12] + "..." if len(req_id) > 12 else req_id
 
-            with st.expander(f"{badge} {req_short}"):
+            with st.expander(f"{badge} `{req_id}`"):
                 researcher_name = req.get("researcher_info", {}).get("name", "N/A")
                 st.write(f"**Researcher:** {researcher_name}")
-                st.write(f"**Status:** {req.get('current_state', 'N/A').replace('_', ' ').title()}")
+                st.write(f"**Status:** {humanize(req.get('current_state'))}")
 
                 started_at = req.get("started_at", "")
                 if started_at:
-                    st.write(
-                        f"**Started:** {started_at[:19] if isinstance(started_at, str) else started_at}"
-                    )
+                    st.write(f"**Started:** {timestamp(started_at)}")
 
                 # Check delivery
                 delivery = check_delivery_status(req_id)
@@ -282,7 +438,7 @@ def show_requests_sidebar():
                     st.write(f"**Cohort:** {delivery.get('cohort_size', 0):,} patients")
                     st.write(f"**Files:** {len(delivery.get('files', []))} ready")
 
-                if st.button("View Details", key=f"view_{idx}_{req_id}"):
+                if st.button("View details", key=f"view_{idx}_{req_id}"):
                     st.session_state.selected_request = req_id
 
         # Check if modal should be shown
@@ -292,7 +448,7 @@ def show_requests_sidebar():
         st.info("No requests match the filters")
 
 
-@st.dialog("Request Details", width="large")
+@st.dialog("Request details", width="large")
 def show_request_details_modal(request_id: str):
     """Show detailed request information in modal"""
 
@@ -304,16 +460,14 @@ def show_request_details_modal(request_id: str):
         return
 
     # Header
-    st.subheader(f"Request: {request_id}")
+    st.subheader(f"Request `{request_id}`")
 
     # Metrics
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Status", status.get("current_state", "N/A").replace("_", " ").title())
+        st.metric("Status", humanize(status.get("current_state")))
     with col2:
-        st.metric(
-            "Current Agent", (status.get("current_agent") or "None").replace("_", " ").title()
-        )
+        st.metric("Current agent", humanize(status.get("current_agent")))
     with col3:
         started = status.get("started_at", "")
         if started:
@@ -327,7 +481,7 @@ def show_request_details_modal(request_id: str):
     st.markdown("---")
 
     # Researcher Info
-    st.markdown("### 👤 Researcher Information")
+    st.markdown("### Researcher")
     researcher = status.get("researcher_info", {})
     col1, col2 = st.columns(2)
     with col1:
@@ -335,55 +489,47 @@ def show_request_details_modal(request_id: str):
         st.write(f"**Email:** {researcher.get('email', 'N/A')}")
     with col2:
         st.write(f"**Department:** {researcher.get('department', 'N/A')}")
-        st.write(f"**IRB Number:** {researcher.get('irb_number', 'N/A')}")
+        st.write(f"**IRB number:** {researcher.get('irb_number', 'N/A')}")
 
     st.markdown("---")
 
     # Workflow Timeline
-    st.markdown("### 📊 Workflow Timeline")
+    st.markdown("### Workflow timeline")
     if status.get("agents_involved"):
         for activity in reversed(status["agents_involved"][-10:]):  # Show last 10
-            agent = activity.get("agent", "").replace("_", " ").title()
-            task = activity.get("task", "").replace("_", " ").title()
-            timestamp = activity.get("timestamp", "")[:19] if activity.get("timestamp") else "N/A"
-            st.markdown(f"**{timestamp}** - {agent}: {task}")
+            agent = humanize(activity.get("agent"))
+            task = humanize(activity.get("task"))
+            st.markdown(f"`{timestamp(activity.get('timestamp'))}` {agent}: {task}")
     else:
         st.info("No agent activity yet")
 
     st.markdown("---")
 
     # Approval History
-    st.markdown("### ✅ Approval History")
+    st.markdown("### Approval history")
     try:
         approval_history = run_async(st.session_state.orchestrator.get_approval_history(request_id))
 
         if approval_history:
             for approval in approval_history:
-                approval_type = approval.get("approval_type", "").replace("_", " ").title()
-                status_icon = {
-                    "approved": "✅",
-                    "rejected": "❌",
-                    "pending": "⏳",
-                    "modified": "✏️",
-                    "timeout": "⏰",
-                }.get(approval.get("status", ""), "❓")
+                approval_type = humanize(approval.get("approval_type"))
+                tone = {
+                    "approved": "green",
+                    "rejected": "red",
+                    "pending": "orange",
+                    "modified": "blue",
+                }.get(approval.get("status", ""), "gray")
 
                 with st.expander(
-                    f"{status_icon} {approval_type} - {approval.get('status', 'N/A').title()}"
+                    f"{dot(tone)} {approval_type} · {humanize(approval.get('status'))}"
                 ):
                     col1, col2 = st.columns(2)
                     with col1:
-                        submitted_at = approval.get("submitted_at", "N/A")
-                        if submitted_at != "N/A":
-                            submitted_at = submitted_at[:19]
-                        st.write(f"**Submitted:** {submitted_at}")
-                        st.write(f"**Submitted By:** {approval.get('submitted_by', 'N/A')}")
+                        st.write(f"**Submitted:** {timestamp(approval.get('submitted_at'))}")
+                        st.write(f"**Submitted by:** {approval.get('submitted_by', 'N/A')}")
                     with col2:
-                        reviewed_at = approval.get("reviewed_at", "N/A")
-                        if reviewed_at and reviewed_at != "N/A":
-                            reviewed_at = reviewed_at[:19]
-                        st.write(f"**Reviewed:** {reviewed_at}")
-                        st.write(f"**Reviewed By:** {approval.get('reviewed_by', 'N/A')}")
+                        st.write(f"**Reviewed:** {timestamp(approval.get('reviewed_at'))}")
+                        st.write(f"**Reviewed by:** {approval.get('reviewed_by', 'N/A')}")
 
                     if approval.get("review_notes"):
                         st.write(f"**Notes:** {approval.get('review_notes')}")
@@ -395,7 +541,6 @@ def show_request_details_modal(request_id: str):
 
     st.markdown("---")
 
-    # Preview Data Section (NEW - Sprint X)
     show_preview_data_section(request_id, status)
 
     st.markdown("---")
@@ -415,7 +560,7 @@ def show_preview_data_section(request_id: str, status: dict):
     from app.database.models import DataDelivery
     from sqlalchemy import select
 
-    st.markdown("### 🔍 Preview Data")
+    st.markdown("### Preview data")
 
     # Check if preview data is available
     try:
@@ -431,48 +576,47 @@ def show_preview_data_section(request_id: str, status: dict):
         delivery = run_async(get_preview_data())
 
         if delivery and delivery.preview_data:
-            st.success("✅ Preview extraction complete (10 rows per element)")
+            st.success("Preview extraction complete: 10 rows per element")
 
             # Show preview QA report summary
             if delivery.preview_qa_report:
                 qa_report = delivery.preview_qa_report
-                status_icon = "✅" if qa_report.get("overall_status") == "passed" else "❌"
+                passed = qa_report.get("overall_status") == "passed"
                 st.info(
-                    f"{status_icon} Preview QA Status: {qa_report.get('overall_status', 'unknown').upper()}"
+                    f"{dot('green' if passed else 'red')} Preview QA: "
+                    f"{qa_report.get('overall_status', 'unknown')}"
                 )
 
                 # Show QA checks
-                with st.expander("Preview QA Checks"):
+                with st.expander("Preview QA checks"):
                     for check in qa_report.get("checks", []):
-                        check_icon = "✅" if check.get("passed") else "❌"
+                        tone = "green" if check.get("passed") else "red"
                         st.write(
-                            f"{check_icon} {check.get('check_name', 'Unknown')}: {check.get('message', 'N/A')}"
+                            f"{dot(tone)} {check.get('check_name', 'Unknown')}: {check.get('message', 'N/A')}"
                         )
 
             # Display preview data tables
-            st.markdown("#### Preview Data Tables")
-            st.caption("Showing first 10 rows per data element")
+            st.markdown("#### Preview tables")
+            st.caption("First 10 rows per data element")
 
             preview_data = delivery.preview_data
             for element_name, records in preview_data.items():
                 if records:
-                    with st.expander(
-                        f"📊 {element_name.replace('_', ' ').title()} ({len(records)} rows)"
-                    ):
+                    with st.expander(f"{humanize(element_name)} · {len(records)} rows"):
                         # Convert to DataFrame for better display
                         df = pd.DataFrame(records)
                         st.dataframe(df, use_container_width=True, height=300)
                 else:
-                    st.warning(f"⚠️ {element_name.replace('_', ' ').title()}: No data")
+                    st.caption(f"{humanize(element_name)}: no data")
 
             # Gate decisions go through the Pending Approvals queue, which resumes the
             # workflow; buttons here used to update the DB without it (#230).
             if status.get("current_state") in ("preview_qa", "preview_qa_review"):
-                st.info("🔍 Approve or reject this preview in the ✋ Pending Approvals tab.")
+                st.info("Approve or reject this preview in the Approvals tab.")
 
         elif status.get("current_state") in ["preview_extraction"]:
             # Show loading spinner for preview extraction
-            with st.spinner("⏳ Extracting preview data (10 rows per element)..."):
+            with st.spinner("Extracting preview data, 10 rows per element"):
                 # Get estimated time from SQL approval if available
                 async def get_estimated_time():
                     async with get_db_session() as session:
@@ -490,10 +634,10 @@ def show_preview_data_section(request_id: str, status: dict):
                         return 0
 
                 est_time = run_async(get_estimated_time())
-                st.info(f"⏳ {preview_time_message(est_time)}")
+                st.info(preview_time_message(est_time))
 
                 # Auto-refresh every 5 seconds to check for completion
-                st.caption("🔄 Auto-refreshing every 5 seconds...")
+                st.caption("Refreshes every 5 seconds")
                 time.sleep(5)
                 st.rerun()
         elif status.get("current_state") in [
@@ -504,9 +648,9 @@ def show_preview_data_section(request_id: str, status: dict):
             "delivered",
             "complete",
         ]:
-            st.success("✅ Preview was approved - full data extraction completed")
+            st.success("Preview approved; the full extraction has run")
         else:
-            st.caption("Preview data not available yet (request hasn't reached preview extraction)")
+            st.caption("No preview yet. The request has not reached preview extraction")
 
     except Exception as e:
         ref = log_internal_error(logger, "Could not load preview data", e)
@@ -515,36 +659,40 @@ def show_preview_data_section(request_id: str, status: dict):
 
 def show_download_section(request_id: str):
     """Show download options in modal"""
-    st.markdown("### 📦 Data Delivery")
+    st.markdown("### Data delivery")
 
     delivery_info = check_delivery_status(request_id)
 
     if delivery_info.get("delivered"):
-        st.success("✅ Data ready for download")
+        st.success("Data ready for download")
 
         # Metrics
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Cohort Size", f"{delivery_info.get('cohort_size', 0):,}")
+            st.metric("Cohort size", f"{delivery_info.get('cohort_size', 0):,}")
         with col2:
-            st.metric("Data Elements", len(delivery_info.get("data_elements", [])))
+            st.metric("Data elements", len(delivery_info.get("data_elements", [])))
         with col3:
             st.metric("Files", len(delivery_info.get("files", [])))
 
         st.markdown("---")
 
         # Download ZIP
-        st.markdown("**Download Complete Package (ZIP)**")
-        st.caption("Includes all data files, data dictionary, QA report, and documentation")
+        st.markdown("**Complete package (ZIP)**")
+        st.caption("All data files, the data dictionary, the QA report and documentation")
 
         if st.button(
-            "📦 Download ZIP", type="primary", use_container_width=True, key=f"dl_zip_{request_id}"
+            "Download ZIP",
+            icon=":material/download:",
+            type="primary",
+            use_container_width=True,
+            key=f"dl_zip_{request_id}",
         ):
-            with st.spinner("Preparing download..."):
+            with st.spinner("Preparing download"):
                 file_content, filename = download_file(request_id)
                 if file_content:
                     st.download_button(
-                        label="💾 Save ZIP File",
+                        label="Save ZIP file",
                         data=file_content,
                         file_name=filename,
                         mime="application/zip",
@@ -552,12 +700,12 @@ def show_download_section(request_id: str):
                         use_container_width=True,
                         key=f"save_zip_{request_id}",
                     )
-                    st.success(f"✅ Ready to download: {filename}")
+                    st.success(f"Ready to download: {filename}")
 
         st.markdown("---")
 
         # Individual files
-        st.markdown("**Individual Files**")
+        st.markdown("**Individual files**")
         files = delivery_info.get("files", [])
         if files:
             for idx, file_info in enumerate(files):
@@ -566,16 +714,16 @@ def show_download_section(request_id: str):
 
                 col1, col2 = st.columns([3, 1])
                 with col1:
-                    st.write(f"📄 {filename} ({size_mb:.2f} MB)")
+                    st.markdown(f"`{filename}` · {size_mb:.2f} MB")
                 with col2:
                     if st.button(
                         "Download", key=f"dl_admin_{request_id}_{idx}", use_container_width=True
                     ):
-                        with st.spinner(f"Downloading {filename}..."):
+                        with st.spinner(f"Downloading {filename}"):
                             file_content, _ = download_file(request_id, filename)
                             if file_content:
                                 st.download_button(
-                                    label=f"💾 Save",
+                                    label="Save",
                                     data=file_content,
                                     file_name=filename,
                                     mime="text/csv" if filename.endswith(".csv") else "text/plain",
@@ -588,7 +736,7 @@ def show_download_section(request_id: str):
         # QA Summary
         if delivery_info.get("qa_report_summary"):
             st.markdown("---")
-            st.markdown("**Quality Assurance Summary**")
+            st.markdown("**Quality assurance summary**")
             st.json(delivery_info["qa_report_summary"])
 
     else:
@@ -598,24 +746,27 @@ def show_download_section(request_id: str):
         if delivery_info.get("status") in {"backend_unreachable", "timeout", "unknown"}:
             return
         current_state = delivery_info.get("current_state", "unknown")
-        st.info(
-            f"Data not yet delivered. Current status: {current_state.replace('_', ' ').title()}"
-        )
+        st.info(f"Data not yet delivered. Current status: {humanize(current_state)}")
 
 
 def main():
     """Main admin dashboard application"""
-    st.set_page_config(page_title="ResearchFlow - Admin Dashboard", page_icon="⚙️", layout="wide")
+    st.set_page_config(
+        page_title="ResearchFlow admin",
+        page_icon=":material/fact_check:",
+        layout="wide",
+    )
+    st.markdown(PAGE_CSS, unsafe_allow_html=True)
 
     # Initialize orchestrator
     initialize_orchestrator()
 
     # Header
-    st.title("⚙️ ResearchFlow - Admin Dashboard")
-    st.caption("System monitoring and management")
+    st.title("ResearchFlow admin")
+    st.caption("Review gates, pipeline health and LLM cost for research data requests")
 
     # Auto-refresh controls
-    col1, col2, col3, col4 = st.columns([2, 2, 2, 6])
+    col1, col2, col3, col4 = st.columns([2, 2, 2, 6], vertical_alignment="bottom")
 
     with col1:
         auto_refresh = st.checkbox("Auto-refresh", value=False, key="auto_refresh")
@@ -630,15 +781,12 @@ def main():
         )
 
     with col3:
-        if st.button("🔄 Refresh Now", key="manual_refresh"):
+        if st.button("Refresh", icon=":material/refresh:", key="manual_refresh"):
             st.rerun()
 
-    with col4:
-        if "last_refresh" in st.session_state:
-            st.caption(f"Last updated: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
-
-    # Update last refresh time
     st.session_state.last_refresh = datetime.now()
+    with col4:
+        stamp(f"Read at {st.session_state.last_refresh.strftime('%H:%M:%S')}")
 
     # Main layout: Sidebar + Main Area
     col_sidebar, col_main = st.columns([1, 3])
@@ -652,13 +800,13 @@ def main():
         # Tabs
         tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(
             [
-                "📊 Overview",
-                "🤖 Agent Metrics",
-                "✋ Pending Approvals",
-                "🚨 Escalations",
-                "📈 Analytics",
-                "🗄️ Materialized Views",
-                "💰 Cost Telemetry",
+                "Overview",
+                "Agent metrics",
+                "Approvals",
+                "Escalations",
+                "Analytics",
+                "Materialized views",
+                "Cost telemetry",
             ]
         )
 
@@ -691,7 +839,7 @@ def main():
 
 def show_overview():
     """Display system overview"""
-    st.header("System Overview")
+    st.header("Overview")
 
     # Get all active requests
     try:
@@ -704,35 +852,35 @@ def show_overview():
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Total Requests", len(requests))
+        st.metric("Requests", f"{len(requests):,}")
 
     with col2:
         in_progress = len(
             [r for r in requests if r["current_state"] not in ["delivered", "complete", "failed"]]
         )
-        st.metric("In Progress", in_progress)
+        st.metric("In progress", f"{in_progress:,}")
 
     with col3:
         completed = len([r for r in requests if r["current_state"] in ["delivered", "complete"]])
-        st.metric("Completed", completed)
+        st.metric("Completed", f"{completed:,}")
 
     with col4:
         failed = len([r for r in requests if r["current_state"] == "failed"])
-        st.metric("Failed/Escalated", failed, delta=-failed if failed > 0 else None)
+        st.metric("Failed", f"{failed:,}", delta=-failed if failed > 0 else None)
 
     # Recent requests
-    st.subheader("📋 Recent Requests")
+    st.subheader("Recent requests")
 
     if requests:
         df_data = []
         for req in requests[:10]:  # Show last 10
             df_data.append(
                 {
-                    "Request ID": req["request_id"][:16] + "...",
+                    "Request ID": req["request_id"],
                     "Researcher": req["researcher_info"].get("name", "N/A"),
-                    "Status": req["current_state"],
-                    "Current Agent": req.get("current_agent", "None"),
-                    "Started": req["started_at"][:19],
+                    "Status": humanize(req["current_state"]),
+                    "Current agent": humanize(req.get("current_agent")),
+                    "Started": timestamp(req["started_at"]),
                 }
             )
 
@@ -749,7 +897,7 @@ def show_agent_metrics():
     NOTE: Queries AgentExecution table instead of in-memory state
     to support cross-process visibility (Researcher Portal → Admin Dashboard)
     """
-    st.header("🤖 Agent Performance Metrics")
+    st.header("Agent metrics")
 
     # Query AgentExecution table from database
     async def fetch_agent_metrics():
@@ -839,11 +987,11 @@ def show_agent_metrics():
             {
                 "Agent": agent_name,
                 "State": metrics["state"],
-                "Total Tasks": metrics["total_tasks"],
+                "Tasks": metrics["total_tasks"],
                 "Successful": metrics["successful_tasks"],
                 "Failed": metrics["failed_tasks"],
-                "Success Rate": f"{metrics['success_rate']:.1%}",
-                "Avg Duration (s)": f"{metrics['avg_duration_seconds']:.1f}",
+                "Success rate": f"{metrics['success_rate']:.1%}",
+                "Avg duration (s)": f"{metrics['avg_duration_seconds']:.1f}",
             }
         )
 
@@ -851,35 +999,36 @@ def show_agent_metrics():
     st.dataframe(df, use_container_width=True, hide_index=True)
 
     # Agent status indicators
-    st.subheader("Agent Status")
+    st.subheader("Agent status")
 
-    cols = st.columns(3)
-    for idx, (agent_id, metrics) in enumerate(all_metrics.items()):
-        with cols[idx % 3]:
-            agent_name = agent_id.replace("_", " ").title()
-            status = metrics["state"]
-            status_emoji = "🟢" if status == "idle" else "🔵" if status == "working" else "🔴"
-
-            st.metric(f"{status_emoji} {agent_name}", status, f"{metrics['total_tasks']} tasks")
+    lines = []
+    for agent_id, metrics in all_metrics.items():
+        status = metrics["state"]
+        tone = "green" if status == "idle" else "blue" if status == "working" else "red"
+        lines.append(
+            f"- {dot(tone)} {humanize(agent_id)} · {status} · {metrics['total_tasks']:,} tasks"
+        )
+    st.markdown("\n".join(lines))
 
 
 def show_pending_approvals():
     """Display pending approvals requiring human review"""
-    st.header("✋ Pending Approvals - Human-in-Loop Gates")
+    st.header("Approvals")
+    st.caption("Human review gates. A request does not move past a gate until it is decided here")
 
     # Filter by approval type
     col1, col2, col3 = st.columns([2, 2, 6])
 
     with col1:
         approval_type_filter = st.selectbox(
-            "Filter by Type",
+            "Type",
             ["All", "Requirements", "Phenotype SQL", "Extraction", "QA", "Scope Change"],
             key="approval_type_filter",
         )
 
     with col2:
         reviewer_email = st.text_input(
-            "Your Email", placeholder="informatician@hospital.org", key="reviewer_email"
+            "Your email", placeholder="informatician@hospital.org", key="reviewer_email"
         )
 
     # Fetch pending approvals from database
@@ -926,53 +1075,57 @@ def show_pending_approvals():
         ]
 
         # Metrics
-        st.subheader("📊 Approval Queue Metrics")
-
         col1, col2, col3, col4 = st.columns(4)
 
         with col1:
-            st.metric("Total Pending", len(approvals))
+            st.metric("Pending", f"{len(approvals):,}")
 
         with col2:
             sql_approvals = len([a for a in approvals if a.get("approval_type") == "phenotype_sql"])
             st.metric(
-                "🔴 SQL Reviews",
-                sql_approvals,
-                help="CRITICAL - SQL must be approved before execution",
+                "SQL reviews",
+                f"{sql_approvals:,}",
+                help="SQL must be approved before it runs",
             )
 
         with col3:
             req_approvals = len([a for a in approvals if a.get("approval_type") == "requirements"])
-            st.metric("Requirements", req_approvals)
+            st.metric("Requirements", f"{req_approvals:,}")
 
         with col4:
             scope_approvals = len(
                 [a for a in approvals if a.get("approval_type") == "scope_change"]
             )
-            st.metric("Scope Changes", scope_approvals)
+            st.metric("Scope changes", f"{scope_approvals:,}")
 
         # Gate telemetry (#144): what the human gates catch, and how fast. Aggregates only.
-        with st.expander("🚦 Gate Telemetry: decisions, reviewer time, what rejections caught"):
+        with st.expander("Gate telemetry: decisions, reviewer time, what rejections caught"):
             try:
                 st.dataframe(gate_telemetry_rows(run_async(load_gate_telemetry())))
             except Exception as e:
                 _render_db_unreachable(e, "gate telemetry")
 
         # Display approvals
-        st.subheader("📋 Pending Approvals")
+        st.subheader("Awaiting review")
 
         if not approvals:
-            st.success("✅ No pending approvals - all reviews complete!")
+            st.info("No pending approvals")
         else:
+            # One card open at a time keeps a long queue scannable (#365).
+            first_sql = next(
+                (a["id"] for a in approvals if a["approval_type"] == "phenotype_sql"), None
+            )
             for approval in approvals:
-                display_approval_card(approval, reviewer_email)
+                display_approval_card(
+                    approval, reviewer_email, expanded=approval["id"] == first_sql
+                )
 
     except Exception as e:
         ref = log_internal_error(logger, "Error fetching approvals", e)
         st.error(f"Error fetching approvals (ref: {ref})")
 
 
-def display_approval_card(approval, reviewer_email):
+def display_approval_card(approval, reviewer_email, expanded=False):
     """Display a single approval card with all details and action buttons"""
     approval_id = approval["id"]
     approval_type = approval["approval_type"]
@@ -983,53 +1136,42 @@ def display_approval_card(approval, reviewer_email):
     approval_data = approval.get("approval_data", {})
 
     # Determine urgency based on timeout
-    urgency = "🟢 Normal"
+    tone, urgency = "gray", ""
     if timeout_at:
         timeout_dt = datetime.fromisoformat(timeout_at.replace("Z", "+00:00"))
         time_remaining = timeout_dt - datetime.now()
         hours_remaining = time_remaining.total_seconds() / 3600
 
-        if hours_remaining < 2:
-            urgency = "🔴 URGENT (< 2h)"
+        if hours_remaining < 0:
+            tone, urgency = "red", "overdue"
+        elif hours_remaining < 2:
+            tone, urgency = "red", "due within 2 h"
         elif hours_remaining < 6:
-            urgency = "🟡 High Priority (< 6h)"
-
-    # Type-specific styling
-    type_emoji_map = {
-        "requirements": "📄",
-        "phenotype_sql": "🔴",  # Red circle for critical SQL
-        "preview_qa": "⚠️",  # Warning for preview QA failure
-        "extraction": "📊",
-        "qa": "✓",
-        "scope_change": "🔄",
-    }
+            tone, urgency = "orange", "due within 6 h"
 
     type_label_map = {
-        "requirements": "Requirements Review",
-        "phenotype_sql": "SQL REVIEW (CRITICAL)",
-        "preview_qa": "PREVIEW QA FAILED - REVIEW REQUIRED",
-        "extraction": "Extraction Approval",
-        "qa": "QA Review",
-        "scope_change": "Scope Change",
+        "requirements": "Requirements review",
+        "phenotype_sql": "SQL review",
+        "preview_qa": "Preview QA failed, review required",
+        "extraction": "Extraction approval",
+        "qa": "QA review",
+        "scope_change": "Scope change",
     }
+    label = type_label_map.get(approval_type, humanize(approval_type))
 
-    emoji = type_emoji_map.get(approval_type, "📋")
-    label = type_label_map.get(approval_type, approval_type.title())
-
-    # Create expander with urgency indicator
     with st.expander(
-        f"{emoji} {label} - {request_id[:20]}... | {urgency}",
-        expanded=(approval_type == "phenotype_sql"),
+        f"{dot(tone)} {label} · `{request_id}`" + (f" · {urgency}" if urgency else ""),
+        expanded=expanded,
     ):
         # Header info
         col1, col2, col3 = st.columns(3)
         with col1:
             st.write(f"**Request ID:** `{request_id}`")
         with col2:
-            st.write(f"**Submitted:** {submitted_at[:19]}")
+            st.write(f"**Submitted:** {timestamp(submitted_at)}")
         with col3:
             if timeout_at:
-                st.write(f"**Timeout:** {timeout_at[:19]}")
+                st.write(f"**Timeout:** {timestamp(timeout_at)}")
 
         st.write(f"**Submitted by:** {submitted_by}")
 
@@ -1057,13 +1199,17 @@ def display_approval_card(approval, reviewer_email):
         st.divider()
 
         # Action buttons
-        st.subheader("Actions")
+        st.subheader("Decision")
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
             if st.button(
-                "✅ Approve", key=f"approve_{approval_id}", type="primary", use_container_width=True
+                "Approve",
+                icon=":material/check:",
+                key=f"approve_{approval_id}",
+                type="primary",
+                use_container_width=True,
             ):
                 # Email optional for MVP (SSO handles authorization)
                 reviewer = reviewer_email if reviewer_email else "System Admin"
@@ -1071,26 +1217,34 @@ def display_approval_card(approval, reviewer_email):
 
         with col2:
             if st.button(
-                "✏️ Modify & Approve", key=f"modify_{approval_id}", use_container_width=True
+                "Modify and approve",
+                icon=":material/edit:",
+                key=f"modify_{approval_id}",
+                use_container_width=True,
             ):
                 st.session_state[f"show_modify_{approval_id}"] = True
 
         with col3:
-            if st.button("❌ Reject", key=f"reject_{approval_id}", use_container_width=True):
+            if st.button(
+                "Reject",
+                icon=":material/close:",
+                key=f"reject_{approval_id}",
+                use_container_width=True,
+            ):
                 st.session_state[f"show_reject_{approval_id}"] = True
 
         # Modification interface
         if st.session_state.get(f"show_modify_{approval_id}", False):
-            st.subheader("Approve with Modifications")
+            st.subheader("Approve with modifications")
             notes = st.text_area(
                 "Notes",
-                placeholder="Explain your modifications...",
+                placeholder="What you changed and why",
                 key=f"modify_notes_{approval_id}",
             )
 
             if approval_type == "phenotype_sql":
                 modified_sql = st.text_area(
-                    "Modified SQL Query",
+                    "Modified SQL",
                     value=approval_data.get("sql_query", ""),
                     height=200,
                     key=f"modified_sql_{approval_id}",
@@ -1099,7 +1253,7 @@ def display_approval_card(approval, reviewer_email):
             else:
                 modifications = {}
 
-            if st.button("Submit Modifications", key=f"submit_modify_{approval_id}"):
+            if st.button("Submit modifications", key=f"submit_modify_{approval_id}"):
                 # Email optional for MVP (SSO handles authorization)
                 reviewer = reviewer_email if reviewer_email else "System Admin"
                 handle_approval_response(approval_id, "modify", reviewer, notes, modifications)
@@ -1107,18 +1261,18 @@ def display_approval_card(approval, reviewer_email):
 
         # Rejection interface
         if st.session_state.get(f"show_reject_{approval_id}", False):
-            st.subheader("Reject Approval")
+            st.subheader("Reject")
             reject_reason = st.text_area(
-                "Reason for Rejection",
-                placeholder="Explain why this is being rejected and what needs to be fixed...",
+                "Reason for rejection",
+                placeholder="What is wrong and what needs to change",
                 key=f"reject_reason_{approval_id}",
             )
 
             if st.button(
-                "Confirm Rejection", key=f"confirm_reject_{approval_id}", type="secondary"
+                "Confirm rejection", key=f"confirm_reject_{approval_id}", type="secondary"
             ):
                 if not reject_reason:
-                    st.error("Please provide a reason for rejection")
+                    st.error("Give a reason for the rejection")
                 else:
                     # Email optional for MVP (SSO handles authorization)
                     reviewer = reviewer_email if reviewer_email else "System Admin"
@@ -1140,73 +1294,70 @@ def display_sql_approval(data):
     """Display SQL approval details with syntax highlighting"""
 
     # Display Research Request Context (NEW - shows what researcher requested)
-    st.subheader("📋 Research Request")
+    st.subheader("Research request")
 
     # Display original request text
     initial_request = data.get("initial_request", "")
     if initial_request:
-        st.info(f"**Original Request**: {initial_request}")
+        st.info(f"**Original request:** {initial_request}")
     else:
-        st.info("**Original Request**: Not available")
+        st.info("**Original request:** not available")
 
     # Display structured requirements
     requirements = data.get("structured_requirements", {})
     if requirements:
-        with st.expander("📊 Structured Requirements", expanded=True):
+        with st.expander("Structured requirements", expanded=True):
             # Display inclusion criteria
             inclusion = requirements.get("inclusion_criteria", [])
             if inclusion:
-                st.markdown("**Inclusion Criteria:**")
+                st.markdown("**Inclusion criteria**")
                 for criterion in inclusion:
                     # Handle both string and dict formats
                     if isinstance(criterion, dict):
                         criterion_text = criterion.get("description", str(criterion))
                     else:
                         criterion_text = str(criterion)
-                    st.markdown(f"• {criterion_text}")
+                    st.markdown(f"- {criterion_text}")
 
             # Display exclusion criteria
             exclusion = requirements.get("exclusion_criteria", [])
             if exclusion:
-                st.markdown("**Exclusion Criteria:**")
+                st.markdown("**Exclusion criteria**")
                 for criterion in exclusion:
                     if isinstance(criterion, dict):
                         criterion_text = criterion.get("description", str(criterion))
                     else:
                         criterion_text = str(criterion)
-                    st.markdown(f"• {criterion_text}")
+                    st.markdown(f"- {criterion_text}")
 
             # Display data elements
             data_elements = requirements.get("data_elements", [])
             if data_elements:
-                st.markdown(f"**Data Elements**: {', '.join(str(elem) for elem in data_elements)}")
+                st.markdown(f"**Data elements:** {', '.join(str(elem) for elem in data_elements)}")
 
             # Display time period
             time_period = requirements.get("time_period", {})
             if time_period and isinstance(time_period, dict):
                 start = time_period.get("start", "N/A")
                 end = time_period.get("end", "N/A")
-                st.markdown(f"**Time Period**: {start} to {end}")
+                st.markdown(f"**Time period:** {start} to {end}")
 
             # Display PHI level
             phi_level = requirements.get("phi_level", "N/A")
-            st.markdown(f"**PHI Level**: {phi_level}")
+            st.markdown(f"**PHI level:** {humanize(phi_level)}")
 
     st.divider()
 
     # SQL Query Review Section
-    st.subheader("🔴 CRITICAL: SQL Query Review")
+    st.subheader("SQL to review")
 
     st.warning(
-        """
-    **IMPORTANT:** This SQL query will execute against the production FHIR database if approved.
-    Please verify:
-    - SQL syntax is correct
-    - Date filters are appropriate
-    - Cohort size is reasonable
-    - No sensitive fields are exposed
-    - Joins and selections are accurate
-    """
+        "If approved, this SQL runs against the production FHIR database. Check that:\n"
+        "- the syntax is correct\n"
+        "- the date filters fit the request\n"
+        "- the cohort size is plausible\n"
+        "- no identifying fields are selected\n"
+        "- the joins and selections match the criteria"
     )
 
     # SQL Query
@@ -1220,7 +1371,14 @@ def display_sql_approval(data):
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Estimated Cohort", "Unavailable" if estimate_unavailable else cohort)
+        st.metric(
+            "Estimated Cohort",
+            (
+                "Unavailable"
+                if estimate_unavailable
+                else f"{cohort:,}" if isinstance(cohort, int) else cohort
+            ),
+        )
 
     with col2:
         feasibility = data.get("feasibility_score")
@@ -1245,40 +1403,39 @@ def display_sql_approval(data):
     if estimate_unavailable:
         ref = estimate.get("error_ref")
         st.error(
-            "🔴 **Cohort estimate unavailable** — the count query failed"
+            "**Cohort estimate unavailable.** The count query failed"
             + (f" (ref: {ref})" if ref else "")
             + ". No cohort size is known; review the SQL on its own."
         )
     elif auto_assessment == "not_feasible":
         st.error(
-            "🔴 **Auto-Assessment: Low Cohort Size Detected**\n\n"
-            "The automated feasibility check detected a small cohort size. "
-            "Please review the SQL query carefully and consider:\n"
+            "**Auto-Assessment: Low Cohort Size Detected**\n\n"
+            "The automated feasibility check found a small cohort. "
+            "Read the SQL closely and consider:\n"
             "- Whether broader inclusion criteria would be appropriate\n"
             "- Whether the SQL query accurately represents the research intent\n"
             "- Whether this cohort size is acceptable for the study design"
         )
     elif auto_assessment == "feasible":
-        st.success("✅ **Auto-Assessment: Adequate Cohort Size**")
+        st.success("**Auto-assessment:** adequate cohort size")
 
     # Warnings
     warnings = data.get("warnings", [])
     if warnings:
-        st.warning("⚠️ **Warnings:**")
-        for warning in warnings:
-            st.write(f"- {warning.get('message', warning)}")
+        st.warning(
+            "**Warnings**\n"
+            + "\n".join(f"- {w.get('message', w) if isinstance(w, dict) else w}" for w in warnings)
+        )
 
     # Recommendations
     recommendations = data.get("recommendations", [])
     if recommendations:
-        st.info("💡 **Recommendations:**")
-        for rec in recommendations:
-            st.write(f"- {rec}")
+        st.info("**Recommendations**\n" + "\n".join(f"- {rec}" for rec in recommendations))
 
 
 def display_preview_qa_approval(data):
     """Display preview QA failure details for review"""
-    st.subheader("⚠️ Preview QA Failed - Review Required")
+    st.subheader("Preview QA failed, review required")
 
     # Display failure message
     message = data.get(
@@ -1290,12 +1447,12 @@ def display_preview_qa_approval(data):
     # Display cohort check results
     cohort_check = data.get("cohort_check", {})
     if cohort_check:
-        st.subheader("📊 Cohort Count Mismatch")
+        st.subheader("Cohort count mismatch")
 
         col1, col2, col3 = st.columns(3)
         with col1:
             actual_size = cohort_check.get("details", {}).get("actual_cohort_size", "N/A")
-            st.metric("Actual Cohort", actual_size)
+            st.metric("Actual cohort", actual_size)
         details = cohort_check.get("details", {})
         # None means the estimate failed; there is nothing to compare (#245).
         estimated_size = details.get("estimated_cohort_size", "N/A")
@@ -1323,28 +1480,28 @@ def display_preview_qa_approval(data):
     # Display QA report if available
     qa_report = data.get("qa_report", {})
     if qa_report:
-        st.subheader("📋 QA Report")
+        st.subheader("QA report")
 
         overall_status = qa_report.get("overall_status", "unknown")
         if overall_status == "failed":
-            st.error(f"**Overall Status:** {overall_status.upper()}")
+            st.error(f"**Overall status:** {overall_status}")
         else:
-            st.success(f"**Overall Status:** {overall_status.upper()}")
+            st.success(f"**Overall status:** {overall_status}")
 
         # Display issues
         issues = qa_report.get("issues", [])
         if issues:
-            st.markdown("**Issues Found:**")
+            st.markdown("**Issues found**")
             for issue in issues:
                 check_name = issue.get("check_name", "Unknown")
                 severity = issue.get("severity", "info")
                 message = issue.get("message", "No message")
 
-                severity_emoji = {"critical": "🔴", "warning": "🟡", "info": "🔵"}.get(
-                    severity, "⚪"
+                tone = {"critical": "red", "warning": "orange", "info": "blue"}.get(
+                    severity, "gray"
                 )
 
-                st.markdown(f"{severity_emoji} **{check_name}**: {message}")
+                st.markdown(f"{dot(tone)} **{check_name}**: {message}")
 
     st.divider()
 
@@ -1353,67 +1510,61 @@ def display_preview_qa_approval(data):
     if preview_package:
         metadata = preview_package.get("metadata", {})
         if metadata:
-            st.subheader("📦 Preview Package Metadata")
+            st.subheader("Preview package metadata")
             st.json(metadata)
 
     # Decision guidance
     st.info(
-        """
-    **Decision Options:**
-
-    **✅ Approve**: Proceed to full extraction despite cohort count mismatch.
-    - Use if the mismatch is acceptable (e.g., data quality issue, acceptable variance)
-    - Full extraction will proceed with all patients that match the SQL query
-
-    **❌ Reject**: Return to SQL generation for revision.
-    - Use if the SQL query needs to be fixed (e.g., wrong criteria, missing conditions)
-    - Request will go back to phenotype agent for new SQL generation
-    """
+        "**Approve** runs the full extraction despite the mismatch. Use it when the "
+        "difference is acceptable, such as a known data quality gap. The extraction "
+        "includes every patient the SQL matches.\n\n"
+        "**Reject** sends the request back to the phenotype agent for new SQL. Use it "
+        "when the criteria are wrong or incomplete."
     )
 
 
 def display_requirements_approval(data):
     """Display requirements approval details"""
-    st.subheader("📄 Requirements Review")
+    st.subheader("Requirements review")
 
     structured_reqs = data.get("structured_requirements", {})
     completeness = data.get("completeness_score", 0)
 
     # Completeness score
-    st.metric("Completeness Score", f"{completeness:.1%}")
+    st.metric("Completeness", f"{completeness:.1%}")
 
     # Study details
     if "study_title" in structured_reqs:
-        st.write(f"**Study Title:** {structured_reqs['study_title']}")
+        st.write(f"**Study title:** {structured_reqs['study_title']}")
 
     # Inclusion criteria
     inclusion = structured_reqs.get("inclusion_criteria", [])
     if inclusion:
-        st.write("**Inclusion Criteria:**")
+        st.write("**Inclusion criteria**")
         for criterion in inclusion:
             st.write(f"- {criterion}")
 
     # Exclusion criteria
     exclusion = structured_reqs.get("exclusion_criteria", [])
     if exclusion:
-        st.write("**Exclusion Criteria:**")
+        st.write("**Exclusion criteria**")
         for criterion in exclusion:
             st.write(f"- {criterion}")
 
     # Data elements
     elements = structured_reqs.get("data_elements", [])
     if elements:
-        st.write(f"**Data Elements:** {', '.join(elements)}")
+        st.write(f"**Data elements:** {', '.join(str(e) for e in elements)}")
 
     # Full requirements (using details/summary instead of nested expander)
     st.markdown("---")
-    st.markdown("**Full Requirements (JSON):**")
+    st.markdown("**Full requirements (JSON)**")
     st.json(structured_reqs)
 
 
 def display_scope_change_approval(data):
     """Display scope change approval with impact analysis"""
-    st.subheader("🔄 Scope Change Request")
+    st.subheader("Scope change request")
 
     requested_changes = data.get("requested_changes", {})
     reason = data.get("reason", "N/A")
@@ -1423,53 +1574,52 @@ def display_scope_change_approval(data):
     st.write(f"**Reason:** {reason}")
 
     # Requested changes
-    st.write("**Requested Changes:**")
+    st.write("**Requested changes**")
     st.json(requested_changes)
 
     st.divider()
 
     # Impact analysis
-    st.subheader("📊 Impact Analysis")
+    st.subheader("Impact analysis")
 
     severity = impact.get("severity", "unknown")
-    severity_color = {"low": "🟢", "medium": "🟡", "high": "🔴"}.get(severity, "⚪")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.metric("Severity", f"{severity_color} {severity.title()}")
+        st.metric("Severity", humanize(severity))
 
     with col2:
         requires_rework = impact.get("requires_rework", False)
-        st.metric("Requires Rework", "Yes" if requires_rework else "No")
+        st.metric("Requires rework", "Yes" if requires_rework else "No")
 
     with col3:
         delay = impact.get("estimated_delay_hours", 0)
-        st.metric("Estimated Delay", f"{delay}h")
+        st.metric("Estimated delay", f"{delay} h")
 
     # Restart point
     if impact.get("restart_from_state"):
-        st.warning(f"⚠️ **Workflow will restart from:** `{impact['restart_from_state']}`")
+        st.warning(f"The workflow restarts from `{impact['restart_from_state']}`")
 
     # Affected components
     affected = impact.get("affected_components", [])
     if affected:
-        st.write(f"**Affected Components:** {', '.join(affected)}")
+        st.write(f"**Affected components:** {', '.join(affected)}")
 
 
 def display_qa_approval(data):
     """Display QA approval details"""
-    st.subheader("✓ QA Results Review")
+    st.subheader("QA results review")
 
-    st.write("**QA validation results:**")
+    st.write("**QA validation results**")
     st.json(data)
 
 
 def display_extraction_approval(data):
     """Display extraction approval details"""
-    st.subheader("📊 Data Extraction Approval")
+    st.subheader("Data extraction approval")
 
-    st.write("**Extraction details:**")
+    st.write("**Extraction details**")
     st.json(data)
 
 
@@ -1500,16 +1650,16 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
         run_async(process_approval_with_orchestrator())
 
         if decision == "approve":
-            st.success(f"✅ Approval {approval_id} approved! Workflow continuing to next agent...")
+            st.success(f"Approval {approval_id} approved. The workflow continues to the next agent")
             logger.info(f"[Admin Dashboard] Approval {approval_id} approved successfully")
         elif decision == "reject":
             st.error(
-                f"❌ Approval {approval_id} rejected. Request will return to originating agent."
+                f"Approval {approval_id} rejected. The request returns to the agent that raised it"
             )
             logger.info(f"[Admin Dashboard] Approval {approval_id} rejected")
         elif decision == "modify":
             st.success(
-                f"✏️ Approval {approval_id} approved with modifications. Workflow continuing with changes..."
+                f"Approval {approval_id} approved with modifications. The workflow continues with the changes"
             )
             logger.info(f"[Admin Dashboard] Approval {approval_id} modified and approved")
 
@@ -1532,41 +1682,34 @@ def handle_approval_response(approval_id, decision, reviewer, notes, modificatio
 
 def show_escalations():
     """Display escalations requiring human review"""
-    st.header("🚨 Escalations & Human Review Queue")
-
-    st.info(
-        """
-    **Note:** Escalations will appear here when:
-    - Agents encounter errors after max retries
-    - Data quality checks fail critically
-    - Requests are not feasible
-    - Complex decisions require human judgment
-    """
+    st.header("Escalations")
+    st.caption(
+        "An escalation lands here when an agent fails after its retries, a data quality "
+        "check fails critically, a request is not feasible, or a decision needs human judgment"
     )
 
-    # Mock escalation data for demonstration
-    st.subheader("Pending Reviews")
+    st.subheader("Pending reviews")
 
     escalations = []  # TODO: Retrieve from database
 
     if escalations:
         for escalation in escalations:
-            with st.expander(f"Request {escalation['request_id']} - {escalation['reason']}"):
+            with st.expander(f"`{escalation['request_id']}` · {escalation['reason']}"):
                 st.write(f"**Agent:** {escalation['agent']}")
                 st.write(f"**Error:** {escalation['error']}")
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    if st.button("✅ Approve", key=f"approve_{escalation['id']}"):
+                    if st.button("Approve", key=f"approve_{escalation['id']}"):
                         st.success("Approved")
                 with col2:
-                    if st.button("✏️ Modify", key=f"modify_{escalation['id']}"):
+                    if st.button("Modify", key=f"modify_{escalation['id']}"):
                         st.info("Show modification interface")
                 with col3:
-                    if st.button("❌ Reject", key=f"reject_{escalation['id']}"):
+                    if st.button("Reject", key=f"reject_{escalation['id']}"):
                         st.error("Rejected")
     else:
-        st.success("No pending escalations - all systems nominal!")
+        st.info("No pending escalations")
 
 
 def show_cost_telemetry():
@@ -1592,20 +1735,19 @@ def show_cost_telemetry():
         FORMAL_BAND_CEILING_USD,
     )
 
-    st.header("💰 Cost Telemetry — Sprint 8.1 Verification")
+    st.header("Cost telemetry")
     st.caption(
-        "Sprint 8.1 gate: median cost-per-request ≤ 1.3× projected, rolling 30 requests per portal. "
-        "See DECISIONS.md Sprint 8.1 ADR for the source-of-truth design."
+        "Median LLM cost over the last 30 requests per portal, against a band of 1.3 × the "
+        "measured baseline. Source: LangSmith runs tagged by portal (ADR 0018, ADR 0025)"
     )
     st.info(
-        "📐 **Numbers corrected 2026-05-14 (Sprint 8.4)** — pre-fix display inflated by "
-        "~3× when caching was active due to `cache_read` tokens being double-charged inside "
-        "`_run_cost_usd`. Sprint 8.1's $0.009026 baseline was unaffected (cache_hit=0% at the "
-        "time). See DECISIONS.md Sprint 8.4 ADR. "
-        "**Corrected again 2026-11-03 (#271)** — cache-write tokens were also double-charged "
-        "(input rate + cache-write rate), inflating cold-cache calls ~1.6×; warm, cache-read "
+        "**Corrected 2026-05-14 (ADR 0023).** Before this fix the figures were about 3 × too "
+        "high while caching was active, because `cache_read` tokens were charged twice in "
+        "`_run_cost_usd`. The $0.009026 baseline was unaffected (cache hit rate was 0% then).\n\n"
+        "**Corrected 2026-11-03 (#271).** Cache-write tokens were also charged twice (input "
+        "rate plus cache-write rate), inflating cold-cache calls about 1.6 ×. Warm, cache-read "
         "calls were unaffected.",
-        icon="ℹ️",
+        icon=":material/info:",
     )
 
     service = CostTelemetryService()
@@ -1614,7 +1756,7 @@ def show_cost_telemetry():
 
     with col_formal:
         st.subheader("Formal Portal")
-        st.caption("6-agent workflow · cost-per-request grouped by `thread_id`")
+        st.caption("6-agent workflow · cost per request, grouped by `thread_id`")
 
         try:
             summary = run_async(service.get_formal_portal_cost_p50(n=30))
@@ -1627,34 +1769,32 @@ def show_cost_telemetry():
             )
             return
 
-        badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[summary.gate_status]
         st.metric(
-            label=f"{badge} Median cost / request",
-            value=f"${summary.median_usd:.4f}",
-            delta=f"band ≤ ${summary.band_ceiling_usd:.4f}",
+            label="Median cost per request",
+            value=f"${summary.median_usd:.5f}",
+            delta=f"band ≤ ${summary.band_ceiling_usd:.5f}",
             delta_color=("normal" if summary.gate_status == "green" else "inverse"),
         )
         st.caption(
-            f"Sample: {summary.n_observed} of 30 · "
-            f"Cache hit rate: {summary.cache_hit_rate * 100:.1f}%"
+            f"Sample {summary.n_observed} of 30 · "
+            f"cache hit rate {summary.cache_hit_rate * 100:.1f}%"
         )
         if summary.gate_status == "gray":
             st.info(
-                f"Insufficient sample ({summary.n_observed} threads observed, need 30). "
-                "Gate fires once the rolling-30 window is full. "
-                "See sprint issue #34 for the /qa pass that seeds the window."
+                f"Not enough data yet: {summary.n_observed} of 30 threads observed. "
+                "The gate reads once the rolling window holds 30"
             )
         elif summary.gate_status == "green":
-            st.success("Gate PASS — 73% claim verified for the formal portal.")
+            st.success("Gate pass: the median is within the band")
         elif summary.gate_status == "red":
             st.error(
-                f"Gate FAIL — actual median (\\${summary.median_usd:.4f}) exceeds the "
-                f"1.3× band (\\${summary.band_ceiling_usd:.4f}). File Sprint 8.2 with the cost-gap finding."
+                f"Gate fail: the median (\\${summary.median_usd:.5f}) is over the "
+                f"band (\\${summary.band_ceiling_usd:.5f})"
             )
 
     with col_exp:
         st.subheader("Exploratory Portal")
-        st.caption("Text2SQL · cost-per-query · aggregated per root trace")
+        st.caption("Text2SQL · cost per query, per root trace")
 
         try:
             exp_summary = run_async(service.get_exploratory_portal_cost_p50(n=30))
@@ -1663,29 +1803,27 @@ def show_cost_telemetry():
             st.error(f"Failed to fetch LangSmith data (ref: {ref})")
             return
 
-        exp_badge = {"green": "🟢", "red": "🔴", "gray": "⚪"}[exp_summary.gate_status]
         st.metric(
-            label=f"{exp_badge} Median cost / query",
+            label="Median cost per query",
             value=f"${exp_summary.median_usd:.5f}",
             delta=f"band ≤ ${exp_summary.band_ceiling_usd:.5f}",
             delta_color=("normal" if exp_summary.gate_status == "green" else "inverse"),
         )
         st.caption(
-            f"Sample: {exp_summary.n_observed} of 30 · "
-            f"Cache hit rate: {exp_summary.cache_hit_rate * 100:.1f}%"
+            f"Sample {exp_summary.n_observed} of 30 · "
+            f"cache hit rate {exp_summary.cache_hit_rate * 100:.1f}%"
         )
         if exp_summary.gate_status == "gray":
             st.info(
-                f"Insufficient sample ({exp_summary.n_observed} queries observed, need 30). "
-                "Run #34 seeds the rolling-30 window with ~30 NL queries via "
-                "research_notebook."
+                f"Not enough data yet: {exp_summary.n_observed} of 30 queries observed. "
+                "The gate reads once the rolling window holds 30"
             )
         elif exp_summary.gate_status == "green":
-            st.success("Gate PASS — 90% claim verified for the exploratory portal.")
+            st.success("Gate pass: the median is within the band")
         elif exp_summary.gate_status == "red":
             st.error(
-                f"Gate FAIL — actual median (\\${exp_summary.median_usd:.5f}) exceeds the "
-                f"1.3× band (\\${exp_summary.band_ceiling_usd:.5f}). File Sprint 8.2 with the cost-gap finding."
+                f"Gate fail: the median (\\${exp_summary.median_usd:.5f}) is over the "
+                f"band (\\${exp_summary.band_ceiling_usd:.5f})"
             )
 
     # Sprint 6.4 cycle 6 — Materialized View health surface.
@@ -1693,13 +1831,11 @@ def show_cost_telemetry():
     # every batch materialize). Shows the last 20 health records + per-view
     # current-alarm state. The reader returns [] cold-start.
     st.divider()
-    st.subheader("🩺 Materialized View health — Sprint 6.4")
+    st.subheader("Materialized view health")
     st.caption(
-        "After each batch materialize, the actual MV row count is compared "
-        "against a HAPI oracle (same run, data-drift-immune). |delta|/oracle > 5% "
-        "flips status to `warn`. Alarm fires only after 3 consecutive warns "
-        "for the same view — filters single-run noise. Source: "
-        "`logs/mv_health.jsonl` (gitignored runtime log)."
+        "After each batch materialize, each view's row count is checked against a HAPI "
+        "oracle from the same run. A delta over 5% marks the view `warn`; the alarm fires "
+        "after 3 warns in a row for one view. Source: `logs/mv_health.jsonl`"
     )
 
     from app.sql_on_fhir.runner.mv_health_check import (
@@ -1713,7 +1849,7 @@ def show_cost_telemetry():
     if not recent:
         st.info(
             f"No health-check records yet. Run `python scripts/materialize_views.py` "
-            f"to materialize the 3 sqlonfhir MVs; records land at `{DEFAULT_LOG_PATH}`."
+            f"to materialize the 3 sqlonfhir views; records land in `{DEFAULT_LOG_PATH}`"
         )
     else:
         views_in_log = sorted({r["view_name"] for r in recent})
@@ -1722,21 +1858,21 @@ def show_cost_telemetry():
         ]
         if alarm_views:
             st.error(
-                f"🚨 ALARM: {len(alarm_views)} view(s) at {DEFAULT_ALARM_CONSECUTIVE_RUNS} "
-                f"consecutive warns — {', '.join(alarm_views)}. Investigate "
-                f"before next batch materialize."
+                f"Alarm: {len(alarm_views)} view(s) at {DEFAULT_ALARM_CONSECUTIVE_RUNS} "
+                f"consecutive warns: {', '.join(alarm_views)}. Investigate "
+                f"before the next batch materialize"
             )
         else:
             st.success(
                 f"No active alarms. {len(views_in_log)} view(s) reporting; "
-                f"last {len(recent)} records all within threshold."
+                f"the last {len(recent)} records are within threshold"
             )
+        stamp(f"Data as of {timestamp(max(r.get('ts', '') for r in recent))}")
 
         # Render last 20 records as a dataframe. Newest LAST per file order
-        # so the table reads chronologically; status emoji aids scanning.
+        # so the table reads chronologically.
         rows = []
         for r in recent:
-            status_emoji = "✅" if r.get("status") == "ok" else "⚠️"
             rows.append(
                 {
                     "ts": r.get("ts", ""),
@@ -1744,7 +1880,7 @@ def show_cost_telemetry():
                     "actual": f"{r.get('actual_count', 0):,}",
                     "oracle": f"{r.get('oracle_count', 0):,}",
                     "delta_pct": f"{r.get('delta_pct', 0.0):.4f}",
-                    "status": f"{status_emoji} {r.get('status', '')}",
+                    "status": r.get("status", ""),
                     "git_commit": r.get("git_commit", ""),
                 }
             )
@@ -1765,16 +1901,16 @@ def show_materialized_views():
     dev with audit middleware bypass (e.g., REDIS_AUDIT_URL unset), the
     button works; in production, it returns 401/403.
     """
-    st.header("🗄️ Materialized Views (Lambda Batch Layer)")
+    st.header("Materialized views")
     st.caption(
-        "Materialized views in `sqlonfhir.*` schema. Refresh runs CONCURRENTLY "
-        "so cohort queries aren't blocked during refresh."
+        "The batch layer: views in the `sqlonfhir` schema. Refresh runs concurrently, "
+        "so cohort queries are not blocked while it runs"
     )
 
     api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
 
-    if st.button("🔄 Refresh all materialized views", type="primary"):
-        with st.spinner("Refreshing 7 views in parallel..."):
+    if st.button("Refresh all materialized views", icon=":material/refresh:", type="primary"):
+        with st.spinner("Refreshing 7 views in parallel"):
             try:
                 response = httpx.post(
                     f"{api_url}/analytics/materialized-views/refresh-all",
@@ -1782,18 +1918,18 @@ def show_materialized_views():
                 )
                 if response.status_code == 401:
                     st.error(
-                        "Authentication required. Streamlit→API auth flow not yet "
-                        "wired (known dev-mode limitation; same pattern as other "
-                        "admin actions in this dashboard)."
+                        "Authentication required. The dashboard does not pass API "
+                        "credentials yet, a known dev-mode limit shared by its other "
+                        "admin actions"
                     )
                 elif response.status_code == 403:
-                    st.error("Admin role required to refresh materialized views.")
+                    st.error("Refreshing materialized views needs the admin role")
                 elif response.status_code != 200:
                     st.error(f"Refresh failed (HTTP {response.status_code}): {response.text}")
                 else:
                     data = response.json()
                     st.success(
-                        f"✅ Refreshed {data['success']}/{data['total_views']} views"
+                        f"Refreshed {data['success']} of {data['total_views']} views"
                         + (f" ({data['failed']} failed)" if data["failed"] else "")
                     )
                     # Per-view results table
@@ -1802,7 +1938,7 @@ def show_materialized_views():
                         rows.append(
                             {
                                 "View": r["view_name"],
-                                "Status": "✅" if r["success"] else "❌",
+                                "Status": "ok" if r["success"] else "failed",
                                 "Duration (ms)": (
                                     f"{r.get('refresh_duration_ms', 0):.0f}"
                                     if r["success"]
@@ -1814,7 +1950,7 @@ def show_materialized_views():
                         )
                     st.dataframe(pd.DataFrame(rows), use_container_width=True)
             except httpx.TimeoutException:
-                st.error("Refresh timed out after 120 seconds.")
+                st.error("Refresh timed out after 120 seconds")
             except Exception as e:
                 ref = log_internal_error(logger, "Unexpected error", e)
                 st.error(f"Unexpected error (ref: {ref})")
@@ -1822,10 +1958,14 @@ def show_materialized_views():
 
 def show_analytics():
     """Display analytics and insights"""
-    st.header("📈 Analytics & Insights")
+    st.header("Analytics")
+    st.info(
+        "Illustrative figures, not measured. This tab is not wired to request data yet",
+        icon=":material/info:",
+    )
 
     # Request volume over time
-    st.subheader("Request Volume Trends")
+    st.subheader("Request volume")
 
     # Mock data for demonstration
     dates = pd.date_range(start=datetime.now() - timedelta(days=30), end=datetime.now(), freq="D")
@@ -1837,27 +1977,28 @@ def show_analytics():
         }
     )
 
-    st.line_chart(volume_data.set_index("Date"))
+    # One accent: the completed line is the one to track; submitted stays neutral.
+    st.line_chart(volume_data.set_index("Date"), color=["#9aa0a8", "#0b4fa8"])
 
     # ROI Metrics
-    st.subheader("💰 ROI Analysis")
+    st.subheader("Cost per request")
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        st.metric("Manual Cost/Request", "$1,500")
+        st.metric("Manual cost per request", "$1,500")
 
     with col2:
-        st.metric("Automated Cost/Request", "$150", delta="-$1,350")
+        st.metric("Automated cost per request", "$150", delta="-$1,350 vs manual")
 
     with col3:
-        st.metric("Time Saved (hours)", "1,200", delta="+150 this month")
+        st.metric("Hours saved", "1,200", delta="+150 vs last month")
 
     with col4:
-        st.metric("Total Savings", "$75,000", delta="+$7,500")
+        st.metric("Total savings", "$75,000", delta="+$7,500 vs last month")
 
     # Most requested data elements
-    st.subheader("Most Requested Data Elements")
+    st.subheader("Most requested data elements")
 
     element_data = pd.DataFrame(
         {
@@ -1866,7 +2007,7 @@ def show_analytics():
         }
     )
 
-    st.bar_chart(element_data.set_index("Element"))
+    st.bar_chart(element_data.set_index("Element"), color="#6b727d", horizontal=True)
 
 
 if __name__ == "__main__":
