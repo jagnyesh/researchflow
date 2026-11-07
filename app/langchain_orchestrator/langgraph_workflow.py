@@ -245,6 +245,7 @@ class FullWorkflow:
         self.graph = self._build_graph()
 
         auto_approve = os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true"
+        self.auto_approve = auto_approve
         is_production = os.getenv("ENVIRONMENT", "").lower() == "production"
         if auto_approve and is_production:
             raise RuntimeError(
@@ -679,7 +680,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating requirements approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "requirements", state, database_url=DATABASE_URL
+            state["request_id"],
+            "requirements",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["requirements_approved"] = None
 
@@ -806,7 +811,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating phenotype approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "phenotype_sql", state, database_url=DATABASE_URL
+            state["request_id"],
+            "phenotype_sql",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["phenotype_approved"] = None
 
@@ -963,7 +972,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating preview QA review approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "preview_qa", state, database_url=DATABASE_URL  # Approval type
+            state["request_id"],
+            "preview_qa",  # Approval type
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["preview_qa_review_approved"] = None
 
@@ -1213,7 +1226,11 @@ class FullWorkflow:
         # approval; the decision arrives later via apply_approval_decision.
         logger.info(f"[FullWorkflow] Creating delivery approval request in database...")
         await create_approval_from_state(
-            state["request_id"], "delivery", state, database_url=DATABASE_URL
+            state["request_id"],
+            "delivery",
+            state,
+            database_url=DATABASE_URL,
+            auto_approved=self.auto_approve,
         )
         state["qa_approved"] = None
 
@@ -1389,7 +1406,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: requirements auto-approved → feasibility_validation"
             )
@@ -1459,7 +1476,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: phenotype SQL auto-approved → preview_extraction"
             )
@@ -1522,7 +1539,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: QA auto-approved → data_delivery"
             )
@@ -1573,7 +1590,7 @@ class FullWorkflow:
             "wait_for_approval" if pending (END; apply_approval_decision re-runs
             this router with the reviewer's decision before the graph resumes)
         """
-        if os.getenv("AUTO_APPROVE_FOR_DEV", "").lower() == "true":
+        if self.auto_approve:  # read once in __init__, with interrupt_after (#210)
             logger.info(
                 "[FullWorkflow] AUTO_APPROVE_FOR_DEV=true: preview QA failure auto-approved → data_extraction"
             )
