@@ -23,9 +23,9 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §0 — Measure before you theorize
 
-**What it says:** before adding any lane, gate, or rule, look at the repo's real numbers (`scripts/dials.sh`, review-minutes, the catch-rate log). And it records an honest baseline: *parallel lanes have never actually run here.*
+**What it says:** before adding any lane, gate, or rule, look at the repo's real numbers (`scripts/dials.sh`, review-minutes, the catch-rate log). And it records an honest, dated baseline: *as of 2026-11-07, parallel lanes have run on two days, and neither is a steady state.* Two lanes ran at once on 2026-10-30 (PRs #215, #216), and four on 2026-11-07 (PRs #357–#360).
 
-**Why:** the whole analysis chain that produced v2 caught itself theorizing about parallelism the repo has never used. This section is a guard against that — don't design for a reality you haven't measured.
+**Why:** the whole analysis chain that produced v2 caught itself theorizing about parallelism the repo had never used. This section is a guard against that — don't design for a reality you haven't measured.
 
 **How to use it:** when tempted to add machinery, run `dials.sh` first and ask "does the data say I need this?"
 
@@ -55,7 +55,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §3 — The ramp (and the honesty label)
 
-**What it says:** Stages 0–1 (pipeline + continuous merge) are **done**. Stages 2–3 (parallel lanes) are **optional, trigger-gated, and have never fired here.**
+**What it says:** Stages 0–1 (pipeline + continuous merge) are **done**. Stages 2–3 (parallel lanes) are **optional and trigger-gated. Stage 2 has been tried, not held, and Stage 3 has not been entered.** Lanes ran on 2026-10-30 at Stage 2's WIP = 2, and on 2026-11-07 at four lanes by explicit choice. Neither run is the logged week Stage 2's exit asks for, so that exit is unmet.
 
 **Why:** earlier analysis over-weighted parallelism. This section demotes it and labels it plainly so nobody reads §4's multi-lane shape as current practice.
 
@@ -65,7 +65,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **§4.1 is your actual mode today:** branch → **classify** → plan to the tier → `/tdd` (tests committed and then locked) → `/validate-and-ship` → merge by tier → memory write-back. Notice classify is step two — it gates everything after.
 
-**§4.2 is marked ASPIRATIONAL** — the multi-lane "manager of a team" day. It's design intent, not your workflow, until §3's trigger fires.
+**§4.2 is marked "tried on two days, not a steady state"** — the multi-lane "manager of a team" day. It's design intent tried twice, not your workflow, until §3's Stage-2 exit is met.
 
 **§4.3 / §4.4:** sprint start fills a queue of pre-classified issues; sprint end is a *quality + learning* event (integration QA + retro), since shipping already happened continuously.
 

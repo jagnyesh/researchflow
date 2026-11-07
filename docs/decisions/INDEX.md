@@ -103,4 +103,4 @@ related: []              # cross-reference filenames (non-supersession)
 
 **Adding a new ADR.** Next number = highest existing number + 1. Filename pattern: `NNNN-sprint-X-Y-topic-slug.md` for sprint ADRs, `NNNN-topic-slug.md` for workflow/meta. Add the entry to both sections in this index.
 
-**See also:** `docs/decisions/README.md` for the long-form conventions doc; `CLAUDE.md` for what auto-loads into Claude Code sessions.
+**See also:** `CLAUDE.md` for what auto-loads into Claude Code sessions.
