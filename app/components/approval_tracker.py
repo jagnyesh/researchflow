@@ -8,7 +8,6 @@ Displays pending approvals, workflow progress, and notifications.
 import streamlit as st
 import httpx
 from typing import Dict, Any, Optional
-import asyncio
 from datetime import datetime
 import logging
 from app.schemas._errors import log_internal_error
@@ -180,53 +179,6 @@ class ApprovalTracker:
             return stage_idx < current_idx
         except StopIteration:
             return False
-
-    async def poll_for_updates(
-        self, request_id: str, poll_interval: int = 5, max_polls: int = 60
-    ) -> Dict[str, Any]:
-        """
-        Poll for request status updates
-
-        Args:
-            request_id: Research request ID
-            poll_interval: Seconds between polls
-            max_polls: Maximum number of polls
-
-        Returns:
-            Final status dictionary
-        """
-        status_placeholder = st.empty()
-        progress_bar = st.progress(0)
-
-        for poll_count in range(max_polls):
-            # Get current status
-            status = await self.get_request_status(request_id)
-
-            if not status:
-                break
-
-            # Update display
-            with status_placeholder.container():
-                current_state = status.get("current_state", "unknown")
-                st.info(f"Current State: {current_state.replace('_', ' ').title()}")
-
-                # Check if workflow is complete
-                if current_state in ["delivered", "completed", "failed"]:
-                    if current_state == "delivered":
-                        st.success("✅ Data delivery complete!")
-                    elif current_state == "failed":
-                        st.error("❌ Workflow failed")
-                    else:
-                        st.success("✅ Workflow complete!")
-                    break
-
-            # Update progress bar
-            progress_bar.progress((poll_count + 1) / max_polls)
-
-            # Wait before next poll
-            await asyncio.sleep(poll_interval)
-
-        return status
 
     def render_pending_approvals(self, approvals: list):
         """
