@@ -302,7 +302,8 @@ def _render_stage_ledger(current_state: str) -> None:
     current_idx = WORKFLOW_STATES.index(current_state) if current_state in WORKFLOW_STATES else -1
     rows = []
     for idx, state in enumerate(WORKFLOW_STATES):
-        if current_idx >= 0 and idx < current_idx:
+        # The final stage is an end state, not a stage still in progress.
+        if current_idx >= 0 and (idx < current_idx or current_idx == len(WORKFLOW_STATES) - 1):
             cls, mark = "rf-done", "Done"
         elif idx == current_idx:
             cls, mark = "rf-current", "Current"

@@ -90,14 +90,14 @@ def _fakes(status, delivered=True):
     ]
 
 
-def _run(status=None, delivered=True, selected=True, email=False, view=False):
+def _run(status=None, delivered=True, selected=True, email=False, view=False, req_id=REQ_ID):
     patches = _fakes(status or _status(), delivered)
     for p in patches:
         p.start()
     try:
         at = AppTest.from_file(PORTAL, default_timeout=60)
         if selected:
-            at.session_state["selected_request"] = REQ_ID
+            at.session_state["selected_request"] = req_id
         at.run()
         if email or view:
             at.text_input(key="sidebar_email").set_value(EMAIL).run()
@@ -150,16 +150,25 @@ def test_researcher_and_agent_text_is_escaped_in_html():
             "irb_number": "<i>IRB</i>",
         },
         agents_involved=[
-            {"agent": "qa_agent", "task": "<script>x</script>", "timestamp": "2026-11-07T10:00:05"}
+            {"agent": "<u>qa</u>", "task": "<script>x</script>", "timestamp": "<s>ts</s>"}
         ],
     )
     for at in (_run(status), _run(status, view=True)):
         assert not at.exception
         html = "\n".join(_html(at))
-        for raw in ("<b>Jane</b>", "<img src=x>", "<i>IRB</i>", "<script>"):
+        for raw in ("<b>Jane</b>", "<img src=x>", "<i>IRB</i>", "<script>", "<u>", "<s>"):
             assert raw not in html
         assert "&lt;b&gt;Jane&lt;/b&gt;" in html
         assert "&lt;i&gt;IRB&lt;/i&gt;" in html
+        assert "&lt;u&gt;" in html and "&lt;s&gt;" in html
+
+
+def test_the_request_id_is_escaped_in_its_stamp():
+    at = _run(req_id="<b>REQ</b>")
+
+    stamps = "\n".join(h for h in _html(at) if "rf-stamp" in h)
+    assert "<b>REQ</b>" not in stamps
+    assert "&lt;b&gt;REQ&lt;/b&gt;" in stamps
 
 
 def test_the_request_carries_its_accession_stamp():
@@ -177,6 +186,14 @@ def test_progress_renders_as_a_stage_ledger():
     assert ledger.count('class="rf-current"') == 1
     assert ledger.count('class="rf-pending"') == 3
     assert "Data extraction" in ledger
+
+
+def test_a_delivered_request_has_every_stage_done():
+    at = _run(_status("delivered"))
+
+    ledger = "\n".join(h for h in _html(at) if "rf-ledger" in h)
+    assert ledger.count('class="rf-done"') == 8
+    assert 'class="rf-current"' not in ledger
 
 
 def test_states_and_agents_read_as_labels():
