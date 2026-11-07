@@ -55,7 +55,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §3 — The ramp (and the honesty label)
 
-**What it says:** Stages 0–1 (pipeline + continuous merge) are **done**. Stages 2–3 (parallel lanes) are **optional and trigger-gated. Stage 2 has been tried, not held, and Stage 3 has not been entered.** Lanes ran on 2026-10-30 at Stage 2's WIP = 2, and on 2026-11-07 at four lanes by explicit choice. Neither run is the logged week Stage 2's exit asks for, so that exit is unmet.
+**What it says:** Stage 1 (pipeline + continuous merge) is **done**. Stage 0 is partial: the golden-file lock and the eval gate are not built yet. Stages 2–3 (parallel lanes) are **optional and trigger-gated. Stage 2 has been tried, not held, and Stage 3 has not been entered.** Lanes ran on 2026-10-30 at Stage 2's WIP = 2, and on 2026-11-07 at four lanes by explicit choice. Neither run is the logged week Stage 2's exit asks for, so that exit is unmet.
 
 **Why:** earlier analysis over-weighted parallelism. This section demotes it and labels it plainly so nobody reads §4's multi-lane shape as current practice.
 
