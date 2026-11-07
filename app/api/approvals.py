@@ -13,6 +13,7 @@ import logging
 from ..database import get_db_session
 from ..schemas._errors import internal_error
 from ..services.approval_service import ApprovalService
+from ..services.scope_change import analyze_scope_change_impact
 from ..langchain_orchestrator.request_facade import LangGraphRequestFacade
 from ..schemas.approvals import ApprovalResponse, ScopeChangeRequest
 
@@ -229,7 +230,7 @@ async def request_scope_change(request: ScopeChangeRequest):
     Request a scope change for an active research request
 
     This allows researchers to modify their requirements mid-workflow without restarting.
-    The coordinator agent will analyze the impact and route for approval.
+    The impact analysis is attached to a scope_change approval for review.
 
     Args:
         request: Scope change request details
@@ -257,23 +258,7 @@ async def request_scope_change(request: ScopeChangeRequest):
 
         logger.info(f"Scope change requested for {request.request_id} by {request.requested_by}")
 
-        # Route to coordinator agent for scope change handling
-        coordinator = orchestrator.agents.get("coordinator_agent")
-        if not coordinator:
-            raise HTTPException(status_code=500, detail="Coordinator agent not available")
-
-        # Execute scope change analysis
-        result = await coordinator.handle_task(
-            task="handle_scope_change",
-            context={
-                "request_id": request.request_id,
-                "current_state": request_status["current_state"],
-                "requested_changes": request.requested_changes,
-                "requested_by": request.requested_by,
-                "reason": request.reason,
-                "original_requirements": {},  # TODO: Get from database
-            },
-        )
+        impact_analysis = analyze_scope_change_impact(request.requested_changes)
 
         # Create approval for scope change
         async with get_db_session() as session:
@@ -286,21 +271,8 @@ async def request_scope_change(request: ScopeChangeRequest):
                 approval_data={
                     "requested_changes": request.requested_changes,
                     "reason": request.reason,
-                    "impact_analysis": result.get("impact_analysis", {}),
+                    "impact_analysis": impact_analysis,
                     "current_state": request_status["current_state"],
-                },
-            )
-
-            # Send notification to stakeholders
-            await coordinator.handle_task(
-                task="send_scope_change_notification",
-                context={
-                    "request_id": request.request_id,
-                    "approval_id": approval.id,
-                    "requested_by": request.requested_by,
-                    "current_state": request_status["current_state"],
-                    "requested_changes": request.requested_changes,
-                    "impact_analysis": result.get("impact_analysis", {}),
                 },
             )
 
@@ -309,7 +281,7 @@ async def request_scope_change(request: ScopeChangeRequest):
                 "message": "Scope change request submitted for approval",
                 "approval_id": approval.id,
                 "request_id": request.request_id,
-                "impact_analysis": result.get("impact_analysis", {}),
+                "impact_analysis": impact_analysis,
             }
 
     except HTTPException:

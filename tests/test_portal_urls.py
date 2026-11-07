@@ -6,8 +6,6 @@ exploratory (Research Notebook) 8501, formal (Researcher Portal) 8502, admin 850
 import re
 from pathlib import Path
 
-import pytest
-
 APP = Path(__file__).resolve().parent.parent / "app"
 EXPLORATORY, FORMAL, ADMIN = (
     "http://localhost:8501",
@@ -49,37 +47,3 @@ def test_notebook_points_users_to_the_formal_portal():
 
     assert "portal_urls" in source
     assert "Formal" in source and "FORMAL_PORTAL_URL" in source
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "method,expected",
-    [
-        ("_send_requirements_complete_email", ADMIN),
-        ("_send_sql_review_email", ADMIN),
-        ("_send_scope_change_notification", ADMIN),
-        ("_send_qa_complete_email", FORMAL),
-    ],
-)
-async def test_notification_emails_link_the_portal_their_reader_uses(monkeypatch, method, expected):
-    from app.agents.coordinator_agent import CoordinatorAgent
-
-    context = {
-        "request_id": "REQ-1",
-        "researcher_name": "Synthetic Researcher",
-        "researcher_email": "researcher@example.org",
-        "approval_id": 1,
-        "phenotype_sql": "SELECT 1",
-        "qa_report": {"overall_status": "passed"},
-        "requested_changes": {},
-    }
-    bodies = []
-    monkeypatch.setattr(
-        CoordinatorAgent,
-        "_deliver_email",
-        lambda self, email_type, recipients, email_body: bodies.append(email_body),
-    )
-
-    await getattr(CoordinatorAgent(), method)(context)
-
-    assert len(bodies) == 1 and expected in bodies[0]

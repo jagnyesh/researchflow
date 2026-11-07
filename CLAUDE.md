@@ -98,7 +98,7 @@ Docker: `make docker-up` (postgres + mock FHIR + app).
 
 ## Key directories
 
-- `app/agents/` — specialized agents (Requirements, Phenotype, Calendar, Extraction, QA, Delivery, Coordinator), all `BaseAgent` subclasses
+- `app/agents/` — specialized agents (Requirements, Phenotype, Calendar, Extraction, QA, Delivery), all `BaseAgent` subclasses
 - `app/langchain_orchestrator/` — LangGraph workflow, the only orchestrator
 - `app/sql_on_fhir/runner/` — Lambda Architecture: `materialized_view_runner.py` (batch) + `speed_layer_runner.py` (Redis) + `hybrid_runner.py` (serving)
 - `app/database/models.py` — ORM tables: request lifecycle (ResearchRequest → DataDelivery), Approval, User, AuditLog, MaterializedViewMetadata
