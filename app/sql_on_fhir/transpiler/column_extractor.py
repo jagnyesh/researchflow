@@ -96,6 +96,7 @@ class ColumnExtractor:
 
             # Handle unionAll (advanced feature)
             elif "unionAll" in select_elem:
+                self.transpiler.unsupported("unionAll")
                 logger.warning("unionAll not yet supported, skipping")
 
         # Build SELECT SQL
