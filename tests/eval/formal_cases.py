@@ -144,21 +144,27 @@ FORMAL_CASES: List[FormalCase] = [
 
 # #241 drafts: written by an agent, not yet signed off, and never recorded or
 # scored. Signing one off moves it into FORMAL_CASES with signoff="approved".
+# Age cases count living patients only (repo owner, 2026-11-07); the request
+# text doesn't say so, but a research cohort by age means patients alive now.
 DRAFT_CASES: List[FormalCase] = [
     FormalCase(
         id="hypertension_65_or_older",
-        # Inclusive boundary: 2 local patients are exactly 65 (49 at >= 65 vs 47 at > 65).
+        # Inclusive boundary: 2 living local patients are exactly 65 (16 at >= 65 vs 14 at > 65).
         request=_request(
             "Patients aged 65 or older with hypertension", ["65 or older", "hypertension"]
         ),
         oracle_sql=f"""
             SELECT p.patient_id FROM sqlonfhir.patient_demographics p
-            WHERE {_AGE} >= 65 AND {_has_condition('hypertension')}
+            WHERE p.deceased IS NOT TRUE AND {_AGE} >= 65 AND {_has_condition('hypertension')}
         """,
-        required_predicates=[("age", ">=", 65), ("condition", "has", "hypertension")],
-        verified_count=49,
-        seed_count=2,
-        expected_fail="no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
+        required_predicates=[
+            ("deceased", "=", False),
+            ("age", ">=", 65),
+            ("condition", "has", "hypertension"),
+        ],
+        verified_count=16,
+        seed_count=1,
+        expected_fail="the generator doesn't exclude deceased patients; no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
     ),
     FormalCase(
         id="diabetes_mellitus_and_hypertension",
@@ -244,15 +250,17 @@ DRAFT_CASES: List[FormalCase] = [
         ),
         oracle_sql=f"""
             SELECT p.patient_id FROM sqlonfhir.patient_demographics p
-            WHERE p.gender = 'male' AND {_AGE} > 40 AND NOT {_has_condition('hypertension')}
+            WHERE p.deceased IS NOT TRUE AND p.gender = 'male' AND {_AGE} > 40 AND NOT {_has_condition('hypertension')}
         """,
         required_predicates=[
+            ("deceased", "=", False),
             ("gender", "=", "male"),
             ("age", ">", 40),
             ("condition", "lacks", "hypertension"),
         ],
-        verified_count=70,
+        verified_count=42,
         seed_count=1,
+        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="women_under_50_with_hypertension",
@@ -263,31 +271,36 @@ DRAFT_CASES: List[FormalCase] = [
         ),
         oracle_sql=f"""
             SELECT p.patient_id FROM sqlonfhir.patient_demographics p
-            WHERE p.gender = 'female' AND {_AGE} < 50 AND {_has_condition('hypertension')}
+            WHERE p.deceased IS NOT TRUE AND p.gender = 'female' AND {_AGE} < 50 AND {_has_condition('hypertension')}
         """,
         required_predicates=[
+            ("deceased", "=", False),
             ("gender", "=", "female"),
             ("age", "<", 50),
             ("condition", "has", "hypertension"),
         ],
         verified_count=2,
         seed_count=1,
+        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="hypertension_aged_50_to_60",
-        # Inclusive range: 17 local patients at 50..60 vs 12 at 51..59.
+        # Inclusive range: 15 living local patients at 50..60 vs 10 at 51..59.
         request=_request(
             "Patients aged 50 to 60 with hypertension",
             ["between 50 and 60 years old", "hypertension"],
         ),
         oracle_sql=f"""
             SELECT p.patient_id FROM sqlonfhir.patient_demographics p
-            WHERE {_AGE} BETWEEN 50 AND 60 AND {_has_condition('hypertension')}
+            WHERE p.deceased IS NOT TRUE AND {_AGE} BETWEEN 50 AND 60 AND {_has_condition('hypertension')}
         """,
-        required_predicates=[("age", "between", (50, 60)), ("condition", "has", "hypertension")],
-        verified_count=17,
+        required_predicates=[
+            ("deceased", "=", False),
+            ("age", "between", (50, 60)),
+            ("condition", "has", "hypertension"),
+        ],
+        verified_count=15,
         seed_count=1,
-        # The generator emits the right cohort (BETWEEN), but #242's predicate
-        # check has no BETWEEN template yet, so this fails until one is added.
+        expected_fail="the generator doesn't exclude deceased patients; #242's predicate check has no BETWEEN template",
     ),
 ]
