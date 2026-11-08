@@ -19,14 +19,14 @@ related: [0028-sprint-6-7-exploratory-llm-sql-synthesis.md]
 
 #274 fixed the same class of problem for the host in `HAPI_DB_URL`.
 
-**Severity: latent.** No synthesized SQL runs in the compose `app` container today. Only the Streamlit notebook (`app/web_ui/research_notebook.py`) builds a `FeasibilityService`, and compose doesn't run the notebook. The container runs `uvicorn app.main:app`. The `app` image probably can't start at all, because `build: .` resolves to `config/`, which has no `app/` package. That finding comes from `docker compose config`, not from a build, and is filed as #389.
+**Severity: latent.** No synthesized SQL runs in the compose `app` container today. In `app/`, only the Streamlit notebook (`app/web_ui/research_notebook.py`) builds a `FeasibilityService`, and compose doesn't run the notebook. `scripts/drive_qa_traffic.py` builds one on the host. The container runs `uvicorn app.main:app`. The `app` image probably can't start at all, because `build: .` resolves to `config/`, which has no `app/` package. That finding comes from `docker compose config`, not from a build, and is filed as #389.
 
 **Decision (owner, 2026-11-07).**
 1. `FeasibilityService` falls back to `HAPI_DB_URL` only when `ENVIRONMENT` is exactly `development`. An unset `ENVIRONMENT` counts as `development`, as it does in `app/security/auth.py`, `tls.py` and `encryption_keys.py`. Every other value raises `RuntimeError` at construction, including `staging`, `Development` and `test`. Compose sets `EXPLORATORY_DB_URL` to the `rf_readonly` role on `hapi-db`, so the fallback never runs there.
 2. `FHIR_SERVER_URL` is the only FHIR URL variable. `/health` builds `FHIRClient()` without a base URL when a request arrives, so `fhir_client.py` is the only place that reads the variable. `FHIR_BASE_URL` gets no alias, because nothing sets it.
 3. The `HEALTHCARE_DB_URL` read is deleted, and compose doesn't set the variable. The extraction agent receives `HAPI_DB_URL`, which matches what it does today.
 4. Compose sets `HAPI_DB_URL` to `postgresql+asyncpg://`, as the host `.env` already does. `HAPIDBClient` strips the `+asyncpg` suffix, so it accepts both forms.
-5. A test in `tests/test_health_stores.py` collects every store URL variable that `app/` reads outside `app/web_ui/`. Store URL variables are `DATABASE_URL`, `*_DB_URL`, `FHIR_*URL` and `REDIS*_URL`. The test asserts that compose's `app` environment sets each one and points it at a compose service, not at `localhost`. It also asserts that `HAPI_DB_URL` uses `+asyncpg` and that `EXPLORATORY_DB_URL` connects as `rf_readonly`.
+5. A test in `tests/test_health_stores.py` collects every store URL variable named as a string literal in `app/` outside `app/web_ui/`. Store URL variables are `DATABASE_URL`, `*_DB_URL`, `FHIR_*URL` and `REDIS*_URL`. The test asserts that compose's `app` environment sets each one and points it at a compose service, not at `localhost`. It also checks that `create_async_engine` accepts compose's `DATABASE_URL` and `HAPI_DB_URL`, and that `EXPLORATORY_DB_URL` connects to `hapi-db` as `rf_readonly`.
 
 **Considered options.**
 - Keeping the production-only refusal leaves `staging` and any typo running synthesized SQL as `hapi`.
