@@ -58,11 +58,11 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
    Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
 
-3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit the old one; comment ordering is the audit trail. Never merge on a stale attestation. The one exception is 7.4.
+3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit or delete an old one; comment ordering is the audit trail. Never merge on a stale attestation. The one exception is 7.4.
 
 4. **Carry-forward across a clean merge from main.** Bringing the branch up to date adds a merge commit, which would void the attestation without changing anything that was reviewed. #283, #287, #290, #291, #292 and #294 merged on attestations voided that way (#361). After attesting, update from main only by merging it (never rebase or force-push), with the merge from main as the last commit and pushed. GitHub's "Update branch" button in its merge mode does exactly this; "Update with rebase" doesn't qualify. Then check the PR's head on GitHub, not a local HEAD.
 
-   `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (it has no line starting `- Carried-From:`), i.e. the last real Step 2 review. Take it from the `ROOT` line of the 7.5 reader, which counts only the repo owner's unedited attestations. Its verdict line must read exactly `- Verdict: SHIP` (SHIP-WITH-FIXES and BLOCK don't qualify). Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
+   `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (it has no line starting `- Carried-From:`), i.e. the last real Step 2 review. Take it from the `ROOT` line of the 7.5 reader, which counts only the repo owner's unedited attestations. If the reader prints any `EDITED` line, don't carry forward: stop and report it to the user. Its verdict line must read exactly `- Verdict: SHIP` (SHIP-WITH-FIXES and BLOCK don't qualify). Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
 
    ```bash
    n=<PR number>; old=<the ROOT line's commit from the 7.5 reader>
@@ -95,15 +95,15 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 5. **Count only the repo owner's unedited attestations.** The repo is public, so any GitHub user can post a comment headed `## Review attestation` (#368). Read attestations only with this reader. It counts a comment only when the repo owner, the account the pipeline posts with, posted it and nobody has edited it since:
 
    ```bash
-   gh pr view <n> --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\r\n]*)")] | .[0].v // "none"; def own($o): .author.login == $o and .authorAssociation == "OWNER"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(own($owner) | not) | "IGNORED \(.author.login) \(.authorAssociation) \(.url)"), ($a[] | select(own($owner) and .includesCreatedEdit != false) | "EDITED \(.url)"), ([$a[] | select(own($owner) and .includesCreatedEdit == false) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end)'
+   gh pr view <n> --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\r\n]*)")] | .[0].v // "none"; def own($o): .author.login == $o and .authorAssociation == "OWNER"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(own($owner) and .includesCreatedEdit != false) | "EDITED \(.url)"), ([$a[] | select(own($owner) and .includesCreatedEdit == false) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end), ($a[] | select(own($owner) | not) | "IGNORED \(.author.login) \(.authorAssociation) \(.url)")'
    ```
 
-   The reader prints these lines:
-   - `IGNORED <login> <association> <url>` for each attestation that another account posted. Name each one in the merge report: the hand-over for a human merge, or the lane's report for a self-merge.
+   The reader prints these lines, in this order:
    - `EDITED <url>` for each of the owner's attestations that was edited after it was posted. Anyone with write access can edit any comment, and the comment keeps its original author. An edited attestation never counts, and Step 8 refuses to merge while one exists. gh reports an edit as `includesCreatedEdit`. It has no `lastEditedAt` field.
    - `NEWEST <commit> head|STALE verdict=<…> carried-from=<commit|none>` for the owner's newest attestation. `head` means its `Reviewed-Commit` equals the PR's `headRefOid`.
    - `ROOT <commit> verdict=<…>` for the owner's newest attestation that isn't a carry-forward. This is the root that 7.4 and Step 8 use.
-   - `MISSING` in place of both, when the owner has posted no attestation.
+   - `MISSING` in place of both, when the owner has no unedited attestation.
+   - `IGNORED <login> <association> <url>` for each attestation that another account posted. Name each one in the merge report: the hand-over for a human merge, or the lane's report for a self-merge. These lines come last, so a flood of forged comments can't push the others down.
 
    The author must pass two checks. The first is that the login equals the owner's login, which the reader takes from the PR's own URL rather than from a hard-coded name. If the owner renames the account, the URL and every comment show the new login, and a stranger who registers the old login doesn't match. The second is that `authorAssociation` is `OWNER`. gh prints a GitHub App's login without its `[bot]` suffix, so the login alone can't tell the owner from an app of the same name. If the repo moves to an organization, no comment passes either check. The reader then counts nothing, and Step 8 refuses the merge.
 
@@ -127,7 +127,7 @@ gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 
 
 The first catches a run that failed without creating any check (e.g. a workflow-file error). Then run the 7.5 reader and check its output:
 
-- Any `EDITED` line → never merge. An edit breaks the append-only record, so report it to the user.
+- Any `EDITED` line → never merge, whatever the other lines say. An edit breaks the append-only record, so report it to the user, who decides what happens next.
 - `NEWEST` must say `head`. `STALE` or `MISSING` → back to Step 7, never merge.
 - If `carried-from` is `none`, `NEWEST` must read `verdict=SHIP` or `verdict=SHIP-WITH-FIXES` exactly. Anything else → never merge. That covers a `BLOCK`, and a carry-forward whose `Carried-From` key is misspelled, which the reader can't recognize as a carry.
 - If `carried-from` isn't `none`, that newest attestation is a 7.4 carry-forward, and you don't take it on trust. The `ROOT` line must read `verdict=SHIP` exactly, `carried-from` must equal the `ROOT` commit, and the 7.4 block, re-run now with `old` set to the `ROOT` commit, must print all three `-ok` lines. Otherwise → fresh review, never merge.
