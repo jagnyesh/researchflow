@@ -11,6 +11,7 @@ Provides HTTP client functionality for:
 import os
 import logging
 from typing import Dict, List, Any, Optional
+from urllib.parse import urlsplit
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.schemas._errors import log_internal_error
@@ -48,7 +49,13 @@ class FHIRClient:
             timeout=30.0, limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
-        logger.info(f"Initialized FHIR client with base URL: {self.base_url}")
+        # Log scheme and host only to avoid leaking userinfo credentials (#393)
+        parsed = urlsplit(self.base_url)
+        host = parsed.hostname or ""
+        port_suffix = f":{parsed.port}" if parsed.port else ""
+        scheme_prefix = f"{parsed.scheme}://" if parsed.scheme else ""
+        target = f"{scheme_prefix}{host}{port_suffix}" if host else "configured host"
+        logger.info(f"Initialized FHIR client for {target}")
 
     async def close(self):
         """Close HTTP client and cleanup resources"""

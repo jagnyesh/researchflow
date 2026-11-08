@@ -38,6 +38,9 @@ PHI_NAMES = {
     "audit_redis_url",
     "redis_url",
     "email",
+    "base_url",
+    "fhir_server_url",
+    "FHIR_SERVER_URL",
 }
 LOG_METHODS = {"debug", "info", "warning", "warn", "error", "critical", "exception", "log"}
 
@@ -94,7 +97,7 @@ def _leaks(source):
 def test_no_phi_bearing_name_is_interpolated_into_a_log_call():
     leaks = []
     for path in sorted((ROOT / "app").rglob("*.py")):
-        for line, name in _leaks(path.read_text()):
+        for line, name in _leaks(path.read_text(encoding="utf-8")):
             leaks.append(f"{path.relative_to(ROOT)}:{line} ({name})")
     assert leaks == []
 
@@ -108,6 +111,7 @@ def test_no_phi_bearing_name_is_interpolated_into_a_log_call():
         'self.logger.debug(f"body {email_body}")',
         'logging.warning(f"dob {birth_date_str}")',
         "logger.info(f\"db {state['researcher_email']}\")",
+        'logger.info(f"Initialized FHIR client with base URL: {self.base_url}")',
     ],
 )
 def test_the_guard_catches_each_shape(snippet):
@@ -136,3 +140,21 @@ def test_the_view_script_prints_no_password(url, shown):
     spec.loader.exec_module(module)
 
     assert module._redacted(url) == shown
+
+
+def test_fhir_client_init_logs_no_credentials(caplog):
+    import asyncio
+    import logging
+    from app.clients.fhir_client import FHIRClient
+
+    with caplog.at_level(logging.INFO):
+        client = FHIRClient(base_url="https://canary_user:canary_secret@fhir.internal:8081/fhir")
+        try:
+            records = [r.message for r in caplog.records]
+            assert any("Initialized FHIR client" in m for m in records)
+            for m in records:
+                assert "canary_user" not in m
+                assert "canary_secret" not in m
+                assert "fhir.internal:8081" in m
+        finally:
+            asyncio.run(client.close())
