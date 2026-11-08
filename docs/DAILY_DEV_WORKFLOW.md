@@ -91,7 +91,7 @@ Before opening a lane, all of these must hold:
 - Every lane beyond the first meets Stage 2's trigger: a lane is mid-run on a long autonomous task, the new issue is independent and well-specified, and review is keeping up.
 
 Two exceptions:
-- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain until `main` is fixed.
+- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision, or while a PR has waited on you more than 24 h. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain and those waits keep growing until `main` is fixed.
 - **"Require up to date" is off:** this override's premise is gone. The cap is Stage 2's 2 until you turn it back on.
 
 *Revert to WIP = 2* as soon as any of these happens after this block lands on `main`:
@@ -225,7 +225,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
 - **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
-- **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3).
+- **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3), except the fix lane (§3).
 - **Review-debt rule:** no new lane while ≥ 2 PRs await your decision, except the one lane fixing a red `main` (§3).
 - **Never scale past validation:** pipeline red/flaky → one lane until green.
 - **Queue health:** refill to lanes × 2; starvation means the plan block was thin.
