@@ -26,8 +26,9 @@ fi
 # Waiting on you = first SHIP / SHIP-WITH-FIXES attestation comment -> merge (or now). It doesn't
 # restart on an update from main, unlike dials.sh's green->merge. The verdict match also accepts
 # the drifted "Verdict: **SHIP**" form and a heading after a preamble, since this measures
-# time and doesn't gate a merge.
-wait_jq='def waited: ([.comments[] | select((.body | test("(?m)^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
+# time and doesn't gate a merge. Only the repo owner's comments count (validate-and-ship
+# Step 7.5), so a SHIP that anyone else posts can't start the clock early.
+wait_jq='def waited: (.url | split("/")[3]) as $owner | ([.comments[] | select(.author.login == $owner and (.body | test("(?m)^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
 
 echo "== protection (strict up-to-date)"
 if strict=$(gh api "repos/$repo/branches/main/protection" -q '.required_status_checks.strict' 2>/dev/null); then
@@ -44,14 +45,14 @@ gh run list --branch main --event push --created ">=$since" --limit 1000 --json 
   -q '[.[] | select(.conclusion == "failure" or (.attempt > 1 and .conclusion == "success"))] | if length == 0 then "none" else "\(length) total", (.[0:15][] | "\(.createdAt) \(.headSha[0:9]) \(.name) \(.conclusion) attempt=\(.attempt)") end' || fail "recent runs"
 
 echo "== open non-draft PRs: green or not, and how long each has waited on you"
-gh pr list --state open --json number,isDraft,statusCheckRollup,comments -q "$wait_jq"'[.[] | select(.isDraft | not) | {n: .number, w: waited, green: ((.statusCheckRollup | length) > 0 and all(.statusCheckRollup[]; .completedAt != "0001-01-01T00:00:00Z" and ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL"))))}] | "review debt (green): \([.[] | select(.green) | .n])", (if length == 0 then "none open" else (.[] | "#\(.n) \(if .green then "green" else "not green" end), " + (if .w == null then "no SHIP attestation yet" elif .w > 1440 then "waited \(.w)m OVER 24h" else "waited \(.w)m" end)) end)' || fail "open PRs"
+gh pr list --state open --json number,url,isDraft,statusCheckRollup,comments -q "$wait_jq"'[.[] | select(.isDraft | not) | {n: .number, w: waited, green: ((.statusCheckRollup | length) > 0 and all(.statusCheckRollup[]; .completedAt != "0001-01-01T00:00:00Z" and ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL"))))}] | "review debt (green): \([.[] | select(.green) | .n])", (if length == 0 then "none open" else (.[] | "#\(.n) \(if .green then "green" else "not green" end), " + (if .w == null then "no SHIP attestation yet" elif .w > 1440 then "waited \(.w)m OVER 24h" else "waited \(.w)m" end)) end)' || fail "open PRs"
 
 echo "== override health (revert triggers, §3)"
 if [ -z "$override_start" ]; then
   echo "override not on origin/main: the cap is 2"
 else
 echo "override on main since $override_start; checking every merge after it"
-gh pr list --state merged --search "merged:>=${override_start%%T*}" --limit 500 --json number,mergedAt,comments \
+gh pr list --state merged --search "merged:>=${override_start%%T*}" --limit 500 --json number,url,mergedAt,comments \
   -q "$wait_jq"'[.[] | select(.mergedAt > "'"$override_start"'") | {n: .number, w: waited}] | "merged: \(length)", ([.[] | select(.w != null and .w > 1440)] | if length == 0 then "waited over 24h: none" else "waited over 24h: " + (map("#\(.n) \(.w)m") | join(", ")) end), ([.[] | select(.w == null)] | if length == 0 then empty else "merged without a SHIP attestation (wait unmeasurable; not a §3 trigger, ask the user): " + (map("#\(.n)") | join(", ")) end)' || fail "override health (waits)"
 gh run list --branch main --event push --created ">=${override_start%%T*}" --limit 1000 --json name,headSha,conclusion,createdAt \
   -q '[.[] | select((.conclusion | IN("failure","timed_out","startup_failure")) and .createdAt > "'"$override_start"'")] | if length == 0 then "failed push runs: none" else "failed push runs: " + (map("\(.headSha[0:9]) \(.name) \(.conclusion)") | join(", ")) end' || fail "override health (runs)"

@@ -62,10 +62,10 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
 4. **Carry-forward across a clean merge from main.** Bringing the branch up to date adds a merge commit, which would void the attestation without changing anything that was reviewed. #283, #287, #290, #291, #292 and #294 merged on attestations voided that way (#361). After attesting, update from main only by merging it (never rebase or force-push), with the merge from main as the last commit and pushed. GitHub's "Update branch" button in its merge mode does exactly this; "Update with rebase" doesn't qualify. Then check the PR's head on GitHub, not a local HEAD.
 
-   `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (it has no line starting `- Carried-From:`), i.e. the last real Step 2 review. Its verdict line must read exactly `- Verdict: SHIP` (SHIP-WITH-FIXES and BLOCK don't qualify). Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
+   `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (it has no line starting `- Carried-From:`), i.e. the last real Step 2 review. Take it from the `ROOT` line of the 7.5 reader, which counts only the repo owner's attestations. Its verdict line must read exactly `- Verdict: SHIP` (SHIP-WITH-FIXES and BLOCK don't qualify). Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
 
    ```bash
-   n=<PR number>; old=<Reviewed-Commit of the root attestation>
+   n=<PR number>; old=<the ROOT line's commit from the 7.5 reader>
    new=$(gh pr view "$n" --json headRefOid -q .headRefOid)
    git fetch -q origin main "pull/$n/head"
    main=$(git rev-parse --verify -q "$new^2") || echo NOT-A-MERGE
@@ -92,7 +92,21 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
    Anything else is a fresh review (Step 2), including any conflict, even one resolved correctly by hand. Don't use `git patch-id` for this: it ignores whitespace and hunk position, so a merge commit that re-indents a `raise` or moves a hunk keeps the same patch-id. The #361 review reproduced both. CI on the new head is still required. It covers integration with main's changes, which a diff review never did (#339 vs #319).
 
-Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
+5. **Count only the repo owner's attestations.** The repo is public, so any GitHub user can post a comment headed `## Review attestation` (#368). Read attestations only with this reader. It counts a comment only when the comment's author is the repo owner, the account the pipeline posts with:
+
+   ```bash
+   gh pr view <n> --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\n]*)")] | .[0].v // "none"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(.author.login != $owner) | "IGNORED \(.author.login) \(.url)"), ([$a[] | select(.author.login == $owner) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end)'
+   ```
+
+   The reader prints these lines:
+   - `IGNORED <login> <url>` for each attestation that another account posted. Name each one in the merge report: the hand-over for a human merge, or the lane's report for a self-merge.
+   - `NEWEST <commit> head|STALE verdict=<…> carried-from=<commit|none>` for the owner's newest attestation. `head` means its `Reviewed-Commit` equals the PR's `headRefOid`.
+   - `ROOT <commit> verdict=<…>` for the owner's newest attestation that isn't a carry-forward. This is the root that 7.4 and Step 8 use.
+   - `MISSING` in place of both, when the owner has posted no attestation.
+
+   The reader takes the owner's login from the PR's own URL, not from a hard-coded name. If the owner renames the account, the URL and every comment show the new login, and a stranger who registers the old login doesn't match. If the repo moves to an organization, no comment author matches the organization's login. The reader then counts nothing, and Step 8 refuses the merge.
+
+Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. The 7.5 author check keeps other accounts' comments from counting. It doesn't separate the reviewer from the merge actor. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
 ### 8. Watch CI; merge by class
 Watch the workflow **runs** for the attested SHA (the full 40 characters; a short SHA silently matches no runs), not the check list (background it):
@@ -110,7 +124,7 @@ gh run list --commit <attested-sha> --json name,conclusion -q 'if length == 0 th
 gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 then "NO CHECKS" else (map(select(.completedAt == "0001-01-01T00:00:00Z" or ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL") | not)) | .name // .context) | if length == 0 then "CHECKS OK" else .[] end) end'
 ```
 
-The first catches a run that failed without creating any check (e.g. a workflow-file error). Then verify the NEWEST attestation comment's `Reviewed-Commit` equals `gh pr view <n> --json headRefOid -q .headRefOid`; mismatch → back to Step 7, never merge. If that newest attestation is a 7.4 carry-forward, don't take it on trust. Find the root (7.4): the newest attestation with no line starting `- Carried-From:`. Its verdict line must read exactly `- Verdict: SHIP`, the carry's `Carried-From` must equal the root's `Reviewed-Commit`, and the 7.4 block, re-run now with `old` set to that `Reviewed-Commit`, must print all three `-ok` lines. Otherwise → fresh review, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
+The first catches a run that failed without creating any check (e.g. a workflow-file error). Then run the 7.5 reader. Its `NEWEST` line must say `head`. `STALE` or `MISSING` → back to Step 7, never merge. If `carried-from` isn't `none`, that newest attestation is a 7.4 carry-forward, and you don't take it on trust. The `ROOT` line must read `verdict=SHIP` exactly, `carried-from` must equal the `ROOT` commit, and the 7.4 block, re-run now with `old` set to the `ROOT` commit, must print all three `-ok` lines. Otherwise → fresh review, never merge. Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
 
 - **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By` — and merge:
   `gh pr merge <n> --squash --delete-branch --match-head-commit <attested-sha> --body-file <file>`
