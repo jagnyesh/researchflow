@@ -36,8 +36,9 @@ def _startup_output(monkeypatch, capfd, caplog) -> str:
 def test_startup_output_carries_no_slice_of_the_key(monkeypatch, capfd, caplog):
     out = _startup_output(monkeypatch, capfd, caplog)
 
-    # A head slice of any key, not only the one this test set, runs past the prefix.
-    assert not re.search(re.escape(PUBLIC_PREFIX) + r"\S", out), "startup output carries a key head"
+    # A head slice of any key, not only the one this test set, runs past its
+    # family's public prefix (sk-ant-api03-, sk-ant-admin01-, ...).
+    assert not re.search(r"sk-ant-[a-z]+\d+-\S", out), "startup output carries a key head"
     # Any other slice of the test key shows up as a run of its tail.
     windows = {SECRET_TAIL[i : i + 4] for i in range(len(SECRET_TAIL) - 3)}
     leaked = sorted(w for w in windows if w in out)
