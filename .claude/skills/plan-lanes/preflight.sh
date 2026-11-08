@@ -27,8 +27,9 @@ fi
 # restart on an update from main, unlike dials.sh's green->merge. The verdict match also accepts
 # the drifted "Verdict: **SHIP**" form and a heading after a preamble, since this measures
 # time and doesn't gate a merge. Only the repo owner's comments count (validate-and-ship
-# Step 7.5), so a SHIP that anyone else posts can't start the clock early.
-wait_jq='def waited: (.url | split("/")[3]) as $owner | ([.comments[] | select(.author.login == $owner and (.body | test("(?m)^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
+# Step 7.5), so a SHIP that anyone else posts can't start the clock early. Unlike Step 7.5,
+# an edited comment still counts: an edit keeps createdAt, and dropping one would shorten the wait.
+wait_jq='def waited: (.url | split("/")[3]) as $owner | ([.comments[] | select(.author.login == $owner and .authorAssociation == "OWNER" and (.body | test("(?m)^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
 
 echo "== protection (strict up-to-date)"
 if strict=$(gh api "repos/$repo/branches/main/protection" -q '.required_status_checks.strict' 2>/dev/null); then
