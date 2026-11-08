@@ -18,8 +18,9 @@ NOTEBOOK = str(Path(__file__).resolve().parents[1] / "app" / "web_ui" / "researc
 
 # Every Anthropic key opens with this fixed prefix; only what follows is secret.
 # The tail is not made of words, so ordinary output can't match a probe by chance.
+# It repeats so its entropy stays low: a random-looking tail trips gitleaks.
 PUBLIC_PREFIX = "sk-ant-api03-"
-SECRET_TAIL = "Zq7xK2vP9mW4QjR8"  # pragma: allowlist secret
+SECRET_TAIL = "Zq7xK2Zq7xK2Zq7x"  # pragma: allowlist secret
 FAKE_KEY = PUBLIC_PREFIX + SECRET_TAIL  # pragma: allowlist secret
 
 
