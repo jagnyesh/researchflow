@@ -12,21 +12,29 @@ m=$(git rev-parse origin/main) || { echo "ERROR: no origin/main"; exit 1; }
 repo=$(gh repo view --json nameWithOwner -q .nameWithOwner) || { echo "ERROR: gh repo view failed"; exit 1; }
 since=$(date -u -v-7d +%F 2>/dev/null || date -u -d '7 days ago' +%F)
 # The lane-cap override (docs/DAILY_DEV_WORKFLOW.md §3) is in force only while origin/main
-# carries both its doc block and lane.sh's WIP_LIMIT=4; a revert changes both. Its start is
-# the commit that added the block. If either check fails, the report says the cap is 2.
+# carries both its live doc block and lane.sh's WIP_LIMIT=4; a revert changes both. A revert
+# note may quote the heading, so the doc check also needs the block's own gate line. Its start
+# is the commit that added the block. If any check fails, the report says the cap is 2.
 override_start=""
+doc=$(git show origin/main:docs/DAILY_DEV_WORKFLOW.md 2>/dev/null)
 if git show origin/main:scripts/lane.sh 2>/dev/null | grep -qx 'WIP_LIMIT=4' \
-   && git show origin/main:docs/DAILY_DEV_WORKFLOW.md 2>/dev/null | grep -q 'Override, 2026-11-07: up to 4 lanes'; then
+   && grep -q 'Override, 2026-11-07: up to 4 lanes' <<<"$doc" \
+   && grep -qF 'Before opening a lane, all of these must hold:' <<<"$doc"; then
   override_start=$(TZ=UTC git log origin/main --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd \
     -S 'Override, 2026-11-07: up to 4 lanes' -- docs/DAILY_DEV_WORKFLOW.md | tail -1)
 fi
 # Waiting on you = first SHIP / SHIP-WITH-FIXES attestation comment -> merge (or now). It doesn't
 # restart on an update from main, unlike dials.sh's green->merge. The verdict match also accepts
-# the drifted "Verdict: **SHIP**" form, since this measures time and doesn't gate a merge.
-wait_jq='def waited: ([.comments[] | select((.body | test("^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
+# the drifted "Verdict: **SHIP**" form and a heading after a preamble, since this measures
+# time and doesn't gate a merge.
+wait_jq='def waited: ([.comments[] | select((.body | test("(?m)^## Review attestation")) and (.body | test("(?m)^-?\\s*Verdict:\\s*\\**SHIP")))] | sort_by(.createdAt) | .[0].createdAt) as $a | if $a == null then null else ((((.mergedAt // (now | todate)) | fromdateiso8601) - ($a | fromdateiso8601)) / 60 | floor) end;'
 
 echo "== protection (strict up-to-date)"
-gh api "repos/$repo/branches/main/protection" -q '.required_status_checks.strict' 2>/dev/null || echo "unknown"
+if strict=$(gh api "repos/$repo/branches/main/protection" -q '.required_status_checks.strict' 2>/dev/null); then
+  echo "$strict"
+else
+  echo "unknown"; fail protection
+fi
 
 echo "== pipeline on origin/main $m"
 gh run list --commit "$m" --json name,status,conclusion -q 'if length == 0 then "NO RUNS" else (map(select(.status != "completed" or (.conclusion | IN("success","skipped","neutral") | not)) | "\(.name) \(.status) \(.conclusion)") | if length == 0 then "MAIN OK" else .[] end) end' || fail pipeline
@@ -42,11 +50,11 @@ echo "== override health (revert triggers, §3)"
 if [ -z "$override_start" ]; then
   echo "override not on origin/main: the cap is 2"
 else
-echo "override on main since $override_start; checking every merge since then"
+echo "override on main since $override_start; checking every merge after it"
 gh pr list --state merged --search "merged:>=${override_start%%T*}" --limit 500 --json number,mergedAt,comments \
-  -q "$wait_jq"'[.[] | select(.mergedAt >= "'"$override_start"'") | {n: .number, w: waited}] | "merged: \(length)", ([.[] | select(.w != null and .w > 1440)] | if length == 0 then "waited over 24h: none" else "waited over 24h: " + (map("#\(.n) \(.w)m") | join(", ")) end), ([.[] | select(.w == null)] | if length == 0 then empty else "merged without a SHIP attestation: " + (map("#\(.n)") | join(", ")) end)' || fail "override health (waits)"
+  -q "$wait_jq"'[.[] | select(.mergedAt > "'"$override_start"'") | {n: .number, w: waited}] | "merged: \(length)", ([.[] | select(.w != null and .w > 1440)] | if length == 0 then "waited over 24h: none" else "waited over 24h: " + (map("#\(.n) \(.w)m") | join(", ")) end), ([.[] | select(.w == null)] | if length == 0 then empty else "merged without a SHIP attestation (wait unmeasurable; not a §3 trigger, ask the user): " + (map("#\(.n)") | join(", ")) end)' || fail "override health (waits)"
 gh run list --branch main --event push --created ">=${override_start%%T*}" --limit 1000 --json name,headSha,conclusion,createdAt \
-  -q '[.[] | select((.conclusion | IN("failure","timed_out","startup_failure")) and .createdAt >= "'"$override_start"'")] | if length == 0 then "failed push runs: none" else "failed push runs: " + (map("\(.headSha[0:9]) \(.name) \(.conclusion)") | join(", ")) end' || fail "override health (runs)"
+  -q '[.[] | select((.conclusion | IN("failure","timed_out","startup_failure")) and .createdAt > "'"$override_start"'")] | if length == 0 then "failed push runs: none" else "failed push runs: " + (map("\(.headSha[0:9]) \(.name) \(.conclusion)") | join(", ")) end' || fail "override health (runs)"
 reverts=$(git log origin/main --since="$override_start" --grep='^Revert' --format='%h %s' | paste -sd ';' -)
 echo "revert commits: ${reverts:-none}"
 fi

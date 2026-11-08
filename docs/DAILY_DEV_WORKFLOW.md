@@ -91,7 +91,7 @@ Before opening a lane, all of these must hold:
 - Every lane beyond the first meets Stage 2's trigger: a lane is mid-run on a long autonomous task, the new issue is independent and well-specified, and review is keeping up.
 
 Two exceptions:
-- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain until `main` is fixed.
+- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision, or while a PR has waited on you more than 24 h. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain and those waits keep growing until `main` is fixed.
 - **"Require up to date" is off:** this override's premise is gone. The cap is Stage 2's 2 until you turn it back on.
 
 *Revert to WIP = 2* as soon as any of these happens after this block lands on `main`:
