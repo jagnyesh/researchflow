@@ -169,6 +169,15 @@ def test_compose_sets_every_store_url_the_app_reads_to_a_compose_service():
     assert {n: h for n, h in hosts.items() if h not in services} == {}
 
 
+@pytest.mark.parametrize("name", ["DATABASE_URL", "HAPI_DB_URL"])
+def test_the_async_engines_accept_the_compose_database_urls(name):
+    # get_engine() and get_hapi_engine() pass these straight to
+    # create_async_engine, which rejects a bare postgresql:// (no async driver).
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    create_async_engine(_compose_app_env()[name]).sync_engine.dispose()
+
+
 def test_compose_runs_exploratory_sql_as_the_role_hapi_db_creates():
     # ADR 0028/0034: synthesized SQL runs as rf_readonly, never as hapi. The
     # credentials must match what hapi-db's initdb script creates.

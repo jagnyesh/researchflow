@@ -9,8 +9,9 @@ services:
       - DATABASE_URL=postgresql+asyncpg://researchflow:researchflow@db:5432/researchflow
       - A2A_JWT_SECRET=supersecret
       - FHIR_SERVER_URL=http://hapi-fhir:8080/fhir
-      # HAPI Postgres (batch layer); the client's localhost default doesn't reach it here
-      - HAPI_DB_URL=postgresql://hapi:hapi@hapi-db:5432/hapi  # pragma: allowlist secret
+      # HAPI Postgres (batch layer); the client's localhost default doesn't reach it here.
+      # +asyncpg: get_hapi_engine() needs the async driver; HAPIDBClient strips it.
+      - HAPI_DB_URL=postgresql+asyncpg://hapi:hapi@hapi-db:5432/hapi  # pragma: allowlist secret
       # The exploratory portal's synthesized SQL runs as rf_readonly (ADR 0028,
       # ADR 0034); hapi-db's initdb mount of rf_readonly_role.sql creates the role.
       - EXPLORATORY_DB_URL=postgresql://rf_readonly:rf_readonly@hapi-db:5432/hapi  # pragma: allowlist secret
