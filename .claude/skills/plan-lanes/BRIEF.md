@@ -22,9 +22,10 @@ Do:
   /validate-and-ship.
 - Medium: the same, and the PR body carries a 5–10 line intent block (what, why, constraints,
   non-goals; §1).
-- High: /grill-with-docs with the user first, then a design note, then the ADR (§1). Write the ADR as docs/decisions/NNNN-<slug>.md
-  (frontmatter and numbering per docs/decisions/INDEX.md, with entries in both of its
-  sections), not docs/adr/ or DECISIONS.md. Stop and get the user's OK before /tdd. The
+- High: /grill-with-docs with the user first, which yields the design doc and the ADR
+  (§1). Write the ADR as docs/decisions/NNNN-<slug>.md (frontmatter and numbering per
+  docs/decisions/INDEX.md, with entries in both of its sections), not docs/adr/ or
+  DECISIONS.md. Stop and get the user's OK before /tdd. The
   reviewer then checks the diff against that ADR.
 
 Files: stay in <predicted files>. Another lane owns <other lanes' files>. Stop and report
