@@ -40,22 +40,22 @@ class FeasibilityService:
         # Sprint 6.7 #92: synthesized SQL executes through the scoped read-only
         # rf_readonly role (SELECT on sqlonfhir only — no writes, no raw
         # hfj_resource PHI). Falls back to HAPI_DB_URL when EXPLORATORY_DB_URL is
-        # unset so dev/test without the role still work.
+        # unset so dev without the role still works.
         self.exploratory_db_client = HAPIDBClient(os.getenv("EXPLORATORY_DB_URL") or hapi_db_url)
-        # Fail-closed guard: synthesis is now the ONLY path (#100), so a production
-        # deploy MUST set EXPLORATORY_DB_URL — otherwise synthesized SQL would run
-        # under HAPI's full-privilege credentials, defeating the rf_readonly
-        # boundary (#92). Hard-fail in production, warn in dev/test (mirrors the
-        # encryption-key startup gate + audit default-deny).
+        # Fail-closed guard: synthesis is now the ONLY path (#100), so without
+        # EXPLORATORY_DB_URL synthesized SQL would run under HAPI's full-privilege
+        # credentials, defeating the rf_readonly boundary (#92). Default-deny
+        # (ADR 0034): only exactly "development" may fall back, so staging and
+        # typos refuse instead of warning.
         if not os.getenv("EXPLORATORY_DB_URL"):
             msg = (
                 "EXPLORATORY_DB_URL is unset — synthesized SQL would execute under "
                 "HAPI's full-privilege credentials, defeating the rf_readonly "
                 "read-only boundary (#92)."
             )
-            if os.getenv("ENVIRONMENT", "").lower() == "production":
+            if os.getenv("ENVIRONMENT", "development") != "development":
                 raise RuntimeError(msg)
-            logger.warning("%s Falling back to HAPI_DB_URL (dev/test only).", msg)
+            logger.warning("%s Falling back to HAPI_DB_URL (development only).", msg)
 
     @traceable(tags=["feasibility-service", "cohort-estimation", "portal:exploratory"])
     async def execute_feasibility_check(

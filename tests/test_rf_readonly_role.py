@@ -37,6 +37,28 @@ class TestFailClosedGuard:
         with pytest.raises(RuntimeError, match="EXPLORATORY_DB_URL"):
             FeasibilityService()
 
+    # ADR 0034: only exactly "development" may fall back; staging and typos
+    # used to warn and run synthesized SQL as hapi.
+    @pytest.mark.parametrize("environment", ["staging", "Development", "test", "prod", ""])
+    def test_any_environment_but_development_hard_fails_when_url_unset(
+        self, monkeypatch, environment
+    ):
+        from app.services.feasibility_service import FeasibilityService
+
+        monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", environment)
+
+        with pytest.raises(RuntimeError, match="EXPLORATORY_DB_URL"):
+            FeasibilityService()
+
+    def test_explicit_development_warns_but_does_not_fail(self, monkeypatch):
+        from app.services.feasibility_service import FeasibilityService
+
+        monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", "development")
+
+        assert FeasibilityService().exploratory_db_client is not None
+
     def test_dev_warns_but_does_not_fail(self, monkeypatch):
         from app.services.feasibility_service import FeasibilityService
 
