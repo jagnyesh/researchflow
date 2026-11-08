@@ -507,18 +507,19 @@ class LangGraphRequestFacade:
                     req.error_message = failure
                     req.updated_at = datetime.now()
 
-                    # Track workflow execution attempt in agents_involved for debugging
-                    agents_involved = req.agents_involved or []
-                    agents_involved.append(
+                    # Track workflow execution attempt in agents_involved for debugging.
+                    # A new list: an in-place append to this plain JSON column is
+                    # never marked dirty and never written (#323, as #63).
+                    req.agents_involved = [
+                        *(req.agents_involved or []),
                         {
                             "agent": "langgraph_workflow",
                             "task": "_run_workflow",
                             "timestamp": datetime.now().isoformat(),
                             "error": failure,
                             "error_type": type(e).__name__,
-                        }
-                    )
-                    req.agents_involved = agents_involved
+                        },
+                    ]
 
                     record_state_transition(req, "error", error=failure)
 
