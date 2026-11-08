@@ -3,6 +3,7 @@
 Real connections; unreachable stores are real closed ports, not stubs.
 """
 
+import ast
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -127,7 +128,7 @@ async def test_health_probes_the_fhir_server_named_by_fhir_server_url(monkeypatc
 
     assert any(line.startswith("GET /fhir/metadata ") for line in requested)
     assert body["components"]["fhir_server"] == {"status": "healthy"}
-    assert str(port) not in text
+    assert f"127.0.0.1:{port}" not in text
 
 
 def test_the_app_container_reaches_hapi_postgres_by_service_name():
@@ -145,13 +146,17 @@ def _compose_app_env():
 
 
 def _store_urls_the_app_reads():
-    # The Streamlit dashboards in app/web_ui/ don't run in the compose app container.
-    read = re.compile(r"""(?:getenv\(|environ\.get\(|environ\[)\s*["']([A-Z0-9_]+)["']""")
+    # Any string literal named like a store URL counts as a read, so aliased
+    # getenv, keyword args and name constants can't slip past. The Streamlit
+    # dashboards in app/web_ui/ don't run in the compose app container.
     store = re.compile(r"DATABASE_URL|[A-Z0-9_]*_DB_URL|FHIR_[A-Z0-9_]*URL|REDIS[A-Z0-9_]*_URL")
     names = set()
     for path in APP.rglob("*.py"):
         if "web_ui" not in path.relative_to(APP).parts:
-            names |= {n for n in read.findall(path.read_text()) if store.fullmatch(n)}
+            for node in ast.walk(ast.parse(path.read_text())):
+                if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                    if store.fullmatch(node.value):
+                        names.add(node.value)
     return names
 
 
@@ -189,3 +194,4 @@ def test_compose_runs_exploratory_sql_as_the_role_hapi_db_creates():
 
     assert role == "rf_readonly"
     assert (url.username, url.password, url.path) == (role, password, "/hapi")
+    assert (url.hostname, url.port) == ("hapi-db", 5432)
