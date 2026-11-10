@@ -186,7 +186,8 @@ class TestExclusionDemographicsAreNegated:
             ],
             [],
         )
-        assert "IS NOT TRUE" not in sql, sql
+        # The one IS NOT TRUE is the age cohort's living-only filter (#403).
+        assert sql.count("IS NOT TRUE") == sql.count("p.deceased IS NOT TRUE") == 1, sql
         assert "p.gender = :gender_1" in sql, sql
 
     def test_excluded_condition_still_uses_not_exists(self, gen):
