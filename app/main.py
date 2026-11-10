@@ -106,7 +106,7 @@ async def lifespan(app: FastAPI):
 
         # Sprint 7.2 Phase 4: A2A's ResearchRequestOrchestrator + manual agent
         # registration are deleted. LangGraphRequestFacade with use_real_agents=True
-        # handles all 6 agent setup internally.
+        # sets up all five agents internally.
         orchestrator = LangGraphRequestFacade(use_real_agents=True, use_persistence=True)
         logger.info(
             "LangGraph orchestrator initialized (use_real_agents=True, use_persistence=True)"
@@ -139,7 +139,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="ResearchFlow - Clinical Research Data Automation",
-    description="AI-Powered Multi-Agent System for Clinical Research Data Requests",
+    description="LLM-assisted clinical research data requests with human approval gates",
     version="2.0.0",
     lifespan=lifespan,
 )
