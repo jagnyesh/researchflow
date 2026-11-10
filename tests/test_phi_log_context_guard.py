@@ -158,3 +158,53 @@ def test_fhir_client_init_logs_no_credentials(caplog):
                 assert "fhir.internal:8081" in m
         finally:
             asyncio.run(client.close())
+
+
+async def _fhir_init_log(url, caplog):
+    """What gets logged while a FHIRClient is built for `url`, lower-cased."""
+    import logging
+    from app.clients.fhir_client import FHIRClient
+
+    with caplog.at_level(logging.INFO):
+        client = FHIRClient(base_url=url)
+    await client.close()
+    return [r.getMessage().lower() for r in caplog.records]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # Each one built a client before #398; urlsplit() or .port rejects it.
+        "http://CANARYUSER:CANARY[PASS@fhir.internal:8081/fhir",
+        "http://CANARYUSER:CANARYPASS@fhir.internal:99999/fhir",
+        "http://CANARYUSER:CANARYPASS@fhir.internal:80a/fhir",
+        "https://CANARYUSER:CANARY：PASS@fhir.internal/fhir",
+        "https://CANARYUSER:CANARYpre/PASS@fhir.internal/fhir",
+    ],
+)
+async def test_a_url_the_log_line_cant_parse_still_builds_a_client(url, caplog):
+    lines = await _fhir_init_log(url, caplog)
+
+    assert any("initialized fhir client" in line for line in lines)
+    assert not [line for line in lines if "canary" in line]
+
+
+@pytest.mark.parametrize("delimiter", ["/", "?", "#"])
+async def test_a_password_that_cuts_the_url_short_isnt_logged_as_the_host(delimiter, caplog):
+    # An unescaped "/", "?" or "#" ends the host part early, so urlsplit reads
+    # the username as the host and the password's leading digits as the port.
+    url = f"https://CANARYUSER:4711{delimiter}CANARYPASS@fhir.internal/fhir"
+
+    lines = await _fhir_init_log(url, caplog)
+
+    assert any("initialized fhir client" in line for line in lines)
+    assert not [line for line in lines if "canary" in line or "4711" in line]
+
+
+async def test_a_username_read_as_the_scheme_isnt_logged(caplog):
+    # With no scheme and a password that starts "//", urlsplit reads the
+    # username as the scheme.
+    lines = await _fhir_init_log("CANARYUSER://CANARYPASS@fhir.internal/fhir", caplog)
+
+    assert any("initialized fhir client" in line for line in lines)
+    assert not [line for line in lines if "canary" in line]

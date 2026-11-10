@@ -19,6 +19,26 @@ from app.schemas._errors import log_internal_error
 logger = logging.getLogger(__name__)
 
 
+def _log_target(base_url: str) -> str:
+    """Scheme, host and port of `base_url` for a log line, never its userinfo (#393)."""
+    try:
+        parsed = urlsplit(base_url)
+        port = parsed.port
+    except ValueError:
+        # A log line must not stop the client being built. The exception isn't
+        # logged either: urlsplit's message can quote the password.
+        return "configured host"
+    # urlsplit can read credentials as another part of the URL. An unescaped
+    # "/", "?" or "#" in the password ends the host part early: the "host" is
+    # then the username, and an "@" follows it. With no scheme, a password that
+    # starts "//" makes the username the scheme.
+    cut_short = "@" in parsed.path + parsed.query + parsed.fragment
+    if parsed.scheme not in ("http", "https") or not parsed.hostname or cut_short:
+        return "configured host"
+    port_suffix = f":{port}" if port else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
+
+
 class FHIRClient:
     """
     HTTP client for FHIR server communication
@@ -49,12 +69,7 @@ class FHIRClient:
             timeout=30.0, limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
-        # Log scheme and host only to avoid leaking userinfo credentials (#393)
-        parsed = urlsplit(self.base_url)
-        host = parsed.hostname or ""
-        port_suffix = f":{parsed.port}" if parsed.port else ""
-        scheme_prefix = f"{parsed.scheme}://" if parsed.scheme else ""
-        target = f"{scheme_prefix}{host}{port_suffix}" if host else "configured host"
+        target = _log_target(self.base_url)
         logger.info(f"Initialized FHIR client for {target}")
 
     async def close(self):
