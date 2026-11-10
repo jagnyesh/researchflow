@@ -1,7 +1,7 @@
 """Public /health reports status only (#179).
 
 `/health` is unauthenticated (NO_AUDIT allowlist). It returned the internal
-FHIR_BASE_URL and research_requests counts; same rule as the public
+FHIR server URL and research_requests counts; same rule as the public
 /health/ready probe (Finding 2, test_audit_health.py): status, not intel.
 """
 
@@ -9,12 +9,15 @@ import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from app.api.health import FHIR_BASE_URL
 from app.api.health import router as health_router
+
+# A closed port, so the probe fails fast; the path is what must not leak.
+FHIR_URL = "http://127.0.0.1:1/fhir-url-leak-canary"
 
 
 @pytest.fixture
-def health_app():
+def health_app(monkeypatch):
+    monkeypatch.setenv("FHIR_SERVER_URL", FHIR_URL)
     app = FastAPI()
     app.include_router(health_router)
     return app
@@ -30,7 +33,7 @@ async def test_public_health_exposes_only_component_status(health_app):
         resp = await c.get("/health")
 
     body = resp.json()
-    assert FHIR_BASE_URL not in resp.text
+    assert "fhir-url-leak-canary" not in resp.text
     assert set(body) <= {"status", "timestamp", "components"}
     assert body["components"], "expected per-component status"
     for name, component in body["components"].items():
@@ -46,5 +49,5 @@ async def test_other_public_probes_expose_no_detail(health_app, path):
     async with AsyncClient(transport=ASGITransport(app=health_app), base_url="http://test") as c:
         resp = await c.get(path)
 
-    assert FHIR_BASE_URL not in resp.text
+    assert "fhir-url-leak-canary" not in resp.text
     assert set(resp.json()) <= {"status", "timestamp"}

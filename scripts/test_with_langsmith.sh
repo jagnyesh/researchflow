@@ -79,7 +79,11 @@ fi
 echo -e "\n${BLUE}LangSmith Configuration:${NC}"
 echo "  Tracing: $LANGCHAIN_TRACING_V2"
 echo "  Project: $LANGCHAIN_PROJECT"
-echo "  API Key: ${LANGCHAIN_API_KEY:0:20}..."
+if [ -n "$LANGCHAIN_API_KEY" ]; then
+    echo "  API Key: set"
+else
+    echo -e "  API Key: ${YELLOW}not set${NC}"
+fi
 echo ""
 echo -e "  ${GREEN}View traces:${NC} https://smith.langchain.com/projects/$LANGCHAIN_PROJECT"
 

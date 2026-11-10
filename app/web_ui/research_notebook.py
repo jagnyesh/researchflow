@@ -50,9 +50,9 @@ load_dotenv(dotenv_path)
 # Verify critical environment variables are loaded
 anthropic_key = os.getenv("ANTHROPIC_API_KEY")
 if anthropic_key:
-    print(
-        f"✓ Loaded ANTHROPIC_API_KEY from: {dotenv_path} (key starts with: {anthropic_key[:20]}...)"
-    )
+    # Never print any slice of the key: the prefix is public, so even a short
+    # head exposes secret characters to every captured process log (#367).
+    print(f"✓ ANTHROPIC_API_KEY is set (checked .env: {dotenv_path})")
 else:
     print(f"⚠️  WARNING: ANTHROPIC_API_KEY not found! Checked: {dotenv_path}")
     print(f"   Query interpretation will fall back to dummy mode (inaccurate results)")

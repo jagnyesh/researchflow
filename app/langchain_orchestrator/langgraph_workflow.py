@@ -218,21 +218,11 @@ class FullWorkflow:
                 "HAPI_DB_URL",
                 "postgresql+asyncpg://hapi:hapi@localhost:5433/hapi",  # pragma: allowlist secret
             )
-            healthcare_db_url = os.getenv("HEALTHCARE_DB_URL")
-
-            # Whether each is set, not the URLs: they carry credentials (#225).
-            logger.info(
-                "[FullWorkflow] HAPI DB URL set: %s; Healthcare DB URL set: %s",
-                bool(hapi_db_url),
-                bool(healthcare_db_url),
-            )
 
             # Initialize all 5 workflow agents with appropriate database connections
             self.requirements_agent = RequirementsAgent()
             self.phenotype_agent = PhenotypeValidationAgent(database_url=hapi_db_url)
-            self.extraction_agent = DataExtractionAgent(
-                database_url=healthcare_db_url or hapi_db_url
-            )
+            self.extraction_agent = DataExtractionAgent(database_url=hapi_db_url)
             self.qa_agent = QualityAssuranceAgent()
             self.delivery_agent = DeliveryAgent()
         else:
