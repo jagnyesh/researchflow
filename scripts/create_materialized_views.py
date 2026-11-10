@@ -221,6 +221,14 @@ async def run_referential_integrity_validation(conn):
         return False
 
 
+def _asyncpg_dsn(url: str) -> str:
+    """asyncpg rejects SQLAlchemy's `postgresql+asyncpg://` scheme (#390).
+
+    Same rule as `HAPIDBClient`; inlined because this script is standalone.
+    """
+    return url.replace("postgresql+asyncpg://", "postgresql://")
+
+
 def _redacted(url: str) -> str:
     """host:port/db only; the URL carries the password (#225)."""
     from urllib.parse import urlsplit
@@ -238,7 +246,7 @@ async def main():
     print(f"Schema: {SCHEMA_NAME}")
     print(f"Validation: {'SKIPPED' if SKIP_VALIDATION else 'ENABLED'}\n")
 
-    conn = await asyncpg.connect(HAPI_DB_URL)
+    conn = await asyncpg.connect(_asyncpg_dsn(HAPI_DB_URL))
 
     try:
         # Create schema
