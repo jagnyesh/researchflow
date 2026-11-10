@@ -165,7 +165,8 @@ async def _fhir_init_log(url, caplog):
     import logging
     from app.clients.fhir_client import FHIRClient
 
-    with caplog.at_level(logging.INFO):
+    # DEBUG on the client's own logger, so a quieter log call is seen too.
+    with caplog.at_level(logging.DEBUG, logger="app.clients.fhir_client"):
         client = FHIRClient(base_url=url)
     await client.close()
     return [r.getMessage().lower() for r in caplog.records]
@@ -178,7 +179,7 @@ async def _fhir_init_log(url, caplog):
         "http://CANARYUSER:CANARY[PASS@fhir.internal:8081/fhir",
         "http://CANARYUSER:CANARYPASS@fhir.internal:99999/fhir",
         "http://CANARYUSER:CANARYPASS@fhir.internal:80a/fhir",
-        "https://CANARYUSER:CANARY：PASS@fhir.internal/fhir",
+        "https://CANARYUSER:CANARY\N{FULLWIDTH COLON}PASS@fhir.internal/fhir",
         "https://CANARYUSER:CANARYpre/PASS@fhir.internal/fhir",
     ],
 )
@@ -208,3 +209,39 @@ async def test_a_username_read_as_the_scheme_isnt_logged(caplog):
 
     assert any("initialized fhir client" in line for line in lines)
     assert not [line for line in lines if "canary" in line]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # The "@" that ends the credentials isn't a literal "@", so urlsplit
+        # reads them as the host, or as the host and port.
+        "https://CANARYUSER%3ACANARYPASS%40fhir.internal/fhir",
+        "https://CANARYTOKEN%40fhir.internal/fhir",
+        "https://CANARYUSER:4711/CANARYPASS%40fhir.internal/fhir",
+        "https://CANARYUSER:4711/CANARYPASS%2540fhir.internal/fhir",
+        "https://CANARYUSER:4711/CANARYPASS\N{FULLWIDTH COMMERCIAL AT}fhir.internal/fhir",
+        "https://CANARYUSER:/CANARYPASS\N{FULLWIDTH COMMERCIAL AT}fhir.internal/fhir",
+    ],
+)
+async def test_credentials_before_an_encoded_at_sign_arent_logged_as_the_host(url, caplog):
+    lines = await _fhir_init_log(url, caplog)
+
+    assert any("initialized fhir client" in line for line in lines)
+    assert not [line for line in lines if "canary" in line or "4711" in line]
+
+
+@pytest.mark.parametrize(
+    "url, target",
+    [
+        ("https://fhir.internal/fhir", "https://fhir.internal"),
+        ("http://user:secret@hapi_fhir:8080/fhir", "http://hapi_fhir:8080"),
+        ("http://[::1]:8081/fhir", "http://::1:8081"),
+        # No host at all: nothing of the URL is described.
+        ("https://CANARYUSER:CANARYPASS@/fhir", "configured host"),
+    ],
+)
+async def test_the_log_line_names_the_scheme_host_and_port_of_a_plain_url(url, target, caplog):
+    lines = await _fhir_init_log(url, caplog)
+
+    assert lines == [f"initialized fhir client for {target}"]

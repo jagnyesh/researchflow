@@ -10,6 +10,7 @@ Provides HTTP client functionality for:
 
 import os
 import logging
+import re
 from typing import Dict, List, Any, Optional
 from urllib.parse import urlsplit
 import httpx
@@ -19,24 +20,41 @@ from app.schemas._errors import log_internal_error
 logger = logging.getLogger(__name__)
 
 
+# The shape of a plain http(s) URL once urlsplit has set any userinfo aside: a
+# host name or IP address, then a path of plain segments. No "%", "@" or
+# non-ASCII, and no query or fragment.
+_PLAIN_HOST = re.compile(r"[a-z0-9_.:-]+")
+_PLAIN_PATH = re.compile(r"[A-Za-z0-9_./-]*")
+
+
 def _log_target(base_url: str) -> str:
-    """Scheme, host and port of `base_url` for a log line, never its userinfo (#393)."""
+    """Scheme, host and port of `base_url` for a log line, never its userinfo (#393).
+
+    urlsplit can read mistyped credentials as the scheme, host, port or path.
+    An unescaped "/" in the password ends the host part early, and a
+    percent-encoded "@" leaves the whole userinfo in the host. So the URL is
+    described only when every part has the plain shape; a denylist of the
+    known misreads was bypassed twice in review. Anything else is logged as
+    "configured host".
+    """
     try:
         parsed = urlsplit(base_url)
-        port = parsed.port
+        host, port = parsed.hostname or "", parsed.port
     except ValueError:
         # A log line must not stop the client being built. The exception isn't
         # logged either: urlsplit's message can quote the password.
         return "configured host"
-    # urlsplit can read credentials as another part of the URL. An unescaped
-    # "/", "?" or "#" in the password ends the host part early: the "host" is
-    # then the username, and an "@" follows it. With no scheme, a password that
-    # starts "//" makes the username the scheme.
-    cut_short = "@" in parsed.path + parsed.query + parsed.fragment
-    if parsed.scheme not in ("http", "https") or not parsed.hostname or cut_short:
+    plain = (
+        parsed.scheme in ("http", "https")
+        and _PLAIN_HOST.fullmatch(host)
+        and _PLAIN_PATH.fullmatch(parsed.path)
+        and not parsed.query
+        and not parsed.fragment
+    )
+    if not plain:
         return "configured host"
     port_suffix = f":{port}" if port else ""
-    return f"{parsed.scheme}://{parsed.hostname}{port_suffix}"
+    return f"{parsed.scheme}://{host}{port_suffix}"
 
 
 class FHIRClient:
