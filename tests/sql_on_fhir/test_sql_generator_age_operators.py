@@ -46,14 +46,16 @@ def test_an_inclusive_upper_bound_keeps_the_boundary_age(details):
     assert (op, value) == ("<=", 50)
 
 
-@pytest.mark.parametrize("details", ["over 65", "older than 65", "> 65"])
+@pytest.mark.parametrize(
+    "details", ["over 65", "older than 65", "> 65", "senior over 65", "for older than 65"]
+)
 def test_an_exclusive_lower_bound_stays_strict(details):
     op, value, _ = _age_predicate(details)
 
     assert (op, value) == (">", 65)
 
 
-@pytest.mark.parametrize("details", ["under 50", "younger than 50", "< 50"])
+@pytest.mark.parametrize("details", ["under 50", "younger than 50", "< 50", "minor under 50"])
 def test_an_exclusive_upper_bound_stays_strict(details):
     op, value, _ = _age_predicate(details)
 

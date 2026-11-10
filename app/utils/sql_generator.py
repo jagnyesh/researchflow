@@ -452,14 +452,15 @@ class SQLGenerator:
             return "BETWEEN", (lo, hi)
 
         # Inclusive forms first: "65 or over" contains "over" and ">=" contains ">" (#404).
-        ge_words = (">=", "at least", "or older", "or over", "or above")
-        le_words = ("<=", "at most", "or younger", "or under", "or below")
+        # Word boundaries keep "senior over 65" strict.
+        ge_pattern = r">=|\bat least\b|\bor (?:older|over|above)\b"
+        le_pattern = r"<=|\bat most\b|\bor (?:younger|under|below)\b"
         gt_words = ("greater than", "more than", "older than", "above", "over")
         lt_words = ("less than", "fewer than", "younger than", "below", "under")
         op = None
-        if any(w in text for w in ge_words):
+        if re.search(ge_pattern, text):
             op = ">="
-        elif any(w in text for w in le_words):
+        elif re.search(le_pattern, text):
             op = "<="
         elif ">" in text or any(w in text for w in gt_words):
             op = ">"
