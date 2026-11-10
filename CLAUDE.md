@@ -1,6 +1,6 @@
 # ResearchFlow
 
-AI-powered multi-agent system that automates clinical research data requests from natural language to delivery. FastAPI + LangGraph + SQL-on-FHIR. Reduces data request turnaround from weeks to hours.
+ResearchFlow is a proof of concept for LLM-assisted clinical research data requests with human approval gates, run on synthetic patients. FastAPI + LangGraph + SQL-on-FHIR.
 
 ## Living state — read these for current context
 
