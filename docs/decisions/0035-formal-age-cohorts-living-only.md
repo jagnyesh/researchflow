@@ -18,6 +18,8 @@ related: [0033-phenotype-estimate-counts-approved-sql.md]
 - An age measured at death, or at a reference date, would give dead patients a real age. The views have no such column, and no request has asked for one.
 
 **Consequences.**
+- The decision accepts an inconsistency. A request without an age criterion still counts deceased patients. "Female patients with diabetes" includes the dead, and "female patients over 18 with diabetes" doesn't.
+- An age phrase that the generator can't parse, such as `"65 or older"`, gets neither the age bound nor the living filter today. `test_an_unparseable_age_adds_no_living_filter` pins this. The parser fix belongs to [#404](https://github.com/jagnyesh/researchflow/issues/404), and it brings both. The owner hasn't ruled on this case yet.
 - Formal Pass@1 on the gold-set replay goes from 0.20 to 0.50 (5/10). Three cases lose their `expected_fail`. `hypertension_65_or_older` and `hypertension_aged_50_to_60` keep one other reason each.
 - The extraction agent runs the approved phenotype SQL, so an age cohort's extracted rows are living-only too. The estimate already counts that SQL (ADR 0033).
 - The `deceased` column is `deceased.exists()` in `patient_demographics.json`. A FHIR `deceasedBoolean: false` would read as deceased. On the local corpus, every one of the 81 deceased patients has a death date, so this case doesn't occur there yet.
