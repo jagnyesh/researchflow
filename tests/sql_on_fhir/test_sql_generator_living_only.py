@@ -64,11 +64,14 @@ def test_a_request_without_an_age_criterion_keeps_the_deceased(requirements, cou
     assert "deceased" not in where, where
 
 
-def test_an_unparseable_age_adds_no_living_filter():
-    vague = RB.build_demographic("Elderly", term="age", details="elderly")
-    where, _ = _where(RB.build_requirements(inclusion=[vague, HYPERTENSION]), True)
+# The filter follows the emitted age predicate; #404's parser fix brings both.
+@pytest.mark.parametrize("details", ["elderly", "65 or older"])
+def test_an_unparseable_age_adds_no_living_filter(details):
+    vague = RB.build_demographic(details, term="age", details=details)
+    where, params = _where(RB.build_requirements(inclusion=[vague, HYPERTENSION]), True)
 
-    assert "deceased" not in where, where
+    assert "deceased" not in where and "AGE(" not in where, where
+    assert not any(name.startswith("age") for name in params), params
 
 
 def test_the_living_filter_does_not_carry_over_to_the_next_query():
