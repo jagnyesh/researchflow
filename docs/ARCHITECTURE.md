@@ -27,7 +27,7 @@ Three older views of the system disagree with this doc in places. Follow this do
 | Call site | Model | Purpose |
 |---|---|---|
 | `RequirementsAgent`, through `LLMClient.extract_requirements` | `claude-sonnet-4-6` | Extract the cohort specification from the request |
-| `RequirementsAgent`, through `LLMClient.extract_medical_concepts_batch` | `claude-haiku-4-5-20251001` | Extract the medical concepts from every criterion in one call. `extract_medical_concepts` retries a criterion that comes back empty |
+| `RequirementsAgent`, through `LLMClient.extract_medical_concepts_batch` | `claude-haiku-4-5-20251001` | Extract the medical concepts from a list of criteria in one call, once for the inclusions and once for the exclusions. `extract_medical_concepts` retries a criterion that comes back empty |
 | `SQLSynthesizer.synthesize` in `app/services/sql_synthesis.py` | `claude-sonnet-4-6` | Write the exploratory SQL |
 | `ConversationManager` in `app/services/conversation_manager.py` | `claude-sonnet-4-6` | Classify a chat message that the patterns cannot classify |
 
@@ -47,7 +47,7 @@ Three older views of the system disagree with this doc in places. Follow this do
 
 - The four terminal nodes are `complete`, `not_feasible`, `qa_failed`, and `human_review`. No router returns `human_review`.
 - The preview check passes when the cohort size is within 50% of the estimate. For an estimate under 10 patients, the tolerance is 5 patients.
-- The preview is not de-identified. The full extraction is de-identified by default. With `phi_level` set to `limited_dataset`, the step removes only `patient_name` and `ssn`, so dates and source ids stay. With `identified`, it removes nothing.
+- The preview is not de-identified. The full extraction is de-identified by default. With `phi_level` set to `limited_dataset`, the step removes only `patient_name` and `ssn`, columns that no view emits. Dates, source ids, `family_name`, and `given_name` stay, and the QA check fails a delivery that holds a name column. With `identified`, the step removes nothing.
 - `_extract_data_element` reads at most the first 1,000 patient ids.
 
 ## Approval gates
@@ -131,7 +131,7 @@ Several components read HAPI FHIR's storage tables directly, not the FHIR REST A
 
 [`HIPAA_POSTURE.md`](HIPAA_POSTURE.md) documents the Sprint 6.1 baseline.
 
-- **Encryption at rest.** `FernetEngine` wraps the Tier 1 columns that can hold PHI: `initial_request`, the inclusion and exclusion criteria, and the phenotype SQL. The JSON columns `approvals.approval_data` and `agent_executions.result` hold copies of that content and are not encrypted ([#207](https://github.com/jagnyesh/researchflow/issues/207)).
+- **Encryption at rest.** `FernetEngine` wraps the Tier 1 columns that can hold PHI: `initial_request`, the inclusion and exclusion criteria, and the phenotype SQL. Three JSON columns are not encrypted: `approvals.approval_data`, `agent_executions.context`, and `agent_executions.result`. They hold copies of that content and the preview's patient rows ([#207](https://github.com/jagnyesh/researchflow/issues/207)).
 - **Audit logging.** A default-deny classifier treats every unlisted route as a PHI route. A PHI route returns 401 without a valid token, and 503 when the audit queue cannot record the request.
 - **TLS.** With `ENVIRONMENT=production`, the API redirects HTTP with a 308 and sends HSTS for one year with `includeSubDomains`.
 - **Input validation.** Request schemas extend `PHIInputModel`, and a 422 response omits the submitted input.
