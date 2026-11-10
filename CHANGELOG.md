@@ -3,7 +3,7 @@
 
 ## Executive Summary
 
-**ResearchFlow** is an AI-powered multi-agent system that automates clinical research data requests from natural language to delivery. This changelog documents the complete development journey from initial proof-of-concept to production-ready system.
+**ResearchFlow** is a proof of concept for LLM-assisted clinical research data requests with human approval gates. This changelog covers its development from October 12, 2024 to November 8, 2025.
 
 ### Key Milestones
 - ✅ **47 commits** across 13 months of active development
