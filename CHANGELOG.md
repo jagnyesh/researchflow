@@ -3,7 +3,7 @@
 
 ## Executive Summary
 
-**ResearchFlow** is a proof of concept for LLM-assisted clinical research data requests with human approval gates. This changelog covers its development from October 12, 2024 to November 8, 2025.
+**ResearchFlow** is a proof of concept for LLM-assisted clinical research data requests with human approval gates.
 
 ### Key Milestones
 - ✅ **47 commits** across 13 months of active development

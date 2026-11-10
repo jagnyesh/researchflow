@@ -1,6 +1,6 @@
 # ResearchFlow
 
-LLM-assisted clinical research data requests with human approval gates. FastAPI + LangGraph + SQL-on-FHIR. A proof of concept on synthetic patients. The project has not measured turnaround time.
+ResearchFlow is a proof of concept for LLM-assisted clinical research data requests with human approval gates, run on synthetic patients. FastAPI + LangGraph + SQL-on-FHIR.
 
 ## Living state — read these for current context
 
