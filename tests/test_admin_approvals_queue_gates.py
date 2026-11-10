@@ -97,7 +97,24 @@ def test_delivery_card_shows_the_qa_summary_and_what_will_be_delivered():
     assert "Cohort 42 differs from estimate 30" in shown
     assert "conditions" in shown and "lab_results" in shown
     assert "de-identified" in shown and "CSV" in shown
+    assert "Spot-check the lab values before release" in shown
+    assert "medications" in shown  # extracted with no records
     assert "Delivery approval" in shown
+
+
+def test_delivery_card_lists_qa_issues():
+    payload = dict(
+        DELIVERY_PAYLOAD,
+        qa_report=dict(
+            DELIVERY_PAYLOAD["qa_report"],
+            issues=[{"check_name": "phi_scrub", "message": "Possible identifier in notes"}],
+        ),
+    )
+    at = _run_card(_approval("delivery", payload))
+
+    shown = _text(at)
+    assert "Issues found" in shown
+    assert "phi_scrub" in shown and "Possible identifier in notes" in shown
 
 
 def test_delivery_card_does_not_dump_the_data_package():

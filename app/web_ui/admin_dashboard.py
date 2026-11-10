@@ -1635,7 +1635,7 @@ def display_delivery_approval(data):
 
     message = data.get("message")
     if message:
-        st.info(message)
+        st.info(_no_latex(message))
 
     qa_report = data.get("qa_report") or {}
     overall_status = qa_report.get("overall_status") or data.get("overall_status") or "unknown"
