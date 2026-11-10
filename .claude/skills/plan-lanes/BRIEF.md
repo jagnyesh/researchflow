@@ -58,7 +58,8 @@ Run pytest one file per process: a multi-file run here has hung for hours.
 Done: /validate-and-ship ran to its end. A standing-rule PR is merged. A human-merge PR is
 green and attested at its head, and you've handed the user the merge command. Then stop.
 - If a merge is refused because the branch is out of date, or you're asked to update it:
-  merge origin/main in, then run validate-and-ship Step 7.4. If any 7.4 check fails, do a
+  merge origin/main in, then run validate-and-ship Step 7.4. If the Step 7.5 reader prints an
+  `EDITED` line, stop and report it to the user (Step 7.4). If any other 7.4 check fails, do a
   fresh Step 2 review and post a new Step 7 attestation instead. Then re-run Step 8: a
   standing-rule PR merges itself, and a human-merge PR hands the user a fresh command.
 - After a merge from a worktree, `gh pr view <n>` confirms both the merge and the remote
