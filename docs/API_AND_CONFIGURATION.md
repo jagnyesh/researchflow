@@ -29,9 +29,9 @@ headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
 # Authentication
 POST   /auth/login                              Return a JWT for an email and password
 POST   /auth/refresh                            Return a new JWT
-POST   /auth/logout                             End the session
+POST   /auth/logout                             Return a success message. The token stays valid until it expires
 GET    /auth/me                                 Return the caller's user record
-POST   /a2a/token                               Return a service token
+POST   /a2a/token                               Return a service token (demo check, issue 233)
 
 # Research requests, read only. A portal starts each request in-process.
 GET    /research/                               List the 50 newest requests that the caller may see
@@ -73,7 +73,7 @@ GET    /health/ready                            Readiness probe
 GET    /health/ready/detailed                   Readiness with the audit-queue state
 ```
 
-The API also serves `/users`, `/sql_query`, and `/mcp/context`. `app/api/` has one module for each router.
+The API also serves `/users` and `/mcp/context`. `POST /sql_query` runs a caller-supplied `SELECT` on HAPI Postgres with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)). `POST /a2a/token` accepts any caller whose `client_id` equals its `client_secret` ([#233](https://github.com/jagnyesh/researchflow/issues/233)). `app/api/` has one module for each router.
 
 ## Examples
 
@@ -132,7 +132,7 @@ print(f"Found {results['row_count']} patients")
 
 ## Environment variables
 
-`config/.env.example` is the template. This table is partial. It lists the variables that you set to run the system or to change what the system does. `grep -rhoE "getenv\(\"[A-Z_0-9]+\"" app | sort -u` lists every variable that the code reads.
+`config/.env.example` is the template. This table is partial. It lists the variables that you set to run the system or to change what the system does. `grep -rhoE "getenv\(\"[A-Z_0-9]+\"" app | sort -u` lists the variables that the code reads by literal name. It misses a variable that the code reads through a constant, such as `DEIDENTIFICATION_HMAC_KEY`.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -170,6 +170,7 @@ pre-commit run --all-files
 bandit -r app/
 ```
 
+- The default run includes the tests marked `requires_services`, which need the Compose stack and use the local HAPI database and Redis. To leave them out, add `-m "not requires_services and not requires_api_key"`.
 - `pytest.ini` leaves `tests/e2e`, `tests/integration`, `scripts`, and six named test files out of the default run.
 - CI's base job runs `pytest tests/ -m "not requires_services and not requires_api_key"`. A second job starts the Compose services for the `requires_services` tests.
 - `tests/eval/test_eval_replay.py` replays the recorded exploratory SQL against HAPI without an API key. [`tests/eval/README.md`](../tests/eval/README.md) explains what a green run does and does not show.
@@ -196,7 +197,6 @@ mypy app/
 | The API returns 401 | The request has no bearer token. See [Authentication](#authentication) |
 | A PHI route returns 503 | The audit Redis on port 6380 is down, or `REDIS_AUDIT_URL` is unset |
 | A dashboard shows old numbers after a code change | Streamlit keeps imported modules in memory. Restart the Streamlit process |
-| `create-all` fails with a `postgresql+asyncpg` URL | [#390](https://github.com/jagnyesh/researchflow/issues/390) |
 
 These checks print only whether each secret is set. They never print the value.
 

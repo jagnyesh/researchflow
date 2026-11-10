@@ -19,7 +19,7 @@ The application database defaults to SQLite at `./dev.db`. `app/database/models.
 
 Three older views of the system disagree with this doc in places. Follow this doc.
 
-- The picture at [`images/architecture-overview.png`](images/architecture-overview.png) and the [interactive diagram](https://jagnyesh.github.io/researchflow/architecture.html) predate Sprint 7.2. They show six agents, a calendar step, and the retired A2A orchestrator.
+- The picture at [`images/architecture-overview.png`](images/architecture-overview.png) and the [interactive diagram](https://jagnyesh.github.io/researchflow/architecture.html) predate Sprint 7.2. They show six agents, a calendar step, and the retired agent-to-agent orchestrator.
 - [`05-24architecturereview.md`](architecture/05-24architecturereview.md) and the earlier [05-15 snapshot](architecture/05-15architecturereview.md) predate Sprint 6.7.
 
 ## Where the LLM is called
@@ -27,7 +27,7 @@ Three older views of the system disagree with this doc in places. Follow this do
 | Call site | Model | Purpose |
 |---|---|---|
 | `RequirementsAgent`, through `LLMClient.extract_requirements` | `claude-sonnet-4-6` | Extract the cohort specification from the request |
-| `RequirementsAgent`, through `LLMClient.extract_medical_concepts` | `claude-haiku-4-5-20251001` | Extract the medical concepts from each criterion |
+| `RequirementsAgent`, through `LLMClient.extract_medical_concepts_batch` | `claude-haiku-4-5-20251001` | Extract the medical concepts from every criterion in one call. `extract_medical_concepts` retries a criterion that comes back empty |
 | `SQLSynthesizer.synthesize` in `app/services/sql_synthesis.py` | `claude-sonnet-4-6` | Write the exploratory SQL |
 | `ConversationManager` in `app/services/conversation_manager.py` | `claude-sonnet-4-6` | Classify a chat message that the patterns cannot classify |
 
@@ -38,7 +38,7 @@ Three older views of the system disagree with this doc in places. Follow this do
 - The Sonnet system prompt is about 3,000 tokens, and the Haiku prompt is about 5,185. Both sit above the thresholds in `_ANTHROPIC_CACHE_THRESHOLDS`: 1,024 tokens for Sonnet and 4,096 for Haiku.
 - The formal portal's median cost is $0.007754 per request over 30 threads, with a 94.88% cache hit rate. The regression ceiling is $0.010080 ([ADR 0025](decisions/0025-sprint-8-3-cost-ceilings-re-derived.md)). The 05-24 review attributes 94.88% to the Sonnet prompt and 100% to the Haiku prompt, after warmup.
 - The exploratory portal's median cost is $0.003586 per query over 30 root traces, with a 95% cache hit rate. The ceiling is $0.004661 ([ADR 0028](decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md)).
-- Both measurements used bursty traffic from [`scripts/drive_qa_traffic.py`](../scripts/drive_qa_traffic.py): 30 requests in 6 to 7 minutes. With gaps over 5 minutes between requests, the median moves toward the cache-create cost. That measurement is the Sprint 8.5 candidate.
+- Both measurements used bursty traffic from [`scripts/drive_qa_traffic.py`](../scripts/drive_qa_traffic.py): 30 formal requests in 6 to 7 minutes, and 30 exploratory queries in 120 seconds. With gaps over 5 minutes between requests, the median moves toward the cache-create cost. That measurement is the Sprint 8.5 candidate.
 - Each of the five agents has one `@traceable` decorator for LangSmith. The tags `portal:formal` and `portal:exploratory` let `CostTelemetryService` report a median for each portal.
 
 ## Formal workflow graph
@@ -47,7 +47,7 @@ Three older views of the system disagree with this doc in places. Follow this do
 
 - The four terminal nodes are `complete`, `not_feasible`, `qa_failed`, and `human_review`. No router returns `human_review`.
 - The preview check passes when the cohort size is within 50% of the estimate. For an estimate under 10 patients, the tolerance is 5 patients.
-- The preview is not de-identified. The full extraction is de-identified unless the request's `phi_level` is `identified`.
+- The preview is not de-identified. The full extraction is de-identified by default. With `phi_level` set to `limited_dataset`, the step removes only `patient_name` and `ssn`, so dates and source ids stay. With `identified`, it removes nothing.
 - `_extract_data_element` reads at most the first 1,000 patient ids.
 
 ## Approval gates
@@ -88,7 +88,7 @@ A timeout never fires for a graph gate. `ApprovalBridge.create_approval_request`
 
 ## Exploratory path
 
-`FeasibilityService.execute_feasibility_check` runs synthesis, validation, and execution. The docstring of `app/services/sql_validator.py` lists the 8 rules of `SQLValidator`. Rule 5 is the PHI (protected health information) boundary. It allows aggregates plus these dimensions: `gender`, `clinical_status`, and columns that end in `_display` or `_code`.
+`FeasibilityService.execute_feasibility_check` runs synthesis, validation, and execution. The docstring of `app/services/sql_validator.py` lists the 8 rules of `SQLValidator`. Rule 5 is the PHI (protected health information) boundary. It allows aggregates plus these dimensions: `gender`, `clinical_status`, and columns that end in `_display` or `_code`. `birth_date` can appear only inside an age-bucket expression. The rule denies `postal_code` and any column whose name contains an identifier token, such as `zip`, `phone`, or `_name`.
 
 The validated SQL gets `LIMIT 1000` and runs with a 5-second timeout as `rf_readonly`. `config/rf_readonly_role.sql` grants that role `USAGE` on the `sqlonfhir` schema and `SELECT` on its tables. Any failure returns an error variant that has no cohort number.
 
@@ -131,11 +131,13 @@ Several components read HAPI FHIR's storage tables directly, not the FHIR REST A
 
 [`HIPAA_POSTURE.md`](HIPAA_POSTURE.md) documents the Sprint 6.1 baseline.
 
-- **Encryption at rest.** `FernetEngine` wraps the Tier 1 columns that can hold PHI: `initial_request`, the inclusion and exclusion criteria, and the phenotype SQL.
+- **Encryption at rest.** `FernetEngine` wraps the Tier 1 columns that can hold PHI: `initial_request`, the inclusion and exclusion criteria, and the phenotype SQL. The JSON columns `approvals.approval_data` and `agent_executions.result` hold copies of that content and are not encrypted ([#207](https://github.com/jagnyesh/researchflow/issues/207)).
 - **Audit logging.** A default-deny classifier treats every unlisted route as a PHI route. A PHI route returns 401 without a valid token, and 503 when the audit queue cannot record the request.
 - **TLS.** With `ENVIRONMENT=production`, the API redirects HTTP with a 308 and sends HSTS for one year with `includeSubDomains`.
 - **Input validation.** Request schemas extend `PHIInputModel`, and a 422 response omits the submitted input.
-- **Authentication.** A human user gets a JWT from `POST /auth/login`, and a service gets a separate token from `POST /a2a/token`. Routes that change materialized views or ViewDefinitions require the `admin` role.
+- **Authentication.** A human user gets a JWT from `POST /auth/login`. Routes that change materialized views or ViewDefinitions require the `admin` role. Two routes are weaker than the rest.
+  - `POST /a2a/token` issues a service token to any caller whose `client_id` equals its `client_secret`, a demo check ([#233](https://github.com/jagnyesh/researchflow/issues/233)).
+  - `POST /sql_query` runs a caller's `SELECT` on HAPI Postgres for any signed-in user, with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)).
 
 `HIPAA_POSTURE.md` does not yet cover the later security work.
 
@@ -144,7 +146,7 @@ Several components read HAPI FHIR's storage tables directly, not the FHIR REST A
 - [ADR 0032](decisions/0032-audit-completed-after-body.md): the audit trail records `PHI_ACCESS_COMPLETED` after the response body is sent, with the real status.
 - [ADR 0034](decisions/0034-compose-store-urls-match-code.md): the exploratory portal refuses to run without `EXPLORATORY_DB_URL` outside development.
 - [PR #357](https://github.com/jagnyesh/researchflow/pull/357): the approval read routes return only approvals for requests that the caller may see.
-- [PR #360](https://github.com/jagnyesh/researchflow/pull/360): a de-identified extract meets the HIPAA Safe Harbor floor. Dates become years, ids become keyed pseudonyms, and unlisted columns are dropped.
+- [PR #360](https://github.com/jagnyesh/researchflow/pull/360): in a de-identified extract, dates become years, ids become keyed pseudonyms, and unlisted columns are dropped. The extract does not yet meet HIPAA Safe Harbor. Ages over 89 are not top-coded, and free text in `code_text` and `value_string` passes through.
 
 ## Known gaps
 

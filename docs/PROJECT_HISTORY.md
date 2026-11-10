@@ -77,7 +77,7 @@ Four follow-up issues from those sprints are also closed: [#82](https://github.c
 
 ## What comes next
 
-Phase 2 is nearly complete, and Phases 3 and 4 are ahead. [`BACKLOG.md`](../BACKLOG.md) has the plan for Sprints 9 to 12 and its decision gates. Two candidates are open from the work above. Sprint 6.6 adds health-check oracles for the custom-path materialized views. Sprint 8.5 measures the median cost under sparse traffic.
+Sprints 9 and 10 finish Phase 2, and Phases 3 and 4 follow. [`BACKLOG.md`](../BACKLOG.md) has the plan for Sprints 9 to 12 and its decision gates. Two candidates are open from the work above. Sprint 6.6 adds health-check oracles for the custom-path materialized views. Sprint 8.5 measures the median cost under sparse traffic.
 
 ## Built with
 

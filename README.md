@@ -6,7 +6,7 @@
 
 **LLM-assisted clinical research data requests with human approval gates**
 
-ResearchFlow is a proof of concept that turns a researcher's plain-English request for clinical data into checked SQL. A validator checks each count query, and a human reviewer approves each extraction query. The data is FHIR (Fast Healthcare Interoperability Resources), the HL7 standard format for clinical records. An LLM does two jobs. It extracts structured requirements from the request, and in the exploratory portal it writes count-only SQL.
+ResearchFlow is a proof of concept that turns a researcher's plain-English request for clinical data into checked SQL. In the exploratory portal, a validator checks each count query. In the formal portal, a human reviewer approves the cohort SQL before any patient rows are extracted. The data is FHIR (Fast Healthcare Interoperability Resources), the HL7 standard format for clinical records. An LLM extracts structured requirements from the request. In the exploratory portal it also writes count-only SQL and classifies ambiguous chat messages.
 
 In the Sprint 6.7 evaluation, the exploratory portal matched a hand-written oracle count on 23 of 23 scored questions. None of 8 adversarial prompts returned row-level data. The rule-based path that it replaced scored 3 of 23, a figure with two confounds that [`tests/eval/README.md`](tests/eval/README.md) names. The median cost was $0.003586 per query.
 
@@ -85,8 +85,8 @@ The workflow extracts no patient rows until a reviewer approves the SQL at step 
 - **A small evaluation.** The model answered 7 of the 8 adversarial prompts with a safe count, and the validator rejected 1 ([ADR 0031](docs/decisions/0031-sprint-6-7-adversarial-gate-attribution.md)). The result depends on the model as well as the validator.
 - **The formal SQL generator passes 5 of its 10 gold cases** ([ADR 0035](docs/decisions/0035-formal-age-cohorts-living-only.md)). It cannot yet express an inclusive age bound, a medication exclusion, a lab value threshold, or a time period.
 - **The dashboards have no authentication** ([#39](https://github.com/jagnyesh/researchflow/issues/39)). Anyone who reaches port 8503 can approve a request. A launch from outside the repo root skips the loopback pin ([#219](https://github.com/jagnyesh/researchflow/issues/219)).
-- **The approval API has no role check** ([#248](https://github.com/jagnyesh/researchflow/issues/248)).
-- **Cost numbers assume bursty traffic.** Each run sent 30 requests in 6 to 7 minutes, so no request waited past Anthropic's 5-minute cache lifetime. The exploratory cache hit rate was 95% ([ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md)).
+- **The API has open authorization gaps.** The approval route has no role check ([#248](https://github.com/jagnyesh/researchflow/issues/248)). `POST /sql_query` runs any `SELECT` for any signed-in user, with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)).
+- **Cost numbers assume bursty traffic.** The formal run sent 30 requests in 6 to 7 minutes, and the exploratory run sent 30 queries in 120 seconds. No request waited past Anthropic's 5-minute cache lifetime. The exploratory cache hit rate was 95% ([ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md)).
 - **The data layer reads HAPI FHIR's internal Postgres tables.** Another FHIR server, or a HAPI release with a new storage layout, breaks it.
 
 [Architecture](docs/ARCHITECTURE.md#known-gaps) lists the remaining gaps.
