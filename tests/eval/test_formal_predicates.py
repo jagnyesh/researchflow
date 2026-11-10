@@ -19,10 +19,12 @@ from tests.eval.formal_predicates import check_predicates, extract_predicates
 from tests.eval.formal_record import load_recording
 
 # The checker tests below pin these predicate sets, so they keep testing the
-# checker when a gold case's requirements change (#241 made case 1 living-only).
+# checker when a gold case's requirements change (#241 made case 1 living-only;
+# #403 made the generator emit it).
 CASE_1 = replace(
     FORMAL_CASES[0],
     required_predicates=[
+        ("deceased", "=", False),
         ("gender", "=", "female"),
         ("age", ">", 65),
         ("condition", "has", "diabetes mellitus"),
@@ -118,6 +120,12 @@ def test_the_exclusion_is_matched_as_lacks():
     assert ("condition", "lacks", "diabetes mellitus") in extract_predicates(sql, params)
 
 
+def test_the_living_filter_is_matched_as_not_deceased():
+    sql, params = _sql(_recorded(CASE_1))
+
+    assert ("deceased", "=", False) in extract_predicates(sql, params)
+
+
 def test_required_predicates_are_json_safe_tuples():
     for case in FORMAL_CASES:
         assert all(isinstance(p, tuple) and len(p) == 3 for p in case.required_predicates)
@@ -132,6 +140,7 @@ _ALL_COLUMNS = (
 )
 _AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) > :age_2"
 _FROM = "FROM sqlonfhir.patient_demographics p\n"
+_LIVING = "p.deceased IS NOT TRUE"
 
 # Each rewrite keeps the required predicate set's labels but narrows or
 # broadens the cohort; the shape match must flag every one (#242 review).
@@ -145,6 +154,11 @@ _SHAPE_ESCAPES = {
     "months_not_years": (_AGE, _AGE.replace("YEAR FROM AGE", "MONTH FROM AGE")),
     "compound_threshold": (_AGE, _AGE + " + 10"),
     "other_alias_gender": ("p.gender = :gender_1", "c.gender = :gender_1"),
+    # = FALSE and IS FALSE drop a NULL flag; IS NULL drops deceased = false.
+    "living_eq_false": (_LIVING, "p.deceased = FALSE"),
+    "living_is_false": (_LIVING, "p.deceased IS FALSE"),
+    "living_is_null": (_LIVING, "p.deceased IS NULL"),
+    "living_other_alias": (_LIVING, "c.deceased IS NOT TRUE"),
     "join_filter": (
         _FROM,
         _FROM.rstrip("\n")

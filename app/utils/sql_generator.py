@@ -29,6 +29,7 @@ class SQLGenerator:
                                    If False, generates SQL for legacy HAPI FHIR schema.
         """
         self._param_counter = 0
+        self._has_age_filter = False
         self.use_materialized_views = use_materialized_views
 
         # Configure schema and table names based on mode
@@ -77,6 +78,7 @@ class SQLGenerator:
     def _reset_param_counter(self):
         """Reset parameter counter for new query"""
         self._param_counter = 0
+        self._has_age_filter = False
 
     def _build_table_name(self, table: str) -> str:
         """
@@ -233,6 +235,11 @@ class SQLGenerator:
             if time_conditions:
                 where_clauses.extend(time_conditions)
                 params.update(time_params)
+
+        if self._has_age_filter:
+            # Age is computed from today, which is meaningless for the dead, so an
+            # age cohort is living-only; IS NOT TRUE keeps a NULL flag (#403, ADR 0035).
+            where_clauses.insert(0, "p.deceased IS NOT TRUE")
 
         # Construct final query
         where_clause = ""
@@ -482,6 +489,7 @@ class SQLGenerator:
             if op is None:
                 logger.warning(f"Could not parse age details: {details!r}")
                 return "", {}
+            self._has_age_filter = True
             # birth_date is materialized as text (FHIR transpiler default);
             # cast to date so AGE() accepts it.
             if op == "BETWEEN":

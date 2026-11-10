@@ -59,11 +59,13 @@ async def _sql_count(requirements):
 
 # Written independently of SQLGenerator, so a predicate the generator drops
 # shows up as a mismatch instead of agreeing on both sides. "Older than 65"
-# is age >= 66: born on or before today minus 66 years.
+# is age >= 66: born on or before today minus 66 years. An age cohort counts
+# living patients only (#403).
 ORACLE = """
     SELECT COUNT(DISTINCT p.patient_id) AS n
     FROM sqlonfhir.patient_demographics p
-    WHERE p.gender = 'female'
+    WHERE p.deceased IS NOT TRUE
+      AND p.gender = 'female'
       AND p.birth_date::date <= CURRENT_DATE - INTERVAL '66 years'
       AND EXISTS (
           SELECT 1 FROM sqlonfhir.condition_simple c
