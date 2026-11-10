@@ -1,0 +1,15 @@
+# Backstop for the explicit COPYs in config/Dockerfile: keep secrets and local
+# state out of the build context entirely.
+.env
+.env.*
+.git
+.venv
+.claude
+.github
+data
+logs
+*.db
+*.db-*
+*.sqlite*
+__pycache__
+.pytest_cache
