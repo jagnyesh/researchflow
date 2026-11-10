@@ -13,7 +13,6 @@ Endpoints:
 from datetime import timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from app.security.auth import (
@@ -236,23 +235,3 @@ async def get_current_user_info(current_user: User = Depends(get_current_active_
         role=current_user.role,
         is_active=current_user.is_active,
     )
-
-
-@router.post("/token", response_model=Token, include_in_schema=False)
-async def token_endpoint(form_data: OAuth2PasswordRequestForm = Depends()):
-    """
-    OAuth2 compatible token endpoint (for Swagger UI authentication)
-
-    This endpoint uses OAuth2PasswordRequestForm which expects:
-    - username (we use email)
-    - password
-
-    Hidden from main API docs (use /auth/login instead)
-    """
-    # Reuse login logic
-    login_request = LoginRequest(email=form_data.username, password=form_data.password)
-    response = await login(login_request)
-
-    return Token(
-        access_token=response.access_token, token_type="bearer"
-    )  # nosec B106  # OAuth2 token type
