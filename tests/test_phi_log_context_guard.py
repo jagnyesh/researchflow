@@ -222,9 +222,15 @@ async def test_a_username_read_as_the_scheme_isnt_logged(caplog):
         "https://CANARYUSER:4711/CANARYPASS%2540fhir.internal/fhir",
         "https://CANARYUSER:4711/CANARYPASS\N{FULLWIDTH COMMERCIAL AT}fhir.internal/fhir",
         "https://CANARYUSER:/CANARYPASS\N{FULLWIDTH COMMERCIAL AT}fhir.internal/fhir",
+        # Other spellings of "@": quoted-printable, UTF-7, an HTML entity and
+        # a backslash escape. Each needs a character a plain path doesn't have.
+        "https://CANARYUSER:4711/CANARYPASS=40fhir.internal/fhir",
+        "https://CANARYUSER:4711/CANARYPASS+AEA-fhir.internal/fhir",
+        "https://CANARYUSER:4711/CANARYPASS&commat;fhir.internal/fhir",
+        r"https://CANARYUSER:4711/CANARYPASS\x40fhir.internal/fhir",
     ],
 )
-async def test_credentials_before_an_encoded_at_sign_arent_logged_as_the_host(url, caplog):
+async def test_credentials_before_a_disguised_at_sign_arent_logged_as_the_host(url, caplog):
     lines = await _fhir_init_log(url, caplog)
 
     assert any("initialized fhir client" in line for line in lines)
@@ -236,12 +242,20 @@ async def test_credentials_before_an_encoded_at_sign_arent_logged_as_the_host(ur
     [
         ("https://fhir.internal/fhir", "https://fhir.internal"),
         ("http://user:secret@hapi_fhir:8080/fhir", "http://hapi_fhir:8080"),
+        ("http://hapi-fhir:8080/fhir", "http://hapi-fhir:8080"),
         ("http://[::1]:8081/fhir", "http://::1:8081"),
-        # No host at all: nothing of the URL is described.
+        ("https://fhir.example.org", "https://fhir.example.org"),
+        ("https://fhir.example.org/fhir-server/api_v4/R4.0", "https://fhir.example.org"),
+        # Not plain, so nothing of the URL is described: no host, a space or
+        # a non-ASCII letter in the host, a non-ASCII letter or ":" in the path.
         ("https://CANARYUSER:CANARYPASS@/fhir", "configured host"),
+        ("https://CANARYUSER fhir.internal/fhir", "configured host"),
+        ("https://f\N{LATIN SMALL LETTER U WITH DIAERESIS}hr.internal/fhir", "configured host"),
+        ("https://fhir.internal/f\N{LATIN SMALL LETTER U WITH DIAERESIS}hr", "configured host"),
+        ("https://fhir.internal/fhir:r4", "configured host"),
     ],
 )
-async def test_the_log_line_names_the_scheme_host_and_port_of_a_plain_url(url, target, caplog):
+async def test_the_log_line_describes_only_a_plain_url(url, target, caplog):
     lines = await _fhir_init_log(url, caplog)
 
     assert lines == [f"initialized fhir client for {target}"]

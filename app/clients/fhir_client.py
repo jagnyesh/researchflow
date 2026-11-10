@@ -33,9 +33,8 @@ def _log_target(base_url: str) -> str:
     urlsplit can read mistyped credentials as the scheme, host, port or path.
     An unescaped "/" in the password ends the host part early, and a
     percent-encoded "@" leaves the whole userinfo in the host. So the URL is
-    described only when every part has the plain shape; a denylist of the
-    known misreads was bypassed twice in review. Anything else is logged as
-    "configured host".
+    described only when every part has the plain shape. Anything else is
+    logged as "configured host".
     """
     try:
         parsed = urlsplit(base_url)
