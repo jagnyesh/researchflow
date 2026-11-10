@@ -277,6 +277,8 @@ def check_delivery_status(request_id: str) -> dict:
         - files: list of file dicts
         - cohort_size: int
         - delivery_location: str
+    or, when the check itself failed (an st.error was already shown), a dict whose
+    "status" is one of backend_unreachable, timeout, unknown, unauthorized, http_error.
     """
     api_url = os.getenv("API_BASE_URL", "http://localhost:8000")
     try:
@@ -285,8 +287,25 @@ def check_delivery_status(request_id: str) -> dict:
 
         if response.status_code == 200:
             return response.json()
-        else:
+        if response.status_code == 404:
+            # The route 404s for "request not visible" and "complete but no delivery
+            # record" — both mean there is nothing to deliver.
             return {"delivered": False, "files": []}
+        # Anything else is a refused or failed check, not an undelivered request (#405).
+        if response.status_code == 401:
+            st.error(
+                "Couldn't check delivery status: authentication required. The dashboard "
+                "does not pass API credentials yet, a known dev-mode limit shared by its "
+                "other admin actions."
+            )
+            return {"status": "unauthorized"}
+        # Don't echo response.text: it can carry server-side detail (#183).
+        logger.warning("Delivery-status check got HTTP %s from %s", response.status_code, api_url)
+        st.error(
+            f"Couldn't check delivery status (HTTP {response.status_code}). Please retry; "
+            f"if it keeps happening, contact platform support with code DELIV-{request_id}."
+        )
+        return {"status": "http_error"}
     except httpx.ConnectError as e:
         # Backend on :8000 is down. Lead with the recovery action a researcher can
         # take; demote the errno to a parenthetical for whoever debugs it (#77).
@@ -751,7 +770,13 @@ def show_download_section(request_id: str):
         # check_delivery_status() already surfaced a researcher-readable st.error
         # for these connectivity/error states (#77); don't stack a misleading
         # "Data not yet delivered. Current status: Unknown" box beneath it.
-        if delivery_info.get("status") in {"backend_unreachable", "timeout", "unknown"}:
+        if delivery_info.get("status") in {
+            "backend_unreachable",
+            "timeout",
+            "unknown",
+            "unauthorized",
+            "http_error",
+        }:
             return
         current_state = delivery_info.get("current_state", "unknown")
         st.info(f"Data not yet delivered. Current status: {humanize(current_state)}")
