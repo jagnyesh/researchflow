@@ -62,7 +62,7 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
 
 ### User Guides
 - **[RESEARCHFLOW_README.md](RESEARCHFLOW_README.md)** - Full architecture guide
-  - Multi-agent system overview
+  - Overview of the original design
   - Database schema
   - API endpoints
 
@@ -80,6 +80,11 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - HTTP request examples
   - Response formats
   - Error handling
+
+- **[API_AND_CONFIGURATION.md](API_AND_CONFIGURATION.md)** - API and configuration reference
+  - Endpoints and example calls
+  - Environment variables
+  - Tests and fixes for common errors
 
 - **[APPROVAL_WORKFLOW_GUIDE.md](APPROVAL_WORKFLOW_GUIDE.md)** - Human-in-loop workflow
   - Critical approval gates
@@ -182,6 +187,11 @@ Archived in **[sprints/archive/](sprints/archive/)**. The original master tracke
 ---
 
 ## 🏗️ Architecture
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Reference for the current code
+  - Workflow graph and approval gates
+  - Data layers and the `HybridRunner` wiring statement
+  - Known gaps
 
 - **[ARCHITECTURE_ALIGNMENT_ANALYSIS.md](ARCHITECTURE_ALIGNMENT_ANALYSIS.md)** - Architecture alignment
   - Design decisions
@@ -289,6 +299,11 @@ Feature completion reports documenting implementation details:
 
 ## 🗂️ Legacy & Historical
 
+- **[PROJECT_HISTORY.md](PROJECT_HISTORY.md)** - Project history
+  - Why the docs say "workflow steps" and not "agents"
+  - The four engineering arcs
+  - What the Sprint 8 series taught, and the shipped log
+
 - **[legacy/](legacy/)** - Legacy documentation archive
   - Previous architecture versions
   - Deprecated features
@@ -298,10 +313,10 @@ Feature completion reports documenting implementation details:
 
 ## 📦 System Overview
 
-ResearchFlow is a multi-agent AI system automating clinical research data requests:
+ResearchFlow is a proof of concept for LLM-assisted clinical research data requests with human approval gates:
 
 ### Components
-- **6 AI Agents**: Requirements, Phenotype, Calendar, Extraction, QA, Delivery
+- **Five workflow steps**: Requirements, Phenotype, Extraction, QA, Delivery. The code calls each step an agent, and only Requirements calls an LLM.
 - **SQL-on-FHIR v2**: Real-time analytics on FHIR data
 - **Lambda Architecture**: Batch layer (materialized views) + speed layer (Redis) + serving layer
 - **LLM Integration**: Claude API + optional OpenAI/Ollama
