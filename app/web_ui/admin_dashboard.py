@@ -1030,7 +1030,15 @@ def show_pending_approvals():
     with col1:
         approval_type_filter = st.selectbox(
             "Type",
-            ["All", "Requirements", "Phenotype SQL", "Extraction", "QA", "Scope Change"],
+            [
+                "All",
+                "Requirements",
+                "Phenotype SQL",
+                "Preview QA",
+                "Extraction",
+                "Delivery",
+                "Scope Change",
+            ],
             key="approval_type_filter",
         )
 
@@ -1046,8 +1054,9 @@ def show_pending_approvals():
             "All": None,
             "Requirements": "requirements",
             "Phenotype SQL": "phenotype_sql",
+            "Preview QA": "preview_qa",
             "Extraction": "extraction",
-            "QA": "qa",
+            "Delivery": "delivery",
             "Scope Change": "scope_change",
         }
 
@@ -1162,7 +1171,7 @@ def display_approval_card(approval, reviewer_email, expanded=False):
         "phenotype_sql": "SQL review",
         "preview_qa": "Preview QA failed, review required",
         "extraction": "Extraction approval",
-        "qa": "QA review",
+        "delivery": "Delivery approval",
         "scope_change": "Scope change",
     }
     label = type_label_map.get(approval_type, humanize(approval_type))
@@ -1198,8 +1207,8 @@ def display_approval_card(approval, reviewer_email, expanded=False):
         elif approval_type == "scope_change":
             display_scope_change_approval(approval_data)
 
-        elif approval_type == "qa":
-            display_qa_approval(approval_data)
+        elif approval_type == "delivery":
+            display_delivery_approval(approval_data)
 
         elif approval_type == "extraction":
             display_extraction_approval(approval_data)
@@ -1620,12 +1629,68 @@ def display_scope_change_approval(data):
         st.write(f"**Affected components:** {', '.join(affected)}")
 
 
-def display_qa_approval(data):
-    """Display QA approval details"""
-    st.subheader("QA results review")
+def display_delivery_approval(data):
+    """Display the full-QA result and what will be delivered (payload: ApprovalBridge "delivery")."""
+    st.subheader("Delivery approval")
 
-    st.write("**QA validation results**")
-    st.json(data)
+    message = data.get("message")
+    if message:
+        st.info(_no_latex(message))
+
+    qa_report = data.get("qa_report") or {}
+    overall_status = qa_report.get("overall_status") or data.get("overall_status") or "unknown"
+    if overall_status == "passed":
+        st.success(f"**QA status:** {overall_status}")
+    else:
+        st.error(f"**QA status:** {overall_status}")
+
+    # The agent writes a list of check dicts; the workflow's stub path writes {name: result}.
+    checks = qa_report.get("checks") or []
+    if isinstance(checks, dict):
+        checks = [{"check_name": name, **(result or {})} for name, result in checks.items()]
+    if checks:
+        st.markdown("**QA checks**")
+        for check in checks:
+            tone = "green" if check.get("passed") else "red"
+            detail = check.get("message")
+            st.markdown(
+                _no_latex(
+                    f"{dot(tone)} **{check.get('check_name', 'Unknown')}**"
+                    + (f": {detail}" if detail else "")
+                )
+            )
+
+    issues = qa_report.get("issues") or []
+    if issues:
+        st.markdown("**Issues found**")
+        for issue in issues:
+            st.markdown(
+                _no_latex(
+                    f"{dot('red')} **{issue.get('check_name', 'Unknown')}**: "
+                    f"{issue.get('message', 'No message')}"
+                )
+            )
+
+    recommendations = qa_report.get("recommendations") or []
+    if recommendations:
+        st.info(
+            "**Recommendations**\n" + "\n".join(_no_latex(f"- {rec}") for rec in recommendations)
+        )
+
+    st.divider()
+
+    # What will be delivered. Metadata only: the package also holds the cohort rows.
+    st.markdown("**What will be delivered**")
+    metadata = (data.get("data_package") or {}).get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    st.metric("Cohort size", f"{data.get('cohort_size') or 0:,}")
+    elements = data.get("data_elements") or []
+    st.write(f"**Data elements:** {', '.join(map(str, elements)) if elements else '—'}")
+    empty = metadata.get("data_elements_empty") or []
+    if empty:
+        st.warning(_no_latex(f"Extracted with no records: {', '.join(map(str, empty))}"))
+    st.write(f"**PHI level:** {metadata.get('phi_level') or '—'}")
+    st.write(f"**Format:** {metadata.get('delivery_format') or '—'}")
 
 
 def display_extraction_approval(data):
