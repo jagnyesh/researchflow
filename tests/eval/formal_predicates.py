@@ -3,6 +3,8 @@ against a gold case's required predicates.
 
 Each top-level WHERE conjunct must match one canonical shape exactly, with a
 single bound parameter in every placeholder position:
+  - ("deceased", "=", False)          p.deceased IS NOT TRUE (no parameter;
+                                        a NULL flag counts as living)
   - ("gender", "=", "female")         p.gender = :g
   - ("age", ">", 65)                  EXTRACT(YEAR FROM AGE(CURRENT_DATE,
                                         CAST(p.birth_date AS DATE))) > :a
@@ -40,6 +42,7 @@ def _template(sql: str) -> str:
     return _sql(sqlglot.parse_one(sql, read="postgres"))
 
 
+_LIVING = _template("p.deceased IS NOT TRUE")
 _GENDER = _template("p.gender = :x")
 _AGE = {
     op: _template(f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, CAST(p.birth_date AS DATE))) {op} :x")
@@ -77,6 +80,8 @@ def _normalized(node: exp.Expression) -> Tuple[str, Optional[str]]:
 
 def _predicate(node: exp.Expression, params: Dict) -> Predicate:
     unrecognized = ("unrecognized", _sql(node), None)
+    if _sql(node) == _LIVING:
+        return ("deceased", "=", False)
     negated = isinstance(node, exp.Not)
     shape, name = _normalized(node.this if negated else node)
     if name is None or name not in params:

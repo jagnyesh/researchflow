@@ -98,8 +98,11 @@ async def test_excluding_males_and_minors_keeps_the_rest_of_the_cohort():
             RB.build_demographic("Age < 18 years", term="age", details="< 18 years"),
         ],
     )
-    everyone = await _count(_has("diabetes"))
-    excluded = await _count(f"{_has('diabetes')} AND (p.gender = 'male' OR {_AGE} < 18)")
+    # The age leg makes it an age cohort, so living patients only (#403).
+    everyone = await _count(f"p.deceased IS NOT TRUE AND {_has('diabetes')}")
+    excluded = await _count(
+        f"p.deceased IS NOT TRUE AND {_has('diabetes')} AND (p.gender = 'male' OR {_AGE} < 18)"
+    )
     expected = everyone - excluded
 
     assert 0 < expected < everyone, "the exclusion must bite and leave a cohort"
