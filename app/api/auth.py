@@ -31,6 +31,12 @@ from sqlalchemy import select
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
+# Not a secret: the bcrypt hash (cost 12, as get_password_hash uses) of a random
+# string that was discarded, so no password matches it. Login verifies against
+# it when the email is unknown, so an unknown email costs the same bcrypt run as
+# a wrong password and response time doesn't reveal which emails exist (#285).
+_DUMMY_PASSWORD_HASH = "$2b$12$WkmaIckgoXBn2L4IEWmXKOIDuFwHF6zBUlMEeC.59jHCfZ0DWRH0."  # nosec B105  # pragma: allowlist secret
+
 
 # LoginRequest migrated to app/schemas/auth.py (Sprint 6.1 Phase 2.3 Issue #6)
 
@@ -95,7 +101,10 @@ async def login(request: Request, login_request: LoginRequest):
         result = await db.execute(select(UserModel).filter(UserModel.email == login_request.email))
         user_model = result.scalar_one_or_none()
 
-    if not user_model or not verify_password(login_request.password, user_model.hashed_password):
+    hashed_password = user_model.hashed_password if user_model else _DUMMY_PASSWORD_HASH
+    password_ok = verify_password(login_request.password, hashed_password)
+
+    if not user_model or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

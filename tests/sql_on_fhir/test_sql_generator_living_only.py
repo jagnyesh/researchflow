@@ -36,8 +36,14 @@ def _where(requirements, count_only):
             inclusion=[OVER_65],
             time_period={"start": "2025-01-01", "end": "2025-12-31"},
         ),
+        RB.build_requirements(
+            inclusion=[
+                RB.build_demographic("65 or older", term="age", details="65 or older"),
+                HYPERTENSION,
+            ]
+        ),
     ],
-    ids=["inclusion", "exclusion", "time_period"],
+    ids=["inclusion", "exclusion", "time_period", "inclusive_age"],
 )
 def test_an_age_criterion_keeps_living_patients_only(requirements, count_only):
     where, params = _where(requirements, count_only)
@@ -64,8 +70,8 @@ def test_a_request_without_an_age_criterion_keeps_the_deceased(requirements, cou
     assert "deceased" not in where, where
 
 
-# The filter follows the emitted age predicate; #404's parser fix brings both.
-@pytest.mark.parametrize("details", ["elderly", "65 or older"])
+# The filter follows the emitted age predicate, so an age it can't parse gets neither.
+@pytest.mark.parametrize("details", ["elderly"])
 def test_an_unparseable_age_adds_no_living_filter(details):
     vague = RB.build_demographic(details, term="age", details=details)
     where, params = _where(RB.build_requirements(inclusion=[vague, HYPERTENSION]), True)
