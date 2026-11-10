@@ -1,7 +1,9 @@
 #!/bin/bash
 # dials.sh — the two §10 throughput dials, computed from merged PRs:
 #   open→green  (PR created → last pre-merge check green) = pipeline health
-#   green→merge (last check green → merge)                = human latency
+#   green→merge (last check green → merge); the clock restarts on every push,
+#     so under strict protection it is NOT the wait on the human (see
+#     docs/DAILY_DEV_WORKFLOW.md §3 for that measure)
 # and flags PRs merged while a check was still running (merged-before-all-green)
 # or had already failed (merged-on-red).
 # Grouped by merge day (session proxy — this repo's cadence is per-session,
@@ -62,7 +64,7 @@ jq -r '
     (.[] | if .og == null
       then "  #\(.n)  merged-before-green (no green pre-merge check)  \(.red)\(.early)\(.t[0:56])"
       else "  #\(.n)  open->green \(.og)m   green->merge \(.gm)m   \(.red)\(.early)\(.t[0:56])" end),
-    # green->merge is human latency after all-green, so PRs that never got
+    # green->merge is measured after all-green, so PRs that never got
     # there (merged-on-red, merged-before-all-green) stay out of the median;
     # their per-PR timings are still printed above (#214).
     ([.[] | select(.red == "" and .early == "") | .gm | select(. != null)] | sort

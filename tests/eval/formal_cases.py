@@ -110,7 +110,6 @@ FORMAL_CASES: List[FormalCase] = [
         signoff="approved",
         verified_count=6,
         seed_count=0,  # no woman over 65 with diabetes on the seed: vacuous in CI
-        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="hypertension_without_diabetes_mellitus",
@@ -170,7 +169,7 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=16,
         seed_count=1,
-        expected_fail="the generator doesn't exclude deceased patients; no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
+        expected_fail="no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
     ),
     FormalCase(
         id="diabetes_mellitus_and_hypertension",
@@ -271,7 +270,6 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=42,
         seed_count=1,
-        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="women_under_50_with_hypertension",
@@ -293,7 +291,6 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=2,
         seed_count=1,
-        expected_fail="the generator doesn't exclude deceased patients",
     ),
     FormalCase(
         id="hypertension_aged_50_to_60",
@@ -314,6 +311,6 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=15,
         seed_count=1,
-        expected_fail="the generator doesn't exclude deceased patients; #242's predicate check has no BETWEEN template",
+        expected_fail="#242's predicate check has no BETWEEN template",
     ),
 ]

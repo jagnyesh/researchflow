@@ -37,7 +37,35 @@ class TestFailClosedGuard:
         with pytest.raises(RuntimeError, match="EXPLORATORY_DB_URL"):
             FeasibilityService()
 
-    def test_dev_warns_but_does_not_fail(self, monkeypatch):
+    # ADR 0034: only exactly "development" may fall back; staging and typos
+    # used to warn and run synthesized SQL as hapi.
+    @pytest.mark.parametrize("environment", ["staging", "Development", "test", "prod", ""])
+    # Set-but-empty is what compose's ${VAR} interpolation yields for a missing var.
+    @pytest.mark.parametrize("url", [None, ""])
+    def test_any_environment_but_development_hard_fails_when_url_unset(
+        self, monkeypatch, environment, url
+    ):
+        from app.services.feasibility_service import FeasibilityService
+
+        if url is None:
+            monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
+        else:
+            monkeypatch.setenv("EXPLORATORY_DB_URL", url)
+        monkeypatch.setenv("ENVIRONMENT", environment)
+
+        with pytest.raises(RuntimeError, match="EXPLORATORY_DB_URL"):
+            FeasibilityService()
+
+    def test_explicit_development_warns_but_does_not_fail(self, monkeypatch, caplog):
+        from app.services.feasibility_service import FeasibilityService
+
+        monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
+        monkeypatch.setenv("ENVIRONMENT", "development")
+
+        assert FeasibilityService().exploratory_db_client is not None
+        assert "EXPLORATORY_DB_URL is unset" in caplog.text
+
+    def test_dev_warns_but_does_not_fail(self, monkeypatch, caplog):
         from app.services.feasibility_service import FeasibilityService
 
         monkeypatch.delenv("EXPLORATORY_DB_URL", raising=False)
@@ -46,6 +74,7 @@ class TestFailClosedGuard:
         # Constructs without raising (falls back to HAPI_DB_URL, dev only).
         fs = FeasibilityService()
         assert fs.exploratory_db_client is not None
+        assert "EXPLORATORY_DB_URL is unset" in caplog.text
 
     def test_url_set_never_guards(self, monkeypatch):
         from app.services.feasibility_service import FeasibilityService

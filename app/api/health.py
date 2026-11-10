@@ -25,9 +25,6 @@ from app.security.audit_drain import (
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Configuration
-FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "http://localhost:8081/fhir")
-
 # Each store probe gives up quickly: /health is polled, and a hung store
 # should read as unhealthy, not stall the probe.
 STORE_PROBE_TIMEOUT_S = 2.0
@@ -171,7 +168,8 @@ async def health() -> Dict[str, Any]:
 
     # Check FHIR server connectivity
     try:
-        fhir_client = FHIRClient(base_url=FHIR_BASE_URL)
+        # No base_url: FHIRClient reads FHIR_SERVER_URL, the one name compose sets (#312).
+        fhir_client = FHIRClient()
 
         # Try a simple metadata query
         await fhir_client.get_metadata()
@@ -223,9 +221,7 @@ async def health() -> Dict[str, Any]:
         # Create temporary runner to get cache stats
         # Note: This creates a new instance, so stats won't be accurate
         # In production, you'd want to inject a shared runner instance
-        temp_runner = InMemoryRunner(
-            fhir_client=FHIRClient(base_url=FHIR_BASE_URL), enable_cache=True
-        )
+        temp_runner = InMemoryRunner(fhir_client=FHIRClient(), enable_cache=True)
         temp_runner.get_cache_stats()
         health_status["components"]["cache"] = {"status": "healthy"}
 

@@ -16,3 +16,7 @@ f931164d36bc4bab7cadc43ed63175cb6471993e:docs/sessions/COMPLETE_SESSION_FIX_SUMM
 # in the next commit (#306).
 ff66a4f2839418e0c81b24864bd621b3a4687977:tests/agents/test_deidentification.py:generic-api-key:26
 ff66a4f2839418e0c81b24864bd621b3a4687977:tests/agents/test_deidentification.py:generic-api-key:189
+# Reviewed 2026-11-07: test-only fake (#367). The generic-api-key hit in f5fb17a
+# is the made-up tail of a fake Anthropic key in a leak test; replaced with a
+# low-entropy fake in a later commit of the same PR.
+f5fb17ac5939bcd27c95af39c1c17228ffd80446:tests/test_notebook_key_print_367.py:generic-api-key:22

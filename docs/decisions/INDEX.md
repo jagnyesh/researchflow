@@ -6,6 +6,8 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0035** — [Formal cohorts with an age criterion count living patients only (#403)](0035-formal-age-cohorts-living-only.md) (2026-11-09, accepted)
+- **0034** — [Compose store URLs match what the code reads, and the exploratory fallback is development-only (#312)](0034-compose-store-urls-match-code.md) (2026-11-07, accepted; amends 0028's `EXPLORATORY_DB_URL` guard)
 - **0033** — [The phenotype estimate counts the approved SQL (#206)](0033-phenotype-estimate-counts-approved-sql.md) (2026-11-04, accepted; amends 0027 for its FORMAL_DRAFT caller)
 - **0031** — [Sprint 6.7 gate: which layer stopped the adversarial cases (#276)](0031-sprint-6-7-adversarial-gate-attribution.md) (2026-11-03, accepted; corrects 0028's attribution)
 - **0032** — [Audit COMPLETED is written after the response body (#224)](0032-audit-completed-after-body.md) (2026-11-04, accepted; amends 0011 post-event)
@@ -45,6 +47,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0026 — Sprint 6.4: sqlonfhir integration + dispatch plumbing](0026-sprint-6-4-sqlonfhir-integration.md)
 - [0027 — Sprint 6.5: Lambda differential freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION)](0027-sprint-6-5-differential-freshness-routing.md)
 - [0033 — The phenotype estimate counts the approved SQL (amends 0027 for phenotype_agent)](0033-phenotype-estimate-counts-approved-sql.md)
+- [0035 — Formal cohorts with an age criterion count living patients only](0035-formal-age-cohorts-living-only.md)
 - [0028 — Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md)
 - [0031 — Sprint 6.7 gate: which layer stopped the adversarial cases](0031-sprint-6-7-adversarial-gate-attribution.md) (corrects 0028's attribution)
 
@@ -60,6 +63,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0029 — API error paths: PHI-safe 500s through a per-site helper](0029-api-error-path-phi-safe-500s.md)
 - [0030 — ViewDefinition writes are admin-only](0030-viewdefinition-write-admin-only.md)
 - [0032 — Audit COMPLETED after the response body; post-event no longer 503s](0032-audit-completed-after-body.md)
+- [0034 — Compose store URLs match the code; exploratory fallback is development-only (amends 0028)](0034-compose-store-urls-match-code.md)
 - [0008 — Durable audit pipeline via Redis queue](0008-sprint-6-1-audit-pipeline-redis-queue.md)
 - [0009 — Split human/agent auth, not unified JWT](0009-sprint-6-1-split-human-agent-auth.md)
 - [0010 — Documentation reorg (CLAUDE.md split + mattpocock skills)](0010-sprint-6-1-documentation-reorg.md)
