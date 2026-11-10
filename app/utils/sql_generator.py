@@ -431,8 +431,8 @@ class SQLGenerator:
         can emit a BETWEEN SQL predicate.
 
         Return shapes:
-          - (">", int_age) for greater-than comparisons
-          - ("<", int_age) for less-than comparisons
+          - (">", int_age) / ("<", int_age) for strict comparisons
+          - (">=", int_age) / ("<=", int_age) for inclusive ones ("65 or older")
           - ("BETWEEN", (lo, hi)) for inclusive ranges
           - (None, None) when no parseable age constraint is present
         """
@@ -451,13 +451,23 @@ class SQLGenerator:
             lo, hi = int(range_match.group(1)), int(range_match.group(2))
             return "BETWEEN", (lo, hi)
 
+        # Inclusive forms first: "65 or over" contains "over" and ">=" contains ">" (#404).
+        # Word boundaries keep "senior over 65" strict.
+        ge_pattern = r">=|\bat least\b|\bor (?:older|over|above)\b"
+        le_pattern = r"<=|\bat most\b|\bor (?:younger|under|below)\b"
         gt_words = ("greater than", "more than", "older than", "above", "over")
         lt_words = ("less than", "fewer than", "younger than", "below", "under")
         op = None
-        if ">" in text or any(w in text for w in gt_words):
+        if re.search(ge_pattern, text):
+            op = ">="
+        elif re.search(le_pattern, text):
+            op = "<="
+        elif ">" in text or any(w in text for w in gt_words):
             op = ">"
         elif "<" in text or any(w in text for w in lt_words):
             op = "<"
+        if op in (">", "<") and "or equal" in text:
+            op += "="
         if op is None:
             return None, None
         m = re.search(r"(\d+)", text)
