@@ -21,11 +21,18 @@ This doc's claims are only as good as the repo's own numbers. Before adding a la
 
 The single structural idea in this edition. A change's **risk tier** — decided by the paths it touches — sets its planning weight, its protected files, whether it hits the eval gate, and who merges it. This extends the merge-by-class path rule you already run; it does not invent a parallel system, but the high-risk path set below is genuinely new and domain-specific, so it earns real judgment, not a copy-paste.
 
-| Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files |
-|---|---|---|---|---|---|
-| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) |
-| **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a |
-| **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a |
+| Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files | Model, effort |
+|---|---|---|---|---|---|---|
+| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) | Opus 5.5, high |
+| **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a | Sonnet 5.5, medium; high when the change spans layers |
+| **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a | Sonnet 5.5, low for a one-file docs change, otherwise medium |
+
+Two rules apply to the Model, effort column:
+
+- Fable runs a lane only when the owner names it for that lane.
+- The coordinator (the session that runs `/plan-lanes`) runs on Opus at medium, in a fresh session for each planning round.
+
+A lane without a model and an effort level inherits the coordinator's, so `/plan-lanes` passes both at every launch.
 
 Planning weight and merge actor are separate axes: a test-only change plans like Low but merges like Medium. The canonical merge rule is CLAUDE.md's *Merge actor* section and `/validate-and-ship` Step 8; this table must not diverge from them.
 
@@ -226,6 +233,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
 - **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
 - **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3), except the fix lane (§3).
+- **Token spend** is a guardrail beside review load: every lane launches on the model and effort level in §1's table, and the account's plan limits are checked before each launch (`/plan-lanes` Step 1).
 - **Review-debt rule:** no new lane while ≥ 2 PRs await your decision, except the one lane fixing a red `main` (§3).
 - **Never scale past validation:** pipeline red/flaky → one lane until green.
 - **Queue health:** refill to lanes × 2; starvation means the plan block was thin.
