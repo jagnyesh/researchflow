@@ -19,7 +19,7 @@ deep-dives follow below.
 |---|---|---|---|---|
 | (a)(1) Access Control | JWT-bearer authentication on every PHI route | `app/security/auth.py` + `app/security/audit_middleware.py` (default-deny classifier) | 74 audit + 6 auth | 1.1 + 2.2 |
 | (a)(2)(i) Unique User Identification | `User.id` (USR-XXXXXXXX) on every audit row | `app/database/models.py::User` + `AuditLog.user_id` | included above | 1.2 + 2.2 |
-| (a)(2)(iii) Automatic Logoff | JWT `exp` claim + `failed_login_attempts` lockout | `app/security/auth.py` + `User.locked_until` | 6 auth | 1.1 + 1.3 |
+| (a)(2)(iii) Automatic Logoff | JWT `exp` claim | `app/security/auth.py` | 6 auth | 1.1 + 1.3 |
 | (a)(2)(iv) Encryption (Addressable) — at rest | Column-level Fernet encryption on Tier 1 PHI columns | `app/security/encryption.py` + `app/security/encryption_keys.py` | 13 encryption | 3b |
 | (b) Audit Controls | Default-deny route classifier + at-least-once Redis queue + Postgres `audit_logs` | `app/security/audit_middleware.py` + `audit_drain.py` | 74 audit | 2.2 |
 | (c)(1) Integrity | Pydantic `PHIInputModel` framework + parameterized SQL | `app/schemas/_base.py` + 30 SQL injection fixes (Sprint 6) | 163 schema | 2.3 + Sprint 6 |

@@ -24,6 +24,11 @@
 
 ## Recent Changes
 
+### [Unreleased] - HIPAA posture correction
+**Changed**:
+- Corrected `docs/HIPAA_POSTURE.md`: the §164.312(a)(2)(iii) Automatic Logoff row now claims only the JWT `exp` claim; the failed-login lockout it previously claimed does not exist in the code.
+- Marked `User.failed_login_attempts`, `User.locked_until`, and `User.last_login_at` as unused in `app/database/models.py` (declared, but never read or written).
+
 ### [Unreleased] - File Organization (Nov 8, 2025)
 **Changed**:
 - Reorganized 28 documentation files from root to structured folders

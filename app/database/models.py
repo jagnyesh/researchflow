@@ -297,11 +297,14 @@ class User(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    last_login_at = Column(DateTime, nullable=True)
+    last_login_at = Column(DateTime, nullable=True)  # UNUSED: never written; appears only in the user response schema
 
     # Security
+    # UNUSED: declared for a failed-login lockout that was never implemented.
+    # No code reads or writes either column, and HIPAA_POSTURE.md does not
+    # claim a lockout control.
     failed_login_attempts = Column(Integer, default=0)
-    locked_until = Column(DateTime, nullable=True)  # Account lockout timestamp
+    locked_until = Column(DateTime, nullable=True)
 
     # Preferences
     notification_preferences = Column(JSON, default={})  # Email, SMS preferences
