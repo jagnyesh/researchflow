@@ -9,7 +9,7 @@ masquerading as an orchestrator internal.
 
 Sprint 7.2 Phase 0 promotes it to `app/database/workflow_states.py` so the
 A2A package can be deleted in Phase 4 without breaking production. This
-test file LOCKS the promotion: all 25 enum values must resolve from the
+test file LOCKS the promotion: every enum value must resolve from the
 new home with the exact same `.value` strings as before (DB schema
 compatibility), AND the old home must still re-export them (A2A internal
 self-references keep working until Phase 4 deletion).
@@ -43,13 +43,14 @@ def test_workflow_state_resolves_from_new_home():
 
 
 # ---------------------------------------------------------------------------
-# Cycle 2 — full enum parity: all 27 (name, value) pairs preserved
+# Cycle 2 — full enum parity: every (name, value) pair preserved
 # ---------------------------------------------------------------------------
 
 # Source-of-truth (name, value) pairs at Sprint 7.2 Phase 0 commit time.
 # Encoded literally to lock the DB schema contract — if a future change
 # silently renames a value, this list breaks the contract loudly.
-# 27 values total. Reordering OK; renaming a .value string is NOT OK
+# #432 added PREVIEW_QA_REVIEW and ERROR, which the code already wrote.
+# Reordering OK; renaming a .value string is NOT OK
 # (breaks DB-stored historical rows).
 _EXPECTED_WORKFLOW_STATES = [
     ("NEW_REQUEST", "new_request"),
@@ -62,6 +63,7 @@ _EXPECTED_WORKFLOW_STATES = [
     ("SCOPE_CHANGE", "scope_change"),
     ("PREVIEW_EXTRACTION", "preview_extraction"),
     ("PREVIEW_QA", "preview_qa"),
+    ("PREVIEW_QA_REVIEW", "preview_qa_review"),
     ("PREVIEW_COMPLETE", "preview_complete"),
     ("FEASIBILITY_VALIDATION", "feasibility_validation"),
     ("FEASIBLE", "feasible"),
@@ -78,6 +80,7 @@ _EXPECTED_WORKFLOW_STATES = [
     ("DELIVERED", "delivered"),
     ("COMPLETE", "complete"),
     ("FAILED", "failed"),
+    ("ERROR", "error"),
     ("HUMAN_REVIEW", "human_review"),
 ]
 

@@ -39,6 +39,7 @@ from app.langchain_orchestrator.approval_bridge import (
 
 # Import database models for AgentExecution tracking
 from app.database import get_db_session, AgentExecution, Approval, DATABASE_URL
+from app.database.workflow_states import STATE_INFO
 from app.schemas._errors import failure_text, log_internal_error
 from sqlalchemy import func, select
 
@@ -46,10 +47,7 @@ logger = logging.getLogger(__name__)
 
 # Approval type -> the review node whose outgoing router consumes that decision
 REVIEW_NODE_BY_APPROVAL_TYPE = {
-    "requirements": "requirements_review",
-    "phenotype_sql": "phenotype_review",
-    "preview_qa": "preview_qa_review",
-    "delivery": "qa_review",
+    info.approval_type: state.value for state, info in STATE_INFO.items() if info.approval_type
 }
 
 
@@ -153,7 +151,7 @@ class FullWorkflowState(TypedDict):
 
 class FullWorkflow:
     """
-    Complete 23-state workflow using LangGraph
+    Complete request workflow using LangGraph
 
     This is the production implementation that replaces:
     - app/orchestrator/workflow_engine.py (custom FSM)
@@ -264,27 +262,15 @@ class FullWorkflow:
         )
 
         persistence_mode = "WITH PERSISTENCE" if self.checkpointer else "WITHOUT PERSISTENCE"
-        logger.info(f"[FullWorkflow] Initialized with 23 states ({persistence_mode})")
+        logger.info(f"[FullWorkflow] Initialized ({persistence_mode})")
 
     def _build_graph(self) -> StateGraph:
         """
-        Build the complete StateGraph with 23 states
+        Build the complete StateGraph: one node per state that the graph writes
 
-        States:
-        1. new_request - Entry point
-        2. requirements_gathering - Requirements Agent
-        3. requirements_review - Approval gate
-        4. feasibility_validation - Phenotype Agent
-        5. phenotype_review - Approval gate
-        6. extraction_approval - Approval gate
-        7. data_extraction - Extraction Agent
-        8. qa_validation - QA Agent
-        9. qa_review - Approval gate
-        10. data_delivery - Delivery Agent
-        11. complete - Terminal (success)
-        12. not_feasible - Terminal (cohort too small)
-        13. qa_failed - Terminal (QA failed)
-        14. human_review - Terminal (escalation)
+        `app/database/workflow_states.py` says what each state means.
+        `tests/test_workflow_state_contract.py` fails when a node added here
+        is not a `WorkflowState` member.
 
         This is much more declarative than the custom FSM's
         workflow_rules dict in workflow_engine.py
