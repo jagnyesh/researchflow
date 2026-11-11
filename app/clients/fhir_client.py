@@ -10,12 +10,50 @@ Provides HTTP client functionality for:
 
 import os
 import logging
+import re
 from typing import Dict, List, Any, Optional
+from urllib.parse import urlsplit
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.schemas._errors import log_internal_error
 
 logger = logging.getLogger(__name__)
+
+
+# The shape of a plain http(s) URL once urlsplit has set any userinfo aside: a
+# host name or IP address, then a path of plain segments. No "%", "@" or
+# non-ASCII, and no query or fragment.
+_PLAIN_HOST = re.compile(r"[a-z0-9_.:-]+")
+_PLAIN_PATH = re.compile(r"[A-Za-z0-9_./-]*")
+
+
+def _log_target(base_url: str) -> str:
+    """Scheme, host and port of `base_url` for a log line, never its userinfo (#393).
+
+    urlsplit can read mistyped credentials as the scheme, host, port or path.
+    An unescaped "/" in the password ends the host part early, and a
+    percent-encoded "@" leaves the whole userinfo in the host. So the URL is
+    described only when every part has the plain shape. Anything else is
+    logged as "configured host".
+    """
+    try:
+        parsed = urlsplit(base_url)
+        host, port = parsed.hostname or "", parsed.port
+    except ValueError:
+        # A log line must not stop the client being built. The exception isn't
+        # logged either: urlsplit's message can quote the password.
+        return "configured host"
+    plain = (
+        parsed.scheme in ("http", "https")
+        and _PLAIN_HOST.fullmatch(host)
+        and _PLAIN_PATH.fullmatch(parsed.path)
+        and not parsed.query
+        and not parsed.fragment
+    )
+    if not plain:
+        return "configured host"
+    port_suffix = f":{port}" if port else ""
+    return f"{parsed.scheme}://{host}{port_suffix}"
 
 
 class FHIRClient:
@@ -48,7 +86,8 @@ class FHIRClient:
             timeout=30.0, limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
         )
 
-        logger.info(f"Initialized FHIR client with base URL: {self.base_url}")
+        target = _log_target(self.base_url)
+        logger.info(f"Initialized FHIR client for {target}")
 
     async def close(self):
         """Close HTTP client and cleanup resources"""
