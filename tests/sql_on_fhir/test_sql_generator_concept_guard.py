@@ -151,11 +151,13 @@ def test_a_named_drug_is_not_a_drug_class():
         {"type": "medication", "term": SECRET},
         {"type": "demographic", "term": "age", "details": SECRET},
         {"type": "demographic", "term": "race", "details": SECRET},
+        {"type": "condition", "term": SECRET},
+        {"type": "demographic", "term": "gender", "details": SECRET},
     ],
-    ids=["built_term", "unparseable_age", "unbuildable_demographic"],
+    ids=["medication", "unparseable_age", "unbuildable_demographic", "condition", "gender"],
 )
-def test_info_and_warning_logs_carry_no_criterion_text(concept, caplog):
-    caplog.set_level("INFO", logger="app.utils.sql_generator")
+def test_logs_carry_no_criterion_text(concept, caplog):
+    caplog.set_level("DEBUG", logger="app.utils.sql_generator")
     try:
         _generate(inclusion=[_criterion(DIABETES, concept)])
     except ValueError:
@@ -164,10 +166,20 @@ def test_info_and_warning_logs_carry_no_criterion_text(concept, caplog):
     assert SECRET not in caplog.text
 
 
-def test_an_unrecognized_criterion_shape_is_not_logged(caplog):
-    caplog.set_level("INFO", logger="app.utils.sql_generator")
-    with pytest.raises(ValueError):
-        _generate(inclusion=[{"description": SECRET, "text": SECRET}])
+@pytest.mark.parametrize(
+    "criterion",
+    [
+        {"description": SECRET, "text": SECRET},
+        {"type": "condition", "code": SECRET, "description": SECRET},
+    ],
+    ids=["unrecognized", "flat"],
+)
+def test_a_criterion_shape_is_not_logged(criterion, caplog):
+    caplog.set_level("DEBUG", logger="app.utils.sql_generator")
+    try:
+        _generate(inclusion=[criterion])
+    except ValueError:
+        pass
 
     assert SECRET not in caplog.text
 

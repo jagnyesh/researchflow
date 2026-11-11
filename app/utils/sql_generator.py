@@ -261,7 +261,7 @@ class SQLGenerator:
         sql = f"{select_clause}\n{from_clause}\n{where_clause}"
 
         logger.debug(f"Generated SQL:\n{sql}")
-        logger.debug(f"Parameters: {params}")
+        logger.debug(f"Parameters: {sorted(params)}")
         return sql, params
 
     def _normalize_criterion(self, criterion: Dict) -> Dict:
@@ -283,7 +283,7 @@ class SQLGenerator:
             return criterion
 
         # Convert flat structure to nested format
-        logger.debug(f"Converting flat criterion to nested format: {criterion}")
+        logger.debug("Converting a flat criterion to nested format")
 
         # Check if this is a flat criterion
         if "type" in criterion:
@@ -296,7 +296,6 @@ class SQLGenerator:
 
             normalized = {"description": criterion.get("description", ""), "concepts": [concept]}
 
-            logger.debug(f"Normalized to: {normalized}")
             return normalized
 
         # If no recognizable structure, return as-is (will result in empty concepts)
@@ -328,17 +327,14 @@ class SQLGenerator:
         logger.info(
             f"[SQLGenerator] Building criteria conditions for {len(criteria)} criteria (include={include})"
         )
-        logger.debug(f"[SQLGenerator] Input criteria structure: {criteria}")
 
         for i, criterion in enumerate(criteria):
             # Normalize criterion to ensure it has "concepts" structure
             criterion = self._normalize_criterion(criterion)
 
             concepts = criterion.get("concepts", [])
-            criterion_desc = criterion.get("description", criterion.get("text", "N/A"))
 
-            logger.debug(f"Processing criterion: '{criterion_desc}' with {len(concepts)} concepts")
-            logger.debug(f"Concepts: {concepts}")
+            logger.debug(f"Processing a criterion with {len(concepts)} concepts")
             if not concepts:
                 # Unfiltered SQL would count everyone as the cohort (#264).
                 raise ValueError("A criterion has no concepts, so it generated 0 WHERE conditions")
@@ -365,8 +361,6 @@ class SQLGenerator:
                         "A medication concept names a drug class, which can't be "
                         "matched by name yet"
                     )
-
-                logger.debug(f"Processing concept: type={concept_type}, term='{term}'")
 
                 if concept_type in ("condition", "lab", "medication", "procedure") and not (
                     isinstance(term, str) and term.strip()
@@ -544,10 +538,6 @@ class SQLGenerator:
         # Normalize inputs for matching
         term_lower = term.lower().strip() if term else ""
         details_lower = details.lower().strip() if details else ""
-
-        logger.debug(
-            f"_build_demographic_clause: term='{term}' (normalized: '{term_lower}'), details='{details}'"
-        )
 
         # Parse age criteria. The LLM extractor emits details in mixed
         # forms — symbolic ("> 18"), natural-language ("greater than 18
