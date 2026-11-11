@@ -6,6 +6,8 @@ disable-model-invocation: true
 
 # plan-lanes
 
+Run this skill in a fresh session on Opus at medium effort (`docs/DAILY_DEV_WORKFLOW.md` §1). Lanes inherit this session's model and effort unless Step 5 sets them.
+
 Plan, ask, launch, watch. Launching is cheap and reversible: each lane is its own branch in its own folder. Merging is where separate changes first meet. This skill adds no merge rule of its own:
 - lanes ship through `/validate-and-ship` unchanged;
 - `main`'s "require branches to be up to date" protection forces every PR to pass its required checks on the latest main before it can merge, so merges serialize;
@@ -35,7 +37,8 @@ Run `.claude/skills/plan-lanes/preflight.sh`. It runs git and gh queries only, a
    - it's detached with 0 commits ahead, or `prunable`. This exemption is the skill's own reading: such a checkout has no branch or no folder, so it can't be a lane.
 
    A branch with 0 commits ahead and no PR counts unless the user says it's a scratch checkout. A branch with commits ahead and no PR is live, unreviewed work, and it counts. Ask the user about cloud sessions and any other lane with no local worktree. Merged or closed lanes are cleanup candidates for Step 4.
-6. **Queue:** the ready-for-agent count, against lanes × 2.
+6. **Plan limits:** the account's plan limits, read from the app's usage report when the session has one, otherwise "not available". Show the row at the gate; the owner decides whether to launch. Don't write the figures into any committed file.
+7. **Queue:** the ready-for-agent count, against lanes × 2.
 
 **New lanes allowed.** The rules are the §3 override's, applied in this order:
 1. **Cap C:** 4 while the override is on `origin/main`, protection is `true` and no revert trigger stands; otherwise 2.
@@ -64,6 +67,7 @@ Anything beyond that is an override. The user grants it by choosing an option in
   - two lanes that share a file;
   - two lanes that both touch `tests/conftest.py`, `app/main.py`, `config/**`, `CLAUDE.md`, `CONTEXT.md`, `BACKLOG.md` or `docs/decisions/INDEX.md`;
   - two lanes that change the same behavior from different files, such as a code change and a test asserting the old behavior.
+- **Model and effort:** read each candidate's model and effort level from the Model, effort column of §1's table, for the tier set above. Don't restate the table here.
 - **Order:** `priority:high` first, then issues that unblock others, then Low and Medium before High. Run at most one High-tier lane at a time, because it starts with the user's design time.
 
 ## 4. Present, then ask (the gate)
@@ -73,14 +77,14 @@ Show:
 - the guardrail table: each Step 1 check, its value, and holds or broken (with the Stage-2 clauses as their own rows when a second lane is on the table);
 - the candidate table:
 
-  | # | Tier (paths) | Predicted files | Blocked / overlap | Verdict |
-  |---|---|---|---|---|
-  | A | High (`app/services/feasibility_service.py`) | that file, `config/docker-compose.yml`, its test, `CONTEXT.md`, `docs/decisions/INDEX.md` | none | launch, `/grill-with-docs` first |
-  | B | Medium (`app/web_ui/research_notebook.py`) | that file, a new test | none | next: alone now, or beside a lane already mid-run if the Stage-2 trigger holds (A's grill isn't autonomous, so it doesn't count) |
-  | C | High | `app/services/feasibility_service.py`, … | shares a file with A | after A |
-  | D | High? (auth, outside `app/security/**`) | `app/api/auth.py`, … | none | your call on the tier |
+  | # | Tier (paths) | Model, effort | Predicted files | Blocked / overlap | Verdict |
+  |---|---|---|---|---|---|
+  | A | High (`app/services/feasibility_service.py`) | from §1 | that file, `config/docker-compose.yml`, its test, `CONTEXT.md`, `docs/decisions/INDEX.md` | none | launch, `/grill-with-docs` first |
+  | B | Medium (`app/web_ui/research_notebook.py`) | from §1 | that file, a new test | none | next: alone now, or beside a lane already mid-run if the Stage-2 trigger holds (A's grill isn't autonomous, so it doesn't count) |
+  | C | High | from §1 | `app/services/feasibility_service.py`, … | shares a file with A | after A |
+  | D | High? (auth, outside `app/security/**`) | from §1 once decided | `app/api/auth.py`, … | none | your call on the tier |
 
-- a draft brief for each proposed lane, filled from [BRIEF.md](BRIEF.md).
+- a draft brief for each proposed lane, with its model and effort level, filled from [BRIEF.md](BRIEF.md).
 
 Then use `AskUserQuestion`. It takes 2–4 options per question and up to 4 questions:
 
@@ -94,10 +98,10 @@ Nothing launches without the user's pick.
 ## 5. Launch
 
 Start one session per approved lane, each in its own worktree, with a fresh context and its brief as the first message.
-- **Desktop app:** use the session tool with a worktree. The lane switches to its own `feat|fix/<n>-<slug>` branch from `origin/main` and sets up its own `.venv` (see the brief).
-- **Terminal:** run `scripts/lane.sh open <n> --type <feat|fix> --slug <slug>`, which syncs deps and copies `.env`. Then start `claude` in that folder with the brief.
+- **Desktop app:** use the session tool with a worktree, and pass its `model` and `effort` inputs from Step 3. The lane switches to its own `feat|fix/<n>-<slug>` branch from `origin/main` and sets up its own `.venv` (see the brief).
+- **Terminal:** run `scripts/lane.sh open <n> --type <feat|fix> --slug <slug>`, which syncs deps and copies `.env`. Then start `claude --model <id> --effort <level>` in that folder with the brief.
 
-Never run a lane as a subagent of this session. Lanes outlive this turn, the user has to be able to talk to them (a High-tier lane grills the user), and each lane spawns its own reviewer.
+Never launch a lane without both settings: it would inherit this session's. Never run a lane as a subagent of this session. Lanes outlive this turn, the user has to be able to talk to them (a High-tier lane grills the user), and each lane spawns its own reviewer.
 
 ## 6. Watch merges
 
@@ -117,7 +121,7 @@ Lanes run `/validate-and-ship` to its end. A standing-rule PR self-merges in its
 
 ## 7. Lane close
 
-The lane runs validate-and-ship Step 9, which writes back any correction. Cleanup is the user's call:
+The lane runs validate-and-ship Step 9, which writes back any correction. Tell the user the lane's model and effort level and how far the plan limits moved since launch, said in the chat and not written to a committed file. Cleanup is the user's call:
 - **Lanes `lane.sh` created:** `scripts/lane.sh close <n> --delete-branch`.
 - **Lanes it didn't create** (desktop `.claude/worktrees/…`, scratchpad worktrees): `git worktree remove <path>`, once the worktree is clean and its PR is merged. `lane.sh close` only prints "no worktree dir" and prunes for these, because it looks for `<repo>-<n>`.
 - **Branches:** a squash-merged branch needs `git branch -D`, and deleting a branch is the user's call.
