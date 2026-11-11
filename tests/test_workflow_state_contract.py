@@ -54,14 +54,44 @@ def _reads_the_field(node: ast.expr) -> bool:
 def _values_written_to_the_field(tree: ast.AST):
     """Yield each expression stored in a `current_state` field.
 
-    Four forms store one: `x.current_state = v`, `x["current_state"] = v`,
-    the keyword `current_state=v`, and the dict entry `{"current_state": v}`.
-    A bare local named `current_state` is not the field.
+    These forms store one: `x.current_state = v`, `x["current_state"] = v`,
+    `setattr(x, "current_state", v)`, `x.setdefault("current_state", v)`, the
+    keyword `current_state=v`, and the dict entry `{"current_state": v}`.
+    A tuple target (`a.current_state, b = ...`) is yielded whole, so it reads
+    as unverifiable. A bare local named `current_state` is not the field.
+
+    Out of the scan's reach: raw SQL text, a field name held in a variable, a
+    `Column(default=...)`, and a class attribute default. No code under `app/`
+    stores a state in any of them today.
     """
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             if any(_reads_the_field(target) for target in node.targets):
                 yield node.value
+            elif any(
+                isinstance(target, (ast.Tuple, ast.List))
+                and any(_reads_the_field(element) for element in target.elts)
+                for target in node.targets
+            ):
+                yield node.value
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            args = node.args
+            if (
+                node.func.attr == "setdefault"
+                and len(args) == 2
+                and isinstance(args[0], ast.Constant)
+                and args[0].value == FIELD
+            ):
+                yield args[1]
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            args = node.args
+            if (
+                node.func.id == "setattr"
+                and len(args) == 3
+                and isinstance(args[1], ast.Constant)
+                and args[1].value == FIELD
+            ):
+                yield args[2]
         elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
             if _reads_the_field(node.target) and node.value is not None:
                 yield node.value
@@ -91,6 +121,9 @@ def _scan_app():
                 where = f"{path.relative_to(APP_DIR.parent)}:{value.lineno}"
                 if isinstance(value, ast.IfExp):
                     pending += [value.body, value.orelse]
+                elif _reads_the_field(value) and isinstance(value, ast.Call):
+                    # `x.get("current_state", default)` stores the default when the key is absent.
+                    pending += value.args[1:2]
                 elif isinstance(value, ast.Constant) and isinstance(value.value, str):
                     literals.setdefault(value.value, []).append(where)
                 elif not _reads_the_field(value):
@@ -164,9 +197,44 @@ def test_each_review_state_has_one_approval_type_and_no_other_state_has_one():
 
 
 def test_approval_decisions_resume_the_registry_review_states():
+    # Pinned as a literal: a derivation compared with itself cannot catch a swapped pair.
+    expected = {
+        "requirements": "requirements_review",
+        "phenotype_sql": "phenotype_review",
+        "preview_qa": "preview_qa_review",
+        "delivery": "qa_review",
+    }
     typed = {info.approval_type: s.value for s, info in STATE_INFO.items() if info.approval_type}
 
-    assert REVIEW_NODE_BY_APPROVAL_TYPE == typed
+    assert typed == expected
+    assert REVIEW_NODE_BY_APPROVAL_TYPE == expected
+
+
+def test_the_kind_of_every_state_the_graph_writes_is_pinned():
+    # The reader PRs consume this split, so a changed kind must be a deliberate edit here.
+    expected = {
+        StateKind.IN_PROGRESS: {
+            "new_request",
+            "requirements_gathering",
+            "feasibility_validation",
+            "preview_extraction",
+            "preview_qa",
+            "data_extraction",
+            "qa_validation",
+            "data_delivery",
+        },
+        StateKind.AWAITING_REVIEW: {
+            "requirements_review",
+            "phenotype_review",
+            "preview_qa_review",
+            "qa_review",
+        },
+        StateKind.SUCCEEDED: {"complete"},
+        StateKind.FAILED: {"not_feasible", "qa_failed", "error", "human_review"},
+    }
+    actual = {kind: _values_where(lambda info, kind=kind: info.kind is kind) for kind in expected}
+
+    assert actual == expected
 
 
 def test_a_member_is_legacy_exactly_when_no_code_writes_it():

@@ -26,7 +26,8 @@ Comparing the column with a member raises `ProgrammingError` on SQLAlchemy 2.0
 with aiosqlite. A `str` subclass would stop that error. It would also change
 equality, hashing and JSON output for every existing member, and no reader
 needs that: a reader starts from a stored string and looks the member up with
-`WorkflowState(value)`. A later move to a `str` subclass breaks no `.value`
+`WorkflowState(value)`, which raises `ValueError` for a string that is not a
+member. The column has no constraint, so a reader must handle that. A later move to a `str` subclass breaks no `.value`
 caller, so the enum stays plain until a reader needs otherwise.
 
 A comparison in Python between a stored string and a member is `False` and
@@ -143,6 +144,8 @@ STATE_INFO: dict[WorkflowState, StateInfo] = {
     WorkflowState.QA_FAILED: StateInfo(StateKind.FAILED, "QA failed"),
     WorkflowState.ERROR: StateInfo(StateKind.FAILED, "Error"),
     # The graph ends here with no approval to resume it, so this is not a review state.
+    # No edge reaches the node today. In the deleted A2A engine this value meant "waiting
+    # on a person", so an old row that holds it reads that way.
     WorkflowState.HUMAN_REVIEW: StateInfo(StateKind.FAILED, "Human review"),
     WorkflowState.REQUIREMENTS_COMPLETE: StateInfo(_LEGACY, "Requirements complete"),
     WorkflowState.EXTRACTION_APPROVAL: StateInfo(_LEGACY, "Extraction approval"),

@@ -1,13 +1,11 @@
 """
-Full 23-State Workflow using LangGraph (Sprint 3)
+Full request workflow using LangGraph (Sprint 3)
 
 This is the complete production workflow that replaces the custom
 workflow_engine.py FSM with LangGraph's StateGraph.
 
-States: 23 total
-- Main workflow: 15 states
-- Approval gates: 5 states
-- Terminal states: 3 states
+`app/database/workflow_states.py` declares the states and what each one means.
+`tests/test_workflow_state_contract.py` fails when the graph and that file disagree.
 
 Purpose: Production-ready LangGraph workflow with all 5 workflow agents integrated
 Status: Sprint 3 - Production Implementation
@@ -1643,8 +1641,8 @@ class FullWorkflow:
 # ============================================================================
 
 # CODE COMPLEXITY:
-# - Custom FSM (workflow_engine.py): ~335 lines, 23 states, manual transition table
-# - LangGraph Full (langgraph_workflow.py): ~720 lines, 23 states, declarative
+# - Custom FSM (workflow_engine.py): ~335 lines, 23 states at Sprint 3, manual transition table
+# - LangGraph Full (langgraph_workflow.py): ~720 lines, 23 states at Sprint 3, declarative
 # - Verdict: LangGraph is more verbose but much clearer
 #
 # STATE TRANSITIONS:
