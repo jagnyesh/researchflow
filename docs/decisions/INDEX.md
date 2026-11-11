@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0036** — [Every formal criterion concept becomes SQL or the request fails (#310)](0036-formal-criteria-build-or-fail.md) (2026-11-11, accepted; amends 0035 for unparseable ages)
 - **0035** — [Formal cohorts with an age criterion count living patients only (#403)](0035-formal-age-cohorts-living-only.md) (2026-11-09, accepted)
 - **0034** — [Compose store URLs match what the code reads, and the exploratory fallback is development-only (#312)](0034-compose-store-urls-match-code.md) (2026-11-07, accepted; amends 0028's `EXPLORATORY_DB_URL` guard)
 - **0033** — [The phenotype estimate counts the approved SQL (#206)](0033-phenotype-estimate-counts-approved-sql.md) (2026-11-04, accepted; amends 0027 for its FORMAL_DRAFT caller)
@@ -48,6 +49,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0027 — Sprint 6.5: Lambda differential freshness routing (EXPLORATORY / FORMAL_DRAFT / FORMAL_EXTRACTION)](0027-sprint-6-5-differential-freshness-routing.md)
 - [0033 — The phenotype estimate counts the approved SQL (amends 0027 for phenotype_agent)](0033-phenotype-estimate-counts-approved-sql.md)
 - [0035 — Formal cohorts with an age criterion count living patients only](0035-formal-age-cohorts-living-only.md)
+- [0036 — Every formal criterion concept becomes SQL or the request fails (amends 0035 for unparseable ages)](0036-formal-criteria-build-or-fail.md)
 - [0028 — Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md)
 - [0031 — Sprint 6.7 gate: which layer stopped the adversarial cases](0031-sprint-6-7-adversarial-gate-attribution.md) (corrects 0028's attribution)
 
