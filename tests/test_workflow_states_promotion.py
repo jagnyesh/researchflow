@@ -2,8 +2,7 @@
 
 Background: until Sprint 7.2, `WorkflowState` lived inside
 `app/orchestrator/workflow_engine.py` (A2A FSM internal). Five production
-callers (`app/api/research.py`, `app/web_ui/dashboard_helpers.py`, and
-3 others) depended on its `.value` strings as the canonical state strings
+callers (`app/api/research.py` and 4 others) depended on its `.value` strings as the canonical state strings
 for `research_requests.current_state` — effectively a DB schema enum
 masquerading as an orchestrator internal.
 
