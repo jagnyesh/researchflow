@@ -112,12 +112,17 @@ def test_a_case_whose_sql_cant_be_generated_still_anchors_on_its_oracle():
                 "concepts": [{"type": "condition", "term": "diabetes mellitus"}],
             }
         ],
+        # An unsupported concept type: medications build since ADR 0036.
         "exclusion_criteria": [
-            {"description": "insulin", "concepts": [{"type": "medication", "term": "insulin"}]}
+            {"description": "insulin", "concepts": [{"type": "allergy", "term": "insulin"}]}
         ],
         "data_elements": ["demographics"],
         "time_period": {"start": None, "end": None},
     }
+    from app.utils.sql_generator import SQLGenerator
+
+    with pytest.raises(ValueError):
+        SQLGenerator(use_materialized_views=True).generate_phenotype_sql(unbuildable)
 
     assert touched_views(case, unbuildable) == {
         "patient_demographics",
