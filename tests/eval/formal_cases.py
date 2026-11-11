@@ -169,7 +169,6 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=16,
         seed_count=1,
-        expected_fail="no inclusive age operator: '65 or older' doesn't parse, and '>= 65' parses as > 65",
     ),
     FormalCase(
         id="diabetes_mellitus_and_hypertension",
