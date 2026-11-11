@@ -546,10 +546,10 @@ async def health_check():
         try:
             is_connected = await fhir_client.test_connection()
 
+            # The FHIR URL stays out of the body: it can carry credentials (#446).
             return {
                 "status": "healthy" if is_connected else "degraded",
                 "fhir_server_connected": is_connected,
-                "fhir_server_url": fhir_client.base_url,
             }
 
         finally:
