@@ -1,0 +1,104 @@
+"""#310 (ADR 0036): every criterion concept becomes SQL, or the request fails.
+
+A concept the generator can't build used to be dropped with a log line, so the
+cohort silently grew. The error names the concept's type and never its term or
+details, which are PHI-adjacent.
+"""
+
+import pytest
+
+from app.utils.sql_generator import SQLGenerator
+from tests.fixtures import RequirementsBuilder as RB
+
+DIABETES = {"type": "condition", "term": "diabetes"}
+# A term and details that must never appear in the error.
+SECRET = "zz-term-sentinel"
+
+
+def _generate(inclusion=(), exclusion=()):
+    return SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        RB.build_requirements(inclusion=list(inclusion), exclusion=list(exclusion)),
+        count_only=True,
+    )
+
+
+def _criterion(*concepts):
+    return {"description": SECRET, "concepts": list(concepts), "codes": []}
+
+
+UNBUILDABLE = {
+    "race": ({"type": "demographic", "term": "race", "details": SECRET}, "demographic"),
+    "unparseable_age": ({"type": "demographic", "term": "age", "details": SECRET}, "demographic"),
+    "unknown_type": ({"type": "allergy", "term": SECRET}, "unsupported concept type"),
+}
+
+
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize("case", sorted(UNBUILDABLE))
+def test_a_concept_that_builds_nothing_fails_the_request(case, side):
+    concept, named = UNBUILDABLE[case]
+    # Next to a concept that does build, in the same criterion.
+    criterion = _criterion(DIABETES, concept)
+
+    with pytest.raises(ValueError) as raised:
+        _generate(**{side: [criterion]})
+
+    assert named in str(raised.value)
+    assert SECRET not in str(raised.value)
+
+
+# The extraction prompt writes negation into details ("not on warfarin" ->
+# details "excluded"); ignoring it inside an inclusion emits the inverse cohort.
+MARKED_EXCLUDED = {
+    "condition": {"type": "condition", "term": "cancer", "details": "excluded, any malignancy"},
+    "medication": {"type": "medication", "term": "warfarin", "details": "excluded"},
+    "procedure": {"type": "procedure", "term": "colonoscopy", "details": "Excluded — no history"},
+    "lab": {"type": "lab", "term": "lactate", "details": "excluded"},
+    "demographic": {"type": "demographic", "term": "age", "details": "< 18 excluded"},
+}
+
+
+@pytest.mark.parametrize("kind", sorted(MARKED_EXCLUDED))
+def test_an_inclusion_concept_marked_excluded_fails_the_request(kind):
+    with pytest.raises(ValueError) as raised:
+        _generate(inclusion=[_criterion(DIABETES, MARKED_EXCLUDED[kind])])
+
+    assert kind in str(raised.value) and "exclusion" in str(raised.value)
+    assert MARKED_EXCLUDED[kind]["term"] not in str(raised.value)
+
+
+@pytest.mark.parametrize("kind", sorted(MARKED_EXCLUDED))
+def test_an_exclusion_concept_marked_excluded_is_negated_once(kind):
+    sql, _ = _generate(
+        inclusion=[_criterion(DIABETES)], exclusion=[_criterion(MARKED_EXCLUDED[kind])]
+    )
+
+    where = sql.partition("WHERE ")[2]
+    assert "NOT EXISTS" in where or "IS NOT TRUE" in where, where
+    assert "NOT NOT" not in where and "IS NOT TRUE) IS NOT TRUE" not in where, where
+
+
+def test_a_word_containing_excluded_is_not_a_marker():
+    sql, _ = _generate(
+        inclusion=[_criterion({"type": "condition", "term": "asthma", "details": "nonexcluded"})]
+    )
+
+    assert "EXISTS" in sql
+
+
+# A blank term would build LIKE '%%' (every record) or '%None%' (almost none).
+@pytest.mark.parametrize("term", ["", "   ", None])
+@pytest.mark.parametrize("kind", ["condition", "lab", "medication", "procedure"])
+def test_a_concept_without_a_term_fails_the_request(kind, term):
+    with pytest.raises(ValueError, match=kind):
+        _generate(inclusion=[_criterion(DIABETES, {"type": kind, "term": term})])
+
+
+def test_a_criterion_that_builds_nothing_fails_next_to_one_that_does():
+    with pytest.raises(ValueError, match="demographic"):
+        _generate(
+            inclusion=[
+                _criterion(DIABETES),
+                _criterion({"type": "demographic", "term": "race", "details": "white"}),
+            ]
+        )

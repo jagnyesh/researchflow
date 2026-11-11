@@ -70,14 +70,14 @@ def test_a_request_without_an_age_criterion_keeps_the_deceased(requirements, cou
     assert "deceased" not in where, where
 
 
-# The filter follows the emitted age predicate, so an age it can't parse gets neither.
+# ADR 0036 amends 0035: an age the parser can't read fails the request instead
+# of silently dropping both the bound and the living filter.
 @pytest.mark.parametrize("details", ["elderly"])
-def test_an_unparseable_age_adds_no_living_filter(details):
+def test_an_unparseable_age_fails_the_request(details):
     vague = RB.build_demographic(details, term="age", details=details)
-    where, params = _where(RB.build_requirements(inclusion=[vague, HYPERTENSION]), True)
 
-    assert "deceased" not in where and "AGE(" not in where, where
-    assert not any(name.startswith("age") for name in params), params
+    with pytest.raises(ValueError, match="demographic"):
+        _where(RB.build_requirements(inclusion=[vague, HYPERTENSION]), True)
 
 
 def test_the_living_filter_does_not_carry_over_to_the_next_query():

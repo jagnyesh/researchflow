@@ -8,6 +8,7 @@ Security: Uses parameterized queries to prevent SQL injection
 
 from typing import Dict, Any, List, Tuple
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class SQLGenerator:
     Security: All methods return parameterized SQL with bound parameters
     to prevent SQL injection vulnerabilities.
     """
+
+    _CONCEPT_TYPES = ("condition", "demographic", "demographics", "lab", "medication", "procedure")
 
     def __init__(self, use_materialized_views: bool = True):
         """
@@ -53,6 +56,11 @@ class SQLGenerator:
             # Lab criteria match by name: code_text is FHIR code.text, code_display the
             # coding display; either may be the populated one.
             self.observation_text_columns = ("code_text", "code_display")
+            # The gold set's signed-off insulin oracle matches these two (ADR 0036).
+            self.medication_table = "medication_requests"
+            self.medication_text_columns = ("medication_display", "medication_text")
+            self.procedure_table = "procedure_history"
+            self.procedure_text_columns = ("code_text", "snomed_display", "cpt_display")
         else:
             # Legacy HAPI FHIR schema (deprecated)
             self.schema = None
@@ -64,6 +72,10 @@ class SQLGenerator:
             self.condition_code_columns = ("code_display",)
             self.observation_code_column = "code_display"
             self.observation_text_columns = ("code_display",)
+            self.medication_table = "medication_request"
+            self.medication_text_columns = ("code_display",)
+            self.procedure_table = "procedure"
+            self.procedure_text_columns = ("code_display",)
 
         # Back-compat alias for callers that still read condition_code_column.
         # Keep the most semantically informative single column for any code
@@ -291,6 +303,12 @@ class SQLGenerator:
         logger.warning(f"Criterion has unrecognized structure: {criterion}")
         return criterion
 
+    def _concept_label(self, concept_type: Any) -> str:
+        # Errors name only a known type: term and details are PHI-adjacent.
+        if concept_type in self._CONCEPT_TYPES:
+            return f"A {concept_type} concept"
+        return "An unsupported concept type"
+
     def _build_criteria_conditions(
         self, criteria: List[Dict], include: bool = True
     ) -> Tuple[List[str], Dict[str, Any]]:
@@ -321,14 +339,29 @@ class SQLGenerator:
 
             logger.debug(f"Processing criterion: '{criterion_desc}' with {len(concepts)} concepts")
             logger.debug(f"Concepts: {concepts}")
+            if not concepts:
+                # Unfiltered SQL would count everyone as the cohort (#264).
+                raise ValueError("A criterion has no concepts, so it generated 0 WHERE conditions")
 
             for concept in concepts:
                 concept_type = concept.get("type")
                 term = concept.get("term")
+                built = len(conditions)
+                if include and re.search(r"\bexcluded\b", concept.get("details") or "", re.I):
+                    # Building it would select the patients the researcher meant to
+                    # exclude; the marker is free text, so fail rather than negate.
+                    raise ValueError(
+                        f"{self._concept_label(concept_type)} in an inclusion criterion is "
+                        "marked excluded; submit it as an exclusion criterion"
+                    )
 
                 logger.debug(f"Processing concept: type={concept_type}, term='{term}'")
 
-                if concept_type == "condition":
+                if concept_type in ("condition", "lab", "medication", "procedure") and not (
+                    str(term).strip() if term is not None else ""
+                ):
+                    pass  # LIKE '%%' matches every record; the guard below fails it
+                elif concept_type == "condition":
                     # Build condition query
                     condition, condition_params = self._build_condition_clause(term, include)
                     if condition:
@@ -366,15 +399,28 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(lab_params)
 
+                elif concept_type in ("medication", "procedure"):
+                    table, columns = {
+                        "medication": (self.medication_table, self.medication_text_columns),
+                        "procedure": (self.procedure_table, self.procedure_text_columns),
+                    }[concept_type]
+                    condition, record_params = self._build_exists_clause(
+                        table, columns, term, include
+                    )
+                    conditions.append(condition)
+                    params.update(record_params)
+
+                if len(conditions) == built:
+                    # A dropped concept silently widens the cohort (ADR 0036). Name
+                    # only a known type: term and details are PHI-adjacent.
+                    raise ValueError(
+                        f"{self._concept_label(concept_type)} produced no SQL condition"
+                    )
+
         logger.info(
             f"[SQLGenerator] Generated {len(conditions)} WHERE conditions from {len(criteria)} criteria"
         )
         logger.info(f"[SQLGenerator] Parameters: {params}")
-
-        if len(conditions) == 0 and len(criteria) > 0:
-            # Unfiltered SQL would count everyone as the cohort (#264).
-            raise ValueError(f"{len(criteria)} criteria provided but 0 WHERE conditions generated")
-
         logger.debug(f"Final conditions: {conditions}")
         return conditions, params
 
@@ -572,6 +618,21 @@ class SQLGenerator:
     )"""
 
         return sql, params
+
+    def _build_exists_clause(
+        self, table: str, text_columns: Tuple[str, ...], term: str, include: bool
+    ) -> Tuple[str, Dict[str, Any]]:
+        """EXISTS (or NOT EXISTS) a row of `table` for the patient whose text matches `term`."""
+        operator = "EXISTS" if include else "NOT EXISTS"
+        param_name = self._get_param_name("term")
+        col_match = " OR ".join(f"LOWER(x.{col}) LIKE LOWER(:{param_name})" for col in text_columns)
+        # nosec B608 - Table/column names from validated configuration, parameters are bound
+        sql = f"""{operator} (
+        SELECT 1 FROM {self._build_table_name(table)} x
+        WHERE x.patient_id = p.{self.patient_id_column}
+        AND ({col_match})
+    )"""
+        return sql, {param_name: f"%{term}%"}
 
     def _build_time_conditions(self, time_period: Dict) -> Tuple[List[str], Dict[str, Any]]:
         """

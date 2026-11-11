@@ -14,6 +14,9 @@ single bound parameter in every placeholder position:
                                         over the oracle's three columns,
                                         with :c bound to '%term%'
   - ("condition", "lacks", "term")    NOT EXISTS(...)
+  - ("medication", "has" | "lacks",   (NOT) EXISTS(.. medication_requests x
+     "term")                            ..) over the oracle's two columns
+                                        (ADR 0036)
 Anything else, including a cohort source other than the bare patient table,
 is ("unrecognized", <sql>, None). It is reported as extra, so a narrower or
 broader predicate fails the case instead of passing unnoticed.
@@ -54,6 +57,15 @@ _HAS_CONDITION = _template(
     + " OR ".join(f"LOWER(c.{col}) LIKE LOWER(:x)" for col in _CONDITION_COLUMNS)
     + "))"
 )
+# The oracle's medication match (formal_cases._INSULIN), ADR 0036.
+_MEDICATION_COLUMNS = ("medication_display", "medication_text")
+_HAS_MEDICATION = _template(
+    "EXISTS (SELECT 1 FROM sqlonfhir.medication_requests AS x "
+    "WHERE x.patient_id = p.patient_id AND ("
+    + " OR ".join(f"LOWER(x.{col}) LIKE LOWER(:x)" for col in _MEDICATION_COLUMNS)
+    + "))"
+)
+_HAS = {_HAS_CONDITION: "condition", _HAS_MEDICATION: "medication"}
 
 
 def _conjuncts(node: exp.Expression):
@@ -87,10 +99,10 @@ def _predicate(node: exp.Expression, params: Dict) -> Predicate:
     if name is None or name not in params:
         return unrecognized
     value = params[name]
-    if shape == _HAS_CONDITION:
+    if shape in _HAS:
         match = re.fullmatch(r"%([^%_]+)%", str(value))
         if match:
-            return ("condition", "lacks" if negated else "has", match.group(1).lower())
+            return (_HAS[shape], "lacks" if negated else "has", match.group(1).lower())
     elif not negated and shape == _GENDER:
         return ("gender", "=", str(value).lower())
     elif not negated:
