@@ -206,7 +206,6 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=31,
         seed_count=2,
-        expected_fail="no medication concept: generation fails on the insulin exclusion",
     ),
     FormalCase(
         id="hba1c_result_in_2025",

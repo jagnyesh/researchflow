@@ -8,6 +8,7 @@ case's required predicates. Pure: no database.
 """
 
 import json
+import re
 from dataclasses import replace
 
 import pytest
@@ -181,6 +182,17 @@ def test_a_reshaped_predicate_is_not_matched(old, new):
     missing, extra = check_predicates(CASE_1, sql, params)
 
     assert missing or extra, sql
+
+
+def test_a_one_column_medication_match_is_not_the_oracle_match():
+    insulin = next(c for c in FORMAL_CASES if c.id == "diabetes_mellitus_not_on_insulin")
+    sql, params = _sql(_recorded(insulin))
+    one_column = re.sub(r" OR LOWER\(x\.medication_text\) LIKE LOWER\(:\w+\)", "", sql)
+    assert one_column != sql
+
+    missing, extra = check_predicates(insulin, one_column, params)
+
+    assert ("medication", "lacks", "insulin") in missing and extra
 
 
 def test_a_prefix_pattern_is_not_the_requested_contains_match():

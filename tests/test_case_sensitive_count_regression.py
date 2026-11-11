@@ -69,7 +69,7 @@ class TestCaseSensitiveMatching:
         Should return all demographic fields for female diabetes patients.
         """
         requirements = {
-            "inclusion_criteria": [{"type": "condition", "details": "diabetes"}],
+            "inclusion_criteria": [{"type": "condition", "code": "diabetes"}],
             "exclusion_criteria": [],
             "data_elements": ["demographics"],
             "demographics": {"gender": "female"},
@@ -125,7 +125,7 @@ class TestDiabetesCohortCount:
         """
         # Generate query for female diabetes patients
         requirements = {
-            "inclusion_criteria": [{"type": "condition", "details": "diabetes"}],
+            "inclusion_criteria": [{"type": "condition", "code": "diabetes"}],
             "exclusion_criteria": [],
             "data_elements": ["demographics"],
             "demographics": {"gender": "female"},

@@ -8,6 +8,7 @@ Security: Uses parameterized queries to prevent SQL injection
 
 from typing import Dict, Any, List, Tuple
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,8 @@ class SQLGenerator:
     Security: All methods return parameterized SQL with bound parameters
     to prevent SQL injection vulnerabilities.
     """
+
+    _CONCEPT_TYPES = ("condition", "demographic", "demographics", "lab", "medication", "procedure")
 
     def __init__(self, use_materialized_views: bool = True):
         """
@@ -53,6 +56,11 @@ class SQLGenerator:
             # Lab criteria match by name: code_text is FHIR code.text, code_display the
             # coding display; either may be the populated one.
             self.observation_text_columns = ("code_text", "code_display")
+            # The gold set's signed-off insulin oracle matches these two (ADR 0036).
+            self.medication_table = "medication_requests"
+            self.medication_text_columns = ("medication_display", "medication_text")
+            self.procedure_table = "procedure_history"
+            self.procedure_text_columns = ("code_text", "snomed_display", "cpt_display")
         else:
             # Legacy HAPI FHIR schema (deprecated)
             self.schema = None
@@ -64,6 +72,10 @@ class SQLGenerator:
             self.condition_code_columns = ("code_display",)
             self.observation_code_column = "code_display"
             self.observation_text_columns = ("code_display",)
+            self.medication_table = "medication_request"
+            self.medication_text_columns = ("code_display",)
+            self.procedure_table = "procedure"
+            self.procedure_text_columns = ("code_display",)
 
         # Back-compat alias for callers that still read condition_code_column.
         # Keep the most semantically informative single column for any code
@@ -249,7 +261,7 @@ class SQLGenerator:
         sql = f"{select_clause}\n{from_clause}\n{where_clause}"
 
         logger.debug(f"Generated SQL:\n{sql}")
-        logger.debug(f"Parameters: {params}")
+        logger.debug(f"Parameters: {sorted(params)}")
         return sql, params
 
     def _normalize_criterion(self, criterion: Dict) -> Dict:
@@ -271,7 +283,7 @@ class SQLGenerator:
             return criterion
 
         # Convert flat structure to nested format
-        logger.debug(f"Converting flat criterion to nested format: {criterion}")
+        logger.debug("Converting a flat criterion to nested format")
 
         # Check if this is a flat criterion
         if "type" in criterion:
@@ -284,12 +296,17 @@ class SQLGenerator:
 
             normalized = {"description": criterion.get("description", ""), "concepts": [concept]}
 
-            logger.debug(f"Normalized to: {normalized}")
             return normalized
 
         # If no recognizable structure, return as-is (will result in empty concepts)
-        logger.warning(f"Criterion has unrecognized structure: {criterion}")
+        logger.warning("Criterion has unrecognized structure")
         return criterion
+
+    def _concept_label(self, concept_type: Any) -> str:
+        # Errors name only a known type: term and details are PHI-adjacent.
+        if concept_type in self._CONCEPT_TYPES:
+            return f"A {concept_type} concept"
+        return "An unsupported concept type"
 
     def _build_criteria_conditions(
         self, criteria: List[Dict], include: bool = True
@@ -310,25 +327,48 @@ class SQLGenerator:
         logger.info(
             f"[SQLGenerator] Building criteria conditions for {len(criteria)} criteria (include={include})"
         )
-        logger.debug(f"[SQLGenerator] Input criteria structure: {criteria}")
 
         for i, criterion in enumerate(criteria):
             # Normalize criterion to ensure it has "concepts" structure
             criterion = self._normalize_criterion(criterion)
 
             concepts = criterion.get("concepts", [])
-            criterion_desc = criterion.get("description", criterion.get("text", "N/A"))
 
-            logger.debug(f"Processing criterion: '{criterion_desc}' with {len(concepts)} concepts")
-            logger.debug(f"Concepts: {concepts}")
+            logger.debug(f"Processing a criterion with {len(concepts)} concepts")
+            if not concepts:
+                # Unfiltered SQL would count everyone as the cohort (#264).
+                raise ValueError("A criterion has no concepts, so it generated 0 WHERE conditions")
 
             for concept in concepts:
                 concept_type = concept.get("type")
                 term = concept.get("term")
+                built = len(conditions)
+                details = concept.get("details")
+                details_text = "" if details is None else str(details)
+                if include and re.search(r"\bexcluded\b", details_text, re.I):
+                    # Building it would select the patients the researcher meant to
+                    # exclude; the marker is free text, so fail rather than negate.
+                    raise ValueError(
+                        f"{self._concept_label(concept_type)} in an inclusion criterion is "
+                        "marked excluded; submit it as an exclusion criterion"
+                    )
+                if concept_type == "medication" and re.search(
+                    r"\bdrug[\s-]+class(?:es)?\b", details_text, re.I
+                ):
+                    # A class name matches no prescription, so an inclusion would
+                    # count 0 and an exclusion remove no one (#455 expands classes).
+                    raise ValueError(
+                        "A medication concept names a drug class, which can't be "
+                        "matched by name yet"
+                    )
 
-                logger.debug(f"Processing concept: type={concept_type}, term='{term}'")
-
-                if concept_type == "condition":
+                if concept_type in ("condition", "lab", "medication", "procedure") and not (
+                    isinstance(term, str) and term.strip()
+                ):
+                    # LIKE '%%' matches every record and '%None%' or a list's repr
+                    # matches none; the guard below fails the request.
+                    pass
+                elif concept_type == "condition":
                     # Build condition query
                     condition, condition_params = self._build_condition_clause(term, include)
                     if condition:
@@ -356,7 +396,7 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(demo_params)
                     else:
-                        logger.warning(f"✗ No demographic clause generated for term='{term}'")
+                        logger.warning("✗ No demographic clause generated")
 
                 elif concept_type == "lab":
                     # Build lab value query
@@ -366,15 +406,28 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(lab_params)
 
+                elif concept_type in ("medication", "procedure"):
+                    table, columns = {
+                        "medication": (self.medication_table, self.medication_text_columns),
+                        "procedure": (self.procedure_table, self.procedure_text_columns),
+                    }[concept_type]
+                    condition, record_params = self._build_exists_clause(
+                        table, columns, term, include
+                    )
+                    conditions.append(condition)
+                    params.update(record_params)
+
+                if len(conditions) == built:
+                    # A dropped concept silently widens the cohort (ADR 0036). Name
+                    # only a known type: term and details are PHI-adjacent.
+                    raise ValueError(
+                        f"{self._concept_label(concept_type)} produced no SQL condition"
+                    )
+
         logger.info(
             f"[SQLGenerator] Generated {len(conditions)} WHERE conditions from {len(criteria)} criteria"
         )
-        logger.info(f"[SQLGenerator] Parameters: {params}")
-
-        if len(conditions) == 0 and len(criteria) > 0:
-            # Unfiltered SQL would count everyone as the cohort (#264).
-            raise ValueError(f"{len(criteria)} criteria provided but 0 WHERE conditions generated")
-
+        logger.info(f"[SQLGenerator] Parameters: {sorted(params)}")
         logger.debug(f"Final conditions: {conditions}")
         return conditions, params
 
@@ -486,10 +539,6 @@ class SQLGenerator:
         term_lower = term.lower().strip() if term else ""
         details_lower = details.lower().strip() if details else ""
 
-        logger.debug(
-            f"_build_demographic_clause: term='{term}' (normalized: '{term_lower}'), details='{details}'"
-        )
-
         # Parse age criteria. The LLM extractor emits details in mixed
         # forms — symbolic ("> 18"), natural-language ("greater than 18
         # years", "above 18", "over 65"), or range ("between 40 and 65").
@@ -497,7 +546,7 @@ class SQLGenerator:
         if "age" in term_lower:
             op, age_value = self._parse_age_details(details)
             if op is None:
-                logger.warning(f"Could not parse age details: {details!r}")
+                logger.warning("Could not parse the details of an age criterion")
                 return "", {}
             self._has_age_filter = True
             # birth_date is materialized as text (FHIR transpiler default);
@@ -545,7 +594,7 @@ class SQLGenerator:
             return sql, params
 
         # If no match, log warning
-        logger.warning(f"Could not build demographic clause for term='{term}', details='{details}'")
+        logger.warning("Could not build a demographic clause for a criterion")
         return "", {}
 
     def _build_lab_clause(self, lab_term: str, include: bool) -> Tuple[str, Dict[str, Any]]:
@@ -572,6 +621,21 @@ class SQLGenerator:
     )"""
 
         return sql, params
+
+    def _build_exists_clause(
+        self, table: str, text_columns: Tuple[str, ...], term: str, include: bool
+    ) -> Tuple[str, Dict[str, Any]]:
+        """EXISTS (or NOT EXISTS) a row of `table` for the patient whose text matches `term`."""
+        operator = "EXISTS" if include else "NOT EXISTS"
+        param_name = self._get_param_name("term")
+        col_match = " OR ".join(f"LOWER(x.{col}) LIKE LOWER(:{param_name})" for col in text_columns)
+        # nosec B608 - Table/column names from validated configuration, parameters are bound
+        sql = f"""{operator} (
+        SELECT 1 FROM {self._build_table_name(table)} x
+        WHERE x.patient_id = p.{self.patient_id_column}
+        AND ({col_match})
+    )"""
+        return sql, {param_name: f"%{term}%"}
 
     def _build_time_conditions(self, time_period: Dict) -> Tuple[List[str], Dict[str, Any]]:
         """

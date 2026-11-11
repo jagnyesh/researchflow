@@ -32,6 +32,7 @@ Shipped-sprint narratives (6.5 and earlier): `docs/sprints/archive/CONTEXT_HISTO
 - **Exploratory Portal** — Text2SQL NL path at `app/web_ui/research_notebook.py`. Cost metric: cost-per-query (per root trace).
 - **Cost Telemetry** — read-side service aggregating LangSmith runs into per-portal medians (`app/services/cost_telemetry_service.py`).
 - **Sprint gate** — pre-committed numeric criterion that fires sprint completion. For Sprint 8.1: rolling-30 cost-band on both portals. For Sprint 6.5: three-way routing divergence + LangSmith cross-correlation in `logs/sprint_6_5_gate.jsonl`.
+- **Criterion concept (formal)** — one typed term (condition, medication, procedure, lab or demographic) that the Requirements Agent extracts from a submitted criterion. Each concept becomes at least one phenotype SQL predicate, or the request fails ([ADR 0036](docs/decisions/0036-formal-criteria-build-or-fail.md)). An exclusion removes only patients known to match, so a patient whose excluded value is unknown stays.
 
 ### Differential freshness routing (Sprint 6.5, 2026-05-17)
 
