@@ -356,6 +356,15 @@ class SQLGenerator:
                         f"{self._concept_label(concept_type)} in an inclusion criterion is "
                         "marked excluded; submit it as an exclusion criterion"
                     )
+                if concept_type == "medication" and re.search(
+                    r"\bdrug class\b", details_text, re.I
+                ):
+                    # A class name matches no prescription, so an inclusion would
+                    # count 0 and an exclusion remove no one (#455 expands classes).
+                    raise ValueError(
+                        "A medication concept names a drug class, which can't be "
+                        "matched by name yet"
+                    )
 
                 logger.debug(f"Processing concept: type={concept_type}, term='{term}'")
 

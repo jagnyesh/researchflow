@@ -113,6 +113,32 @@ def test_non_text_details_without_the_marker_still_build(details):
     assert "medication_requests" in sql
 
 
+# The prompt keeps a class as the term ("SSRIs", details "drug class — ...").
+# Matched by name it finds no record: an inclusion zeroes, an exclusion removes
+# no one (#455 expands classes).
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    ["drug class — RxNorm members include sertraline, fluoxetine", "Drug Class"],
+)
+def test_a_drug_class_medication_fails_the_request(details, side):
+    concept = {"type": "medication", "term": SECRET, "details": details}
+
+    with pytest.raises(ValueError) as raised:
+        _generate(**{side: [_criterion(DIABETES, concept)]})
+
+    assert "medication" in str(raised.value) and "drug class" in str(raised.value)
+    assert SECRET not in str(raised.value)
+
+
+def test_a_named_drug_is_not_a_drug_class():
+    concept = {"type": "medication", "term": "metformin", "details": "any dose, not a classic"}
+
+    sql, _ = _generate(inclusion=[_criterion(concept)])
+
+    assert "medication_requests" in sql
+
+
 @pytest.mark.parametrize(
     "concept",
     [
