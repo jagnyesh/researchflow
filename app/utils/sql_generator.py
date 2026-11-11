@@ -347,7 +347,9 @@ class SQLGenerator:
                 concept_type = concept.get("type")
                 term = concept.get("term")
                 built = len(conditions)
-                if include and re.search(r"\bexcluded\b", concept.get("details") or "", re.I):
+                details = concept.get("details")
+                details_text = "" if details is None else str(details)
+                if include and re.search(r"\bexcluded\b", details_text, re.I):
                     # Building it would select the patients the researcher meant to
                     # exclude; the marker is free text, so fail rather than negate.
                     raise ValueError(
@@ -358,9 +360,11 @@ class SQLGenerator:
                 logger.debug(f"Processing concept: type={concept_type}, term='{term}'")
 
                 if concept_type in ("condition", "lab", "medication", "procedure") and not (
-                    str(term).strip() if term is not None else ""
+                    isinstance(term, str) and term.strip()
                 ):
-                    pass  # LIKE '%%' matches every record; the guard below fails it
+                    # LIKE '%%' matches every record and '%None%' or a list's repr
+                    # matches none; the guard below fails the request.
+                    pass
                 elif concept_type == "condition":
                     # Build condition query
                     condition, condition_params = self._build_condition_clause(term, include)

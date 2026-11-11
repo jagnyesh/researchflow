@@ -73,7 +73,8 @@ def test_an_exclusion_concept_marked_excluded_is_negated_once(kind):
         inclusion=[_criterion(DIABETES)], exclusion=[_criterion(MARKED_EXCLUDED[kind])]
     )
 
-    where = sql.partition("WHERE ")[2]
+    # The living filter an age adds is IS NOT TRUE too; it isn't the negation.
+    where = sql.partition("WHERE ")[2].replace("p.deceased IS NOT TRUE", "")
     assert "NOT EXISTS" in where or "IS NOT TRUE" in where, where
     assert "NOT NOT" not in where and "IS NOT TRUE) IS NOT TRUE" not in where, where
 
@@ -86,12 +87,30 @@ def test_a_word_containing_excluded_is_not_a_marker():
     assert "EXISTS" in sql
 
 
-# A blank term would build LIKE '%%' (every record) or '%None%' (almost none).
-@pytest.mark.parametrize("term", ["", "   ", None])
+# A blank term would build LIKE '%%' (every record) or '%None%' (almost none),
+# and a non-string one '%['a', 'b']%' (nothing).
+@pytest.mark.parametrize("term", ["", "   ", None, ["insulin", "metformin"], {"t": 1}, 0])
 @pytest.mark.parametrize("kind", ["condition", "lab", "medication", "procedure"])
-def test_a_concept_without_a_term_fails_the_request(kind, term):
-    with pytest.raises(ValueError, match=kind):
+def test_a_concept_without_a_text_term_fails_the_request(kind, term):
+    with pytest.raises(ValueError, match=f"^A {kind} concept produced no SQL condition$"):
         _generate(inclusion=[_criterion(DIABETES, {"type": kind, "term": term})])
+
+
+@pytest.mark.parametrize("details", [["excluded"], {"note": "excluded"}])
+def test_non_text_details_marked_excluded_still_fail_an_inclusion(details):
+    concept = {"type": "medication", "term": "warfarin", "details": details}
+
+    with pytest.raises(ValueError, match="marked excluded"):
+        _generate(inclusion=[_criterion(DIABETES, concept)])
+
+
+@pytest.mark.parametrize("details", [5, ["any dose"], None])
+def test_non_text_details_without_the_marker_still_build(details):
+    concept = {"type": "medication", "term": "warfarin", "details": details}
+
+    sql, _ = _generate(inclusion=[_criterion(DIABETES, concept)])
+
+    assert "medication_requests" in sql
 
 
 def test_a_criterion_that_builds_nothing_fails_next_to_one_that_does():
