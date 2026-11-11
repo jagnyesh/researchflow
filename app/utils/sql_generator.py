@@ -300,7 +300,7 @@ class SQLGenerator:
             return normalized
 
         # If no recognizable structure, return as-is (will result in empty concepts)
-        logger.warning(f"Criterion has unrecognized structure: {criterion}")
+        logger.warning("Criterion has unrecognized structure")
         return criterion
 
     def _concept_label(self, concept_type: Any) -> str:
@@ -357,7 +357,7 @@ class SQLGenerator:
                         "marked excluded; submit it as an exclusion criterion"
                     )
                 if concept_type == "medication" and re.search(
-                    r"\bdrug class\b", details_text, re.I
+                    r"\bdrug[\s-]+class(?:es)?\b", details_text, re.I
                 ):
                     # A class name matches no prescription, so an inclusion would
                     # count 0 and an exclusion remove no one (#455 expands classes).

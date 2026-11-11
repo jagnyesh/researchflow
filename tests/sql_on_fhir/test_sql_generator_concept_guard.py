@@ -119,7 +119,13 @@ def test_non_text_details_without_the_marker_still_build(details):
 @pytest.mark.parametrize("side", ["inclusion", "exclusion"])
 @pytest.mark.parametrize(
     "details",
-    ["drug class — RxNorm members include sertraline, fluoxetine", "Drug Class"],
+    [
+        "drug class — RxNorm members include sertraline, fluoxetine",
+        "Drug Class",
+        "drug-class",
+        "drug classes",
+        "drug  class",
+    ],
 )
 def test_a_drug_class_medication_fails_the_request(details, side):
     concept = {"type": "medication", "term": SECRET, "details": details}
@@ -154,6 +160,14 @@ def test_info_and_warning_logs_carry_no_criterion_text(concept, caplog):
         _generate(inclusion=[_criterion(DIABETES, concept)])
     except ValueError:
         pass
+
+    assert SECRET not in caplog.text
+
+
+def test_an_unrecognized_criterion_shape_is_not_logged(caplog):
+    caplog.set_level("INFO", logger="app.utils.sql_generator")
+    with pytest.raises(ValueError):
+        _generate(inclusion=[{"description": SECRET, "text": SECRET}])
 
     assert SECRET not in caplog.text
 
