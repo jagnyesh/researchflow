@@ -113,6 +113,25 @@ def test_non_text_details_without_the_marker_still_build(details):
     assert "medication_requests" in sql
 
 
+@pytest.mark.parametrize(
+    "concept",
+    [
+        {"type": "medication", "term": SECRET},
+        {"type": "demographic", "term": "age", "details": SECRET},
+        {"type": "demographic", "term": "race", "details": SECRET},
+    ],
+    ids=["built_term", "unparseable_age", "unbuildable_demographic"],
+)
+def test_info_and_warning_logs_carry_no_criterion_text(concept, caplog):
+    caplog.set_level("INFO", logger="app.utils.sql_generator")
+    try:
+        _generate(inclusion=[_criterion(DIABETES, concept)])
+    except ValueError:
+        pass
+
+    assert SECRET not in caplog.text
+
+
 def test_a_criterion_that_builds_nothing_fails_next_to_one_that_does():
     with pytest.raises(ValueError, match="demographic"):
         _generate(

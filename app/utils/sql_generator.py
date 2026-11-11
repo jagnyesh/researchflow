@@ -393,7 +393,7 @@ class SQLGenerator:
                         conditions.append(condition)
                         params.update(demo_params)
                     else:
-                        logger.warning(f"✗ No demographic clause generated for term='{term}'")
+                        logger.warning("✗ No demographic clause generated")
 
                 elif concept_type == "lab":
                     # Build lab value query
@@ -424,7 +424,7 @@ class SQLGenerator:
         logger.info(
             f"[SQLGenerator] Generated {len(conditions)} WHERE conditions from {len(criteria)} criteria"
         )
-        logger.info(f"[SQLGenerator] Parameters: {params}")
+        logger.info(f"[SQLGenerator] Parameters: {sorted(params)}")
         logger.debug(f"Final conditions: {conditions}")
         return conditions, params
 
@@ -547,7 +547,7 @@ class SQLGenerator:
         if "age" in term_lower:
             op, age_value = self._parse_age_details(details)
             if op is None:
-                logger.warning(f"Could not parse age details: {details!r}")
+                logger.warning("Could not parse the details of an age criterion")
                 return "", {}
             self._has_age_filter = True
             # birth_date is materialized as text (FHIR transpiler default);
@@ -595,7 +595,7 @@ class SQLGenerator:
             return sql, params
 
         # If no match, log warning
-        logger.warning(f"Could not build demographic clause for term='{term}', details='{details}'")
+        logger.warning("Could not build a demographic clause for a criterion")
         return "", {}
 
     def _build_lab_clause(self, lab_term: str, include: bool) -> Tuple[str, Dict[str, Any]]:
