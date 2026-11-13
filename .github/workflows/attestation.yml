@@ -28,11 +28,14 @@ permissions:
 
 concurrency:
   # One group per PR. The newest run reads the current head and comments, so it supersedes the rest.
-  group: attestation-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  # Per event type too: a comment run must not cancel the run on the PR's head, because a cancelled
+  # run on the attested commit reads as not-green to validate-and-ship Step 8.
+  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
   cancel-in-progress: true
 
 jobs:
-  attestation:
+  # Not named `attestation`: a check run with the required context's name could satisfy it on its own.
+  set-attestation-status:
     # issue_comment also fires for plain issues; only PR comments matter.
     if: github.event_name != 'issue_comment' || github.event.issue.pull_request
     runs-on: ubuntu-latest

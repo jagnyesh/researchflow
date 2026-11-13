@@ -60,6 +60,7 @@ status_decision() {
   local head out edited newest root verdict carried s state root_commit root_verdict missing=""
   # bash clears errexit inside $(...), so a gh failure must return explicitly, not fall through to a verdict.
   head=$(gh pr view "$pr" --json headRefOid -q .headRefOid) || return 3
+  [ -n "$head" ] || return 3
   out=$(read_attestations) || return 3
 
   emit() { printf '%s\t%s\t%s\n' "$1" "$head" "$2"; }
@@ -95,6 +96,10 @@ status_decision() {
   fi
 
   # A carry-forward: trust it only after checking its root and the 7.4 conditions again.
+  if [ "$verdict" != "SHIP (carried forward)" ] && [ "$verdict" != SHIP ]; then
+    emit failure "Carry-forward's own verdict isn't SHIP (carried forward)."
+    return
+  fi
   root=$(grep -m1 '^ROOT ' <<<"$out" || true)
   root_commit=$(awk '{print $2}' <<<"$root")
   root_verdict=$(sed -E 's/^ROOT [^ ]+ verdict=(.*)$/\1/' <<<"$root")
