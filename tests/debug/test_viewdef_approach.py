@@ -58,7 +58,7 @@ class ViewDefinitionTester:
         print("=" * 80)
         print(f"View: patient_simple (simplified demographics)")
         if gender:
-            print(f"Filter: gender={gender}")
+            print("Filter: gender filter applied")
         print()
 
         # Load ViewDefinition (using patient_simple to avoid complex WHERE clause)
@@ -244,7 +244,7 @@ class ViewDefinitionTester:
                 print("❌ No patients found with specified gender")
                 return
 
-            print(f"Found {len(patients)} {gender} patients")
+            print(f"Found {len(patients)} patients matching the gender filter")
             print()
 
             # STEP 2: Filter by age (in Python, not SQL)
@@ -303,8 +303,8 @@ class ViewDefinitionTester:
             print()
 
             if final_patient_ids:
-                print("Patient IDs:")
-                for pid in sorted(final_patient_ids):
+                print("Matching patients (identifiers not printed):")
+                for i, pid in enumerate(sorted(final_patient_ids), 1):
                     # Find patient details
                     patient = next(
                         (p for p in patients_by_age if (p.get("id") or p.get("patient_id")) == pid),
@@ -313,7 +313,7 @@ class ViewDefinitionTester:
                     if patient:
                         name = patient.get("full_name", "Unknown")
                         age = self.calculate_age(patient.get("birth_date"))
-                        print(f"  - {pid}: {name} (age {age})")
+                        print(f"  - patient {i}: age {age}")
             else:
                 print("No patients found matching all criteria")
 

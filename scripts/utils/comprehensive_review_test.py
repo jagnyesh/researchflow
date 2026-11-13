@@ -119,16 +119,7 @@ All tests passing ✓
         print(f"  - Columns: {list(results[0].keys()) if results else 'N/A'}")
 
         if results:
-            print(f"\n  Sample data (first 3 patients):")
-            for i, row in enumerate(results[:3], 1):
-                id_val = row.get("id") or "N/A"
-                id_str = id_val[:8] if isinstance(id_val, str) else str(id_val)
-                print(
-                    f"    {i}. ID={id_str:8} "
-                    f"Gender={str(row.get('gender', 'N/A')):6} "
-                    f"Active={str(row.get('active', 'N/A')):5} "
-                    f"DOB={row.get('birth_date', 'N/A')}"
-                )
+            print(f"\n  Sample rows returned: {min(len(results), 3)} (values not printed)")
 
         # Test 2: Search Parameter Filtering
         print_section("3. SEARCH PARAMETER FILTERING")
