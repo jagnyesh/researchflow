@@ -19,7 +19,7 @@ deep-dives follow below.
 |---|---|---|---|---|
 | (a)(1) Access Control | JWT-bearer authentication on every PHI route | `app/security/auth.py` + `app/security/audit_middleware.py` (default-deny classifier) | 74 audit + 6 auth | 1.1 + 2.2 |
 | (a)(2)(i) Unique User Identification | `User.id` (USR-XXXXXXXX) on every audit row | `app/database/models.py::User` + `AuditLog.user_id` | included above | 1.2 + 2.2 |
-| (a)(2)(iii) Automatic Logoff | JWT `exp` claim + `failed_login_attempts` lockout | `app/security/auth.py` + `User.locked_until` | 6 auth | 1.1 + 1.3 |
+| (a)(2)(iii) Automatic Logoff (Addressable) | Partial: JWT `exp` claim bounds each access token (30 minutes by default). No inactivity timeout, no server-side logoff, no failed-login lockout; see [Automatic Logoff limits](#automatic-logoff-limits) | `app/security/auth.py::create_access_token` | 6 auth | 1.1 |
 | (a)(2)(iv) Encryption (Addressable) — at rest | Column-level Fernet encryption on Tier 1 PHI columns | `app/security/encryption.py` + `app/security/encryption_keys.py` | 13 encryption | 3b |
 | (b) Audit Controls | Default-deny route classifier + at-least-once Redis queue + Postgres `audit_logs` | `app/security/audit_middleware.py` + `audit_drain.py` | 74 audit | 2.2 |
 | (c)(1) Integrity | Pydantic `PHIInputModel` framework + parameterized SQL | `app/schemas/_base.py` + 30 SQL injection fixes (Sprint 6) | 163 schema | 2.3 + Sprint 6 |
@@ -28,6 +28,17 @@ deep-dives follow below.
 | (e)(1) Transmission Security | HTTPS-redirect middleware + HSTS | `app/security/tls.py` | 22 TLS | 3a |
 | (e)(2)(i) Integrity Controls — in transit | TLS 1.2+ at the load balancer | platform-managed (k8s ingress / ALB) | covered by 22 TLS | 3a |
 | (e)(2)(ii) Encryption (Addressable) — in transit | HSTS `max-age=31536000; includeSubDomains` enforced; HTTP redirected with 308 | `app/security/tls.py::tls_enforcement_middleware` | 22 TLS | 3a |
+
+### Automatic Logoff limits
+
+The only automatic-logoff mechanism is the JWT `exp` claim, which expires an access token `ACCESS_TOKEN_EXPIRE_MINUTES` after issue (default 30). The following are not implemented:
+
+- **Indefinite extension.** `POST /auth/refresh` (`app/api/auth.py`) issues a new token to any holder of a currently valid token, so a session can be extended without limit and without re-entering a password.
+- **No inactivity timeout.** Expiry is measured from issue time, not from last activity.
+- **Logout does not revoke.** `POST /auth/logout` is a no-op on the server; the old token stays valid until its `exp`, because there is no token denylist.
+- **No failed-login lockout.** The `User.failed_login_attempts` and `User.locked_until` columns exist but no code reads or writes them, so repeated failed logins are never counted or blocked.
+
+Automatic Logoff is an addressable specification under §164.312(a)(2)(iii), so these gaps need a documented rationale or an alternative control rather than being an automatic violation. This proof of concept runs on synthetic patients and has not made that assessment.
 
 ### Common review questions
 
