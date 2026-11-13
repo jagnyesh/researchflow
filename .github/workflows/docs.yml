@@ -6,11 +6,18 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+concurrency:
+  # Non-PR runs get a unique group: a shared group would still replace a pending run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only PR runs are cancelled by a newer push; main pushes always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   # No diagram job (#202): apt's PlantUML 1.2020.2 can't parse two of the diagrams,
   # so the check never gated. Render them locally per CONTRIBUTING.md.
   check-documentation:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
@@ -35,6 +42,7 @@ jobs:
 
   api-docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
@@ -68,6 +76,7 @@ jobs:
 
   check-docstrings:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
     - name: Checkout code
