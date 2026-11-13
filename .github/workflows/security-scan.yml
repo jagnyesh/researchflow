@@ -15,10 +15,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Non-PR runs get a unique group: a shared group would still replace a pending run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only PR runs are cancelled by a newer push; main pushes always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   secret-scanning:
     name: Secret Detection
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -53,6 +60,7 @@ jobs:
   dependency-check:
     name: Dependency Vulnerability Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -80,6 +88,7 @@ jobs:
   code-security:
     name: Code Security Analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout code
@@ -109,6 +118,7 @@ jobs:
   container-scanning:
     name: Container Security Scan
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: github.event_name == 'push' && contains(github.ref, 'refs/heads/main')
     permissions:
       contents: read
@@ -136,6 +146,7 @@ jobs:
 
   codeql-analysis:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: read
