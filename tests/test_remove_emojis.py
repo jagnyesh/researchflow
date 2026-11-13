@@ -64,3 +64,51 @@ def test_emoji_is_removed(tmp_path, monkeypatch, emoji):
 def test_variation_selector_is_removed_with_its_emoji(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert _clean(tmp_path, "a\u2702\ufe0fb\n") == "ab\n"
+
+
+# The matched set, written out independently of the implementation so the
+# boundary tests pin it. (start, end) are inclusive code points.
+_EXPECTED_RANGES = [
+    (0x1F600, 0x1F64F),
+    (0x1F300, 0x1F5FF),
+    (0x1F680, 0x1F6FF),
+    (0x2702, 0x27B0),
+    (0x24C2, 0x24C2),
+    (0x2600, 0x26FF),
+    (0x2B00, 0x2BFF),
+    (0x25AA, 0x25AA),
+    (0x25B6, 0x25B6),
+    (0x25C0, 0x25C0),
+    (0x25FB, 0x25FB),
+    (0x2934, 0x2935),
+    (0x3030, 0x3030),
+    (0x303D, 0x303D),
+    (0x3297, 0x3297),
+    (0x3299, 0x3299),
+    (0x1F004, 0x1F004),
+    (0x1F0CF, 0x1F0CF),
+    (0xFE0F, 0xFE0F),
+    (0x1F170, 0x1F251),
+]
+
+
+def _in_expected(cp):
+    return any(lo <= cp <= hi for lo, hi in _EXPECTED_RANGES)
+
+
+_INSIDE = sorted({cp for lo, hi in _EXPECTED_RANGES for cp in (lo, hi)})
+_OUTSIDE = sorted(
+    {cp for lo, hi in _EXPECTED_RANGES for cp in (lo - 1, hi + 1) if not _in_expected(cp)}
+)
+
+
+@pytest.mark.parametrize("cp", _INSIDE, ids=lambda cp: f"U+{cp:04X}")
+def test_range_endpoints_are_removed(tmp_path, monkeypatch, cp):
+    monkeypatch.chdir(tmp_path)
+    assert _clean(tmp_path, f"a{chr(cp)}b\n") == "ab\n"
+
+
+@pytest.mark.parametrize("cp", _OUTSIDE, ids=lambda cp: f"U+{cp:04X}")
+def test_characters_just_outside_ranges_are_kept(tmp_path, monkeypatch, cp):
+    monkeypatch.chdir(tmp_path)
+    assert _clean(tmp_path, f"a{chr(cp)}b\n") == f"a{chr(cp)}b\n"
