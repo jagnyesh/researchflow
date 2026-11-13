@@ -43,7 +43,6 @@ _SERVICE_ROUTE_PREFIXES = ("/a2a", "/mcp")
 # treated as non-IDs and leave resource_id null.
 RESOURCE_MAP = {
     "/research": "ResearchRequest",
-    "/sql_query": "Query",
     "/analytics": "AnalyticsView",
     "/approvals": "Approval",
     "/users": "User",

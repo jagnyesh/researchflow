@@ -85,7 +85,7 @@ The workflow extracts no patient rows until a reviewer approves the SQL at step 
 - **A small evaluation.** The model answered 7 of the 8 adversarial prompts with a safe count, and the validator rejected 1 ([ADR 0031](docs/decisions/0031-sprint-6-7-adversarial-gate-attribution.md)). The result depends on the model as well as the validator.
 - **The formal SQL generator passes 5 of its 10 gold cases** ([ADR 0035](docs/decisions/0035-formal-age-cohorts-living-only.md)). It cannot yet express an inclusive age bound, a medication exclusion, a lab value threshold, or a time period.
 - **The dashboards have no authentication** ([#39](https://github.com/jagnyesh/researchflow/issues/39)). Anyone who reaches port 8503 can approve a request. A launch from outside the repo root skips the loopback pin ([#219](https://github.com/jagnyesh/researchflow/issues/219)).
-- **The API has open authorization gaps.** The approval route has no role check ([#248](https://github.com/jagnyesh/researchflow/issues/248)). `POST /sql_query` runs any `SELECT` for any signed-in user, with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)).
+- **The API has open authorization gaps.** The approval route has no role check ([#248](https://github.com/jagnyesh/researchflow/issues/248)).
 - **Cost numbers assume bursty traffic.** The formal run sent 30 requests in 6 to 7 minutes, and the exploratory run sent 30 queries in 120 seconds. No request waited past Anthropic's 5-minute cache lifetime. The exploratory cache hit rate was 95% ([ADR 0028](docs/decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md)).
 - **The data layer reads HAPI FHIR's internal Postgres tables.** Another FHIR server, or a HAPI release with a new storage layout, breaks it.
 

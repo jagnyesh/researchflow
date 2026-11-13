@@ -13,7 +13,6 @@ from app.security.audit_middleware import resolve_resource, RESOURCE_MAP
 def test_resource_map_covers_known_phi_route_prefixes():
     expected = {
         "/research",
-        "/sql_query",
         "/analytics",
         "/approvals",
         "/users",
@@ -25,8 +24,8 @@ def test_resource_map_covers_known_phi_route_prefixes():
 
 
 def test_resolve_resource_returns_type_for_known_prefix_no_id():
-    rt, rid = resolve_resource("/sql_query")
-    assert rt == "Query"
+    rt, rid = resolve_resource("/analytics/execute")
+    assert rt == "AnalyticsView"
     assert rid is None
 
 

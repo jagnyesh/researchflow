@@ -63,19 +63,12 @@ async def test_a2a_token_endpoint_is_reachable_through_middleware(fake_audit_red
 
 
 @pytest.mark.asyncio
-async def test_sql_query_endpoint_enqueues_pre_and_post_via_real_app(fake_audit_redis):
-    """Hit the real /sql_query route on app.main:app and assert pre+post events."""
+async def test_phi_route_enqueues_pre_and_post_via_real_app(fake_audit_redis):
+    """Hit a real PHI route on app.main:app and assert pre+post events."""
     from datetime import timedelta
     from httpx import AsyncClient, ASGITransport
     from app.main import app
-    from app.adapters.sql_on_fhir import SQLonFHIRAdapter
     from app.security.auth import create_access_token
-
-    # Stub the SQL execution so we don't need HAPI running
-    async def stub_execute(self, sql):
-        return [{"col": "value"}]
-
-    SQLonFHIRAdapter.execute_sql = stub_execute
 
     token = create_access_token(
         {"sub": "user@example.com", "user_id": "user-7", "role": "researcher"},
@@ -84,9 +77,8 @@ async def test_sql_query_endpoint_enqueues_pre_and_post_via_real_app(fake_audit_
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post(
-            "/sql_query",
-            json={"sql": "SELECT 1"},
+        response = await client.get(
+            "/research/",
             headers={"authorization": f"Bearer {token}"},
         )
 
@@ -99,3 +91,26 @@ async def test_sql_query_endpoint_enqueues_pre_and_post_via_real_app(fake_audit_
     assert pre["user_id"] == "user-7"
     assert post["event_type"] == "PHI_ACCESS_COMPLETED"
     assert post["status_code"] == 200
+
+
+@pytest.mark.asyncio
+async def test_sql_query_route_is_removed(fake_audit_redis):
+    """#234, ADR 0037: no route runs caller-supplied SQL against the HAPI database."""
+    from datetime import timedelta
+    from httpx import AsyncClient, ASGITransport
+    from app.main import app
+    from app.security.auth import create_access_token
+
+    token = create_access_token(
+        {"sub": "admin@example.com", "user_id": "admin-1", "role": "admin"},
+        expires_delta=timedelta(minutes=5),
+    )
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/sql_query",
+            json={"sql": "SELECT 1"},
+            headers={"authorization": f"Bearer {token}"},
+        )
+
+    assert response.status_code in (404, 405)

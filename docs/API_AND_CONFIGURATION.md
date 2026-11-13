@@ -73,7 +73,7 @@ GET    /health/ready                            Readiness probe
 GET    /health/ready/detailed                   Readiness with the audit-queue state
 ```
 
-The API also serves `/users` and `/mcp/context`. `POST /sql_query` runs a caller-supplied `SELECT` on HAPI Postgres with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)). `POST /a2a/token` accepts any caller whose `client_id` equals its `client_secret` ([#233](https://github.com/jagnyesh/researchflow/issues/233)). `app/api/` has one module for each router.
+The API also serves `/users` and `/mcp/context`. `POST /a2a/token` accepts any caller whose `client_id` equals its `client_secret` ([#233](https://github.com/jagnyesh/researchflow/issues/233)). `app/api/` has one module for each router.
 
 ## Examples
 
