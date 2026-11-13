@@ -199,3 +199,30 @@ async def test_overlong_name_is_404_not_500(fake_audit_redis, view_dir, research
         )
 
     assert resp.status_code == 404
+
+
+def _symlinked_manager(tmp_path):
+    """views/linked.json is a symlink to a valid definition outside the directory (#468)."""
+    from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
+
+    views = tmp_path / "views"
+    target = _plant_outside(views)
+    os.symlink(target, views / "linked.json")
+    return ViewDefinitionManager(view_definitions_dir=str(views)), target
+
+
+def test_load_refuses_a_symlink_that_points_outside(tmp_path):
+    manager, _ = _symlinked_manager(tmp_path)
+
+    with pytest.raises(FileNotFoundError):
+        manager.load("linked")
+
+
+def test_save_does_not_write_through_a_symlink_that_points_outside(tmp_path):
+    manager, target = _symlinked_manager(tmp_path)
+    before = target.read_text()
+
+    with pytest.raises(ValueError):
+        manager.save({**VALID_VIEW, "name": "linked"})
+
+    assert target.read_text() == before
