@@ -13,7 +13,7 @@ Plan, ask, launch, watch. Launching is cheap and reversible: each lane is its ow
 - `main`'s "require branches to be up to date" protection forces every PR to pass its required checks on the latest main before it can merge, so merges serialize;
 - this session's job at merge time is to check and report.
 
-Required checks don't cover everything: the code-scanning `CodeQL` check isn't required (the `codeql-analysis (python)` job is), and Container Security Scan runs only on push to main. So main can still go red after a merge, which is why Step 6 watches it.
+Required checks don't cover everything: the code-scanning `CodeQL` check isn't required (the `codeql-analysis (python)` job is), and Container Security Scan and `test (macos-latest, 3.11)` run only on push to main (#462). So main can still go red after a merge, which is why Step 6 watches it.
 
 Authorities, by reference: risk tiers `docs/DAILY_DEV_WORKFLOW.md` §1, the Stage-2 trigger §3, guardrails §10, attestation templates and merge rules `.claude/skills/validate-and-ship/SKILL.md` Steps 7–8.
 

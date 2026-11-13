@@ -48,9 +48,15 @@ def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
             "\U0001f600-\U0001f64f"  # emoticons
             "\U0001f300-\U0001f5ff"  # symbols & pictographs
             "\U0001f680-\U0001f6ff"  # transport & map symbols
-            "\U0001f1e0-\U0001f1ff"  # flags (iOS)
-            "\U00002702-\U000027b0"
-            "\U000024c2-\U0001f251"
+            "\U00002702-\U000027b0"  # dingbats
+            "\U000024c2"  # circled M
+            "\U00002600-\U000026ff"  # miscellaneous symbols
+            "\U00002b00-\U00002bff"  # miscellaneous symbols and arrows
+            "\U000025aa\U000025b6\U000025c0\U000025fb"  # emoji-presented geometric shapes
+            "\U00002934\U00002935\U00003030\U0000303d\U00003297\U00003299"
+            "\U0001f004\U0001f0cf"
+            "\ufe0f"  # emoji variation selector
+            "\U0001f170-\U0001f251"  # enclosed alphanumerics/ideographs; includes flags
             "]+",
             flags=re.UNICODE,
         )
