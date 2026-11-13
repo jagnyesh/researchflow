@@ -20,9 +20,9 @@ Other alerts are false positives. `ViewDefinitionManager._path_for` already hold
 
 **Decision (owner, 2026-11-13).**
 
-- **Guards take a shape CodeQL recognizes, so alerts clear in code, not by dismissal.** A path guard resolves the joined path with `os.path.realpath` and checks that it starts with the base directory plus a separator. An existing name regex stays in front of it. The resolve step also stops a symlink inside the directory from pointing out of it. The false positives in `view_definition_manager.py` get the same guard.
-- **`FileStorageService` and `FileContextStore` reject a name that isn't one safe path component.** A write raises `ValueError`, so an extraction with a bad element name fails visibly. A read returns `None` or an empty list, so a download returns 404. Neither class renames a file to make it safe.
-- **`POST /sql_query` is removed.** Its route, its request schema and its audit route-map entry go. Tests that used it as their sample PHI route move to another one. SQL reaches the HAPI database only from code that builds it (`SQLGenerator`, ViewDefinitions) or through the exploratory validator (ADR 0028).
+- **Guards take a shape CodeQL recognizes, so alerts clear in code, not by dismissal.** A path guard resolves the joined path with `os.path.realpath` and checks that it starts with the base directory plus a separator. An existing name regex stays in front of it. A symlinked entry is refused even when it points inside the directory, because a resolved path would let `delete` remove the file the link points at. The false positives in `view_definition_manager.py` get the same guard.
+- **`FileStorageService` and `FileContextStore` reject a name that isn't one safe path component.** A write raises `ValueError`. A read returns `None` or an empty list, so a download returns 404. Neither class renames a file to make it safe.
+- **`POST /sql_query` is removed.** Its route, its request schema and its audit route-map entry go. Tests that used it as their sample PHI route move to another one. No route now passes caller SQL straight to the HAPI database. A reviewer can still replace the phenotype SQL through `POST /approvals/{id}/respond`, which has no role check ([#248](https://github.com/jagnyesh/researchflow/issues/248)); extraction then runs it (traced in code, not exercised).
 - **Logs carry no bound-parameter values and no generated SQL text.** A log line keeps its purpose through parameter names, counts and clause counts. The SQL a researcher's request runs stays reviewable in its approval record.
 
 **Considered options.**
@@ -34,7 +34,7 @@ Other alerts are false positives. `ViewDefinitionManager._path_for` already hold
 
 **Consequences.**
 
-- A request whose data element name contains a path separator or `..` now fails at extraction instead of writing outside its delivery directory.
+- A data element whose name contains a path separator or `..` gets no CSV instead of one written outside its delivery directory. The extraction agent's `_format_data` catches the `ValueError` with a broad `except`, so it also skips the elements after that one and still lists every file in its result. A `/` in the name already failed that way on main, through an `OSError`; a follow-up makes the failure visible.
 - Debug logs no longer show the generated SQL. Read it from the approval record or the phenotype step's state.
 - README and the API, architecture and HIPAA docs drop `/sql_query`. ADR 0012 used it as its first validated route; that ADR's validation framework is unchanged.
 - The CodeQL run on this PR shows whether each guard is recognized. An alert it still reports goes to the owner as a proposed dismissal with the guard's `file:line`.
