@@ -74,16 +74,7 @@ async def main():
 
         # Display results
         if rows:
-            print(f"\n  Patient Data:")
-            print(f"  {'ID':8} {'Active':8} {'Gender':8} {'Birth Date':12}")
-            print(f"  {'-'*8} {'-'*8} {'-'*8} {'-'*12}")
-            for row in rows:
-                print(
-                    f"  {str(row.get('id', ''))[:8]:8} "
-                    f"{str(row.get('active', ''))[:8]:8} "
-                    f"{str(row.get('gender', ''))[:8]:8} "
-                    f"{str(row.get('birth_date', ''))[:12]:12}"
-                )
+            print(f"\n  Columns: {sorted(rows[0].keys())}")
 
         # Test with search params
         print(f"\n✓ Testing with search parameters (gender=male)...")

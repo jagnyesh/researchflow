@@ -1,5 +1,7 @@
 """Tests for app/security/tls.py — Sprint 6.1 Phase 3a (Issue #7)."""
 
+from urllib.parse import urlparse
+
 import pytest
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
@@ -363,7 +365,8 @@ async def test_legitimate_host_is_accepted_after_redirect():
     async with AsyncClient(transport=transport, base_url="http://app.example.com") as client:
         response = await client.get("/", follow_redirects=False)
     assert response.status_code == 308
-    assert response.headers["location"].startswith("https://app.example.com")
+    location = urlparse(response.headers["location"])
+    assert (location.scheme, location.hostname) == ("https", "app.example.com")
 
 
 def test_warning_logged_when_production_with_wildcard_allowed_hosts(monkeypatch, caplog):

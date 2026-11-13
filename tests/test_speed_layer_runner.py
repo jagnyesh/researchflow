@@ -289,7 +289,6 @@ async def test_execute_with_patients(redis_client, speed_runner, patient_view_de
     assert actual_ids == expected_ids, f"❌ Patient IDs don't match: {actual_ids}"
 
     print(f"✓ Found {result['total_count']} patients")
-    print(f"✓ Patient IDs: {result['patient_ids']}")
 
     print("\n✅ TEST PASSED")
 
@@ -323,7 +322,6 @@ async def test_gender_filter(redis_client, speed_runner, patient_view_def, sampl
         assert resource["gender"] == "male", f"❌ Found non-male patient: {resource['id']}"
 
     print(f"✓ Filtered to {result['total_count']} male patients")
-    print(f"✓ Patient IDs: {result['patient_ids']}")
 
     # Query for female patients
     result_female = await speed_runner.execute(
@@ -375,7 +373,7 @@ async def test_condition_resources(
     ), f"❌ Patient IDs don't match: {actual_patient_ids}"
 
     print(f"✓ Found {len(result['resources'])} conditions")
-    print(f"✓ Extracted {result['total_count']} unique patient IDs: {result['patient_ids']}")
+    print(f"✓ Extracted {result['total_count']} unique patient IDs")
 
     print("\n✅ TEST PASSED")
 
@@ -475,7 +473,6 @@ async def test_time_filter(redis_client, speed_runner, patient_view_def, sample_
     assert actual_ids == expected_new_ids, f"❌ Wrong patient IDs returned: {actual_ids}"
 
     print(f"✓ Time filter working: found {result['total_count']} patients after cutoff")
-    print(f"✓ Patient IDs: {result['patient_ids']}")
 
     print("\n✅ TEST PASSED")
 
