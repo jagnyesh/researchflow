@@ -109,13 +109,7 @@ async def main():
             print(f"  Returned {len(rows)} male patients")
 
             if rows:
-                print(f"\n  Results:")
-                for i, row in enumerate(rows, 1):
-                    print(
-                        f"    {i}. {row.get('full_name', 'Unknown')} - "
-                        f"Gender: {row.get('gender')}, "
-                        f"Birth Date: {row.get('birth_date')}"
-                    )
+                print(f"\n  Columns: {sorted(rows[0].keys())}")
 
         except Exception as e:
             print(f"✗ Query execution failed: {e}")

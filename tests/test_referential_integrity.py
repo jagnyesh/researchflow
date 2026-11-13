@@ -207,11 +207,7 @@ async def test_foreign_key_integrity_conditions():
             """
             )
 
-            print(f"\n  Sample orphaned records:")
-            for sample in samples:
-                print(
-                    f"    - Condition {sample['id']}: patient_id={sample['patient_id']}, code={sample['icd10_code']}"
-                )
+            print(f"\n  {len(samples)} sample orphaned records fetched (identifiers not printed)")
 
         assert orphaned == 0, f"Found {orphaned} orphaned conditions (patients don't exist)"
 
