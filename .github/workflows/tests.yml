@@ -6,13 +6,21 @@ on:
   pull_request:
     branches: [ main, develop ]
 
+concurrency:
+  # Non-PR runs get a unique group: a shared group would still replace a pending run.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  # Only PR runs are cancelled by a newer push; main pushes always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        # macOS runs only on pushes to main: its hosted-runner wait stalled PR runs (#462).
+        os: ${{ fromJSON(github.event_name == 'push' && github.ref == 'refs/heads/main' && '["ubuntu-latest","macos-latest"]' || '["ubuntu-latest"]') }}
         python-version: ['3.11']  # pyproject.toml: requires-python >=3.11,<3.13
 
     steps:
@@ -71,6 +79,7 @@ jobs:
   # No pg_dump, no Synthea-in-CI: the bundle is the entire test corpus.
   service-dependent-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
@@ -148,7 +157,7 @@ jobs:
 
   security-scan:
     runs-on: ubuntu-latest
-    needs: test
+    timeout-minutes: 15
 
     steps:
     - name: Checkout code
