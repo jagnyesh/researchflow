@@ -182,17 +182,17 @@ def test_progress_renders_as_a_stage_ledger():
     at = _run(_status("data_extraction", current_agent="extraction_agent"), delivered=False)
 
     ledger = "\n".join(h for h in _html(at) if "rf-ledger" in h)
-    assert ledger.count('class="rf-done"') == 4
+    assert ledger.count('class="rf-done"') == 8
     assert ledger.count('class="rf-current"') == 1
-    assert ledger.count('class="rf-pending"') == 3
+    assert ledger.count('class="rf-pending"') == 4
     assert "Data extraction" in ledger
 
 
 def test_a_delivered_request_has_every_stage_done():
-    at = _run(_status("delivered"))
+    at = _run(_status("complete"))
 
     ledger = "\n".join(h for h in _html(at) if "rf-ledger" in h)
-    assert ledger.count('class="rf-done"') == 8
+    assert ledger.count('class="rf-done"') == 13
     assert 'class="rf-current"' not in ledger
 
 

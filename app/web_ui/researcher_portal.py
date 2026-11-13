@@ -52,6 +52,7 @@ assert_encryption_key_present_if_production()
 from app.langchain_orchestrator.request_facade import LangGraphRequestFacade
 from app.agents.extraction_agent import FORM_DATA_ELEMENTS
 from app.database import get_engine
+from app.database.workflow_states import STATE_INFO, StateKind, WorkflowState
 
 
 def run_async(coroutine):
@@ -109,16 +110,21 @@ def clear_researcher_email():
         st.warning(f"Could not clear saved email (ref: {ref})")
 
 
+def _state_info(value):
+    """Registry entry for a stored state string, or None for a value that is not a member."""
+    try:
+        return WorkflowState(value).info
+    except ValueError:
+        return None
+
+
+# The ledger lists every state a running request passes through, in the registry's
+# lifecycle order, and ends at the state a successful run ends in (#436).
 WORKFLOW_STATES = [
-    "new_request",
-    "requirements_gathering",
-    "feasibility_validation",
-    "schedule_kickoff",
-    "data_extraction",
-    "qa_validation",
-    "data_delivery",
-    "delivered",
-]
+    state.value
+    for state, info in STATE_INFO.items()
+    if info.kind in (StateKind.IN_PROGRESS, StateKind.AWAITING_REVIEW)
+] + [WorkflowState.COMPLETE.value]
 
 # Same state categories the colored-circle emoji used to carry (#363).
 _STATE_ICONS = {
@@ -995,17 +1001,26 @@ def show_request_details():
     else:
         # Not yet delivered
         current_state = status["current_state"]
-        if current_state in ["delivered", "complete"]:
+        info = _state_info(current_state)
+        if info is not None and info.kind is StateKind.SUCCEEDED:
             st.warning("Data delivery is being prepared. Check back in a few minutes")
-        elif current_state in ["data_extraction", "qa_validation", "data_delivery"]:
+        elif current_state in (
+            WorkflowState.DATA_EXTRACTION.value,
+            WorkflowState.QA_VALIDATION.value,
+            WorkflowState.DATA_DELIVERY.value,
+        ):
             st.info(f"Your request is being processed. Current stage: {_label(current_state)}")
             st.caption("You can download your data once processing completes")
-        elif current_state == "failed":
-            st.error("The request failed. Contact support for help")
-        elif current_state == "not_feasible":
+        elif current_state == WorkflowState.NOT_FEASIBLE.value:
             st.warning(
                 "The request was found not feasible. Review the feedback and submit a new request"
             )
+        elif info is not None and info.kind is StateKind.FAILED:
+            # Fixed text: research_requests.error_message holds raw failure output.
+            st.error("The request did not complete. Contact support for help")
+        elif info is not None and info.kind is StateKind.AWAITING_REVIEW:
+            st.info(f"Waiting for review: {info.label}")
+            st.caption("Data download opens once the request is completed and delivered")
         else:
             st.info(f"In progress: {_label(current_state)}")
             st.caption("Data download opens once the request is completed and delivered")
