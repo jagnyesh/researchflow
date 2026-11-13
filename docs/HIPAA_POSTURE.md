@@ -33,7 +33,7 @@ deep-dives follow below.
 
 The only automatic-logoff mechanism is the JWT `exp` claim, which expires an access token `ACCESS_TOKEN_EXPIRE_MINUTES` after issue (default 30). The following are not implemented:
 
-- **Indefinite extension.** `POST /auth/refresh` (`app/api/auth.py`) issues a new token to any holder of a currently valid token, so a session can be extended without limit and without re-entering a password.
+- **Indefinite extension.** `POST /auth/refresh` (`app/api/auth.py`) issues a new token to any holder of a currently valid token, so a session can be extended without limit and without re-entering a password. The endpoint does not look up the user, so a deactivated account can keep refreshing until its current token expires.
 - **No inactivity timeout.** Expiry is measured from issue time, not from last activity.
 - **Logout does not revoke.** `POST /auth/logout` is a no-op on the server; the old token stays valid until its `exp`, because there is no token denylist.
 - **No failed-login lockout.** The `User.failed_login_attempts` and `User.locked_until` columns exist but no code reads or writes them, so repeated failed logins are never counted or blocked.
