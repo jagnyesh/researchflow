@@ -1,0 +1,30 @@
+# Tests and scripts a lane never runs without asking the user first.
+# Read by .claude/skills/plan-lanes/BRIEF.md (the lane brief's "Never" list) and by
+# .claude/hooks/Stop.sh, which skips every file named here. One entry per line;
+# '#' starts a comment. Editing these files is fine; running them is not.
+#
+# file: <path>      writes shared local state (live :5433 views, Redis, or live HAPI)
+# marker: <name>    any test file carrying this pytest marker (pytest.ini doesn't skip
+#                   them locally), including a module-level pytestmark
+# pattern: <regex>  any test file whose text matches (Python regex; a space followed
+#                   by '#' ends the line, so a pattern can't contain " #")
+
+# Rebuild or write the live :5433 views and Redis.
+file: tests/test_hybrid_runner_freshness.py
+file: tests/test_transpiler_correctness.py
+file: tests/test_custom_path_regression.py
+file: tests/test_sqlonfhir_integration.py
+file: scripts/materialize_views.py
+
+# Writes to live HAPI.
+file: tests/test_drive_fhir_traffic.py
+
+# Use the conftest `redis_client` fixture or flush Redis themselves.
+file: tests/test_hybrid_runner_speed_integration.py
+file: tests/test_phase20a_speed_layer.py
+file: tests/test_redis_client.py
+file: tests/test_speed_layer_runner.py
+pattern: \bredis_client\b|flushdb|flushall
+
+marker: requires_services
+marker: requires_hapi
