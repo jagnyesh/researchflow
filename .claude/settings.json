@@ -12,7 +12,15 @@
       "Bash(rm -r*)",
       "Bash(rm -fr*)",
       "Bash(rm -Rf*)",
-      "Bash(rm -R*)"
+      "Bash(rm -R*)",
+      "Bash(git push -d*)",
+      "Bash(git push * -d*)",
+      "Bash(git push * +*)",
+      "Bash(rm -fR*)",
+      "Bash(rm -f -r*)",
+      "Bash(rm * -r*)",
+      "Bash(rm * -R*)",
+      "Bash(rm *--recursive*)"
     ],
     "deny": [
       "Read(//**/.env)",
