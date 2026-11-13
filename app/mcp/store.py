@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 
@@ -7,12 +8,34 @@ class FileContextStore:
         self.dir = Path(dirpath or "./mcp_contexts")
         self.dir.mkdir(parents=True, exist_ok=True)
 
+    def _path_for(self, request_id: str) -> Path:
+        """`<dir>/<request_id>.json`, or ValueError unless it stays directly in `dir`.
+
+        request_id arrives in the POST /mcp/context body (#223). realpath +
+        startswith is the guard shape CodeQL recognizes (ADR 0037); resolving
+        also catches a symlink that points out of the directory.
+        """
+        if (
+            not isinstance(request_id, str)
+            or request_id in ("", ".", "..")
+            or any(c in request_id for c in ("/", "\\", "\x00"))
+        ):
+            raise ValueError("Unsafe MCP context request_id")
+        base_real = os.path.realpath(self.dir)
+        full = os.path.realpath(os.path.join(base_real, f"{request_id}.json"))
+        if not full.startswith(base_real + os.sep):
+            raise ValueError("Unsafe MCP context request_id")
+        return Path(full)
+
     def save(self, request_id: str, context: dict):
-        path = self.dir / f"{request_id}.json"
+        path = self._path_for(request_id)
         path.write_text(json.dumps(context))
 
     def load(self, request_id: str) -> dict | None:
-        path = self.dir / f"{request_id}.json"
+        try:
+            path = self._path_for(request_id)
+        except ValueError:
+            return None
         if not path.exists():
             return None
         return json.loads(path.read_text())
