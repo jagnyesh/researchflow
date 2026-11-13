@@ -31,6 +31,38 @@ EMOJI_REPLACEMENTS = {
 }
 
 
+# Inclusive (start, end) code-point ranges treated as emoji. Checked in Python
+# rather than in a regex character class: CodeQL reads class ranges above
+# U+FFFF as UTF-16 surrogate pairs and flags them as overlapping (#470).
+EMOJI_RANGES = (
+    (0x1F600, 0x1F64F),  # emoticons
+    (0x1F300, 0x1F5FF),  # symbols & pictographs
+    (0x1F680, 0x1F6FF),  # transport & map symbols
+    (0x2702, 0x27B0),  # dingbats
+    (0x24C2, 0x24C2),  # circled M
+    (0x2600, 0x26FF),  # miscellaneous symbols
+    (0x2B00, 0x2BFF),  # miscellaneous symbols and arrows
+    (0x25AA, 0x25AA),  # emoji-presented geometric shapes
+    (0x25B6, 0x25B6),
+    (0x25C0, 0x25C0),
+    (0x25FB, 0x25FB),
+    (0x2934, 0x2935),
+    (0x3030, 0x3030),
+    (0x303D, 0x303D),
+    (0x3297, 0x3297),
+    (0x3299, 0x3299),
+    (0x1F004, 0x1F004),
+    (0x1F0CF, 0x1F0CF),
+    (0xFE0F, 0xFE0F),  # emoji variation selector
+    (0x1F170, 0x1F251),  # enclosed alphanumerics/ideographs; includes flags
+)
+
+
+def _is_emoji(ch: str) -> bool:
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in EMOJI_RANGES)
+
+
 def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
     """Remove emojis from a markdown file."""
     try:
@@ -41,26 +73,7 @@ def remove_emojis_from_file(file_path: Path, dry_run: bool = False):
         for emoji, replacement in EMOJI_REPLACEMENTS.items():
             content = content.replace(emoji, replacement)
 
-        # Remove any remaining emojis (Unicode emoji range)
-        # This regex matches most emojis
-        emoji_pattern = re.compile(
-            "["
-            "\U0001f600-\U0001f64f"  # emoticons
-            "\U0001f300-\U0001f5ff"  # symbols & pictographs
-            "\U0001f680-\U0001f6ff"  # transport & map symbols
-            "\U00002702-\U000027b0"  # dingbats
-            "\U000024c2"  # circled M
-            "\U00002600-\U000026ff"  # miscellaneous symbols
-            "\U00002b00-\U00002bff"  # miscellaneous symbols and arrows
-            "\U000025aa\U000025b6\U000025c0\U000025fb"  # emoji-presented geometric shapes
-            "\U00002934\U00002935\U00003030\U0000303d\U00003297\U00003299"
-            "\U0001f004\U0001f0cf"
-            "\ufe0f"  # emoji variation selector
-            "\U0001f170-\U0001f251"  # enclosed alphanumerics/ideographs; includes flags
-            "]+",
-            flags=re.UNICODE,
-        )
-        content = emoji_pattern.sub("", content)
+        content = "".join(ch for ch in content if not _is_emoji(ch))
 
         # Clean up any double spaces created by emoji removal
         content = re.sub(r"  +", " ", content)
