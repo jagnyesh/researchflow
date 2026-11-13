@@ -91,3 +91,14 @@ async def test_post_context_cannot_write_outside_the_context_directory(
 
     assert response.status_code != 200
     assert [p for p in tmp_path.rglob("*.json")] == []
+
+
+def test_save_does_not_write_through_a_symlink_inside_the_directory(tmp_path):
+    store = FileContextStore(str(tmp_path / "contexts"))
+    store.save("other", {"owner": "other"})
+    os.symlink(tmp_path / "contexts" / "other.json", tmp_path / "contexts" / "alias.json")
+
+    with pytest.raises(ValueError):
+        store.save("alias", {"owner": "attacker"})
+
+    assert store.load("other") == {"owner": "other"}

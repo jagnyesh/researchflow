@@ -158,10 +158,13 @@ class ViewDefinitionManager:
                 "letters, numbers, and underscores"
             )
         # The regex already holds; realpath + startswith is the guard shape
-        # CodeQL recognizes (ADR 0037) and also stops a symlink out of the dir.
+        # CodeQL recognizes (ADR 0037). A resolved path that differs from the
+        # joined one is a symlink, refused even within the directory so
+        # delete never removes the file it points at.
         base_real = os.path.realpath(self.view_definitions_dir)
-        full = os.path.realpath(os.path.join(base_real, f"{name}.json"))
-        if not full.startswith(base_real + os.sep):
+        joined = os.path.join(base_real, f"{name}.json")
+        full = os.path.realpath(joined)
+        if not full.startswith(base_real + os.sep) or full != joined:
             raise ValueError("ViewDefinition path leaves the ViewDefinition directory")
         return Path(full)
 

@@ -107,3 +107,28 @@ def test_download_zip_leaves_out_a_symlink_that_points_outside(storage, secret):
 
     with zipfile.ZipFile(zip_path) as zf:
         assert zf.namelist() == ["cohort.csv"]
+
+
+def test_a_symlink_to_a_prefix_sibling_request_is_refused(storage):
+    """REQ-1 must not reach REQ-10's files (the guard's `+ os.sep`)."""
+    storage.save_text_file("REQ-10", "x.csv", "REQ-10 data")
+    os.symlink(
+        storage.base_path / "REQ-10" / "x.csv", storage._get_request_directory("REQ-1") / "x.csv"
+    )
+
+    assert storage.get_file_path("REQ-1", "x.csv") is None
+
+
+def test_delete_through_a_symlinked_request_id_leaves_the_target(storage):
+    storage.save_text_file(REQ, "cohort.csv", "a\n1\n")
+    os.symlink(storage.base_path / REQ, storage.base_path / "REQ-ALIAS")
+
+    assert storage.delete_request_data("REQ-ALIAS") is False
+    assert storage.get_file_path(REQ, "cohort.csv") is not None
+
+
+def test_list_files_leaves_out_a_symlink_that_points_outside(storage, secret):
+    storage.save_text_file(REQ, "cohort.csv", "a\n1\n")
+    os.symlink(secret, storage._get_request_directory(REQ) / "link.csv")
+
+    assert [f["filename"] for f in storage.list_files(REQ)] == ["cohort.csv"]
