@@ -37,16 +37,11 @@ in your report. If the file you need is on
 High lane starts over with /grill-with-docs.
 
 Never:
-- Run, without asking the user first, anything that writes shared local state:
-  tests/test_hybrid_runner_freshness.py, tests/test_transpiler_correctness.py,
-  tests/test_custom_path_regression.py, tests/test_sqlonfhir_integration.py and
-  scripts/materialize_views.py (they rebuild or write the live :5433 views and Redis);
-  tests/test_drive_fhir_traffic.py (writes to live HAPI); anything using the conftest
-  `redis_client` fixture or flushing Redis itself, such as
-  tests/test_hybrid_runner_speed_integration.py, tests/test_phase20a_speed_layer.py,
-  tests/test_redis_client.py and tests/test_speed_layer_runner.py; and any test marked
-  `requires_services` or `requires_hapi` (pytest.ini doesn't skip them locally). Editing
-  them is fine. Pass this list to your reviewer.
+- Run, without asking the user first, anything that writes shared local state: every
+  file, marker and pattern listed in `.claude/lane-never-run.txt` (live :5433 views, Redis,
+  live HAPI; pytest.ini doesn't skip the marked tests locally). Editing them is fine.
+  Paste that file's contents into your reviewer's brief. The Stop hook
+  (`.claude/hooks/Stop.sh`) reads the same file.
 - Make a billed LLM call without the user's OK for that run. Keyless runs use
   `ANTHROPIC_API_KEY= LANGCHAIN_TRACING_V2=false LANGSMITH_TRACING=false` (an unset key gets
   refilled from .env).
