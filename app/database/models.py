@@ -297,11 +297,14 @@ class User(Base):
     # Timestamps
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    # Unused: no code writes this column, so it is always NULL. It is only
+    # echoed by the UserResponse schema in app/api/users.py.
     last_login_at = Column(DateTime, nullable=True)
 
-    # Security
+    # Security. Unused: no code reads or writes these two columns, so no failed-login
+    # counting or account lockout exists.
     failed_login_attempts = Column(Integer, default=0)
-    locked_until = Column(DateTime, nullable=True)  # Account lockout timestamp
+    locked_until = Column(DateTime, nullable=True)
 
     # Preferences
     notification_preferences = Column(JSON, default={})  # Email, SMS preferences
