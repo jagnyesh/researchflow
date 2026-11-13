@@ -12,9 +12,8 @@ class FileContextStore:
         """`<dir>/<request_id>.json`, or ValueError unless it stays directly in `dir`.
 
         request_id arrives in the POST /mcp/context body (#223). realpath +
-        startswith is the guard shape CodeQL recognizes (ADR 0037). A resolved
-        path that differs from the joined one is a symlink, refused even within
-        the directory.
+        startswith is the guard shape CodeQL recognizes (ADR 0037). A symlink
+        that resolves elsewhere is refused even within the directory.
         """
         if (
             not isinstance(request_id, str)
@@ -25,7 +24,9 @@ class FileContextStore:
         base_real = os.path.realpath(self.dir)
         joined = os.path.join(base_real, f"{request_id}.json")
         full = os.path.realpath(joined)
-        if not full.startswith(base_real + os.sep) or full != joined:
+        if not full.startswith(base_real + os.sep):
+            raise ValueError("Unsafe MCP context request_id")
+        if full != joined:
             raise ValueError("Unsafe MCP context request_id")
         return Path(full)
 

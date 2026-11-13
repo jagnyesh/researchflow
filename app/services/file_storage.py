@@ -48,8 +48,8 @@ class FileStorageService:
         """`base`/`name`, or ValueError unless it is one non-symlink entry directly in `base`.
 
         realpath + startswith is the guard shape CodeQL recognizes (ADR 0037).
-        A resolved path that differs from the joined one means `name` is a
-        symlink, refused even within `base` so delete never follows it.
+        A symlink that resolves elsewhere is refused even within `base`, so
+        delete never follows it.
         """
         if (
             not isinstance(name, str)
@@ -58,8 +58,11 @@ class FileStorageService:
         ):
             raise ValueError("Unsafe delivery path component")
         base_real = os.path.realpath(base)
-        full = os.path.realpath(os.path.join(base_real, name))
-        if not full.startswith(base_real + os.sep) or full != os.path.join(base_real, name):
+        joined = os.path.join(base_real, name)
+        full = os.path.realpath(joined)
+        if not full.startswith(base_real + os.sep):
+            raise ValueError("Unsafe delivery path component")
+        if full != joined:
             raise ValueError("Unsafe delivery path component")
         return Path(full)
 
