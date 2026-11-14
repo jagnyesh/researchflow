@@ -40,13 +40,13 @@ Full context with 10 documented cases: see [ADR 0000](docs/decisions/0000-meta-r
 
 Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules every lane inherits — a second autonomous lane sees only what is written here, not what lived in the last session. First run under this model was Sprint 6.7 (11 slices, one branch/PR each) — run serially, before the `scripts/lane.sh` harness existed; it proved continuous per-issue merge, not parallel lanes.
 
-**Per-issue continuous merge (§2, §4.1).** One branch per issue (`feat/<issue>-<slug>` or `fix/<issue>-<slug>`), one PR per issue, attested squash-merge the moment it is green — by the merge actor the Merge actor rule below defines (human for behavior-touching PRs). No parking commits on a shared feature branch until sprint end. **Branch BEFORE editing** — slipped on #100 (committed to `main`, recovered non-destructively). The sprint is a planning + retro cadence, not a merge gate.
+**Per-issue continuous merge (§2, §4.1).** One branch per issue (`feat/<issue>-<slug>` or `fix/<issue>-<slug>`), one PR per issue, attested squash-merge the moment it is green — by the merge actor the Merge actor rule below defines (human for behavior-touching PRs). No parking commits on a shared feature branch until sprint end. **Branch before editing** — slipped on #100 (committed to `main`, recovered non-destructively). The sprint is a planning + retro cadence, not a merge gate.
 
 **The pipeline (§5).** Take a finished change from "code done" to "merged" with `/validate-and-ship`: /qa → fresh-context review → conventional commit → rebase onto main → PR with Testing Evidence → SHA-bound attestation comment → watch CI → merge by class (human unless standing rule) → escalate ambiguity only. Green unit tests alone never clear the bar; wire-level confirmation is required at interface boundaries (Sprint 8.2 langchain-anthropic, Sprint 8.4 aggregator).
 
-**Delegation + review (§5.1) — non-negotiable once lanes run in parallel:**
+**Delegation + review (§5.1) — required once lanes run in parallel:**
 1. Delegate outcomes with the *why* attached, not step lists. The why lets a lane generalize and run longer without you.
-2. **Never review in the authoring session.** Reviews run in a fresh context; the pipeline enforces this. Highest-leverage rule in the stack — a session grading its own homework assumes its own intent.
+2. **Review in a fresh context, not the authoring session.** The pipeline enforces this. Highest-leverage rule in the stack — a session grading its own homework assumes its own intent.
 3. **Escalation split:** behavior-changing findings come to the human; mechanical findings (lint, naming, dead code) the lane fixes itself.
 4. Don't take back control — teach. A lane error → feedback + memory write-back, not "I'll do it myself." Taking over makes you the bottleneck across every lane at once.
 
@@ -62,51 +62,6 @@ Full method: `docs/DAILY_DEV_WORKFLOW.md` (read on demand). These are the rules 
 **Guardrail (§10).** The metric is *verified merges per week* (evidence section + green CI + fresh-context review), not raw merges. Never scale lanes past validation: pipeline red or flaky → drop to one lane, the one fixing `main`, until green. No new lane launches while ≥2 PRs sit awaiting your decision, except that fix lane (`docs/DAILY_DEV_WORKFLOW.md` §3: under strict protection a red required check keeps every PR from merging, so the debt can't drain until `main` is fixed). `scripts/dials.sh` computes the measurable cycle-time sub-intervals (open→green pipeline health, green→merge) per merge day; green→merge restarts on every push, so under strict protection it no longer measures how long a PR waited on you — `docs/DAILY_DEV_WORKFLOW.md` §3 has that measure.
 
 **Merge actor (§1, §5; added 2026-07-19).** On green CI the pipeline reports and waits — a human merges every behavior-touching PR. Standing-rule exception: docs-only PRs (`docs:` prefix AND only `docs/**` or root-level `*.md` paths — a `.md` under `app/` or `tests/` is behavior-touching) and harness-internal PRs (only `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) may self-merge, with the squash commit carrying a visible `Merged-By: pipeline (standing-rule: <class>)` trailer. Self-amendment carve-out: a PR changing the merge policy itself (the validate-and-ship skill, this rule, the workflow doc's merge sections) is always human-merge. Either class merges only against a current SHA-bound attestation: a PR comment recording the review verdict and the exact reviewed commit SHA, equal to `headRefOid` at merge time and enforced with `gh pr merge --match-head-commit`. A post-attestation push voids the attestation — fresh review + fresh comment, never a silent merge — except a merge from a commit on `origin/main` whose resulting tree exactly equals `git merge-tree` of the last real (SHIP) review's commit and that main commit (no file changed on both sides), which carries the attestation forward in a new comment that is re-checked before merge (validate-and-ship Steps 7.4 and 8; added 2026-11-07, #361). The attestation is also a commit status named `attestation`, set on each PR's head by `.github/workflows/attestation.yml`. Once it is a required check on `main`, GitHub refuses any merge without a current attestation, and, once the owner allows auto-merge, standing-rule PRs merge through `gh pr merge --auto` (validate-and-ship Steps 7.6 and 8; added 2026-11-13, #466). Precedent: the 2026-07-19 last-10-PR audit found 0/10 PRs carried an independent review artifact and the merge actor was undefined (#128).
-
-## Quick start
-
-```bash
-# Setup (one-time)
-python3 -m venv .venv && source .venv/bin/activate
-uv pip sync config/requirements.lock
-cp config/.env.example .env  # add ANTHROPIC_API_KEY, REDIS_URL
-pre-commit install
-
-# Daily loop
-redis-server &                                                 # speed layer
-python scripts/materialize_views.py                            # batch layer (one-time/nightly)
-streamlit run app/web_ui/research_notebook.py --server.port 8501   # exploratory UI
-streamlit run app/web_ui/researcher_portal.py --server.port 8502   # formal request UI
-streamlit run app/web_ui/admin_dashboard.py --server.port 8503     # admin
-make run                                                       # API at :8000
-
-# Tests + security
-pytest -xvs
-pre-commit run --all-files
-bandit -r app/
-```
-
-Docker: `make docker-up` (postgres + mock FHIR + app).
-
-## Service ports
-
-| Service | Port | File |
-|---|---|---|
-| Exploratory Analytics (chat) | 8501 | `app/web_ui/research_notebook.py` |
-| Formal Request Portal (form) | 8502 | `app/web_ui/researcher_portal.py` |
-| Admin Dashboard | 8503 | `app/web_ui/admin_dashboard.py` |
-| API | 8000 | `app/main.py` |
-| Mock FHIR | 8080 | docker-compose |
-| Postgres | 5432 | docker-compose |
-
-## Key directories
-
-- `app/agents/` — specialized agents (Requirements, Phenotype, Calendar, Extraction, QA, Delivery), all `BaseAgent` subclasses
-- `app/langchain_orchestrator/` — LangGraph workflow, the only orchestrator
-- `app/sql_on_fhir/runner/` — Lambda Architecture: `materialized_view_runner.py` (batch) + `speed_layer_runner.py` (Redis) + `hybrid_runner.py` (serving)
-- `app/database/models.py` — ORM tables: request lifecycle (ResearchRequest → DataDelivery), Approval, User, AuditLog, MaterializedViewMetadata
-- `app/security/` — JWT auth, RBAC, rate limiting, audit logging
-- `tests/` — pytest with `pytest-asyncio`; subdirs `e2e/`, `integration/`, `security/`
 
 ## Skill routing
 
