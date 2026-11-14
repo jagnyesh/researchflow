@@ -1,0 +1,24 @@
+{
+ "comments": [
+  {
+   "author": {
+    "login": "jagnyesh"
+   },
+   "authorAssociation": "OWNER",
+   "body": "## Review attestation\n- Verdict: SHIP\n- Reviewed-Commit: bba4918f0ddc59cd7688d36139bb814b53b072e0\n- Reviewer: fresh-context subagent (Step 2), 2 passes; reviewed ad8c78c, rebased onto main 9de9964 before pushing (no file this PR changes was touched by main)\n- Findings: finding 1 (carry-forward with a BLOCK verdict gave success) \u2192 fixed\n- Findings: finding 2 (job id collided with the required status context; comment run could cancel the head's run) \u2192 fixed, verified live\n- Findings: finding 3 (empty head from gh produced a malformed status line) \u2192 fixed\n- Findings: finding 4 (CLAUDE.md overstated the --auto path) \u2192 fixed\n- Findings: finding 5 (status is a cached decision) \u2192 fixed, sentence added to Step 7.6\n- Findings: finding 6 (first-match on duplicate keys, owner-authored only) \u2192 accepted\n- Findings: finding 7 (no tests for scripts/attestation.sh) \u2192 routed to a follow-up, tests/ was another lane's\n- Findings: finding 8 (preflight.sh, SessionStart.sh, dials.sh now count attestation as part of green) \u2192 routed, noted in the PR\n- Findings: finding 9 (Step 8 until loop has no timeout) \u2192 accepted\n- Findings: finding 10 (per-event concurrency groups can race; recovery documented in Step 7.6) \u2192 accepted\n- Findings: finding 11 (issue_comment runs attach to main's sha and show in preflight.sh's pipeline check) \u2192 routed to a follow-up\n- Findings: finding 12 (non-40-hex head rejected by the API) \u2192 accepted\n",
+   "includesCreatedEdit": false,
+   "url": "https://github.com/jagnyesh/researchflow/pull/484#issuecomment-6867379136"
+  },
+  {
+   "author": {
+    "login": "jagnyesh"
+   },
+   "authorAssociation": "OWNER",
+   "body": "## Review attestation\n- Verdict: SHIP (carried forward)\n- Reviewed-Commit: 77c4864733b327581754f0c18a2547f717fddf2c\n- Carried-From: bba4918f0ddc59cd7688d36139bb814b53b072e0\n- Basis: merge from main e97e7bc21e130f898d7df4c73cc9bf4cd45f79b0; tree 566c698de4dced76aea3987db0284cedd85fa045 equals merge-tree(Carried-From, main)\n- Reviewer: no new review; carried from the root attestation\n- Findings: as in the root attestation\n",
+   "includesCreatedEdit": false,
+   "url": "https://github.com/jagnyesh/researchflow/pull/484#issuecomment-6869601033"
+  }
+ ],
+ "headRefOid": "77c4864733b327581754f0c18a2547f717fddf2c",
+ "url": "https://github.com/jagnyesh/researchflow/pull/484"
+}
