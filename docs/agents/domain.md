@@ -24,7 +24,7 @@ Single-context. One `CONTEXT.md` at the root. One ADR log under `docs/decisions/
 
 ```
 /
-├── CLAUDE.md                  ← bootstraps + imports CONTEXT, the ADR index, BACKLOG
+├── CLAUDE.md                  ← bootstraps + imports CONTEXT and architecture.rules; names the ADR index and BACKLOG as on-demand reads
 ├── CONTEXT.md                 ← living state, domain vocabulary
 ├── BACKLOG.md                 ← forward plan + follow-ups
 ├── docs/decisions/            ← append-only ADR log, one file per decision
