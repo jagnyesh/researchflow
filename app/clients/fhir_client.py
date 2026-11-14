@@ -11,8 +11,8 @@ Provides HTTP client functionality for:
 import os
 import logging
 import re
-from typing import Dict, List, Any, Optional
-from urllib.parse import urlsplit
+from typing import Dict, List, Any, Optional, Tuple
+from urllib.parse import unquote, urlsplit
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from app.schemas._errors import log_internal_error
@@ -56,6 +56,21 @@ def _log_target(base_url: str) -> str:
     return f"{parsed.scheme}://{host}{port_suffix}"
 
 
+def _split_userinfo(url: str) -> Tuple[str, Optional[httpx.BasicAuth]]:
+    """Split the userinfo off `url`, returning (URL without userinfo, BasicAuth or None).
+
+    Splits at the last "@" rather than trusting urlsplit: an unescaped "/" or "?"
+    in a mistyped password would otherwise leave part of it in the path or query.
+    FHIR base URLs carry no "@" of their own.
+    """
+    scheme, sep, rest = url.partition("://")
+    if not sep or "@" not in rest:
+        return url, None
+    userinfo, _, hostpart = rest.rpartition("@")
+    user, _, password = userinfo.partition(":")
+    return f"{scheme}://{hostpart}", httpx.BasicAuth(unquote(user), unquote(password))
+
+
 class FHIRClient:
     """
     HTTP client for FHIR server communication
@@ -76,14 +91,17 @@ class FHIRClient:
             base_url: FHIR server base URL (e.g., http://localhost:8081/fhir)
                      If not provided, uses FHIR_SERVER_URL environment variable
         """
-        self.base_url = base_url or os.getenv("FHIR_SERVER_URL", "http://localhost:8081/fhir")
+        raw_url = base_url or os.getenv("FHIR_SERVER_URL", "http://localhost:8081/fhir")
 
-        # Remove trailing slash if present
-        self.base_url = self.base_url.rstrip("/")
+        # Userinfo is moved to `auth=` so no URL httpx sees carries credentials:
+        # httpx logs the full request URL at INFO and quotes it in HTTPStatusError (#445).
+        self.base_url, auth = _split_userinfo(raw_url.rstrip("/"))
 
         # Initialize HTTP client with connection pooling
         self.client = httpx.AsyncClient(
-            timeout=30.0, limits=httpx.Limits(max_keepalive_connections=5, max_connections=10)
+            timeout=30.0,
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            auth=auth,
         )
 
         target = _log_target(self.base_url)
