@@ -157,7 +157,18 @@ class ViewDefinitionManager:
                 "ViewDefinition name must start with a letter and contain only "
                 "letters, numbers, and underscores"
             )
-        return self.view_definitions_dir / f"{name}.json"
+        # The regex already holds; realpath + startswith is the guard shape
+        # CodeQL recognizes (ADR 0037). A symlink that resolves elsewhere is
+        # refused even within the directory, so delete never removes the file
+        # it points at.
+        base_real = os.path.realpath(self.view_definitions_dir)
+        joined = os.path.join(base_real, f"{name}.json")
+        full = os.path.realpath(joined)
+        if not full.startswith(base_real + os.sep):
+            raise ValueError("ViewDefinition path leaves the ViewDefinition directory")
+        if full != joined:
+            raise ValueError("ViewDefinition path leaves the ViewDefinition directory")
+        return Path(full)
 
     def delete(self, name: str) -> bool:
         """

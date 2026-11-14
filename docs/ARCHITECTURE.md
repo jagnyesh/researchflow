@@ -135,9 +135,7 @@ Several components read HAPI FHIR's storage tables directly, not the FHIR REST A
 - **Audit logging.** A default-deny classifier treats every unlisted route as a PHI route. A PHI route returns 401 without a valid token, and 503 when the audit queue cannot record the request.
 - **TLS.** With `ENVIRONMENT=production`, the API redirects HTTP with a 308 and sends HSTS for one year with `includeSubDomains`.
 - **Input validation.** Request schemas extend `PHIInputModel`, and a 422 response omits the submitted input.
-- **Authentication.** A human user gets a JWT from `POST /auth/login`. Routes that change materialized views or ViewDefinitions require the `admin` role. Two routes are weaker than the rest.
-  - `POST /a2a/token` issues a service token to any caller whose `client_id` equals its `client_secret`, a demo check ([#233](https://github.com/jagnyesh/researchflow/issues/233)).
-  - `POST /sql_query` runs a caller's `SELECT` on HAPI Postgres for any signed-in user, with no validator ([#234](https://github.com/jagnyesh/researchflow/issues/234)).
+- **Authentication.** A human user gets a JWT from `POST /auth/login`. Routes that change materialized views or ViewDefinitions require the `admin` role. One route is weaker than the rest: `POST /a2a/token` issues a service token to any caller whose `client_id` equals its `client_secret`, a demo check ([#233](https://github.com/jagnyesh/researchflow/issues/233)).
 
 `HIPAA_POSTURE.md` does not yet cover the later security work.
 

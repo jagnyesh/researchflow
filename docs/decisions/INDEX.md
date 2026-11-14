@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0037** — [CodeQL alerts under app/ are cleared in code, and /sql_query is removed (#468)](0037-codeql-alerts-cleared-in-code.md) (2026-11-13, accepted)
 - **0036** — [Every formal criterion concept becomes SQL or the request fails (#310)](0036-formal-criteria-build-or-fail.md) (2026-11-11, accepted; amends 0035 for unparseable ages)
 - **0035** — [Formal cohorts with an age criterion count living patients only (#403)](0035-formal-age-cohorts-living-only.md) (2026-11-09, accepted)
 - **0034** — [Compose store URLs match what the code reads, and the exploratory fallback is development-only (#312)](0034-compose-store-urls-match-code.md) (2026-11-07, accepted; amends 0028's `EXPLORATORY_DB_URL` guard)
@@ -66,6 +67,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0030 — ViewDefinition writes are admin-only](0030-viewdefinition-write-admin-only.md)
 - [0032 — Audit COMPLETED after the response body; post-event no longer 503s](0032-audit-completed-after-body.md)
 - [0034 — Compose store URLs match the code; exploratory fallback is development-only (amends 0028)](0034-compose-store-urls-match-code.md)
+- [0037 — CodeQL alerts under app/ cleared in code; /sql_query removed](0037-codeql-alerts-cleared-in-code.md)
 - [0008 — Durable audit pipeline via Redis queue](0008-sprint-6-1-audit-pipeline-redis-queue.md)
 - [0009 — Split human/agent auth, not unified JWT](0009-sprint-6-1-split-human-agent-auth.md)
 - [0010 — Documentation reorg (CLAUDE.md split + mattpocock skills)](0010-sprint-6-1-documentation-reorg.md)

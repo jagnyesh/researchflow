@@ -1,7 +1,7 @@
 """
 End-to-end test for Phase 2.2 Issue #1 (tracer bullet).
 
-Hits POST /sql_query through the real FastAPI app, with the real audit Redis
+Hits GET /research/ through the real FastAPI app, with the real audit Redis
 instance (`redis-audit` docker service) and Postgres backing audit_logs.
 Skipped automatically if the audit Redis port (6380) is not reachable —
 run after `docker-compose up redis-audit db`.
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.mark.e2e
 @pytest.mark.asyncio
-async def test_sql_query_produces_audit_row(monkeypatch):
+async def test_phi_request_produces_audit_row(monkeypatch):
     monkeypatch.setenv("REDIS_AUDIT_URL", "redis://localhost:6380/0")
     monkeypatch.setenv("ENABLE_ORCHESTRATOR", "false")
     # Explicit override: .env points DATABASE_URL at the docker Postgres which
@@ -47,15 +47,7 @@ async def test_sql_query_produces_audit_row(monkeypatch):
     from app.main import app, lifespan
     from app.database import get_db_session
     from app.database.models import AuditLog
-    from app.adapters.sql_on_fhir import SQLonFHIRAdapter
     from app.security.auth import create_access_token
-
-    async def stub_execute(self, sql):
-        return [{"col": "value"}]
-
-    # monkeypatch, not assignment: CI runs both audit e2e files in one process
-    # (#172), and a bare class-attribute swap would leak the stub past this test.
-    monkeypatch.setattr(SQLonFHIRAdapter, "execute_sql", stub_execute)
 
     token = create_access_token(
         {"sub": "e2e@example.com", "user_id": "e2e-user", "role": "researcher"},
@@ -70,9 +62,8 @@ async def test_sql_query_produces_audit_row(monkeypatch):
 
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/sql_query",
-                json={"sql": "SELECT 1"},
+            response = await client.get(
+                "/research/",
                 headers={"authorization": f"Bearer {token}"},
             )
 

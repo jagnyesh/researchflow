@@ -199,3 +199,64 @@ async def test_overlong_name_is_404_not_500(fake_audit_redis, view_dir, research
         )
 
     assert resp.status_code == 404
+
+
+def _symlinked_manager(tmp_path):
+    """views/linked.json is a symlink to a valid definition outside the directory (#468)."""
+    from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
+
+    views = tmp_path / "views"
+    target = _plant_outside(views)
+    os.symlink(target, views / "linked.json")
+    return ViewDefinitionManager(view_definitions_dir=str(views)), target
+
+
+def test_load_refuses_a_symlink_that_points_outside(tmp_path):
+    manager, _ = _symlinked_manager(tmp_path)
+
+    with pytest.raises(FileNotFoundError):
+        manager.load("linked")
+
+
+def test_save_does_not_write_through_a_symlink_that_points_outside(tmp_path):
+    manager, target = _symlinked_manager(tmp_path)
+    before = target.read_text()
+
+    with pytest.raises(ValueError):
+        manager.save({**VALID_VIEW, "name": "linked"})
+
+    assert target.read_text() == before
+
+
+def test_delete_of_a_symlinked_name_leaves_the_target(tmp_path):
+    """A symlink resolved before delete would remove the definition it points at (#468)."""
+    import json
+
+    from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
+
+    views = tmp_path / "views"
+    views.mkdir()
+    real = views / "real_view.json"
+    real.write_text(json.dumps({**VALID_VIEW, "name": "real_view"}))
+    os.symlink(real, views / "alias_view.json")
+    manager = ViewDefinitionManager(view_definitions_dir=str(views))
+
+    assert manager.delete("alias_view") is False
+    assert real.exists()
+
+
+def test_a_symlink_to_a_prefix_sibling_directory_is_refused(tmp_path):
+    """views/x.json -> views2/x.json must not load (the guard's `+ os.sep`)."""
+    import json
+
+    from app.sql_on_fhir.view_definition_manager import ViewDefinitionManager
+
+    views, sibling = tmp_path / "views", tmp_path / "views2"
+    views.mkdir()
+    sibling.mkdir()
+    (sibling / "x.json").write_text(json.dumps({**VALID_VIEW, "name": "x"}))
+    os.symlink(sibling / "x.json", views / "x.json")
+    manager = ViewDefinitionManager(view_definitions_dir=str(views))
+
+    with pytest.raises(FileNotFoundError):
+        manager.load("x")

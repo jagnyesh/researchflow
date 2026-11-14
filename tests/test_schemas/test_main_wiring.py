@@ -40,10 +40,10 @@ async def test_real_app_422_response_strips_input(fake_audit_redis):
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # /sql_query expects {sql: str}; send wrong shape with a "secret" value
+        # Wrong-typed fields plus an extra key carrying a "secret" value
         response = await client.post(
-            "/sql_query",
-            json={"sql": 123, "leaked_value": "PHI-marker-that-must-not-leak"},
+            "/approvals/scope-change",
+            json={"request_id": 123, "leaked_value": "PHI-marker-that-must-not-leak"},
             headers={"authorization": f"Bearer {token}"},
         )
 

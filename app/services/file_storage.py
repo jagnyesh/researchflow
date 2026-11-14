@@ -43,9 +43,32 @@ class FileStorageService:
             log_internal_error(logger, "Failed to create delivery directory", e)
             raise
 
+    @staticmethod
+    def _contained(base: Path, name: str) -> Path:
+        """`base`/`name`, or ValueError unless it is one non-symlink entry directly in `base`.
+
+        realpath + startswith is the guard shape CodeQL recognizes (ADR 0037).
+        A symlink that resolves elsewhere is refused even within `base`, so
+        delete never follows it.
+        """
+        if (
+            not isinstance(name, str)
+            or name in ("", ".", "..")
+            or any(c in name for c in ("/", "\\", "\x00"))
+        ):
+            raise ValueError("Unsafe delivery path component")
+        base_real = os.path.realpath(base)
+        joined = os.path.join(base_real, name)
+        full = os.path.realpath(joined)
+        if not full.startswith(base_real + os.sep):
+            raise ValueError("Unsafe delivery path component")
+        if full != joined:
+            raise ValueError("Unsafe delivery path component")
+        return Path(full)
+
     def _get_request_directory(self, request_id: str) -> Path:
         """Get directory path for a specific request"""
-        request_dir = self.base_path / request_id
+        request_dir = self._contained(self.base_path, request_id)
         request_dir.mkdir(parents=True, exist_ok=True)
         return request_dir
 
@@ -70,7 +93,7 @@ class FileStorageService:
         """
         try:
             request_dir = self._get_request_directory(request_id)
-            file_path = request_dir / filename
+            file_path = self._contained(request_dir, filename)
 
             # Save CSV with UTF-8 encoding
             dataframe.to_csv(file_path, index=include_index, encoding="utf-8")
@@ -100,7 +123,7 @@ class FileStorageService:
         """
         try:
             request_dir = self._get_request_directory(request_id)
-            file_path = request_dir / filename
+            file_path = self._contained(request_dir, filename)
 
             file_path.write_text(content, encoding="utf-8")
 
@@ -189,7 +212,7 @@ class FileStorageService:
 
             files = []
             for file_path in request_dir.iterdir():
-                if file_path.is_file():
+                if file_path.is_file() and not file_path.is_symlink():
                     stat = file_path.stat()
                     files.append(
                         {
@@ -220,7 +243,10 @@ class FileStorageService:
         Returns:
             Path object if file exists, None otherwise
         """
-        file_path = self._get_request_directory(request_id) / filename
+        try:
+            file_path = self._contained(self._get_request_directory(request_id), filename)
+        except ValueError:
+            return None
 
         if file_path.exists() and file_path.is_file():
             return file_path
@@ -249,12 +275,16 @@ class FileStorageService:
             if zip_filename is None:
                 zip_filename = f"{request_id}_data_package.zip"
 
-            zip_path = request_dir / zip_filename
+            zip_path = self._contained(request_dir, zip_filename)
 
             # Create ZIP archive
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
                 for file_path in request_dir.iterdir():
-                    if file_path.is_file() and file_path.name != zip_filename:
+                    if (
+                        file_path.is_file()
+                        and not file_path.is_symlink()
+                        and file_path.name != zip_filename
+                    ):
                         # Add file to ZIP with just the filename (no directory structure)
                         zipf.write(file_path, arcname=file_path.name)
 
