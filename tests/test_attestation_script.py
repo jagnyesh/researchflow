@@ -526,3 +526,41 @@ def test_status_head_moving_during_check_exits_3(fake_gh, tmp_path):
     assert r.stdout == ""
     assert "head moved" in r.stderr
     shutil.rmtree(real.parent, ignore_errors=True)
+
+
+def test_status_carry_forward_uses_newest_non_carry_root(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    older_block = with_verdict(copy.deepcopy(pr["comments"][0]), "BLOCK")
+    pr["comments"].insert(0, older_block)
+    state, _, _ = parse(status(fake_gh, pr, cwd=repo.work))
+    assert state == "success"
+
+
+def test_status_carry_forward_with_ship_with_fixes_root_fails(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    with_verdict(pr["comments"][0], "SHIP-WITH-FIXES")
+    state, _, desc = parse(status(fake_gh, pr, cwd=repo.work))
+    assert state == "failure"
+    assert "root" in desc
+
+
+def test_status_quoted_heading_mid_comment_is_not_an_attestation(fake_gh):
+    pr = load("pr480.json")
+    head = load("pr484.json")["headRefOid"]
+    owner = load("pr484.json")["comments"][0]
+    quoted = copy.deepcopy(owner)
+    quoted["body"] = "Pasting the last one for reference:\n" + owner["body"].replace(
+        PR484_SHIP_COMMIT, head
+    )
+    pr["comments"].append(quoted)
+    state, _, desc = parse(status(fake_gh, pr, head=head))
+    assert state == "failure"
+    assert "No attestation" in desc
+
+
+def test_carry_without_root_prints_usage(fake_gh):
+    fake_gh.serve(load("pr484.json"))
+    r = fake_gh.run("carry", "1")
+    assert r.returncode == 2
