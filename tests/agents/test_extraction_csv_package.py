@@ -116,11 +116,13 @@ async def test_a_failed_write_fails_extraction_and_removes_what_it_wrote(monkeyp
     # after the earlier CSVs are on disk.
     blocker = f"{FORM_DATA_ELEMENTS[-1]}.csv"
     (delivery_dir / REQUEST_ID / blocker).mkdir(parents=True)
+    # Cleanup removes only what this call started writing.
+    (delivery_dir / REQUEST_ID / "unrelated.txt").write_text("kept")
 
     with pytest.raises(OSError):
         await agent.execute_task("extract_data", _context(list(FORM_DATA_ELEMENTS)))
 
-    assert _written(delivery_dir) == {blocker}
+    assert _written(delivery_dir) == {blocker, "unrelated.txt"}
 
 
 class _Unwritable:
@@ -143,6 +145,39 @@ async def test_a_write_that_fails_midway_leaves_no_partial_csv(monkeypatch, deli
     with pytest.raises(RuntimeError):
         await agent.execute_task("extract_data", _context(list(FORM_DATA_ELEMENTS)))
 
+    assert _written(delivery_dir) == set()
+
+
+class _UnwritableSecondTime:
+    """Writes once, into its element's CSV, then fails inside all_data_combined.csv."""
+
+    def __init__(self):
+        self.writes = 0
+
+    def __str__(self):
+        self.writes += 1
+        if self.writes > 1:
+            raise RuntimeError("synthetic write failure")
+        return "synthetic"
+
+
+@pytest.mark.asyncio
+async def test_a_combined_file_that_fails_midway_leaves_no_partial_csv(monkeypatch, delivery_dir):
+    agent = _agent(monkeypatch, [])
+    value = _UnwritableSecondTime()
+
+    async def element(data_element, patient_ids, time_period):
+        row = _row(data_element)
+        if data_element == FORM_DATA_ELEMENTS[-1]:
+            return [row, {**row, "value_string": value}]
+        return [row]
+
+    monkeypatch.setattr(agent, "_extract_data_element", element)
+
+    with pytest.raises(RuntimeError):
+        await agent.execute_task("extract_data", _context(list(FORM_DATA_ELEMENTS)))
+
+    assert value.writes == 2, "vacuous: the failure must come from the combined file"
     assert _written(delivery_dir) == set()
 
 
