@@ -387,6 +387,19 @@ def test_carry_rewritten_branch_fails_lineage_ok(fake_gh, repo):
     assert "main-ok" in r.stdout.splitlines()
 
 
+def test_carry_merge_with_extra_edit_fails_tree_ok(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    # The merge commit carries a change the review never saw.
+    (Path(repo.work) / "smuggled.txt").write_text("x\n")
+    git(repo.work, "add", "smuggled.txt")
+    git(repo.work, "commit", "-q", "--amend", "--no-edit")
+    evil = git(repo.work, "rev-parse", "HEAD")
+    publish(repo, evil, m)
+    r = run_carry(fake_gh, repo, old, evil)
+    assert r.returncode == 1
+    assert r.stdout.splitlines() == ["main-ok", "lineage-ok"]
+
+
 def test_carry_head_not_a_merge_prints_not_a_merge(fake_gh, repo):
     old, m, new = carry_setup(repo)
     git(repo.work, "checkout", "-q", old)
