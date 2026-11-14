@@ -298,9 +298,14 @@ de-identified according to the specified PHI level."""
                     if source.exists():
                         dest_dir = self.file_storage._get_request_directory(request_id)
                         dest = dest_dir / source.name
-                        shutil.copy2(source, dest)
+                        # Extraction writes through the same base path, so the
+                        # file is usually already in place (#479).
+                        if dest.exists() and source.samefile(dest):
+                            logger.info(f"[{self.agent_id}] ✓ {source.name} already in {dest_dir}")
+                        else:
+                            shutil.copy2(source, dest)
+                            logger.info(f"[{self.agent_id}] ✓ Copied {source.name} to {dest}")
                         csv_filenames.append(source.name)  # Track filename
-                        logger.info(f"[{self.agent_id}] ✓ Copied {source.name} to {dest}")
                     else:
                         logger.warning(
                             f"[{self.agent_id}] ⚠️ CSV file not found at {csv_path}, skipping"
