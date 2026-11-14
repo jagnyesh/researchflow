@@ -250,8 +250,6 @@ class Repo:
         return sorted(self.state.glob("snapshot-*.txt"))
 
     def run(self, github, *args, **env):
-        if self.snapshots():
-            time.sleep(1.05)  # snapshot names carry a one-second timestamp
         (self.tmp / "data.json").write_text(json.dumps(github))
         return subprocess.run(
             ["bash", str(CHECK), *args],
@@ -343,6 +341,9 @@ def test_an_unchanged_run_says_no_change(repo):
 
 def test_a_changed_run_prints_only_what_changed(repo):
     repo.run(_github(repo.head()))
+    # The user's git config must not change the report's shape.
+    _git(repo.work, "config", "log.decorate", "short")
+    _git(repo.work, "config", "core.abbrev", "12")
     before = repo.head()
     repo.commit({"app/security/auth.py": "x = 1\n"})
     after = repo.head()
@@ -367,8 +368,9 @@ def test_a_changed_run_prints_only_what_changed(repo):
         "now: dependabot.high=1",
         "now: dependabot.low=1",
     }
+    short = _git(repo.author, "log", "-1", "--format=%h", "--abbrev=12")
     expected = (
-        f"1 commits, {before[:7]}..{after[:7]}:\n{after[:7]} change app/security/auth.py\n"
+        f"1 commits, {before[:7]}..{after[:7]}:\n{short} change app/security/auth.py\n"
         "1 files changed:\napp/security/auth.py\n== deep audit\n"
     )
     assert expected in result.stdout
@@ -546,8 +548,12 @@ def test_a_run_in_progress_is_passed_over_for_the_latest_completed_one(repo):
     result = repo.run(github)
 
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"# scan.scheduled.run=11 {_iso(6)[:10]} abc1234 (6d ago)" in result.stdout.splitlines()
-    assert f"# scan.main.run=22 {repo.head()[:7]}" in result.stdout.splitlines()
+    lines = result.stdout.splitlines()
+    assert any(
+        re.fullmatch(r"# scan\.scheduled\.run=11 \d{4}-\d\d-\d\d abc1234 \(6d ago\)", l)
+        for l in lines
+    )
+    assert f"# scan.main.run=22 {repo.head()[:7]}" in lines
 
 
 @pytest.mark.parametrize(
@@ -580,7 +586,7 @@ def test_a_scan_on_an_older_commit_is_noted(repo):
     )
 
 
-def test_a_rewritten_main_is_reported(repo):
+def test_a_commit_missing_from_the_clone_is_unknown_not_rewritten(repo):
     repo.state.mkdir()
     (repo.state / "snapshot-20200101T000000Z-0000000.txt").write_text(f"# main={'0' * 40}\n")
 
@@ -588,9 +594,92 @@ def test_a_rewritten_main_is_reported(repo):
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert (
-        "REWRITTEN: the previous snapshot's commit 0000000 is not an ancestor of main"
+        "UNKNOWN: the previous snapshot's commit 0000000 is not in this clone, so main cannot be compared"
         in result.stdout.splitlines()
     )
+    assert "REWRITTEN" not in result.stdout
+
+
+def test_a_force_pushed_main_is_reported_as_rewritten(repo):
+    repo.commit({"first.txt": "x\n"})
+    github = _github(repo.head())
+    repo.run(github)
+    old = repo.head()
+    _git(repo.author, "reset", "-q", "--hard", "HEAD~1")
+    (repo.author / "other.txt").write_text("y\n")
+    _git(repo.author, "add", "-A")
+    _git(repo.author, "commit", "-q", "-m", "replacement")
+    _git(repo.author, "push", "-q", "-f", "origin", "HEAD:main")
+    assert old != repo.head()
+
+    result = repo.run(github)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (
+        f"REWRITTEN: the previous snapshot's commit {old[:7]} is not an ancestor of main"
+        in result.stdout.splitlines()
+    )
+
+
+def test_a_commit_and_its_revert_print_no_blank_line(repo):
+    github = _github(repo.head())
+    repo.run(github)
+    repo.commit({"x.txt": "1\n"})
+    repo.commit({"x.txt": None})
+
+    out = repo.run(github).stdout
+
+    assert "2 commits, " in out
+    assert "0 files changed:\n== deep audit\n" in out
+
+
+def test_a_commit_list_over_the_cap_is_cut_and_the_rest_counted(repo):
+    github = _github(repo.head())
+    repo.run(github)
+    for i in range(5):
+        repo.commit({f"c{i}.txt": "x\n"})
+
+    out = repo.run(github, SECURITY_CHECK_CAP="3").stdout
+
+    listed = out.split(" commits, ")[1].split("\n", 1)[1].split("5 files changed:")[0].splitlines()
+    assert listed[:3] == [
+        f"{_git(repo.author, 'log', '-1', '--format=%h', f'HEAD~{i}')} change c{4 - i}.txt"
+        for i in range(3)
+    ]
+    assert listed[3:] == ["... and 2 more commits"]
+
+
+def test_lists_exactly_at_the_cap_are_not_cut(repo):
+    github = _github(repo.head())
+    repo.run(github)
+    for i in range(3):
+        repo.commit({f"f{i}.txt": "x\n"})
+
+    out = repo.run(github, SECURITY_CHECK_CAP="3").stdout
+
+    assert "3 commits, " in out
+    assert "3 files changed:" in out
+    assert "more commits" not in out
+    assert "more files" not in out
+
+
+def test_a_missing_hooks_directory_is_recorded_as_none(repo):
+    repo.commit({HOOK: None})
+
+    result = repo.run(_github(repo.head()))
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "harness.hooks_tree=none" in result.stdout.splitlines()
+
+
+def test_the_protection_digest_ignores_array_order(repo):
+    github = _github(repo.head())
+    repo.run(github)
+    checks = github["protection"]["required_status_checks"]
+    checks["contexts"].reverse()
+    checks["checks"].reverse()
+
+    assert _changed(repo.run(github)) == ["no change"]
 
 
 def test_a_long_file_list_is_cut_and_the_rest_counted(repo):
