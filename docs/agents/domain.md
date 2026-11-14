@@ -14,7 +14,7 @@ How the engineering skills should consume this repo's domain documentation when 
 
 The Matt Pocock skills' default convention puts per-decision ADR files under `docs/adr/`. ResearchFlow keeps them under `docs/decisions/` instead, one file per decision, numbered in append order. The filename pattern, the YAML frontmatter and the append-only rule (a correction is a new ADR that names what it corrects) are in `INDEX.md`'s Conventions section.
 
-CLAUDE.md `@`-imports `docs/decisions/INDEX.md`, so the index auto-loads every session; read individual ADRs on demand. The log used to be a single root `DECISIONS.md`; #90 deleted its last stub on 2026-05-24. Older docs and code comments still cite that file by name; read those mentions as the matching file under `docs/decisions/`.
+CLAUDE.md does not import `docs/decisions/INDEX.md` (#451); it tells a session to read the index's "By topic" section before changing behavior in an area, then the ADRs listed there. The log used to be a single root `DECISIONS.md`; #90 deleted its last stub on 2026-05-24. Older docs and code comments still cite that file by name; read those mentions as the matching file under `docs/decisions/`.
 
 When a skill says "read ADRs that touch this area," start from the index's "By topic" section, then grep `docs/decisions/` for the area's domain terms (e.g. `LangGraph`, `HybridRunner`, `cost_telemetry`, `audit middleware`).
 
@@ -24,7 +24,7 @@ Single-context. One `CONTEXT.md` at the root. One ADR log under `docs/decisions/
 
 ```
 /
-├── CLAUDE.md                  ← bootstraps + imports CONTEXT, the ADR index, BACKLOG
+├── CLAUDE.md                  ← bootstraps + imports CONTEXT and architecture.rules; names the ADR index and BACKLOG as on-demand reads
 ├── CONTEXT.md                 ← living state, domain vocabulary
 ├── BACKLOG.md                 ← forward plan + follow-ups
 ├── docs/decisions/            ← append-only ADR log, one file per decision
