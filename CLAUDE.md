@@ -5,9 +5,12 @@ ResearchFlow is a proof of concept for LLM-assisted clinical research data reque
 ## Living state — read these for current context
 
 - @CONTEXT.md — what is true *right now* (active sprint, in-progress work, blockers)
-- @docs/decisions/INDEX.md — append-only architecture decision log; one file per ADR under `docs/decisions/`
-- @BACKLOG.md — forward plan (upcoming sprints, decision gates)
 - @.claude/architecture.rules — naming conventions, agent patterns, no-go zones
+
+Read these on demand (not auto-loaded, to keep every session's context small):
+
+- `docs/decisions/INDEX.md` — append-only architecture decision log; one file per ADR under `docs/decisions/`. Before you change behavior in an area, read the index's "By topic" section, then the ADRs listed there for that area.
+- `BACKLOG.md` — forward plan (upcoming sprints, decision gates). Read it when planning or choosing what to work on next.
 
 Historical sprint reports live in `docs/sprints/archive/`. Don't load them unless explicitly asked.
 
