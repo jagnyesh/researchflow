@@ -288,15 +288,9 @@ app/schemas/
 
 `audit_logs` remains **metadata only**, NOT PHI. The Phase 2.3 `BoundedDict` validators bound the size of dict fields that flow into request bodies, but those dicts are not stored in `audit_logs.event_data`. Phase 2.2's PHI boundary (route_template, not resolved path; status_code; latency_ms) is unchanged.
 
-### Why no SQL keyword filtering on `SQLQueryRequest`
+### `POST /sql_query` was removed
 
-The `/sql_query` endpoint exists to run SQL. Restricting `DROP|DELETE|INSERT|UPDATE|ALTER|CREATE` via regex would:
-1. Be HIPAA security theater — trivially bypassed by `SELECT * FROM x; DROP/* */ TABLE y` or comment-encoding. A reviewer who knows what they're doing spots it as such and loses confidence in the rest of the security posture.
-2. Break the endpoint's reason for being.
-
-**The right control layer is DB-level least-privilege**: the API user has SELECT-only on the FHIR schema. That is the expected answer under external review.
-
-`SQLQueryRequest.sql` is bounded by `LongText` (50K cap, DoS defense) and that is the only validation applied.
+`POST /sql_query` ran any `SELECT` on the HAPI database for any signed-in user. It connected as the `hapi` database owner, not a read-only role, so the least-privilege control this section used to cite did not exist. The route was removed ([ADR 0037](decisions/0037-codeql-alerts-cleared-in-code.md), [#234](https://github.com/jagnyesh/researchflow/issues/234)). Exploratory SQL runs only after the default-deny validator, under the read-only `rf_readonly` role ([ADR 0028](decisions/0028-sprint-6-7-exploratory-llm-sql-synthesis.md)). One path still carries reviewer-written SQL: `POST /approvals/{id}/respond` accepts replacement phenotype SQL without a role check ([#248](https://github.com/jagnyesh/researchflow/issues/248)), and extraction runs it as the database owner. That path is traced in code, not exercised.
 
 ### Why permissive IRB regex (not canonical)
 

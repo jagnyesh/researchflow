@@ -98,11 +98,11 @@ async def test_oversized_body_rejected_413_without_polluting_audit_queue(fake_au
     from app.security.body_size import MAX_REQUEST_BODY_BYTES
 
     transport = ASGITransport(app=app)
-    huge_body = '{"sql": "' + ("x" * (MAX_REQUEST_BODY_BYTES + 100)) + '"}'
+    huge_body = '{"request_id": "' + ("x" * (MAX_REQUEST_BODY_BYTES + 100)) + '"}'
 
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/sql_query",
+            "/approvals/scope-change",
             content=huge_body,
             headers={"content-type": "application/json"},
         )

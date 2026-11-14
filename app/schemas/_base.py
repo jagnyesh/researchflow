@@ -12,8 +12,8 @@ class PHIInputModel(BaseModel):
     """Strict-by-default base for PHI-relevant request bodies.
 
     Config rationale:
-    - `extra='forbid'`: an attacker submitting `{"sql": "SELECT 1", "is_admin": true}`
-      to SQLQueryRequest gets 422, not silent acceptance with downstream code maybe
+    - `extra='forbid'`: an attacker adding `"is_admin": true` to a request body
+      gets 422, not silent acceptance with downstream code maybe
       reading the unexpected key. Defends against future field additions where some
       consumer starts reading a key before the schema catches up.
     - `str_strip_whitespace=True`: normalize before constraint checks; means

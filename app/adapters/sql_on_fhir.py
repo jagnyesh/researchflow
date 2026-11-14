@@ -78,13 +78,13 @@ class SQLonFHIRAdapter:
 
         logger = logging.getLogger(__name__)
 
-        # Log query details for debugging
+        # Parameter names only: on the extraction path the values are patient
+        # IDs, and the SQL text stays out too (ADR 0037).
+        param_names = sorted(params) if isinstance(params, dict) else []
         logger.debug(
-            f"[SQLonFHIRAdapter] Executing query:"
-            f"\n  SQL: {sql[:200]}..."
-            f"\n  Params: {params}"
-            f"\n  Has params: {bool(params)}"
-            f"\n  Param count: {len(params) if params else 0}"
+            "[SQLonFHIRAdapter] Executing query: %d params %s",
+            len(params) if params else 0,
+            param_names,
         )
 
         # VERY simple sandbox: only allow SELECT

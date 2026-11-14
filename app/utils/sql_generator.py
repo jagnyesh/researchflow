@@ -260,7 +260,7 @@ class SQLGenerator:
 
         sql = f"{select_clause}\n{from_clause}\n{where_clause}"
 
-        logger.debug(f"Generated SQL:\n{sql}")
+        logger.debug(f"Generated SQL with {len(where_clauses)} WHERE clauses")
         logger.debug(f"Parameters: {sorted(params)}")
         return sql, params
 
@@ -372,7 +372,7 @@ class SQLGenerator:
                     # Build condition query
                     condition, condition_params = self._build_condition_clause(term, include)
                     if condition:
-                        logger.debug(f"Added condition clause: {condition}")
+                        logger.debug("Added condition clause")
                         conditions.append(condition)
                         params.update(condition_params)
 
@@ -386,13 +386,8 @@ class SQLGenerator:
                         # IS NOT TRUE, not NOT: a NULL gender or birth date is not
                         # known to match the exclusion, so the patient stays (#310).
                         condition = f"({condition}) IS NOT TRUE"
-                    logger.debug(
-                        f"Demographic clause result: condition='{condition}', params={demo_params}"
-                    )
                     if condition:
-                        logger.info(
-                            f"✓ Added demographic filter: {condition} with params {demo_params}"
-                        )
+                        logger.info(f"✓ Added demographic filter with params {sorted(demo_params)}")
                         conditions.append(condition)
                         params.update(demo_params)
                     else:
@@ -428,7 +423,6 @@ class SQLGenerator:
             f"[SQLGenerator] Generated {len(conditions)} WHERE conditions from {len(criteria)} criteria"
         )
         logger.info(f"[SQLGenerator] Parameters: {sorted(params)}")
-        logger.debug(f"Final conditions: {conditions}")
         return conditions, params
 
     def _build_condition_clause(
@@ -590,7 +584,7 @@ class SQLGenerator:
             param_name = self._get_param_name("gender")
             params = {param_name: gender_value}
             sql = f"p.gender = :{param_name}"
-            logger.info(f"✓ Generated gender filter: {sql} with {param_name}='{gender_value}'")
+            logger.info(f"✓ Generated gender filter with param {param_name}")
             return sql, params
 
         # If no match, log warning
