@@ -106,6 +106,8 @@ Two exceptions:
 - a push workflow on `main` fails on a merge commit. A failure doesn't count if it passed on a re-run, or if you attribute it to something outside the merged PRs, such as a new advisory or a runner outage. Write that attribution in the log;
 - an escape (§6) traces to a PR merged under this override: a `Revert` of it, an issue it closed reopening, or a bug filed against it.
 
+*2026-11-10:* #396 waited 45.5 h, which met the first trigger. You kept the cap at 4, and the log records why. *2026-11-14:* #460 and #463 each waited over 50 h and met it again; you kept the cap at 4 for them too. The triggers still apply to every later merge.
+
 To revert, open one PR that replaces this block with a dated one-line note and sets `WIP_LIMIT=2` back in `scripts/lane.sh` with its test. It touches `tests/**`, so you merge it.
 
 The log is `docs/audits/lane-cap-override.md`, kept for as long as this override stands. It holds each merged PR's wait (as defined above), main's failed push runs with any attribution, and `scripts/dials.sh` output.
