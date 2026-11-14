@@ -1,0 +1,33 @@
+{
+ "comments": [
+  {
+   "author": {
+    "login": "jagnyesh"
+   },
+   "authorAssociation": "OWNER",
+   "body": "## Review attestation\n- Verdict: SHIP\n- Reviewed-Commit: 53b8b908635730de7f7c32f993d1849087464972\n- Reviewer: throwaway test, not a review\n- Findings: none\n",
+   "includesCreatedEdit": false,
+   "url": "https://github.com/jagnyesh/researchflow/pull/475#issuecomment-6866428858"
+  },
+  {
+   "author": {
+    "login": "jagnyesh"
+   },
+   "authorAssociation": "OWNER",
+   "body": "## Review attestation\n- Verdict: SHIP\n- Reviewed-Commit: cd99c9c2e8222a96c9002e993105afc1f2ea86f7\n- Reviewer: throwaway test, not a review\n- Findings: none\n",
+   "includesCreatedEdit": false,
+   "url": "https://github.com/jagnyesh/researchflow/pull/475#issuecomment-6866512596"
+  },
+  {
+   "author": {
+    "login": "jagnyesh"
+   },
+   "authorAssociation": "OWNER",
+   "body": "## Review attestation\n- Verdict: SHIP (carried forward)\n- Reviewed-Commit: 5b95471e75407155f3f50c3fdb75f2d3eb4c70a2\n- Carried-From: cd99c9c2e8222a96c9002e993105afc1f2ea86f7\n- Basis: merge from main; throwaway test\n- Reviewer: no new review; carried from the root attestation\n- Findings: as in the root attestation\n- Note: edited after posting (test)",
+   "includesCreatedEdit": true,
+   "url": "https://github.com/jagnyesh/researchflow/pull/475#issuecomment-6866527134"
+  }
+ ],
+ "headRefOid": "5b95471e75407155f3f50c3fdb75f2d3eb4c70a2",
+ "url": "https://github.com/jagnyesh/researchflow/pull/475"
+}
