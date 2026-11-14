@@ -51,8 +51,10 @@ else
   echo "unknown"; fail protection
 fi
 
-echo "== pipeline on origin/main $m"
-gh run list --commit "$m" --json name,status,conclusion -q 'if length == 0 then "NO RUNS" else (map(select(.status != "completed" or (.conclusion | IN("success","skipped","neutral") | not)) | "\(.name) \(.status) \(.conclusion)") | if length == 0 then "MAIN OK" else .[] end) end' || fail pipeline
+echo "== pipeline on origin/main $m (push runs only)"
+# issue_comment and workflow_dispatch runs (the Attestation workflow, #484) attach to main's head
+# too, and a superseded one ends cancelled; they say nothing about whether main is green (#486).
+gh run list --commit "$m" --event push --json name,status,conclusion -q 'if length == 0 then "NO RUNS" else (map(select(.status != "completed" or (.conclusion | IN("success","skipped","neutral") | not)) | "\(.name) \(.status) \(.conclusion)") | if length == 0 then "MAIN OK" else .[] end) end' || fail pipeline
 
 echo "== main push runs since $since that failed, or passed only on a re-run (newest 15)"
 gh run list --branch main --event push --created ">=$since" --limit 1000 --json name,headSha,conclusion,attempt,createdAt \
