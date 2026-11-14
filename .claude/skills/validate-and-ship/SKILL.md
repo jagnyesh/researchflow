@@ -15,15 +15,18 @@ The composite pipeline for this repo's per-issue-branch, continuous-merge workfl
 Run the tests covering this change with the project venv: `./.venv/bin/pytest <paths> -q`. If the change touches a runtime surface (agents, SQL, API, UI), also drive it end-to-end (the gated integration test, a live probe, or a `requires_services` run) — green unit tests alone do NOT clear the bar. This repo has two wire-level bugs on record that passed unit tests for months; assert at the wire/DB, not just the wrapper. Capture the actual command output — it fills the PR's Testing Evidence section verbatim.
 
 ### 2. Fresh-context review (the load-bearing step)
-Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: false`) on the diff. NEVER review in this authoring session — it checks its own homework. Give the reviewer: the issue's acceptance criteria, the ADR/design authority, the explicit out-of-scope list, and instructions to probe empirically (parse/execute against real state, not static reading) and report CONFIRMED vs suspected findings with a SHIP / SHIP-WITH-FIXES / BLOCK verdict. The reviewer's final message must end with a liftable verdict block — the verdict plus one line per finding with its disposition — saved to a scratch file: it becomes the Step 7 attestation comment verbatim.
+Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: false`) on the diff. NEVER review in this authoring session — it checks its own homework. Give the reviewer: the issue's acceptance criteria, the ADR/design authority, the explicit out-of-scope list, and instructions to probe empirically (parse/execute against real state, not static reading) and report CONFIRMED vs suspected findings with a SHIP / SHIP-WITH-FIXES / BLOCK verdict. The reviewer's final message must end with a liftable verdict block — the verdict plus one line per finding with its disposition — saved to a scratch file: it feeds the Step 7 attestation comment (one reviewer: verbatim; High tier: combined per the Step 7 template).
 
-**For security-sensitive changes (auth, SQL synthesis, PHI boundaries, validation gates, crypto): the review is adversarial AND repeated.** Send fixes back to the SAME reviewer (SendMessage to its agentId) and re-run until a pass returns zero confirmed escapes. Sprint 6.7 #95 took six passes; the escapes narrowed each round (that monotonic narrowing is the convergence signal). A green test suite proves nothing about shapes it omits — every confirmed escape becomes an explicit regression case before re-running.
+**High tier (§1's classifier): a second reviewer on Fable.** After the first reviewer's pass, spawn a second clean subagent (`general-purpose`, `run_in_background: false`) with `model: "fable"`. §1's "Model, effort" notes record that the owner named Fable for this role (standing choice, High-tier second reviewer only); the first reviewer stays on the lane's model. It receives the same inputs as the first (diff, acceptance criteria, ADR/design authority, out-of-scope list) plus the first reviewer's confirmed findings, and nothing from the authoring session's reasoning, so it stays independent. It does two things: re-checks each confirmed finding by reproducing it against real state and marks it confirmed or refuted with the evidence, and reviews the diff on its own for what the first missed. It ends with the same liftable verdict block. Low and Medium tiers keep one reviewer.
+
+**For security-sensitive changes (auth, SQL synthesis, PHI boundaries, validation gates, crypto): the review is adversarial AND repeated.** Send fixes back to the SAME reviewer (SendMessage to its agentId) and re-run until a pass returns zero confirmed escapes. Sprint 6.7 #95 took six passes; the escapes narrowed each round (that monotonic narrowing is the convergence signal). A green test suite proves nothing about shapes it omits — every confirmed escape becomes an explicit regression case before re-running. The repeat loop runs on the first reviewer only; the Fable second reviewer then reviews the final commit once, and again only if its findings lead to fixes.
 
 ### 3. Triage findings
 - **Mechanical** (naming, dead code, lint, a missing test case, a clear bug in the new code): fix silently, re-run tests.
 - **Behavior-changing or scope questions**: escalate to the user. Don't decide product scope.
+- A finding either reviewer confirms goes through this triage. A High-tier PR is `SHIP` only when both reviewers return `SHIP`; any other combination is the worse of the two verdicts.
 - A BLOCK on your own new code is not an escalation — it's a bug to fix, then re-review.
-- Any fix applied after the review is only covered by a fresh attestation (Step 7 staleness rule); a fix that changes behavior goes back through Step 2 before it can be attested.
+- Any fix applied after the review is only covered by a fresh attestation (Step 7 staleness rule); a fix that changes behavior goes back through Step 2 (both reviewers on High tier) before it can be attested.
 
 ### 4. Conventional commit(s)
 Separate latent/defensive fixes from the active change — separate commit minimum (a shared-code bug the feature merely surfaces is its own commit). Message body via a scratchpad file + `git commit -F <file>`: **the Bash approval hook rejects multi-line strings passed inline to `-m`** (control-character guard). End messages with the `Co-Authored-By` trailer the session's attribution instructions specify.
@@ -52,11 +55,12 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    ## Review attestation
    - Verdict: SHIP | SHIP-WITH-FIXES | BLOCK
    - Reviewed-Commit: <full 40-char sha>
-   - Reviewer: fresh-context subagent (Step 2), <k> pass(es)
+   - Reviewer 1 (<model>): fresh-context subagent (Step 2), <k> pass(es), <verdict>
+   - Reviewer 2 (<model>): fresh-context subagent (Step 2), <k> pass(es), <verdict>
    - Findings: <one per line: finding → disposition (fixed / accepted / routed to #issue)>
    ```
 
-   Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
+   Include the `Reviewer 2` line on High-tier PRs only. The `Verdict:` line is the combined verdict (the worse of the two on a High-tier PR). Per-reviewer lines never start with `- Verdict:`, because the 7.5 reader matches that line exactly. Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
 
 3. **Staleness rule:** any commit pushed after this comment voids it. Post-attestation fixes → back through Step 2, then post a NEW attestation comment — never edit or delete an old one; comment ordering is the audit trail. Never merge on a stale attestation. The one exception is 7.4.
 
