@@ -1,0 +1,73 @@
+name: Attestation
+
+# Sets the `attestation` commit status on a PR's head: success only when the repo owner's newest
+# unedited review attestation names that head (scripts/attestation.sh decides; the rules live in
+# .claude/skills/validate-and-ship/SKILL.md Steps 7-8). Once `attestation` is a required check on
+# main, GitHub refuses any merge, by any route, whose head has no current attestation.
+#
+# Trust boundary: this workflow never checks out, builds or runs the PR's code. Scripts come from
+# the default branch (or, for a manual dispatch, the ref the owner dispatched). It reads comments
+# through the API and runs git plumbing on fetched PR objects.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created, edited, deleted]
+  # Manual re-run for one PR, e.g. a PR that was already open when this check became required.
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Pull request number
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+
+concurrency:
+  # One group per PR. The newest run reads the current head and comments, so it supersedes the rest.
+  # Per event type too: a comment run must not cancel the run on the PR's head, because a cancelled
+  # run on the attested commit reads as not-green to validate-and-ship Step 8.
+  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  cancel-in-progress: true
+
+jobs:
+  # Not named `attestation`: a check run with the required context's name could satisfy it on its own.
+  set-attestation-status:
+    # issue_comment also fires for plain issues; only PR comments matter.
+    if: github.event_name != 'issue_comment' || github.event.issue.pull_request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      PR: ${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+    steps:
+      - name: Checkout scripts (never PR code)
+        uses: actions/checkout@v4
+        with:
+          # pull_request would check out the PR's merge commit by default. The PR's base branch is
+          # trusted; the PR's head is not. issue_comment already defaults to the default branch.
+          ref: ${{ github.event.pull_request.base.ref || (github.event_name == 'workflow_dispatch' && github.ref) || github.event.repository.default_branch }}
+          fetch-depth: 0  # the carry-forward check needs main's history
+
+      - name: Set the attestation status
+        run: |
+          set -uo pipefail
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "::error::bad PR number"; exit 1; }
+          if result=$(scripts/attestation.sh status "$PR"); then
+            IFS=$'\t' read -r state sha description <<<"$result"
+          else
+            # Fail closed: the reader crashed or the head moved mid-check. A push's own run decides the latter.
+            sha=$(gh pr view "$PR" --json headRefOid -q .headRefOid) || exit 1
+            state=error
+            description="The attestation check failed to run; see the workflow run."
+          fi
+          echo "attestation on ${sha:0:7}: $state: $description"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+            -f state="$state" \
+            -f context=attestation \
+            -f description="${description:0:140}" \
+            -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null

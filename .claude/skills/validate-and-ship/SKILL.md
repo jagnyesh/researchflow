@@ -65,16 +65,11 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    `old` is always the **root**: the `Reviewed-Commit` of the newest attestation that is not itself a carry-forward (it has no line starting `- Carried-From:`), i.e. the last real Step 2 review. Take it from the `ROOT` line of the 7.5 reader, which counts only the repo owner's unedited attestations. If the reader prints any `EDITED` line, don't carry forward: stop and report it to the user. Its verdict line must read exactly `- Verdict: SHIP` (SHIP-WITH-FIXES and BLOCK don't qualify). Never chain from an earlier carry: a carry nobody re-verified would launder whatever it let through.
 
    ```bash
-   n=<PR number>; old=<the ROOT line's commit from the 7.5 reader>
-   new=$(gh pr view "$n" --json headRefOid -q .headRefOid)
-   git fetch -q origin main "pull/$n/head"
-   main=$(git rev-parse --verify -q "$new^2") || echo NOT-A-MERGE
-   git merge-base --is-ancestor "$main" origin/main && echo main-ok          # what was merged is main
-   git merge-base --is-ancestor "$old" "$new" && echo lineage-ok           # no rewrite since the review
-   mb=$(git merge-base "$old" "$main") && [ -z "$(LC_ALL=C comm -12 <(git diff --no-renames --ignore-submodules=none --name-only "$mb" "$old" | LC_ALL=C sort) <(git diff --no-renames --ignore-submodules=none --name-only "$mb" "$main" | LC_ALL=C sort))" ] && t=$(git -c merge.directoryRenames=false merge-tree --write-tree "$old" "$main") && [ "$t" = "$(git rev-parse "$new^{tree}")" ] && echo tree-ok
+   scripts/attestation.sh carry <PR number> <the ROOT line's commit from the 7.5 reader>
    ```
 
-   `tree-ok` means two things:
+   It fetches `origin main` and `pull/<n>/head`, prints `NOT-A-MERGE` or each of `main-ok`, `lineage-ok` and `tree-ok` that holds, and exits 0 only when all three print. A final `main=<sha> tree=<sha>` line feeds the comment's Basis line. `main-ok` means the new head's second parent is on `origin/main`. `lineage-ok` means the root is an ancestor of the new head, so nothing was rewritten since the review. `tree-ok` means two things:
+
    - **No file was changed by both the PR and main since they diverged.** So git never had to merge file contents, and no merge driver, `merge.default` setting, `.gitattributes` or rename-following can shape the result. `-c merge.directoryRenames=false` stops git moving a file the PR added into a directory that main renamed. The #361 review got a real conflict to pass as "clean" through each of those, until this guard replaced an attribute check.
    - **The new head's tree is exactly what git produces by merging the reviewed commit with that main commit.**
 
@@ -95,8 +90,10 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 5. **Count only the repo owner's unedited attestations.** The repo is public, so any GitHub user can post a comment headed `## Review attestation` (#368). Read attestations only with this reader. It counts a comment only when the repo owner, the account the pipeline posts with, posted it and nobody has edited it since:
 
    ```bash
-   gh pr view <n> --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\r\n]*)")] | .[0].v // "none"; def own($o): .author.login == $o and .authorAssociation == "OWNER"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(own($owner) and .includesCreatedEdit != false) | "EDITED \(.url)"), ([$a[] | select(own($owner) and .includesCreatedEdit == false) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end), ($a[] | select(own($owner) | not) | "IGNORED \(.author.login) \(.authorAssociation) \(.url)")'
+   scripts/attestation.sh read <n>
    ```
+
+   The jq filter lives in that script and nowhere else: the `attestation` status workflow (7.6) runs the same one.
 
    The reader prints these lines, in this order:
    - `EDITED <url>` for each of the owner's attestations that was edited after it was posted. Anyone with write access can edit any comment, and the comment keeps its original author. An edited attestation never counts, and Step 8 refuses to merge while one exists. gh reports an edit as `includesCreatedEdit`. It has no `lastEditedAt` field.
@@ -106,6 +103,11 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    - `IGNORED <login> <association> <url>` for each attestation that another account posted. Name each one in the merge report: the hand-over for a human merge, or the lane's report for a self-merge. These lines come last, so a flood of forged comments can't push the others down.
 
    The author must pass two checks. The first is that the login equals the owner's login, which the reader takes from the PR's own URL rather than from a hard-coded name. If the owner renames the account, the URL and every comment show the new login, and a stranger who registers the old login doesn't match. The second is that `authorAssociation` is `OWNER`. gh prints a GitHub App's login without its `[bot]` suffix, so the login alone can't tell the owner from an app of the same name. If the repo moves to an organization, no comment passes either check. The reader then counts nothing, and Step 8 refuses the merge.
+
+6. **The `attestation` status.** `.github/workflows/attestation.yml` runs `scripts/attestation.sh status <n>` on every push to a PR and every comment on one, and posts the result as the commit status `attestation` on the PR's head. `success` means the owner's newest unedited attestation names that head and passes the conditions in Step 8; any other state carries the reason in its description. Once `attestation` is one of `main`'s required checks (the owner adds it), GitHub refuses every merge whose head has no current attestation, by whatever route, the Update branch button included (#466). The workflow never checks out or runs the PR's code: it reads comments through the API and runs git plumbing on fetched objects.
+   - The status records a decision made when a run last executed. A failed or missed run leaves the previous status on that commit, so a status that disagrees with `scripts/attestation.sh status <n>` is stale: Step 8 trusts the command, and a new run replaces the status.
+   - Every PR starts with `failure` until you post its attestation. The comment triggers a new run, so nothing needs a manual re-run; allow about a minute.
+   - A PR that was open before the check became required has no status until something triggers a run: `gh workflow run attestation.yml -f pr=<n>`.
 
 Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. The 7.5 reader keeps other accounts' attestations and edited ones from counting. It doesn't separate the reviewer from the merge actor, and it can't see a comment that someone with write access deleted. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
@@ -125,18 +127,34 @@ gh run list --commit <attested-sha> --json name,conclusion -q 'if length == 0 th
 gh pr view <n> --json statusCheckRollup -q '.statusCheckRollup | if length == 0 then "NO CHECKS" else (map(select(.completedAt == "0001-01-01T00:00:00Z" or ((.conclusion // .state) | IN("SUCCESS","SKIPPED","NEUTRAL") | not)) | .name // .context) | if length == 0 then "CHECKS OK" else .[] end) end'
 ```
 
-The first catches a run that failed without creating any check (e.g. a workflow-file error). Then run the 7.5 reader and check its output:
+The first catches a run that failed without creating any check (e.g. a workflow-file error). Then run `scripts/attestation.sh status <n>`. It makes the decision the `attestation` status makes (7.6), and its first field must read `success`:
 
-- Any `EDITED` line → never merge, whatever the other lines say. An edit breaks the append-only record, so report it to the user, who decides what happens next.
-- `NEWEST` must say `head`. `STALE` or `MISSING` → back to Step 7, never merge.
-- If `carried-from` is `none`, `NEWEST` must read `verdict=SHIP` or `verdict=SHIP-WITH-FIXES` exactly. Anything else → never merge. That covers a `BLOCK`, and a carry-forward whose `Carried-From` key is misspelled, which the reader can't recognize as a carry.
-- If `carried-from` isn't `none`, that newest attestation is a 7.4 carry-forward, and you don't take it on trust. The `ROOT` line must read `verdict=SHIP` exactly, `carried-from` must equal the `ROOT` commit, and the 7.4 block, re-run now with `old` set to the `ROOT` commit, must print all three `-ok` lines. Otherwise → fresh review, never merge.
+```bash
+scripts/attestation.sh status <n>   # prints: <state><TAB><head sha><TAB><reason>
+scripts/attestation.sh read <n>     # for the EDITED and IGNORED lines
+```
+
+Anything else, a non-zero exit included, never merges. The reason says which rule failed:
+- An owner attestation was edited, which `read` shows as an `EDITED` line → never merge, whatever else is true. An edit breaks the append-only record, so report it to the user, who decides what happens next.
+- Missing or stale → back to Step 7.
+- A `BLOCK` verdict, or a verdict that isn't `SHIP` or `SHIP-WITH-FIXES`, which includes a carry-forward whose `Carried-From` key is misspelled (the reader can't recognize it as a carry) → never merge.
+- A carry-forward whose root isn't verdict `SHIP`, whose `Carried-From` isn't the root's commit, or whose 7.4 checks, re-run now against the root, don't all pass → fresh review (Step 2).
+
+Name each `IGNORED` line from `read` in the merge report (the hand-over for a human merge, the lane's report for a self-merge). The GitHub rollup above includes the posted `attestation` status once it exists; this command is the check that doesn't wait for the workflow.
 
 Then classify by the actual file list (`gh pr view <n> --json files -q '.files[].path'`), not the title prefix:
 
-- **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By` — and merge:
+- **Standing-rule self-merge** — every path is docs-only OR harness-internal. Docs-only = `docs/**` plus *root-level* `*.md` (a `.md` inside `app/`, `tests/`, etc. is behavior-touching — the behavior-touching list wins any conflict), AND the PR title carries the `docs:` prefix (an additional requirement on top of the file-list classifier, not a substitute for it). Harness-internal = `.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`. A PR mixing the two classes takes the `harness-internal` trailer. Write the squash body to a scratch file — PR summary, `Closes #<issue>`, trailer `Merged-By: pipeline (standing-rule: docs-only)` (or `harness-internal`), then `Co-Authored-By`. Then enable auto-merge, with the same head SHA and the same body:
+  `gh pr merge <n> --squash --auto --match-head-commit <attested-sha> --body-file <file>`
+  Use `--auto` only when both of these print `true`:
+  `gh api repos/{owner}/{repo} -q .allow_auto_merge`
+  `gh api repos/{owner}/{repo}/branches/main/protection/required_status_checks -q '.contexts | index("attestation") != null'`
+  If either doesn't, merge at once instead:
   `gh pr merge <n> --squash --delete-branch --match-head-commit <attested-sha> --body-file <file>`
-  `--match-head-commit` makes GitHub itself refuse the merge if the head moved after attestation — server-side enforcement, not discipline.
+  Why both: auto-merge fires on whatever head the PR has when its required checks pass, and the required `attestation` status (7.6) is what stops a head pushed after this attestation from merging unattested. `--match-head-commit` is still checked when `--auto` merges at once: `gh` sends `expectedHeadOid`, the squash body and the merge method, and a wrong SHA was refused (#466 test). Whether GitHub re-checks that SHA when a delayed auto-merge fires is untested, which is why the required status is a precondition and not an extra.
+  `--delete-branch` isn't passed with `--auto`, because the merge can happen after `gh` exits. Wait for it (background it), then delete the branch yourself:
+  `until [ "$(gh pr view <n> --json state -q .state)" != OPEN ]; do sleep 45; done`
+  `MERGED` → `git push origin --delete <branch>` and delete the local branch. `CLOSED`, or a check that went red → `gh pr merge <n> --disable-auto`, diagnose and fix as above.
   **Self-amendment carve-out:** a PR that changes the merge policy itself — this skill file, CLAUDE.md's "Merge actor" rule, or the workflow doc's merge sections — is ALWAYS human-merge, whatever else it touches. The pipeline never self-merges a change to its own merge authority.
 - **Human merge (everything else)** — any path under `app/**`, `tests/**`, `migrations/**`, `config/**`, CI workflows, or dependency files is behavior-touching. Report green + the attested SHA, post the ready-to-run merge command (with `--match-head-commit` filled in), and STOP. The human merges; you wait. No framing makes a behavior-touching PR self-mergeable.
 
