@@ -5,6 +5,7 @@
 #   attestation.sh read   <pr>          print the 7.5 reader's lines (EDITED, NEWEST, ROOT, MISSING, IGNORED)
 #   attestation.sh carry  <pr> <root>   run the 7.4 carry-forward checks against the PR's head
 #   attestation.sh status <pr>          decide the `attestation` status: prints "<state>\t<head-sha>\t<description>"
+#   attestation.sh set-status <pr>      run `status` and POST the result as the `attestation` commit status
 #
 # Needs gh (authenticated; GH_REPO selects the repo when not run inside a clone of it). `carry` and
 # `status` also need a clone with `origin` pointing at the repo. Nothing here checks out, builds or
@@ -12,7 +13,7 @@
 set -euo pipefail
 
 usage() {
-  sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -20,11 +21,37 @@ cmd=${1:-}
 pr=${2:-}
 [[ $pr =~ ^[0-9]+$ ]] || usage
 
+# Runs gh, retrying only a 5xx response (up to 3 tries, 2s then 4s apart; ATTESTATION_RETRY_SLEEP
+# overrides the base delay). Any other failure, a 4xx included, returns at once, so retrying can't
+# turn a refusal into a success. Callers still decide what a failure means.
+gh_retry() {
+  local try=1 out err rc
+  err=$(mktemp)
+  while :; do
+    # rc is read right after the command: an `if` that falls through would reset $? to 0.
+    out=$(gh "$@" 2>"$err") && {
+      rm -f "$err"
+      printf '%s\n' "$out"
+      return 0
+    }
+    rc=$?
+    if [ "$try" -lt 3 ] && grep -Eq 'HTTP 5[0-9]{2}' "$err"; then
+      echo "gh: HTTP 5xx, retrying ($try of 3 tries used)" >&2
+      sleep $((${ATTESTATION_RETRY_SLEEP:-2} * try))
+      try=$((try + 1))
+      continue
+    fi
+    cat "$err" >&2
+    rm -f "$err"
+    return "$rc"
+  done
+}
+
 # Counts a comment only when the repo owner posted it and nobody has edited it since. The owner's
 # login comes from the PR's own URL, and authorAssociation must be OWNER (gh prints a GitHub App's
 # login without its [bot] suffix, so the login alone can't tell the owner from an app of that name).
 read_attestations() {
-  gh pr view "$pr" --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\r\n]*)")] | .[0].v // "none"; def own($o): .author.login == $o and .authorAssociation == "OWNER"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(own($owner) and .includesCreatedEdit != false) | "EDITED \(.url)"), ([$a[] | select(own($owner) and .includesCreatedEdit == false) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end), ($a[] | select(own($owner) | not) | "IGNORED \(.author.login) \(.authorAssociation) \(.url)")'
+  gh_retry pr view "$pr" --json headRefOid,url,comments -q 'def v($k): [capture("(?m)^- \($k): (?<v>[^\r\n]*)")] | .[0].v // "none"; def own($o): .author.login == $o and .authorAssociation == "OWNER"; .headRefOid as $h | (.url | split("/")[3]) as $owner | [.comments[] | select(.body | test("^## Review attestation"))] as $a | ($a[] | select(own($owner) and .includesCreatedEdit != false) | "EDITED \(.url)"), ([$a[] | select(own($owner) and .includesCreatedEdit == false) | .body] as $o | ($o | last) as $new | ([$o[] | select(test("(?m)^- Carried-From:") | not)] | last) as $root | if $new == null then "MISSING" else ($new | v("Reviewed-Commit")) as $s | "NEWEST \($s) \(if $s == $h then "head" else "STALE" end) verdict=\($new | v("Verdict")) carried-from=\($new | v("Carried-From"))", "ROOT \(if $root == null then "none" else "\($root | v("Reviewed-Commit")) verdict=\($root | v("Verdict"))" end)" end), ($a[] | select(own($owner) | not) | "IGNORED \(.author.login) \(.authorAssociation) \(.url)")'
 }
 
 # The 7.4 checks. Prints NOT-A-MERGE, or each of main-ok, lineage-ok, tree-ok that holds.
@@ -33,7 +60,7 @@ read_attestations() {
 carry_checks() {
   local old=$1 new main mb t ok=0
   [[ $old =~ ^[0-9a-f]{40}$ ]] || { echo "BAD-ROOT"; return 1; }
-  new=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
+  new=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid)
   git fetch -q origin main "pull/$pr/head"
   main=$(git rev-parse --verify -q "$new^2") || { echo NOT-A-MERGE; return 1; }
   # What was merged is main.
@@ -59,7 +86,7 @@ carry_checks() {
 status_decision() {
   local head out edited newest root verdict carried s state root_commit root_verdict missing=""
   # bash clears errexit inside $(...), so a gh failure must return explicitly, not fall through to a verdict.
-  head=$(gh pr view "$pr" --json headRefOid -q .headRefOid) || return 3
+  head=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid) || return 3
   [ -n "$head" ] || return 3
   out=$(read_attestations) || return 3
 
@@ -123,16 +150,37 @@ status_decision() {
   emit success "Carried-forward attestation covers head ${head:0:7}; Step 7.4 checks pass on ${carried:0:7}."
 }
 
+# Sets the `attestation` commit status. Fail closed: a reader crash posts `error`, and a POST that
+# still fails after the retries exits 1 so the job is red, never green.
+set_status() {
+  local result state sha description
+  if result=$("$0" status "$pr"); then
+    IFS=$'\t' read -r state sha description <<<"$result"
+  else
+    # The head may have moved mid-check; a push's own run decides that case.
+    sha=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid) || return 1
+    state=error
+    description="The attestation check failed to run; see the workflow run."
+  fi
+  echo "attestation on ${sha:0:7}: $state: $description"
+  gh_retry api --method POST "repos/$GITHUB_REPOSITORY/statuses/$sha" \
+    -f state="$state" \
+    -f context=attestation \
+    -f description="${description:0:140}" \
+    -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" >/dev/null
+}
+
 case "$cmd" in
+  set-status) set_status ;;
   read) read_attestations ;;
   carry)
     [ -n "${3:-}" ] || usage
     carry_checks "$3"
     ;;
   status)
-    before=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
+    before=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid)
     result=$(status_decision)
-    after=$(gh pr view "$pr" --json headRefOid -q .headRefOid)
+    after=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid)
     # A push during the check means the result may describe the old head; the push's own run decides.
     [ "$before" = "$after" ] || { echo "head moved during the check ($before -> $after)" >&2; exit 3; }
     printf '%s\n' "$result"
