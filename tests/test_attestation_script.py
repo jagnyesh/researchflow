@@ -43,6 +43,23 @@ PR484_HEAD = "77c4864733b327581754f0c18a2547f717fddf2c"
 FAKE_GH = r"""#!/usr/bin/env bash
 # Fake `gh pr view <n> --json <fields> [-q <jq>]` over $FAKE_GH_FIXTURE.
 [ -z "${FAKE_GH_FAIL:-}" ] || { echo "gh: simulated failure" >&2; exit 1; }
+# Scripted HTTP outcomes: one code per call, consumed from $FAKE_GH_<KIND>_CODES (a file, one code per
+# line; an empty or missing file means 200). Non-200 prints what gh prints and fails.
+scripted() {
+  local f=$1 code
+  [ -s "$f" ] || return 0
+  code=$(head -n1 "$f"); tail -n +2 "$f" >"$f.next"; mv "$f.next" "$f"
+  [ "$code" = 200 ] && return 0
+  echo "gh: Simulated (HTTP $code)" >&2
+  exit 1
+}
+if [ "$1" = api ]; then
+  scripted "${FAKE_GH_API_CODES:-/nonexistent}"
+  echo "$*" >>"$FAKE_GH_API_LOG"
+  exit 0
+fi
+[ "$1 $2" = "pr view" ] || { echo "fake gh: unsupported: $*" >&2; exit 64; }
+scripted "${FAKE_GH_VIEW_CODES:-/nonexistent}"
 [ "$1 $2" = "pr view" ] || { echo "fake gh: unsupported: $*" >&2; exit 64; }
 shift 3
 fields="" query="."
@@ -90,6 +107,13 @@ def fake_gh(tmp_path):
             **os.environ,
             "PATH": f"{bindir}{os.pathsep}{os.environ['PATH']}",
             "FAKE_GH_FIXTURE": str(tmp_path / "pr.json"),
+            "FAKE_GH_API_LOG": str(tmp_path / "api.log"),
+            "FAKE_GH_API_CODES": str(tmp_path / "api.codes"),
+            "FAKE_GH_VIEW_CODES": str(tmp_path / "view.codes"),
+            "ATTESTATION_RETRY_SLEEP": "0",
+            "GITHUB_REPOSITORY": "o/r",
+            "GITHUB_SERVER_URL": "https://github.example",
+            "GITHUB_RUN_ID": "7",
             "GIT_CONFIG_GLOBAL": os.devnull,
             "GIT_CONFIG_SYSTEM": os.devnull,
             "GIT_AUTHOR_NAME": "t",
@@ -269,6 +293,93 @@ def test_status_gh_failure_exits_nonzero(fake_gh):
 def test_bad_pr_number_prints_usage(fake_gh):
     r = fake_gh.run("read", "abc")
     assert r.returncode == 2
+
+
+# --------------------------------------------------------------- set-status + retry
+
+
+def script_codes(fake_gh, kind, codes):
+    Path(fake_gh.env[f"FAKE_GH_{kind}_CODES"]).write_text("".join(f"{c}\n" for c in codes))
+
+
+def posted(fake_gh):
+    log = Path(fake_gh.env["FAKE_GH_API_LOG"])
+    return log.read_text().splitlines() if log.exists() else []
+
+
+def ship_on_head():
+    pr = load("pr484.json")
+    pr["comments"] = [comment(pr, 0)]
+    pr["headRefOid"] = PR484_SHIP_COMMIT
+    return pr
+
+
+def set_status(fake_gh, pr, view=(), api=()):
+    fake_gh.serve(pr)
+    script_codes(fake_gh, "VIEW", view)
+    script_codes(fake_gh, "API", api)
+    return fake_gh.run("set-status", "1")
+
+
+def test_set_status_posts_success_for_a_ship_on_head(fake_gh):
+    r = set_status(fake_gh, ship_on_head())
+    assert r.returncode == 0, r.stderr
+    (call,) = posted(fake_gh)
+    assert f"statuses/{PR484_SHIP_COMMIT}" in call and "state=success" in call
+
+
+def test_set_status_502_then_200_on_post_ends_in_success(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), api=[502, 200])
+    assert r.returncode == 0, r.stderr
+    calls = posted(fake_gh)
+    assert len(calls) == 1 and "state=success" in calls[0]
+
+
+def test_set_status_persistent_502_on_post_fails_the_job(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), api=[502, 502, 502, 200])
+    assert r.returncode != 0
+    assert posted(fake_gh) == []
+
+
+def test_set_status_502_then_200_on_reader_view_ends_in_success(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), view=[503, 200])
+    assert r.returncode == 0, r.stderr
+    assert "state=success" in posted(fake_gh)[0]
+
+
+def test_set_status_persistent_502_on_reader_never_posts_success(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), view=[502] * 9)
+    assert r.returncode != 0
+    assert not any("state=success" in c for c in posted(fake_gh))
+
+
+def test_set_status_4xx_on_post_is_not_retried(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), api=[422, 200])
+    assert r.returncode != 0
+    assert posted(fake_gh) == []
+
+
+def test_set_status_4xx_on_view_is_not_retried_and_never_succeeds(fake_gh):
+    r = set_status(fake_gh, ship_on_head(), view=[404, 200, 200, 200, 200, 200])
+    assert not any("state=success" in c for c in posted(fake_gh))
+    # The 404 was not retried: the reader gave up, and only the fallback head lookup consumed a 200.
+    assert Path(fake_gh.env["FAKE_GH_VIEW_CODES"]).read_text().count("200") == 4
+    assert "state=error" in posted(fake_gh)[0], r.stderr
+
+
+def test_set_status_reader_failure_posts_error_not_success(fake_gh):
+    # A non-HTTP crash in the reader (e.g. jq) must post `error`, never success.
+    pr = ship_on_head()
+    pr["comments"] = "not-a-list"
+    r = set_status(fake_gh, pr)
+    (call,) = posted(fake_gh)
+    assert "state=error" in call, (r.stdout, r.stderr)
+
+
+def test_set_status_failure_verdict_still_posts_failure(fake_gh):
+    r = set_status(fake_gh, load("pr480.json"))
+    assert r.returncode == 0, r.stderr
+    assert "state=failure" in posted(fake_gh)[0]
 
 
 # ------------------------------------------------------------ real git (carry)
