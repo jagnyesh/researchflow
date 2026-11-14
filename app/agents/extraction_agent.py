@@ -101,7 +101,8 @@ _DATA_ELEMENT_ALIASES = {
 FORM_DATA_ELEMENTS = [
     "Demographics (age, gender, race)",
     "Diagnoses (ICD codes)",
-    "Procedures (CPT/HCPCS codes)",
+    # A label becomes a CSV file name, so it can't hold a path separator (#477).
+    "Procedures (CPT, HCPCS codes)",
     "Lab Results (LOINC codes)",
 ]
 
@@ -111,6 +112,20 @@ def canonical_data_element(name: str) -> Optional[str]:
     key = re.sub(r"\(.*?\)", "", name).lower()
     key = re.sub(r"[^a-z]+", " ", key).strip()
     return _DATA_ELEMENT_ALIASES.get(key)
+
+
+def _check_file_names(data_elements) -> None:
+    """Raise unless every data element name can be a CSV file name (ADR 0038).
+
+    Runs before any query so an unsafe name never reaches a log line; the
+    error gives the element's position, never its name.
+    """
+    for position, name in enumerate(data_elements, start=1):
+        if not isinstance(name, str) or any(c in name for c in ("/", "\\", "\x00")):
+            message = f"Data element at position {position} has a name that can't be a file name"
+            # The workflow's PHI-safe failure log drops exception text; say it here.
+            logger.error(message)
+            raise ValueError(message)
 
 
 def _deidentification_key() -> bytes:
@@ -242,6 +257,8 @@ class DataExtractionAgent(BaseAgent):
             )
             logger.error(f"[{self.agent_id}] {error_msg}")
             raise ValueError(error_msg)
+
+        _check_file_names(requirements.get("data_elements", []))
 
         logger.info(f"[{self.agent_id}] Starting extraction for {request_id}")
 
@@ -382,6 +399,8 @@ class DataExtractionAgent(BaseAgent):
             )
             logger.error(f"[{self.agent_id}] {error_msg}")
             raise ValueError(error_msg)
+
+        _check_file_names(requirements.get("data_elements", []))
 
         logger.info(
             f"[{self.agent_id}] Starting PREVIEW extraction for {request_id}"
@@ -638,6 +657,15 @@ class DataExtractionAgent(BaseAgent):
             # Generate actual CSV files
             logger.info(f"[{self.agent_id}] Generating CSV files for request {request_id}")
 
+            # Recorded before each write: a write that fails midway leaves a partial file.
+            attempted = []
+
+            def save_csv(filename, dataframe):
+                attempted.append(filename)
+                return self.file_storage.save_csv(
+                    request_id=request_id, filename=filename, dataframe=dataframe
+                )
+
             try:
                 # Define demographic data elements that should be consolidated
                 # Bug fix: Use lowercase keys for case-insensitive matching
@@ -730,9 +758,7 @@ class DataExtractionAgent(BaseAgent):
                         demographics_df = demographics_df[actual_columns + other_columns]
 
                         filename = "Demographics.csv"
-                        file_path = self.file_storage.save_csv(
-                            request_id=request_id, filename=filename, dataframe=demographics_df
-                        )
+                        file_path = save_csv(filename, demographics_df)
 
                         formatted["files"].append(
                             {
@@ -759,9 +785,7 @@ class DataExtractionAgent(BaseAgent):
 
                     # Save CSV
                     filename = f"{element_name}.csv"
-                    file_path = self.file_storage.save_csv(
-                        request_id=request_id, filename=filename, dataframe=df
-                    )
+                    file_path = save_csv(filename, df)
 
                     formatted["files"].append(
                         {
@@ -789,9 +813,7 @@ class DataExtractionAgent(BaseAgent):
                 if all_records:
                     master_df = pd.DataFrame(all_records)
                     master_filename = "all_data_combined.csv"
-                    master_path = self.file_storage.save_csv(
-                        request_id=request_id, filename=master_filename, dataframe=master_df
-                    )
+                    master_path = save_csv(master_filename, master_df)
                     formatted["files"].append(
                         {
                             "filename": master_filename,
@@ -806,13 +828,20 @@ class DataExtractionAgent(BaseAgent):
                     f"{len(formatted['files'])} files created"
                 )
 
-            except Exception as e:
-                log_internal_error(logger, f"[{self.agent_id}] CSV generation failed", e)
-                # Return metadata even if file generation fails
-                for element_name, records in data.items():
-                    formatted["files"].append(
-                        {"filename": f"{element_name}.csv", "record_count": len(records)}
-                    )
+            except Exception:
+                # A partial package must not reach a later ZIP of this directory (ADR 0038).
+                for filename in attempted:
+                    try:
+                        file_path = self.file_storage.get_file_path(request_id, filename)
+                        if file_path:
+                            os.remove(file_path)
+                    except OSError as cleanup_error:
+                        log_internal_error(
+                            logger,
+                            f"[{self.agent_id}] Removing a partial CSV failed",
+                            cleanup_error,
+                        )
+                raise
 
         elif format_type == "FHIR":
             # TODO: In production, convert to FHIR Bundle
