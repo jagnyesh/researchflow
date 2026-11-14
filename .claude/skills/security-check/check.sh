@@ -19,7 +19,7 @@ state=${SECURITY_CHECK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/security
 mkdir -p "$state" || { echo "ERROR: cannot create $state"; exit 1; }
 now=$(date +%s)
 deep_days=${SECURITY_CHECK_DEEP_DAYS:-90}
-cap=300  # longest commit or file list printed; the rest is counted
+cap=${SECURITY_CHECK_CAP:-300}  # longest commit or file list printed; the rest is counted
 
 if [ "${1:-}" = "--record-deep" ]; then
   { [ $# -eq 2 ] && [ -n "$2" ]; } || { echo "usage: check.sh --record-deep <tool>"; exit 2; }
@@ -134,7 +134,7 @@ if p=$(gh api "repos/$repo/branches/main/protection" 2>"$errf"); then
       "protection.deletions=\(.allow_deletions.enabled)",
       "protection.signatures=\(.required_signatures.enabled // false)",
       "protection.required_reviews=\(.required_pull_request_reviews.required_approving_review_count // "none")"'
-  if dg=$(jq -S -c . <<<"$p" 2>/dev/null | git hash-object --stdin); then emit "protection.digest=${dg:0:12}"; fi
+  if dg=$(jq -S -c 'walk(if type == "array" then sort else . end)' <<<"$p" 2>/dev/null | git hash-object --stdin); then emit "protection.digest=${dg:0:12}"; fi
 elif grep -q "Branch not protected" "$errf"; then
   emit "protection=none"
 else
@@ -176,18 +176,24 @@ if [ -z "$prev_sha" ]; then
   echo "first run: no previous snapshot"
 elif [ "$prev_sha" = "$m" ]; then
   echo "no commits since ${m:0:7}"
-elif git merge-base --is-ancestor "$prev_sha" "$m" 2>/dev/null; then
-  n=$(git rev-list --count "$prev_sha..$m")
-  echo "$n commits, ${prev_sha:0:7}..${m:0:7}:"
-  git log --oneline "$prev_sha..$m" | head -"$cap"
-  [ "$n" -le "$cap" ] || echo "... and $((n - cap)) more commits"
-  files=$(git diff --name-only "$prev_sha" "$m")
-  nf=$(grep -c . <<<"$files")
-  echo "$nf files changed:"
-  head -"$cap" <<<"$files"
-  [ "$nf" -le "$cap" ] || echo "... and $((nf - cap)) more files"
 else
-  echo "REWRITTEN: the previous snapshot's commit ${prev_sha:0:7} is not an ancestor of main"
+  git merge-base --is-ancestor "$prev_sha" "$m" 2>/dev/null; anc=$?
+  if [ "$anc" -eq 0 ]; then
+    n=$(git rev-list --count "$prev_sha..$m")
+    echo "$n commits, ${prev_sha:0:7}..${m:0:7}:"
+    git log --format='%h %s' "$prev_sha..$m" | head -"$cap"
+    [ "$n" -le "$cap" ] || echo "... and $((n - cap)) more commits"
+    files=$(git diff --name-only "$prev_sha" "$m")
+    nf=$(grep -c . <<<"$files")
+    echo "$nf files changed:"
+    [ "$nf" -eq 0 ] || head -"$cap" <<<"$files"
+    [ "$nf" -le "$cap" ] || echo "... and $((nf - cap)) more files"
+  elif [ "$anc" -eq 1 ]; then
+    echo "REWRITTEN: the previous snapshot's commit ${prev_sha:0:7} is not an ancestor of main"
+  else
+    # Exit 128: the commit is not in this clone (a shallow clone, or a pruned repo).
+    echo "UNKNOWN: the previous snapshot's commit ${prev_sha:0:7} is not in this clone, so main cannot be compared"
+  fi
 fi
 
 echo "== deep audit"
@@ -211,7 +217,10 @@ else
   if [ -n "$d" ]; then echo "$d"; else echo "no change"; fi
 fi
 if [ "$rc" -eq 0 ]; then
-  saved="$state/snapshot-$(date -u +%Y%m%dT%H%M%SZ)-${m:0:7}.txt"
+  # Microseconds in the name: two runs in one second must not overwrite each other, and
+  # BSD date has no %N.
+  stamp=$(perl -MPOSIX=strftime -MTime::HiRes=gettimeofday -e '($s, $u) = gettimeofday; printf "%s%06dZ", strftime("%Y%m%dT%H%M%S", gmtime $s), $u') || stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  saved="$state/snapshot-$stamp-${m:0:7}.txt"
   if cp "$new" "$saved"; then echo "saved: $saved"; else fail "snapshot save"; fi
 fi
 exit $rc
