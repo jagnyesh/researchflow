@@ -19,9 +19,11 @@ state=${SECURITY_CHECK_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/security
 mkdir -p "$state" || { echo "ERROR: cannot create $state"; exit 1; }
 now=$(date +%s)
 deep_days=${SECURITY_CHECK_DEEP_DAYS:-90}
+cap=300  # longest commit or file list printed; the rest is counted
 
 if [ "${1:-}" = "--record-deep" ]; then
-  [ -n "${2:-}" ] || { echo "usage: check.sh --record-deep <tool>"; exit 2; }
+  { [ $# -eq 2 ] && [ -n "$2" ]; } || { echo "usage: check.sh --record-deep <tool>"; exit 2; }
+  [ "$rc" -eq 0 ] || { echo "not recorded: origin/main could not be fetched"; exit 1; }
   echo "$now $(date -u +%F) ${m:0:7} $2" > "$state/deep-run"
   echo "recorded deep audit: $2 on $(date -u +%F) at ${m:0:7}"
   exit 0
@@ -31,28 +33,35 @@ fi
 prev=$(find "$state" -maxdepth 1 -name 'snapshot-*.txt' | sort | tail -1)
 prev_sha=""
 [ -n "$prev" ] && prev_sha=$(sed -n 's/^# main=//p' "$prev")
-new=$(mktemp) && log=$(mktemp) || { echo "ERROR: mktemp failed"; exit 1; }
-trap 'rm -f "$new" "$log"' EXIT
+new=$(mktemp) && log=$(mktemp) && errf=$(mktemp) || { echo "ERROR: mktemp failed"; exit 1; }
+trap 'rm -f "$new" "$log" "$errf"' EXIT
 
 emit() { echo "$1"; echo "$1" >> "$new"; }      # compared with the previous run
 note() { echo "# $1"; echo "# $1" >> "$new"; }  # recorded, never compared
 emit_lines() { local l; while IFS= read -r l; do [ -n "$l" ] && emit "$l"; done; }
-# Open alerts from one endpoint, counted by a jq key. "disabled" in the API's error is a
-# state to record, not a failure.
+# Emit what a jq filter makes of a JSON document. A jq error fails the section: it must not
+# leave the section blank, or the run would save a snapshot with lines missing.
+emit_jq() {  # section name, json, jq filter
+  local lines
+  if lines=$(jq -r "$3" <<<"$2" 2>/dev/null); then emit_lines <<<"$lines"; else fail "$1"; fi
+}
+# Open alerts from one endpoint, counted by a jq key. Only stdout is counted: gh writes
+# debug and warning lines to stderr. "disabled" in the API's error is a state to record.
 alerts() {  # name, endpoint, jq key expression
   local out
-  if out=$(gh api --paginate "repos/$repo/$2?state=open&per_page=100" -q ".[] | $3" 2>&1); then
+  if out=$(gh api --paginate "repos/$repo/$2?state=open&per_page=100" -q ".[] | $3" 2>"$errf"); then
     emit "$1.open=$(grep -c . <<<"$out")"
     grep . <<<"$out" | sort | uniq -c | awk -v p="$1" '{print p "." $2 "=" $1}' | emit_lines
-  elif grep -qi disabled <<<"$out"; then
+  elif grep -qi disabled "$errf"; then
     emit "$1.open=disabled"
   else
     fail "$1 alerts"
   fi
 }
+# gh gives an unfinished job the conclusion "", not null, so "//" alone never reaches status.
 jobs_of() {  # run id, key prefix
-  gh run view "$1" --json jobs | jq -r --arg p "$2" \
-    '.jobs[] | "\($p).\(.name | gsub("[^A-Za-z0-9]+"; "_"))=\(.conclusion // .status)"'
+  gh run view "$1" --json jobs | jq -r --arg p "$2" '.jobs[]
+    | "\($p).\(.name | gsub("[^A-Za-z0-9]+"; "_"))=\(if (.conclusion // "") == "" then .status else .conclusion end)"'
 }
 
 echo "== security-check $repo at ${m:0:7} ($(date -u +%FT%TZ))"
@@ -65,8 +74,9 @@ alerts code_scanning code-scanning/alerts \
 alerts secret_scanning secret-scanning/alerts '"alert"'
 alerts dependabot dependabot/alerts '.security_advisory.severity'
 
-echo "== scans (security-scan.yml)"
-if sched=$(gh run list --workflow security-scan.yml --event schedule --limit 1 --json databaseId,createdAt,headSha \
+echo "== scans (security-scan.yml, latest completed runs)"
+if sched=$(gh run list --workflow security-scan.yml --event schedule --status completed --limit 1 \
+    --json databaseId,createdAt,headSha \
     -q '.[0] // empty | "\(.databaseId) \(.createdAt[0:10]) \(.headSha[0:7]) \((now - (.createdAt | fromdateiso8601)) / 86400 | floor)"'); then
   if [ -z "$sched" ]; then
     emit "scan.scheduled=none"
@@ -110,29 +120,44 @@ else
   fail "security-scan.yml read"
 fi
 
+# The digest covers every protection field, so a change the lines above it don't itemize
+# still shows. A branch with no protection is a state to record, not a failed query.
 echo "== branch protection and repo settings"
-if p=$(gh api "repos/$repo/branches/main/protection" 2>/dev/null); then
-  jq -r '"protection.strict=\(.required_status_checks.strict)",
-    "protection.enforce_admins=\(.enforce_admins.enabled)",
-    "protection.force_pushes=\(.allow_force_pushes.enabled)",
-    "protection.deletions=\(.allow_deletions.enabled)",
-    "protection.required_count=\(.required_status_checks.contexts | length)",
-    "protection.required=\(.required_status_checks.contexts | sort | join(","))"' <<<"$p" | emit_lines
+if p=$(gh api "repos/$repo/branches/main/protection" 2>"$errf"); then
+  emit_jq "branch protection" "$p" '(.required_status_checks // {}) as $c
+    | ($c.checks // ($c.contexts // [] | map({context: .}))) as $checks
+    | "protection.strict=\($c.strict)",
+      "protection.required_count=\($checks | length)",
+      "protection.required=\($checks | map("\(.context)\(if .app_id then "@\(.app_id)" else "" end)") | sort | join(","))",
+      "protection.enforce_admins=\(.enforce_admins.enabled)",
+      "protection.force_pushes=\(.allow_force_pushes.enabled)",
+      "protection.deletions=\(.allow_deletions.enabled)",
+      "protection.signatures=\(.required_signatures.enabled // false)",
+      "protection.required_reviews=\(.required_pull_request_reviews.required_approving_review_count // "none")"'
+  if dg=$(jq -S -c . <<<"$p" 2>/dev/null | git hash-object --stdin); then emit "protection.digest=${dg:0:12}"; fi
+elif grep -q "Branch not protected" "$errf"; then
+  emit "protection=none"
 else
   fail "branch protection"
 fi
 if r=$(gh api "repos/$repo" 2>/dev/null); then
-  jq -r '"repo.visibility=\(.visibility)", "repo.allow_auto_merge=\(.allow_auto_merge)",
-    (.security_and_analysis // {} | to_entries[] | "repo.\(.key)=\(.value.status)")' <<<"$r" | emit_lines
+  emit_jq "repo settings" "$r" '"repo.visibility=\(.visibility)", "repo.allow_auto_merge=\(.allow_auto_merge)",
+    (.security_and_analysis // {} | to_entries[] | "repo.\(.key)=\(.value.status)")'
 else
   fail "repo settings"
 fi
 
-echo "== harness (.claude/settings.json on origin/main)"
+# The blob and tree ids cover the whole settings file and every hook script, so a change
+# the itemized lines don't show (a hook's command, an ask rule swapped for another) still does.
+echo "== harness (.claude/settings.json and .claude/hooks on origin/main)"
 if s=$(git show origin/main:.claude/settings.json 2>/dev/null); then
-  jq -r '"harness.deny=\(.permissions.deny // [] | sort | join(";"))",
+  emit_jq "settings.json read" "$s" '"harness.deny=\(.permissions.deny // [] | sort | join(";"))",
+    "harness.allow=\(.permissions.allow // [] | sort | join(";"))",
+    "harness.default_mode=\(.permissions.defaultMode // "unset")",
     "harness.ask_count=\(.permissions.ask // [] | length)",
-    "harness.hooks=\(.hooks // {} | keys | join(","))"' <<<"$s" | emit_lines
+    "harness.hooks=\(.hooks // {} | keys | join(","))"'
+  emit "harness.settings_blob=$(git rev-parse --short=12 origin/main:.claude/settings.json)"
+  emit "harness.hooks_tree=$(git rev-parse --short=12 --verify -q origin/main:.claude/hooks || echo none)"
 else
   fail "settings.json read"
 fi
@@ -152,10 +177,17 @@ if [ -z "$prev_sha" ]; then
 elif [ "$prev_sha" = "$m" ]; then
   echo "no commits since ${m:0:7}"
 elif git merge-base --is-ancestor "$prev_sha" "$m" 2>/dev/null; then
-  echo "$(git rev-list --count "$prev_sha..$m") commits, ${prev_sha:0:7}..${m:0:7}; files changed:"
-  git diff --name-only "$prev_sha" "$m" | head -200
+  n=$(git rev-list --count "$prev_sha..$m")
+  echo "$n commits, ${prev_sha:0:7}..${m:0:7}:"
+  git log --oneline "$prev_sha..$m" | head -"$cap"
+  [ "$n" -le "$cap" ] || echo "... and $((n - cap)) more commits"
+  files=$(git diff --name-only "$prev_sha" "$m")
+  nf=$(grep -c . <<<"$files")
+  echo "$nf files changed:"
+  head -"$cap" <<<"$files"
+  [ "$nf" -le "$cap" ] || echo "... and $((nf - cap)) more files"
 else
-  echo "the previous snapshot's commit ${prev_sha:0:7} is not an ancestor of main"
+  echo "REWRITTEN: the previous snapshot's commit ${prev_sha:0:7} is not an ancestor of main"
 fi
 
 echo "== deep audit"
@@ -180,6 +212,6 @@ else
 fi
 if [ "$rc" -eq 0 ]; then
   saved="$state/snapshot-$(date -u +%Y%m%dT%H%M%SZ)-${m:0:7}.txt"
-  cp "$new" "$saved" && echo "saved: $saved" || fail "snapshot save"
+  if cp "$new" "$saved"; then echo "saved: $saved"; else fail "snapshot save"; fi
 fi
 exit $rc
