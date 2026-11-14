@@ -999,6 +999,8 @@ class FullWorkflow:
                 await self._track_agent_execution_complete(execution_id, "failed", error=failure)
 
                 state["extraction_complete"] = False
+                # A rerun's failure must not leave QA the last run's package (ADR 0038).
+                state["extracted_data_summary"] = {}
                 state["error"] = f"Extraction agent error: {failure}"
 
         else:
