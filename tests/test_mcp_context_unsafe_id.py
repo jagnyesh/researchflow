@@ -21,7 +21,7 @@ async def fake_audit_redis():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "request_id", ["../xsentinel", "ABSOLUTE", "a\\xsentinel", "a/xsentinel", ".."]
+    "request_id", ["../xsentinel", "ABSOLUTE", "a\\xsentinel", "a/xsentinel", "x/../xsentinel"]
 )
 async def test_unsafe_request_id_gets_400_without_echo_or_write(
     tmp_path, monkeypatch, fake_audit_redis, caplog, request_id
