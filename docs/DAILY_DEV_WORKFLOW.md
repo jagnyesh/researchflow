@@ -29,7 +29,7 @@ The single structural idea in this edition. A change's **risk tier** — decided
 
 Two rules apply to the Model, effort column:
 
-- Fable runs a lane only when the owner names it for that lane.
+- Fable runs a lane only when the owner names it for that lane. The one standing exception (owner, 2026-11-13): on High-tier lanes, validate-and-ship Step 2's second, independent reviewer runs on Fable. The lane itself and the first reviewer stay on the lane's model.
 - The coordinator (the session that runs `/plan-lanes`) runs on Opus at medium, in a fresh session for each planning round.
 
 A lane without a model and an effort level inherits the coordinator's, so `/plan-lanes` passes both at every launch.
@@ -234,7 +234,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
 - **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
 - **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3), except the fix lane (§3).
-- **Token spend** is a guardrail beside review load: every lane launches on the model and effort level in §1's table, and the account's plan limits are checked before each launch (`/plan-lanes` Step 1).
+- **Token spend** is a guardrail beside review load: every lane launches on the model and effort level in §1's table, and the account's plan limits are checked before each launch (`/plan-lanes` Step 1). Each High-tier PR also costs one Fable review (§1, Model, effort).
 - **Review-debt rule:** no new lane while ≥ 2 PRs await your decision, except the one lane fixing a red `main` (§3).
 - **Never scale past validation:** pipeline red/flaky → one lane until green.
 - **Queue health:** refill to lanes × 2; starvation means the plan block was thin.

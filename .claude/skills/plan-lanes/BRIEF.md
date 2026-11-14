@@ -51,7 +51,7 @@ Never:
 
 If a check keeps failing or you stall, escalate in this order: give the model a check it can run (a failing test, a command that prints the value), then raise effort one level, then ask the user before moving up a model. You do not change your own model.
 
-For file searches use the `file-finder` subagent, and for reading test output and logs use the `log-reader` subagent (`.claude/agents/`). The validate-and-ship Step 2 reviewer stays on your model.
+For file searches use the `file-finder` subagent, and for reading test output and logs use the `log-reader` subagent (`.claude/agents/`). The validate-and-ship Step 2 reviewer stays on your model; on a High-tier lane, Step 2 also spawns a Fable second reviewer (see §1, Model, effort).
 
 Run pytest one file per process: a multi-file run here has hung for hours.
 
