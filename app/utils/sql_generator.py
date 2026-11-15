@@ -22,6 +22,20 @@ class SQLGenerator:
     """
 
     _CONCEPT_TYPES = ("condition", "demographic", "demographics", "lab", "medication", "procedure")
+    # A negated gender or age fails rather than build the inverse (ADR 0039). "excluded"
+    # is absent: inside an exclusion criterion it restates the list (ADR 0036).
+    _NEGATION = re.compile(
+        r"\b(?:not|no|non|but|never|nobody|none|cannot|minus|besides|without|ineligible"
+        r"|except\w*|exclu(?!ded\b|sively\b)\w*|excl|omit\w*|disqualif\w*|remov\w*"
+        r"|other\s+than|aside\s+from|rather\s+than|instead\s+of)\b|\bw/o\b|n['’]t\b"
+    )
+    # "familial" and "FH" are left out: they also name the patient's own diagnosis,
+    # as in familial hypercholesterolemia.
+    _FAMILY_HISTORY = re.compile(
+        r"\bfamily[\s_-]+(?:medical[\s_-]+)?(?:history|hx)\b"
+        r"|\b(?:maternal|paternal)[\s_-]+history\b|\bfirst[\s-]+degree[\s-]+relative",
+        re.I,
+    )
 
     def __init__(self, use_materialized_views: bool = True):
         """
@@ -361,6 +375,15 @@ class SQLGenerator:
                         "A medication concept names a drug class, which can't be "
                         "matched by name yet"
                     )
+                term_text = term if isinstance(term, str) else ""
+                if concept_type == "condition" and self._FAMILY_HISTORY.search(
+                    f"{term_text} {details_text}"
+                ):
+                    # The meant record is a relative's (FamilyMemberHistory), which
+                    # no view reads; the patient's own condition is wrong in either list.
+                    raise ValueError(
+                        "A condition concept names a family history, which can't be matched yet"
+                    )
 
                 if concept_type in ("condition", "lab", "medication", "procedure") and not (
                     isinstance(term, str) and term.strip()
@@ -481,13 +504,16 @@ class SQLGenerator:
           - (">", int_age) / ("<", int_age) for strict comparisons
           - (">=", int_age) / ("<=", int_age) for inclusive ones ("65 or older")
           - ("BETWEEN", (lo, hi)) for inclusive ranges
+          - ("AND", ((op, lo), (op, hi))) for a lower and an upper bound (#456)
+          - ("OR", ((op, lo), (op, hi))) for below one age or above a higher one
           - (None, None) when no parseable age constraint is present
         """
-        import re
-
         if not details:
             return None, None
         text = details.lower().strip()
+        if SQLGenerator._NEGATION.search(text):
+            # "not over 65" used to build > 65.
+            return None, None
 
         # Try range syntax first ("between X and Y"). Matches the LLM's
         # canonical age-range format per _MEDICAL_CONCEPTS_SYSTEM_PROMPT.
@@ -498,6 +524,48 @@ class SQLGenerator:
             lo, hi = int(range_match.group(1)), int(range_match.group(2))
             return "BETWEEN", (lo, hi)
 
+        numbers = list(re.finditer(r"\d+", text))
+        if len(numbers) == 1:
+            return SQLGenerator._parse_age_bound(text)
+        if len(numbers) != 2:
+            # The parser used to take the first number and drop the rest (#456).
+            return None, None
+        first, second = numbers
+        # "18 or older and under 65": the "or older" belongs to a first bound that has
+        # no comparison of its own. In "under 18 or over 65" it starts the second.
+        suffix = None
+        if SQLGenerator._parse_age_bound(text[: first.end()])[0] is None:
+            suffix = re.match(
+                r"\s*or\s+(?:older|over|above|younger|under|below)\b",
+                text[first.end() : second.start()],
+            )
+        start = first.end() + (suffix.end() if suffix else 0)
+        joins = list(re.finditer(r"\b(and|or)\b", text[start : second.start()]))
+        if len(joins) != 1:
+            return None, None
+        join = joins[0]
+        bounds = (
+            SQLGenerator._parse_age_bound(text[: start + join.start()]),
+            SQLGenerator._parse_age_bound(text[start + join.end() :]),
+        )
+        lower = [b for b in bounds if b[0] in (">", ">=")]
+        upper = [b for b in bounds if b[0] in ("<", "<=")]
+        if len(lower) != 1 or len(upper) != 1:
+            return None, None
+        (lower,), (upper,) = lower, upper
+        # The shape check, in whole years: AND must admit at least one age and OR must
+        # leave at least one out, so "> 18 and < 19" and "<= 17 or >= 18" fail.
+        youngest = lower[1] + (lower[0] == ">")
+        oldest = upper[1] - (upper[0] == "<")
+        if join.group(1) == "and" and youngest <= oldest:
+            return "AND", (lower, upper)
+        if join.group(1) == "or" and oldest + 1 < youngest:
+            return "OR", (upper, lower)
+        return None, None
+
+    @staticmethod
+    def _parse_age_bound(text: str) -> Tuple[Any, Any]:
+        """Read one comparison and its age from text holding exactly one number."""
         # Inclusive forms first: "65 or over" contains "over" and ">=" contains ">" (#404).
         # Word boundaries keep "senior over 65" strict.
         ge_pattern = r">=|\bat least\b|\bor (?:older|over|above)\b"
@@ -558,27 +626,29 @@ class SQLGenerator:
                     f"BETWEEN :{lo_param} AND :{hi_param}"
                 )
                 return sql, params
+            if op in ("AND", "OR"):
+                params, parts = {}, []
+                for bound_op, bound_age in age_value:
+                    name = self._get_param_name("age")
+                    params[name] = bound_age
+                    parts.append(
+                        f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) "
+                        f"{bound_op} :{name}"
+                    )
+                return f"({f' {op} '.join(parts)})", params
             param_name = self._get_param_name("age")
             params = {param_name: age_value}
             sql = f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) {op} :{param_name}"
             return sql, params
 
-        # Parse gender - MORE ROBUST MATCHING
+        # One value, never negated (ADR 0039): "not male" used to build male and
+        # "male or female" female.
         gender_value = None
-
-        # Check if term contains gender keywords
-        # IMPORTANT: Check "female" before "male" to avoid substring collision
-        # ("male" is a substring of "female", so order matters)
-        if "female" in term_lower:
-            gender_value = "female"
-        elif "male" in term_lower:
-            gender_value = "male"
-        elif "gender" in term_lower:
-            # Check details for gender value
-            if "male" in details_lower and "female" not in details_lower:
-                gender_value = "male"
-            elif "female" in details_lower:
-                gender_value = "female"
+        if "male" in term_lower or "gender" in term_lower:
+            text = f"{term_lower} {details_lower}"
+            values = set(re.findall(r"\b(female|male)s?\b", text))
+            if len(values) == 1 and not self._NEGATION.search(text):
+                gender_value = values.pop()
 
         if gender_value:
             param_name = self._get_param_name("gender")
