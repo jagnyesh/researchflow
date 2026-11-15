@@ -237,7 +237,7 @@ In the same answer you decided that #499, #503 and #504 are not escapes, which a
 - No PR was reverted, and none of the nine closed issues has reopened.
 - Two issues were filed during the round, [#515](https://github.com/jagnyesh/researchflow/issues/515) and [#517](https://github.com/jagnyesh/researchflow/issues/517). #515 came from the review of the change in #516, and #517 from the review of the change in #518. On 2026-11-15 you decided that neither is an escape.
   - #515 reports a bug that the review found outside the diff, in code that predates the override.
-  - #517 is a scope split of #456. It proposes an allowlist in place of the word denylist that #518 added. It also lists inputs that still build the wrong cohort after #518, such as a gender of `!= male`. #518's review routed those inputs to #517 before #518 merged. The generator had no negation check before #518.
+  - #517 is a scope split of #456. It proposes an allowlist in place of the word denylist that #518 added. It also lists inputs that still build the wrong cohort after #518, such as a gender of `!= male`. #518's review routed those inputs to #517 before #518 merged. Before #518 the gender clause had no negation check, so `!= male` already built the male cohort.
 
 **Analysis (the coordinating session's reading, not your stated reason).** No wait came near the 24 h bar. The round's cost was the updates that each merge forced on the other open PRs.
 
