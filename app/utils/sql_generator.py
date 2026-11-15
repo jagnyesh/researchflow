@@ -25,7 +25,16 @@ class SQLGenerator:
     # A negated gender or age fails rather than build the inverse (ADR 0039). "excluded"
     # is absent: inside an exclusion criterion it restates the list (ADR 0036).
     _NEGATION = re.compile(
-        r"\b(?:not|no|non|but|except|exclude|excludes|excluding|other\s+than|without)\b|n't\b"
+        r"\b(?:not|no|non|but|never|nobody|none|cannot|minus|besides|without|ineligible"
+        r"|except\w*|exclu(?!ded\b)\w*|excl|omit\w*|disqualif\w*|remov\w*"
+        r"|other\s+than|aside\s+from|rather\s+than|instead\s+of)\b|\bw/o\b|n['’]t\b"
+    )
+    # "familial" and "FH" are left out: they also name the patient's own diagnosis,
+    # as in familial hypercholesterolemia.
+    _FAMILY_HISTORY = re.compile(
+        r"\bfamily[\s_-]+(?:medical[\s_-]+)?(?:history|hx)\b"
+        r"|\b(?:maternal|paternal)[\s_-]+history\b|\bfirst[\s-]+degree[\s-]+relative",
+        re.I,
     )
 
     def __init__(self, use_materialized_views: bool = True):
@@ -367,10 +376,8 @@ class SQLGenerator:
                         "matched by name yet"
                     )
                 term_text = term if isinstance(term, str) else ""
-                if concept_type == "condition" and re.search(
-                    r"\bfamily[\s-]+(?:medical\s+)?(?:history|hx)\b",
-                    f"{term_text} {details_text}",
-                    re.I,
+                if concept_type == "condition" and self._FAMILY_HISTORY.search(
+                    f"{term_text} {details_text}"
                 ):
                     # The meant record is a relative's (FamilyMemberHistory), which
                     # no view reads; the patient's own condition is wrong in either list.

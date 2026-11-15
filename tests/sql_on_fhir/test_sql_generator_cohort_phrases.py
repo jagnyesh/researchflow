@@ -33,6 +33,10 @@ def _criterion(*concepts):
         ("breast cancer", "family medical history"),
         ("breast cancer", "family hx"),
         ("family history of breast cancer", ""),
+        ("breast cancer", "family_history"),
+        ("breast cancer", "maternal history"),
+        ("breast cancer", "Paternal  history"),
+        ("breast cancer", "in a first-degree relative"),
     ],
 )
 def test_a_family_history_condition_fails_the_request(side, term, details):
@@ -42,6 +46,15 @@ def test_a_family_history_condition_fails_the_request(side, term, details):
         _generate(**{side: [_criterion(concept)]})
 
     assert "breast cancer" not in str(raised.value)
+
+
+# "familial" and "FH" also name a patient's own diagnosis, so they are not markers.
+def test_familial_hypercholesterolemia_is_the_patients_own_condition():
+    concept = {"type": "condition", "term": "familial hypercholesterolemia", "details": "FH"}
+
+    _, params = _generate(inclusion=[_criterion(concept)])
+
+    assert params == {"condition_1": "%familial hypercholesterolemia%"}
 
 
 @pytest.mark.parametrize(
@@ -84,6 +97,23 @@ def test_a_single_gender_builds_that_gender(term, details, value):
         ("gender", "excludes male patients"),
         ("gender", "anything but male"),
         ("gender", "isn't male"),
+        ("gender", "isn’t male"),
+        ("gender", "exclusion of males"),
+        ("gender", "males (exclusion)"),
+        ("gender", "excl. males"),
+        ("gender", "excepting males"),
+        ("gender", "omit males"),
+        ("gender", "never male"),
+        ("gender", "w/o males"),
+        ("gender", "minus males"),
+        ("gender", "besides males"),
+        ("gender", "aside from males"),
+        ("gender", "rather than male"),
+        ("gender", "instead of male"),
+        ("gender", "males are ineligible"),
+        ("gender", "males removed"),
+        ("gender", "males disqualified"),
+        ("gender", "cannot be male"),
     ],
 )
 def test_a_negated_or_multi_value_gender_fails_the_request(side, term, details):
@@ -179,6 +209,20 @@ def test_any_other_age_with_two_or_more_numbers_fails_the_request(side, details)
         "no one under 18",
         "not between 18 and 65",
         "over 18 but under 65",  # "but" is on the shared negation list
+        "isn’t over 65",
+        "don’t include over 65",
+        "cannot be over 65",
+        "nobody over 65",
+        "none over 65",
+        "never over 65",
+        "w/o patients over 65",
+        "over 65 disqualified",
+        "under 18 or over 65 are ineligible",
+        "exclusion: under 18 or over 65",
+        "excl. under 18 or over 65",
+        "excepting under 18 or over 65",
+        "omit under 18 or over 65",
+        "over 65 removed",
     ],
 )
 def test_a_negated_age_fails_the_request(side, details):
