@@ -168,7 +168,7 @@ def _proceed_app(submitted: list, fail: bool = False):
     at = AppTest.from_file(notebook, default_timeout=60).run()
 
     async def intent(self, text):
-        return UserIntent.QUERY if text == QUERY else UserIntent.CONFIRMATION
+        return UserIntent.CONFIRMATION if text == "proceed" else UserIntent.QUERY
 
     async def confirmed(self, text):
         return True
@@ -241,4 +241,21 @@ def test_a_failed_submit_says_so_and_keeps_the_count_confirmable():
 
     assert submitted == []
     assert at.session_state["pending_request_id"] is None
-    assert "Could not submit" in at.session_state["messages"][-1]["content"]
+    reply = at.session_state["messages"][-1]["content"]
+    assert "Could not submit" in reply
+    assert "workflow down" not in reply  # ADR 0029: a ref, never the exception text
+    assert at.session_state["conversation_state"].name == "AWAITING_CONFIRMATION"
+
+
+def test_proceed_after_a_refined_question_submits_the_latest_query():
+    submitted: list = []
+    at, patches = _proceed_app(submitted)
+    refined = "How many women with hypertension are under 50?"
+    try:
+        at.chat_input[0].set_value(QUERY).run()
+        at.chat_input[0].set_value(refined).run()
+        at.chat_input[0].set_value("proceed").run()
+    finally:
+        _stop(patches)
+
+    assert submitted == [refined]
