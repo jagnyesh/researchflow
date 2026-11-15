@@ -5,11 +5,13 @@ This script bulk-loads FHIR bundles from Synthea output directory into HAPI FHIR
 Each bundle contains a complete patient record with all associated resources.
 
 Usage:
-    python scripts/load_synthea_to_hapi.py
+    python scripts/load_synthea_to_hapi.py path/to/synthea/output/fhir
+    SYNTHEA_FHIR_DIR=path/to/synthea/output/fhir python scripts/load_synthea_to_hapi.py
 
 Requirements:
     - HAPI FHIR server running on http://localhost:8081/fhir
-    - Synthea FHIR bundles in /Users/jagnyesh/Development/sql_practice/synthea/output/fhir/
+    - Synthea FHIR bundles (*.json) in the directory given as the argument or in
+      SYNTHEA_FHIR_DIR; the argument wins when both are set
 """
 
 import httpx
@@ -17,14 +19,24 @@ import asyncio
 import json
 from pathlib import Path
 from datetime import datetime
+import os
 import sys
 
 # Configuration
 FHIR_SERVER = "http://localhost:8081/fhir"
-SYNTHEA_DIR = Path("/Users/jagnyesh/Development/sql_practice/synthea/output/fhir")
 TIMEOUT = 30.0
 BATCH_DELAY = 0.5  # seconds between batches
 BATCH_SIZE = 10  # bundles per batch before delay
+
+
+def resolve_synthea_dir(argv: list[str], env) -> Path:
+    """Bundle directory from the first CLI argument, else SYNTHEA_FHIR_DIR; exit if neither."""
+    value = argv[0] if argv else env.get("SYNTHEA_FHIR_DIR", "")
+    if not value:
+        sys.exit(
+            "Synthea directory not set: pass it as the first argument or set SYNTHEA_FHIR_DIR."
+        )
+    return Path(value)
 
 
 async def check_server_health() -> bool:
@@ -77,13 +89,13 @@ async def load_fhir_bundle(client: httpx.AsyncClient, bundle_path: Path) -> tupl
         return False, f"Error: {e}"
 
 
-async def load_all_bundles():
+async def load_all_bundles(synthea_dir: Path):
     """Load all Synthea FHIR bundles into HAPI FHIR server"""
     print("=" * 80)
     print("SYNTHEA → HAPI FHIR BULK LOADER")
     print("=" * 80)
     print(f"FHIR Server: {FHIR_SERVER}")
-    print(f"Synthea Dir: {SYNTHEA_DIR}")
+    print(f"Synthea Dir: {synthea_dir}")
     print()
 
     # Check server health
@@ -97,13 +109,13 @@ async def load_all_bundles():
 
     # Find all bundle files
     print("[2/4] Finding FHIR bundles...")
-    if not SYNTHEA_DIR.exists():
-        print(f"❌ Directory not found: {SYNTHEA_DIR}")
+    if not synthea_dir.exists():
+        print(f"❌ Directory not found: {synthea_dir}")
         sys.exit(1)
 
-    bundles = list(SYNTHEA_DIR.glob("*.json"))
+    bundles = list(synthea_dir.glob("*.json"))
     if not bundles:
-        print(f"❌ No JSON files found in {SYNTHEA_DIR}")
+        print(f"❌ No JSON files found in {synthea_dir}")
         sys.exit(1)
 
     print(f"✅ Found {len(bundles)} FHIR bundles")
@@ -156,7 +168,7 @@ async def load_all_bundles():
 
 if __name__ == "__main__":
     try:
-        asyncio.run(load_all_bundles())
+        asyncio.run(load_all_bundles(resolve_synthea_dir(sys.argv[1:], os.environ)))
     except KeyboardInterrupt:
         print("\n⚠️  Interrupted by user")
         sys.exit(1)
