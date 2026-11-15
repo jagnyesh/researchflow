@@ -55,10 +55,18 @@ from app.langchain_orchestrator.request_facade import (
     ApprovalRefused,
     LangGraphRequestFacade,
 )
+from app.langchain_orchestrator.approval_bridge import (
+    REJECT_FOR_REVISION,
+    REJECT_NOT_FEASIBLE,
+    REJECTION_ROUTE_KEY,
+)
 from app.database import get_db_session, get_engine
 from app.services.gate_telemetry import gate_telemetry_rows, load_gate_telemetry
 from app.database.models import AgentExecution
 from app.services.approval_service import ApprovalService
+
+REJECT_FOR_REVISION_LABEL = "Reject for revision"
+REJECT_NOT_FEASIBLE_LABEL = "Reject as not feasible"
 
 
 def run_async(coroutine):
@@ -1304,6 +1312,25 @@ def display_approval_card(approval, reviewer_email, expanded=False):
         # Rejection interface
         if st.session_state.get(f"show_reject_{approval_id}", False):
             st.subheader("Reject")
+            rejection_modifications = {}
+            if approval_type == "phenotype_sql":
+                # An explicit choice: the router never reads the reason's wording (#434)
+                route_label = st.radio(
+                    "What happens to the request",
+                    [REJECT_FOR_REVISION_LABEL, REJECT_NOT_FEASIBLE_LABEL],
+                    captions=[
+                        "The SQL is regenerated and comes back for review",
+                        "The request ends and the researcher is told it is not feasible",
+                    ],
+                    key=f"reject_route_{approval_id}",
+                )
+                rejection_modifications = {
+                    REJECTION_ROUTE_KEY: (
+                        REJECT_NOT_FEASIBLE
+                        if route_label == REJECT_NOT_FEASIBLE_LABEL
+                        else REJECT_FOR_REVISION
+                    )
+                }
             reject_reason = st.text_area(
                 "Reason for rejection",
                 placeholder="What is wrong and what needs to change",
@@ -1318,7 +1345,9 @@ def display_approval_card(approval, reviewer_email, expanded=False):
                 else:
                     # Email optional for MVP (SSO handles authorization)
                     reviewer = reviewer_email if reviewer_email else "System Admin"
-                    handle_approval_response(approval_id, "reject", reviewer, reject_reason, {})
+                    handle_approval_response(
+                        approval_id, "reject", reviewer, reject_reason, rejection_modifications
+                    )
                     st.session_state[f"show_reject_{approval_id}"] = False
 
 
