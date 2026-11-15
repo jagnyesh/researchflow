@@ -60,19 +60,22 @@ async def refresh_all_views():
         logger.info("\n" + "=" * 60)
         logger.info("REFRESH COMPLETE")
         logger.info(f"Total duration: {duration:.2f}s")
-        logger.info(f"Views refreshed: {result.get('refreshed_count', 0)}")
-        logger.info(f"Views failed: {result.get('failed_count', 0)}")
+        refreshed = result["success"]
+        failed = result["failed"]
+        logger.info(f"Views refreshed: {refreshed}")
+        logger.info(f"Views failed: {failed}")
 
-        if result.get("errors"):
+        failures = [r for r in result["results"] if not r.get("success")]
+        if failures:
             logger.error("\nErrors encountered:")
-            for error in result["errors"]:
-                logger.error(f"  - {error}")
+            for r in failures:
+                logger.error(f"  - {r['view_name']}: {r.get('error')}")
 
         logger.info(f"Finished at: {datetime.utcnow().isoformat()}")
         logger.info("=" * 60)
 
         # Return exit code based on success
-        return 0 if result.get("failed_count", 0) == 0 else 1
+        return 0 if failed == 0 else 1
 
     except Exception as e:
         logger.error(f"\n❌ Fatal error: {e}", exc_info=True)
