@@ -11,7 +11,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
 1. **[../README.md](../README.md)** - Project overview and key features
 2. **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Installation instructions (3 steps)
 3. **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Common commands and troubleshooting
-4. **[DEMO_GUIDE.md](DEMO_GUIDE.md)** - Walkthrough demo
 
 ---
 
@@ -55,10 +54,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Testing commands
   - Common workflows
 
-- **[DEMO_GUIDE.md](DEMO_GUIDE.md)** - Interactive demo
-  - Step-by-step walkthrough
-  - Example research requests
-  - Expected results
 
 ### User Guides
 - **[RESEARCHFLOW_README.md](RESEARCHFLOW_README.md)** - Full architecture guide
@@ -86,10 +81,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Environment variables
   - Tests and fixes for common errors
 
-- **[APPROVAL_WORKFLOW_GUIDE.md](APPROVAL_WORKFLOW_GUIDE.md)** - Human-in-loop workflow
-  - Critical approval gates
-  - SQL review process
-  - Requirements validation
 
 ### Technical Implementation
 - **[SQL_ON_FHIR_V2.md](SQL_ON_FHIR_V2.md)** - FHIR analytics
@@ -98,7 +89,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Query optimization
 
 - **[MATERIALIZED_VIEWS.md](MATERIALIZED_VIEWS.md)** - Performance optimization
-  - 10-100x query speedup
   - View management
   - Refresh strategies
 
@@ -107,15 +97,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Speed layer (Redis cache)
   - Serving layer (HybridRunner)
 
-- **[MULTI_PROVIDER_LLM.md](MULTI_PROVIDER_LLM.md)** - LLM integration
-  - Claude + OpenAI/Ollama setup
-  - 60% cost reduction
-  - Provider routing logic
-
-- **[POSTGRES_RUNNER_IMPLEMENTATION.md](POSTGRES_RUNNER_IMPLEMENTATION.md)** - In-database runner
-  - PostgreSQL implementation
-  - Performance benchmarks
-  - Query execution
 
 - **[REFERENTIAL_INTEGRITY.md](REFERENTIAL_INTEGRITY.md)** - Database design
   - Foreign key relationships
@@ -138,44 +119,25 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
 ## 🧪 Testing & Quality
 
 ### Testing Guides
-- **[SQL_ON_FHIR_TESTING_GUIDE.md](SQL_ON_FHIR_TESTING_GUIDE.md)** - SQL testing
-  - Test data setup (Synthea)
-  - Writing SQL tests
-  - Integration testing
-
-- **[TEST_SUITE_ORGANIZATION.md](TEST_SUITE_ORGANIZATION.md)** - Test structure
-  - Unit, integration, E2E tests
-  - Test file organization
-  - Running specific test suites
+See the [testing/](testing/) directory (E2E guide, manual script, LangGraph test plan).
 
 ### Test Results
 - **[sprints/archive/SPRINT_05_5_TEST_RESULTS.md](sprints/archive/SPRINT_05_5_TEST_RESULTS.md)** - Lambda architecture
-  - 29 comprehensive tests
-  - 100% pass rate
   - Performance benchmarks
 
 - **[sprints/archive/E2E_TESTING_REPORT.md](sprints/archive/E2E_TESTING_REPORT.md)** - End-to-end tests
   - Full workflow validation
   - Integration test coverage
 
-- **[TEST_EXECUTION_RESULTS.md](TEST_EXECUTION_RESULTS.md)** - Test summary
-  - Overall statistics
-  - Coverage reports
-  - Failure analysis
 
 - **[implementation/TEST_RESULTS.md](implementation/TEST_RESULTS.md)** - Implementation tests
 - **[implementation/APPROVAL_WORKFLOW_TEST_RESULTS.md](implementation/APPROVAL_WORKFLOW_TEST_RESULTS.md)** - Approval workflow tests
-- **[PRIORITY_0_TESTS_SUMMARY.md](PRIORITY_0_TESTS_SUMMARY.md)** - Priority 0 test results
-- **[RESEARCHER_PORTAL_TESTING.md](RESEARCHER_PORTAL_TESTING.md)** - Portal testing
 
 ---
 
 ## 📋 Sprint Documentation
 
 For current sprint state, blockers, and what's in flight, see **[../CONTEXT.md](../CONTEXT.md)** at repo root. For architectural decisions across sprints, see **[decisions/INDEX.md](decisions/INDEX.md)** (append-only ADR log, one file per decision). For upcoming work, see **[../BACKLOG.md](../BACKLOG.md)**.
-
-### Active Sprint
-- **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** — Sprint 6.1 Security Baseline implementation plan
 
 ### Sprint Template
 - [sprints/SPRINT_TEMPLATE.md](sprints/SPRINT_TEMPLATE.md) — boilerplate for new sprint reports
@@ -193,21 +155,12 @@ Archived in **[sprints/archive/](sprints/archive/)**. The original master tracke
   - Data layers and the `HybridRunner` wiring statement
   - Known gaps
 
-- **[ARCHITECTURE_ALIGNMENT_ANALYSIS.md](ARCHITECTURE_ALIGNMENT_ANALYSIS.md)** - Architecture alignment
-  - Design decisions
-  - Component interactions
-  - System boundaries
 
 - **[architecture/ArchitectureAnalysis.md](architecture/ArchitectureAnalysis.md)** - Deep dive
   - Detailed component analysis
   - Data flow diagrams
   - Performance considerations
 
-- **[DESIGN_SYSTEM.md](DESIGN_SYSTEM.md)** - UI design system
-  - Color palette
-  - Typography
-  - Component library
-  - Accessibility guidelines
 
 ---
 
@@ -218,7 +171,7 @@ Archived in **[sprints/archive/](sprints/archive/)**. The original master tracke
   - Security best practices
   - Responsible disclosure
 
-- **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** - Security implementation (active)
+- **[sprints/SPRINT_06_IMPLEMENTATION.md](sprints/SPRINT_06_IMPLEMENTATION.md)** - Security implementation
   - HIPAA compliance checklist
   - Authentication & authorization
   - SQL injection prevention
@@ -229,19 +182,7 @@ Archived in **[sprints/archive/](sprints/archive/)**. The original master tracke
 
 ## 📊 Observability & Monitoring
 
-- **[LANGSMITH_DASHBOARD_GUIDE.md](LANGSMITH_DASHBOARD_GUIDE.md)** - LangSmith observability
-  - Workflow tracing
-  - Performance monitoring
-  - Debugging workflows
-
-- **[LANGSMITH_WORKFLOW_TRACES.md](LANGSMITH_WORKFLOW_TRACES.md)** - Trace examples
-  - Sample traces
-  - Trace analysis
-  - Performance insights
-
-- **[LANGSMITH_DIAGRAM_GENERATION_GUIDE.md](LANGSMITH_DIAGRAM_GENERATION_GUIDE.md)** - Diagram generation
-  - LangGraph diagram export
-  - Workflow visualization
+- **[observability/](observability/)** - LangSmith observability and debugging guides
 
 ---
 
@@ -251,7 +192,7 @@ Feature completion reports documenting implementation details:
 
 - **[implementation/PHASE1_COMPLETE.md](implementation/PHASE1_COMPLETE.md)** - Database persistence
 - **[implementation/PHASE2_PHASE3_COMPLETE.md](implementation/PHASE2_PHASE3_COMPLETE.md)** - Performance & production hardening
-- **[implementation/CACHING_COMPLETE.md](implementation/CACHING_COMPLETE.md)** - Query caching (1151x speedup)
+- **[implementation/CACHING_COMPLETE.md](implementation/CACHING_COMPLETE.md)** - Query caching
 - **[implementation/PARALLEL_PROCESSING_COMPLETE.md](implementation/PARALLEL_PROCESSING_COMPLETE.md)** - Parallel processing
 - **[implementation/HEALTHCHECK_COMPLETE.md](implementation/HEALTHCHECK_COMPLETE.md)** - Health monitoring
 - **[implementation/HUMAN_IN_LOOP_COMPLETE.md](implementation/HUMAN_IN_LOOP_COMPLETE.md)** - Human-in-loop approvals
@@ -262,15 +203,6 @@ Feature completion reports documenting implementation details:
 
 ## 🔬 Research & Evaluation
 
-- **[LANGCHAIN_COMPARISON.md](LANGCHAIN_COMPARISON.md)** - LangChain vs custom agents
-  - Evaluation criteria
-  - Decision rationale
-  - Migration considerations
-
-- **[LANGCHAIN_EVALUATION.md](LANGCHAIN_EVALUATION.md)** - LangChain evaluation
-  - Features analysis
-  - Performance benchmarks
-  - Integration complexity
 
 - **[ResearchFlow PRD.md](ResearchFlow%20PRD.md)** - Original product requirements
   - User stories
@@ -282,18 +214,10 @@ Feature completion reports documenting implementation details:
 ## 📖 Planning & Roadmap
 
 - **[GAP_ANALYSIS_AND_ROADMAP.md](GAP_ANALYSIS_AND_ROADMAP.md)** - Product roadmap
-  - Current status (44.44% complete)
+  - Historical roadmap; current state is in [../CONTEXT.md](../CONTEXT.md)
   - Future features
   - 8-month implementation plan
 
-- **[HUMAN_IN_LOOP_ENHANCEMENT_ROADMAP.md](HUMAN_IN_LOOP_ENHANCEMENT_ROADMAP.md)** - Human-in-loop roadmap
-  - Approval workflow enhancements
-  - Implementation phases
-
-- **[NEXT_STEPS.md](NEXT_STEPS.md)** - Next development steps
-  - Planned features
-  - Technical debt
-  - Optimization opportunities
 
 ---
 
@@ -304,10 +228,6 @@ Feature completion reports documenting implementation details:
   - The four engineering arcs
   - What the Sprint 8 series taught, and the shipped log
 
-- **[legacy/](legacy/)** - Legacy documentation archive
-  - Previous architecture versions
-  - Deprecated features
-  - Migration guides
 
 ---
 
@@ -320,29 +240,19 @@ ResearchFlow is a proof of concept for LLM-assisted clinical research data reque
 - **SQL-on-FHIR v2**: Real-time analytics on FHIR data
 - **Lambda Architecture**: Batch layer (materialized views) + speed layer (Redis) + serving layer
 - **LLM Integration**: Claude API + optional OpenAI/Ollama
-- **Web UIs**: Research Notebook (port 8501) + Admin Dashboard (port 8502)
-
-### Key Features
-- ✅ Database persistence with audit trail
-- ✅ Query caching (1151x speedup)
-- ✅ Parallel processing (1.5x faster)
-- ✅ Health monitoring endpoints
-- ✅ SQL-on-FHIR v2 with ViewDefinitions
-- ✅ Natural language query interface
-- ✅ Human-in-loop approval gates
-- ✅ Multi-provider LLM routing (60% cost reduction)
-- ✅ Lambda architecture (10-100x speedup)
+- **Web UIs**: Exploratory portal (port 8501), formal portal (port 8502), Admin Dashboard (port 8503)
 
 ### Services
 
 | Service | Port | URL |
 |---------|------|-----|
-| Research Notebook | 8501 | http://localhost:8501 |
-| Admin Dashboard | 8502 | http://localhost:8502 |
+| Exploratory portal (Research Notebook) | 8501 | http://localhost:8501 |
+| Formal portal (Researcher Portal) | 8502 | http://localhost:8502 |
+| Admin Dashboard | 8503 | http://localhost:8503 |
 | API Server | 8000 | http://localhost:8000 |
 | HAPI FHIR | 8081 | http://localhost:8081/fhir |
 | PostgreSQL (HAPI) | 5433 | localhost:5433 |
-| PostgreSQL (App) | 5432 | localhost:5432 |
+| PostgreSQL (App) | 5434 | localhost:5434 |
 
 ---
 
@@ -397,19 +307,16 @@ docs/
 ├── README.md (this file)
 ├── Getting Started/
 │   ├── SETUP_GUIDE.md
-│   ├── QUICK_REFERENCE.md
-│   └── DEMO_GUIDE.md
+│   └── QUICK_REFERENCE.md
 ├── Core Documentation/
 │   ├── RESEARCHFLOW_README.md
 │   ├── TEXT_TO_SQL_FLOW.md
 │   └── API_EXAMPLES.md
 ├── Technical/
 │   ├── SQL_ON_FHIR_V2.md
-│   ├── MATERIALIZED_VIEWS_ARCHITECTURE.md
-│   └── MULTI_PROVIDER_LLM.md
+│   └── MATERIALIZED_VIEWS_ARCHITECTURE.md
 ├── Testing/
-│   ├── SQL_ON_FHIR_TESTING_GUIDE.md
-│   └── TEST_SUITE_ORGANIZATION.md
+│   └── testing/
 ├── Architecture/
 │   └── architecture/
 ├── Sprints/
@@ -422,21 +329,10 @@ docs/
 
 ## 📊 Project Status
 
-- **Status**: Active Development (Sprint 6 - Security Baseline)
-- **Completion**: 44.44% (8/18 sprints)
-- **Test Coverage**: 29 comprehensive tests (100% pass rate)
-- **Performance**: 10-100x speedup (materialized views), 1151x (caching)
-- **Cost Optimization**: 60% LLM cost reduction
-- **Documentation**: 60+ markdown files
+For current status, see [../CONTEXT.md](../CONTEXT.md). Plans are in [../BACKLOG.md](../BACKLOG.md). Several documents above predate the LangGraph migration; where they disagree with [ARCHITECTURE.md](ARCHITECTURE.md) or the code, those win.
 
 ---
 
 ## 📜 License
 
 MIT License - See [../LICENSE](../LICENSE)
-
----
-
-**Last Updated**: 2025-10-30
-**Documentation Version**: 2.0
-**Project Version**: Sprint 6 (Security Baseline)
