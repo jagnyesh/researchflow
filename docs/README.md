@@ -98,7 +98,6 @@ Welcome to the ResearchFlow documentation! This guide helps you navigate the ext
   - Serving layer (HybridRunner)
 
 
-
 - **[REFERENTIAL_INTEGRITY.md](REFERENTIAL_INTEGRITY.md)** - Database design
   - Foreign key relationships
   - Data consistency
@@ -183,8 +182,7 @@ Archived in **[sprints/archive/](sprints/archive/)**. The original master tracke
 
 ## 📊 Observability & Monitoring
 
-
-
+- **[observability/](observability/)** - LangSmith observability and debugging guides
 
 ---
 
@@ -206,7 +204,6 @@ Feature completion reports documenting implementation details:
 ## 🔬 Research & Evaluation
 
 
-
 - **[ResearchFlow PRD.md](ResearchFlow%20PRD.md)** - Original product requirements
   - User stories
   - Success criteria
@@ -220,7 +217,6 @@ Feature completion reports documenting implementation details:
   - Historical roadmap; current state is in [../CONTEXT.md](../CONTEXT.md)
   - Future features
   - 8-month implementation plan
-
 
 
 ---
@@ -256,7 +252,7 @@ ResearchFlow is a proof of concept for LLM-assisted clinical research data reque
 | API Server | 8000 | http://localhost:8000 |
 | HAPI FHIR | 8081 | http://localhost:8081/fhir |
 | PostgreSQL (HAPI) | 5433 | localhost:5433 |
-| PostgreSQL (App) | 5432 | localhost:5432 |
+| PostgreSQL (App) | 5434 | localhost:5434 |
 
 ---
 
@@ -311,16 +307,14 @@ docs/
 ├── README.md (this file)
 ├── Getting Started/
 │   ├── SETUP_GUIDE.md
-│   ├── QUICK_REFERENCE.md
-│   └── DEMO_GUIDE.md
+│   └── QUICK_REFERENCE.md
 ├── Core Documentation/
 │   ├── RESEARCHFLOW_README.md
 │   ├── TEXT_TO_SQL_FLOW.md
 │   └── API_EXAMPLES.md
 ├── Technical/
 │   ├── SQL_ON_FHIR_V2.md
-│   ├── MATERIALIZED_VIEWS_ARCHITECTURE.md
-│   └── MULTI_PROVIDER_LLM.md
+│   └── MATERIALIZED_VIEWS_ARCHITECTURE.md
 ├── Testing/
 │   └── testing/
 ├── Architecture/
