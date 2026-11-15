@@ -31,7 +31,7 @@ The age parser took the first number in the details and the first comparison wor
   - the phrases `other than`, `aside from`, `rather than` and `instead of`;
   - any word that starts with `except`, `exclu`, `omit`, `disqualif` or `remov`, the abbreviation `excl`, and any `n't` with a straight or curly apostrophe.
 
-  `excluded` isn't on the list, because inside an exclusion criterion it restates the list it's in (ADR 0036).
+  `excluded` isn't on the list, because inside an exclusion criterion it restates the list it's in (ADR 0036). Neither are `exclusive` and `exclusively`, which negate nothing: `exclusively male` builds `male`.
 - **An age with two bounds builds both, joined the way the details join them.** When the details hold exactly two numbers, the generator splits them at the one `and` or `or` between the numbers and reads each side as a single bound. An `or older`, `or over`, `or above`, `or younger`, `or under` or `or below` right after the first number belongs to the first bound when no comparison comes before that number, as in `18 or older and under 65`. In `under 18 or over 65` the first bound already has `under`, so `or over` starts the second bound.
   - One side must be a lower bound (`>` or `>=`) and the other an upper bound (`<` or `<=`). The generator compares them in whole years of age, so `> 18` admits 19 and up, and `< 65` admits 64 and down.
   - `and` builds `(age > :lo AND age < :hi)` when at least one whole year meets both bounds. `>= 18 and <= 18` builds the 18-year-olds, and `> 18 and < 19` fails.

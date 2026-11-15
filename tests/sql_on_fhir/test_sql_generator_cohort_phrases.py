@@ -57,6 +57,16 @@ def test_familial_hypercholesterolemia_is_the_patients_own_condition():
     assert params == {"condition_1": "%familial hypercholesterolemia%"}
 
 
+# ADR 0039 scopes the family-history rule to conditions.
+@pytest.mark.parametrize("concept_type", ["medication", "procedure", "lab"])
+def test_family_history_details_on_another_concept_type_still_build(concept_type):
+    concept = {"type": concept_type, "term": "insulin", "details": "family history"}
+
+    sql, _ = _generate(inclusion=[_criterion(concept)])
+
+    assert sql.count("EXISTS (") == 1
+
+
 @pytest.mark.parametrize(
     "term,details,value",
     [
@@ -65,6 +75,9 @@ def test_familial_hypercholesterolemia_is_the_patients_own_condition():
         ("female", "female patients", "female"),
         ("gender", "males", "male"),
         ("Females", "", "female"),
+        # "exclu" is a negation stem, but "exclusively" negates nothing.
+        ("gender", "exclusively male", "male"),
+        ("male", "male exclusively", "male"),
         # Inside an exclusion the marker restates the list (ADR 0036), so it is no negation.
         ("gender", "male, excluded", "male"),
     ],
@@ -114,6 +127,7 @@ def test_a_single_gender_builds_that_gender(term, details, value):
         ("gender", "males removed"),
         ("gender", "males disqualified"),
         ("gender", "cannot be male"),
+        ("gender", "nonmale"),
     ],
 )
 def test_a_negated_or_multi_value_gender_fails_the_request(side, term, details):
@@ -139,6 +153,8 @@ def _age(details):
         ("18 or older and under 65", ">=", 18, "<", 65),
         ("under 65 and over 18", ">", 18, "<", 65),
         (">= 18 and <= 18", ">=", 18, "<=", 18),
+        ("18 or over and under 65", ">=", 18, "<", 65),
+        ("18 or above and below 65", ">=", 18, "<", 65),
     ],
 )
 def test_an_age_with_two_bounds_joined_by_and_builds_both(details, lo_op, lo, hi_op, hi):
@@ -158,6 +174,8 @@ def test_an_age_with_two_bounds_joined_by_and_builds_both(details, lo_op, lo, hi
         ("over 65 or under 18", "<", 18, ">", 65),
         ("18 or younger or 65 or older", "<=", 18, ">=", 65),
         ("under 18 or over 18", "<", 18, ">", 18),
+        ("17 or under or over 65", "<=", 17, ">", 65),
+        ("17 or below or over 65", "<=", 17, ">", 65),
     ],
 )
 def test_an_age_with_two_bounds_joined_by_or_builds_outside_the_range(
@@ -194,6 +212,13 @@ def test_an_excluded_two_bound_age_keeps_unknown_birth_dates():
 def test_any_other_age_with_two_or_more_numbers_fails_the_request(side, details):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
         _generate(**{side: [_age(details)]})
+
+
+def test_exclusively_is_not_a_negation_for_an_age():
+    sql, params = _generate(inclusion=[_age("exclusively over 65")])
+
+    assert f"{_AGE} > :age_1" in sql
+    assert params == {"age_1": 65}
 
 
 # A negation used to build the inverse: "not over 65" built > 65.
