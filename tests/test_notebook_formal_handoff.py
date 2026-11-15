@@ -139,3 +139,123 @@ async def test_a_concept_extraction_outage_fails_visibly(monkeypatch):
 
     with pytest.raises(CriteriaNotStructuredError):
         await _notebook_gather(agent, "How many patients with type 2 diabetes?")
+
+
+# --- #364: typing "proceed" reaches the hand-off, with the researcher's query ---
+
+QUERY = "How many women with hypertension are under 65?"
+RESULT = {
+    "status": "ok",
+    "estimated_cohort": 1284,
+    "generated_sql": "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p",
+    "time_period": {},
+}
+
+
+def _proceed_app(submitted: list, fail: bool = False):
+    """The notebook page, driven by AppTest. Stubbed: intent detection and the
+    feasibility check (LLM), and the facade's process_new_request (database +
+    workflow), which records what the page sends it."""
+    from pathlib import Path
+    from unittest.mock import patch
+
+    from streamlit.testing.v1 import AppTest
+
+    from app.services.conversation_manager import ConversationManager, UserIntent
+    from app.services.feasibility_service import FeasibilityService
+
+    notebook = str(Path(__file__).resolve().parents[1] / "app" / "web_ui" / "research_notebook.py")
+    at = AppTest.from_file(notebook, default_timeout=60).run()
+
+    async def intent(self, text):
+        return UserIntent.CONFIRMATION if text == "proceed" else UserIntent.QUERY
+
+    async def confirmed(self, text):
+        return True
+
+    async def check(self, query_intent, natural_language_query=None):
+        return dict(RESULT)
+
+    async def close(self):
+        return None
+
+    async def process(self, researcher_request, researcher_info, from_formal_portal=False):
+        if fail:
+            raise RuntimeError("workflow down")
+        submitted.append(researcher_request)
+        return "REQ-364"
+
+    patches = (
+        patch.object(ConversationManager, "detect_intent", intent),
+        patch.object(ConversationManager, "is_confirmation", confirmed),
+        patch.object(FeasibilityService, "execute_feasibility_check", check),
+        patch.object(FeasibilityService, "close", close),
+        patch.object(LangGraphRequestFacade, "process_new_request", process),
+    )
+    for p in patches:
+        p.start()
+    return at, patches
+
+
+def _stop(patches):
+    for p in patches:
+        p.stop()
+
+
+def test_proceed_submits_the_researchers_query_not_the_assistants_reply():
+    submitted: list = []
+    at, patches = _proceed_app(submitted)
+    try:
+        at.chat_input[0].set_value(QUERY).run()
+        at.chat_input[0].set_value("proceed").run()
+    finally:
+        _stop(patches)
+
+    assert not at.exception
+    assert submitted == [QUERY]
+    assert at.session_state["pending_request_id"] == "REQ-364"
+    assert "REQ-364" in at.session_state["messages"][-1]["content"]
+
+
+def test_a_second_proceed_does_not_submit_a_duplicate_request():
+    submitted: list = []
+    at, patches = _proceed_app(submitted)
+    try:
+        at.chat_input[0].set_value(QUERY).run()
+        at.chat_input[0].set_value("proceed").run()
+        at.chat_input[0].set_value("proceed").run()
+    finally:
+        _stop(patches)
+
+    assert submitted == [QUERY]
+
+
+def test_a_failed_submit_says_so_and_keeps_the_count_confirmable():
+    submitted: list = []
+    at, patches = _proceed_app(submitted, fail=True)
+    try:
+        at.chat_input[0].set_value(QUERY).run()
+        at.chat_input[0].set_value("proceed").run()
+    finally:
+        _stop(patches)
+
+    assert submitted == []
+    assert at.session_state["pending_request_id"] is None
+    reply = at.session_state["messages"][-1]["content"]
+    assert "Could not submit" in reply
+    assert "workflow down" not in reply  # ADR 0029: a ref, never the exception text
+    assert at.session_state["conversation_state"].name == "AWAITING_CONFIRMATION"
+
+
+def test_proceed_after_a_refined_question_submits_the_latest_query():
+    submitted: list = []
+    at, patches = _proceed_app(submitted)
+    refined = "How many women with hypertension are under 50?"
+    try:
+        at.chat_input[0].set_value(QUERY).run()
+        at.chat_input[0].set_value(refined).run()
+        at.chat_input[0].set_value("proceed").run()
+    finally:
+        _stop(patches)
+
+    assert submitted == [refined]
