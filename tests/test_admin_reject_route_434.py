@@ -5,6 +5,7 @@ double is `handle_approval_response`, which would otherwise call the orchestrato
 what it receives is the dashboard's whole contribution to the decision.
 """
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 REVISION = "Reject for revision"
@@ -25,6 +26,16 @@ def _render(approval_type, calls):
         "approval_data": {"sql_query": "SELECT 1"},
     }
     admin_dashboard.display_approval_card(approval, "reviewer@example.org", expanded=True)
+
+
+@pytest.fixture(autouse=True)
+def _restore_handle_approval_response():
+    # _render replaces the function inside the AppTest script, in this process
+    from app.web_ui import admin_dashboard
+
+    original = admin_dashboard.handle_approval_response
+    yield
+    admin_dashboard.handle_approval_response = original
 
 
 def _open_reject_dialog(approval_type):

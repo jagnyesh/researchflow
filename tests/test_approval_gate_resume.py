@@ -646,3 +646,33 @@ async def test_a_rejection_with_no_route_is_a_revision_even_if_the_note_says_not
     await _decide(facade, request_id, "phenotype_sql", "reject", notes="Not feasible at this site")
 
     assert ran == ["feasibility_validation", "phenotype_review"]
+
+
+@pytest.mark.parametrize(
+    "modifications", ["not_feasible", ["not_feasible"], {"rejection_route": 5}]
+)
+async def test_a_malformed_route_is_a_revision_not_a_stuck_gate(
+    facade, saver, ran, monkeypatch, modifications
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+
+    await _decide(facade, request_id, "phenotype_sql", "reject", modifications=modifications)
+
+    assert ran == ["feasibility_validation", "phenotype_review"]
+    await _assert_waiting_at(saver, request_id, "phenotype_review")
+
+
+async def test_approving_after_a_rejection_clears_the_route(facade, saver, ran, monkeypatch):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+    await _decide(
+        facade,
+        request_id,
+        "phenotype_sql",
+        "reject",
+        modifications={"rejection_route": "revision"},
+    )
+    assert (await _snapshot(saver, request_id)).values["phenotype_rejection_route"] == "revision"
+
+    await _decide(facade, request_id, "phenotype_sql", "approve")
+
+    assert (await _snapshot(saver, request_id)).values["phenotype_rejection_route"] is None

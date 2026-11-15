@@ -310,7 +310,8 @@ class ApprovalBridge:
                 state[state_field] = False
                 state[rejection_field] = approval.review_notes or "Rejected by reviewer"
                 if has_route:
-                    chosen = (approval.modifications or {}).get(REJECTION_ROUTE_KEY)
+                    mods = approval.modifications
+                    chosen = mods.get(REJECTION_ROUTE_KEY) if isinstance(mods, dict) else None
                     state[route_field] = chosen or REJECT_FOR_REVISION
                 logger.info(
                     f"[ApprovalBridge] Synced approval: {request_id} / "
