@@ -52,7 +52,7 @@ The age parser took the first number in the details and the first comparison wor
 
 - Requests with these phrasings now fail at the phenotype step instead of counting the wrong cohort. G2 shows the estimate as unavailable with `ValueError (ref: …)` until [#454](https://github.com/jagnyesh/researchflow/issues/454) shows the reason. Each error names only the concept's type.
 - An age that has two numbers for another reason now fails, such as `> 65 within the last 6 months`. The parser used to build `> 65`.
-- A phrase with a negation word fails even where the word negates nothing. `over 18 but under 65` means both bounds, `no older than 65` means `<= 65`, and a gender with details `no restriction` filters nothing. Each now fails with an error, and none builds a wrong cohort.
+- A phrase with a negation word fails even where the word negates nothing. `over 18 but under 65` means both bounds, `no older than 65` means `<= 65`, and a gender with details `no restriction` filters nothing. Each now fails with an error, and none builds a wrong cohort. Inside an exclusion criterion only `excluded` restates the list, so `exclude under 18` fails there as well.
 - Single-bound age phrasings such as `65+` still fail, which is [#431](https://github.com/jagnyesh/researchflow/issues/431). Lab thresholds are still ignored, which is [#297](https://github.com/jagnyesh/researchflow/issues/297).
 - A two-bound age is an age criterion, so ADR 0035's living-only filter applies. An excluded two-bound age keeps a patient whose birth date is NULL, per ADR 0036.
 - A family-history criterion can't run until a FamilyMemberHistory view exists, and the local corpus has none to count. No issue tracks that view yet.
