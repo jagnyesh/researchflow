@@ -22,6 +22,11 @@ class SQLGenerator:
     """
 
     _CONCEPT_TYPES = ("condition", "demographic", "demographics", "lab", "medication", "procedure")
+    # A negated gender or age fails rather than build the inverse (ADR 0039). "excluded"
+    # is absent: inside an exclusion criterion it restates the list (ADR 0036).
+    _NEGATION = re.compile(
+        r"\b(?:not|no|non|but|except|exclude|excludes|excluding|other\s+than|without)\b|n't\b"
+    )
 
     def __init__(self, use_materialized_views: bool = True):
         """
@@ -361,13 +366,16 @@ class SQLGenerator:
                         "A medication concept names a drug class, which can't be "
                         "matched by name yet"
                     )
+                term_text = term if isinstance(term, str) else ""
                 if concept_type == "condition" and re.search(
-                    r"\bfamily\s+history\b", details_text, re.I
+                    r"\bfamily[\s-]+(?:medical\s+)?(?:history|hx)\b",
+                    f"{term_text} {details_text}",
+                    re.I,
                 ):
                     # The meant record is a relative's (FamilyMemberHistory), which
                     # no view reads; the patient's own condition is wrong in either list.
                     raise ValueError(
-                        "A condition concept names a family history, which can't be " "matched yet"
+                        "A condition concept names a family history, which can't be matched yet"
                     )
 
                 if concept_type in ("condition", "lab", "medication", "procedure") and not (
@@ -496,6 +504,9 @@ class SQLGenerator:
         if not details:
             return None, None
         text = details.lower().strip()
+        if SQLGenerator._NEGATION.search(text):
+            # "not over 65" used to build > 65.
+            return None, None
 
         # Try range syntax first ("between X and Y"). Matches the LLM's
         # canonical age-range format per _MEDICAL_CONCEPTS_SYSTEM_PROMPT.
@@ -535,10 +546,13 @@ class SQLGenerator:
         if len(lower) != 1 or len(upper) != 1:
             return None, None
         (lower,), (upper,) = lower, upper
-        # The shape check: AND must leave a range, OR must leave two disjoint ones.
-        if join.group(1) == "and" and lower[1] < upper[1]:
+        # The shape check, in whole years: AND must admit at least one age and OR must
+        # leave at least one out, so "> 18 and < 19" and "<= 17 or >= 18" fail.
+        youngest = lower[1] + (lower[0] == ">")
+        oldest = upper[1] - (upper[0] == "<")
+        if join.group(1) == "and" and youngest <= oldest:
             return "AND", (lower, upper)
-        if join.group(1) == "or" and upper[1] < lower[1]:
+        if join.group(1) == "or" and oldest + 1 < youngest:
             return "OR", (upper, lower)
         return None, None
 
@@ -621,13 +635,12 @@ class SQLGenerator:
             return sql, params
 
         # One value, never negated (ADR 0039): "not male" used to build male and
-        # "male or female" female. "excluded" is not a negation here (ADR 0036).
+        # "male or female" female.
         gender_value = None
         if "male" in term_lower or "gender" in term_lower:
             text = f"{term_lower} {details_lower}"
             values = set(re.findall(r"\b(female|male)s?\b", text))
-            negated = re.search(r"\b(?:not|non|no|except|excluding|other\s+than|without)\b", text)
-            if len(values) == 1 and not negated:
+            if len(values) == 1 and not self._NEGATION.search(text):
                 gender_value = values.pop()
 
         if gender_value:

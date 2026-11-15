@@ -24,9 +24,19 @@ def _criterion(*concepts):
 # No view reads FamilyMemberHistory, so the patient's own condition is the only
 # thing the generator could match, which is wrong in either list.
 @pytest.mark.parametrize("side", ["inclusion", "exclusion"])
-@pytest.mark.parametrize("details", ["family history", "Family  History of, maternal"])
-def test_a_family_history_condition_fails_the_request(side, details):
-    concept = {"type": "condition", "term": "breast cancer", "details": details}
+@pytest.mark.parametrize(
+    "term,details",
+    [
+        ("breast cancer", "family history"),
+        ("breast cancer", "Family  History of, maternal"),
+        ("breast cancer", "family-history"),
+        ("breast cancer", "family medical history"),
+        ("breast cancer", "family hx"),
+        ("family history of breast cancer", ""),
+    ],
+)
+def test_a_family_history_condition_fails_the_request(side, term, details):
+    concept = {"type": "condition", "term": term, "details": details}
 
     with pytest.raises(ValueError, match="family history") as raised:
         _generate(**{side: [_criterion(concept)]})
@@ -40,6 +50,8 @@ def test_a_family_history_condition_fails_the_request(side, details):
         ("male", "", "male"),
         ("gender", "female", "female"),
         ("female", "female patients", "female"),
+        ("gender", "males", "male"),
+        ("Females", "", "female"),
         # Inside an exclusion the marker restates the list (ADR 0036), so it is no negation.
         ("gender", "male, excluded", "male"),
     ],
@@ -68,6 +80,10 @@ def test_a_single_gender_builds_that_gender(term, details, value):
         ("gender", "excluding males"),
         ("male", "no"),
         ("gender", "without female"),
+        ("gender", "exclude males"),
+        ("gender", "excludes male patients"),
+        ("gender", "anything but male"),
+        ("gender", "isn't male"),
     ],
 )
 def test_a_negated_or_multi_value_gender_fails_the_request(side, term, details):
@@ -92,6 +108,7 @@ def _age(details):
         (">= 18 and <= 65", ">=", 18, "<=", 65),
         ("18 or older and under 65", ">=", 18, "<", 65),
         ("under 65 and over 18", ">", 18, "<", 65),
+        (">= 18 and <= 18", ">=", 18, "<=", 18),
     ],
 )
 def test_an_age_with_two_bounds_joined_by_and_builds_both(details, lo_op, lo, hi_op, hi):
@@ -110,6 +127,7 @@ def test_an_age_with_two_bounds_joined_by_and_builds_both(details, lo_op, lo, hi
         ("< 18 or > 65", "<", 18, ">", 65),
         ("over 65 or under 18", "<", 18, ">", 65),
         ("18 or younger or 65 or older", "<=", 18, ">=", 65),
+        ("under 18 or over 18", "<", 18, ">", 18),
     ],
 )
 def test_an_age_with_two_bounds_joined_by_or_builds_outside_the_range(
@@ -135,7 +153,8 @@ def test_an_excluded_two_bound_age_keeps_unknown_birth_dates():
         "> 65 and < 18",  # no one
         "> 18 or < 65",  # everyone with a birth date
         "> 18 and > 65",  # two lower bounds
-        "under 18 or over 18",  # no gap between the bounds
+        "> 18 and < 19",  # no whole year fits
+        "<= 17 or >= 18",  # leaves out no whole year
         "18 to 65",  # no connective
         "> 18 and or < 65",  # two connectives
         "> 65 within last 6 months",
@@ -143,6 +162,26 @@ def test_an_excluded_two_bound_age_keeps_unknown_birth_dates():
     ],
 )
 def test_any_other_age_with_two_or_more_numbers_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate(**{side: [_age(details)]})
+
+
+# A negation used to build the inverse: "not over 65" built > 65.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "excluding those under 18 or over 65",
+        "not under 18 or over 65",
+        "except under 18 or over 65",
+        "exclude patients > 18 and < 65",
+        "not over 65",
+        "no one under 18",
+        "not between 18 and 65",
+        "over 18 but under 65",  # "but" is on the shared negation list
+    ],
+)
+def test_a_negated_age_fails_the_request(side, details):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
         _generate(**{side: [_age(details)]})
 
