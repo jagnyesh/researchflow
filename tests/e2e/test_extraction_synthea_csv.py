@@ -1,14 +1,14 @@
 """
 End-to-End Tests - Direct Extraction from Synthea PostgreSQL Database
 
-Tests real data extraction using the healthcare_practice PostgreSQL database
-with Synthea data. Generates actual CSV files with de-identified patient data.
+Tests real data extraction against the HAPI FHIR database (the one
+`HAPI_DB_URL` names; `get_hapi_engine()` reads it). Generates actual CSV files
+with de-identified patient data.
 
 Data Source:
-- PostgreSQL database: localhost:5432/healthcare_practice
-- Schema: synthea
-- 137 patients with realistic clinical data
-- Tables: patients, conditions, observations, procedures, encounters, medications
+- HAPI FHIR PostgreSQL database loaded with synthetic Synthea patients
+- The extraction agent ignores any `database_url` it is given and does not
+  read the Synthea CSV database on :5432 or `HEALTHCARE_DB_URL`
 
 Test Scenarios:
 1. Extract Diabetes Patients to CSV:
@@ -17,7 +17,7 @@ Test Scenarios:
    Ensure PHI is removed in safe_harbor mode (dates shifted, names removed)
 
 Requirements:
-- healthcare_practice database with Synthea data
+- HAPI database (`HAPI_DB_URL`) loaded with Synthea patients
 - ANTHROPIC_API_KEY (for real ExtractionAgent)
 - LangSmith tracing enabled
 """
@@ -42,10 +42,6 @@ from app.langchain_orchestrator.persistence import WorkflowPersistence
 # ============================================================================
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dev.db")
-HEALTHCARE_DB_URL = os.getenv(
-    "HEALTHCARE_DB_URL", "postgresql+asyncpg://jagnyesh@localhost:5432/healthcare_practice"
-)
-HEALTHCARE_DB_SCHEMA = os.getenv("HEALTHCARE_DB_SCHEMA", "synthea")
 
 # Output directory for generated CSVs
 OUTPUT_DIR = Path(__file__).parent / "output" / "csv_extracts"
@@ -105,7 +101,7 @@ def diabetes_extraction_request():
 @pytest.mark.asyncio
 async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request):
     """
-    Test complete extraction workflow from healthcare_practice to CSV files
+    Test complete extraction workflow from the HAPI database to CSV files
 
     Steps:
     1. Create workflow with real ExtractionAgent
@@ -176,7 +172,7 @@ async def test_extract_diabetes_to_csv(persistence, diabetes_extraction_request)
 
     # ===== Step 5: Run REAL Data Extraction =====
     print("\n[5/7] Running REAL data extraction...")
-    print("  ⏳ ExtractionAgent will query healthcare_practice database...")
+    print("  ⏳ ExtractionAgent will query the HAPI database...")
 
     extraction_start = time.time()
 
@@ -368,13 +364,10 @@ if __name__ == "__main__":
     Run direct extraction E2E tests with Synthea PostgreSQL data
 
     Prerequisites:
-    1. Ensure healthcare_practice database has Synthea data:
-       psql -U jagnyesh -d healthcare_practice -c "SELECT COUNT(*) FROM synthea.patients;"
+    1. Ensure the HAPI database (HAPI_DB_URL) has Synthea patients loaded.
 
     2. Set environment variables:
        export ANTHROPIC_API_KEY=sk-ant-api03-...
-       export HEALTHCARE_DB_URL=postgresql+asyncpg://jagnyesh@localhost:5432/healthcare_practice
-       export HEALTHCARE_DB_SCHEMA=synthea
        export LANGCHAIN_TRACING_V2=true
        export LANGCHAIN_API_KEY=lsv2_pt_...
 
