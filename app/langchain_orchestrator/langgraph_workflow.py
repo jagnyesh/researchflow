@@ -30,6 +30,8 @@ from app.agents.delivery_agent import DeliveryAgent
 
 # Import ApprovalBridge for database sync at approval gates
 from app.langchain_orchestrator.approval_bridge import (
+    REJECT_FOR_REVISION,
+    REJECT_NOT_FEASIBLE,
     ApprovalBridge,
     create_approval_from_state,
     check_approval_status,
@@ -98,6 +100,9 @@ class FullWorkflowState(TypedDict):
     auto_feasibility_assessment: str | None
     phenotype_approved: bool | None
     phenotype_rejection_reason: str | None
+    # The reviewer's explicit choice on a rejection ("revision" | "not_feasible");
+    # the router reads this, never the free-text reason (#434).
+    phenotype_rejection_route: str | None
 
     # ===== Kickoff Phase =====
     meeting_scheduled: bool
@@ -1373,23 +1378,20 @@ class FullWorkflow:
             return "preview_extraction"
 
         elif phenotype_approved is False:
-            # Check rejection reason to determine routing
-            rejection_reason = state.get("phenotype_rejection_reason", "").lower()
-
-            # If human explicitly marks as "not feasible", route to terminal state
-            if (
-                "not feasible" in rejection_reason
-                or "cohort too small" in rejection_reason
-                or "infeasible" in rejection_reason
-            ):
+            # The reviewer's explicit choice decides; the reason is free text and
+            # never changes the route (#434). Anything but "not_feasible" is a revision.
+            route = state.get("phenotype_rejection_route")
+            if route == REJECT_NOT_FEASIBLE:
                 logger.info(
                     f"[FullWorkflow] SQL rejected as not feasible by human → not_feasible terminal state"
                 )
                 return "not_feasible"
-            else:
-                # Rejected for revision (SQL needs improvement, but request is potentially feasible)
-                logger.info(f"[FullWorkflow] SQL rejected for revision → feasibility_validation")
-                return "feasibility_validation"
+            if route not in (None, REJECT_FOR_REVISION):
+                logger.warning(
+                    f"[FullWorkflow] Unrecognised rejection route {route!r} → treated as revision"
+                )
+            logger.info(f"[FullWorkflow] SQL rejected for revision → feasibility_validation")
+            return "feasibility_validation"
 
         else:
             logger.info(f"[FullWorkflow] SQL approval pending → wait_for_approval")

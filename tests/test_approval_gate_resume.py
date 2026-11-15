@@ -172,7 +172,6 @@ async def test_reject_at_phenotype_review_does_not_run_preview_extraction(
             ["feasibility_validation", "phenotype_review"],
             "phenotype_sql",
         ),
-        ("phenotype_sql", "Not feasible: cohort too small", ["not_feasible"], None),
         (
             "preview_qa",
             "Cohort mismatch, revise SQL",
@@ -563,3 +562,87 @@ async def test_the_api_reports_a_refused_decision(facade, saver, ran, monkeypatc
     assert first.status_code == 200, first.text
     assert repeat.status_code == 400, repeat.text
     assert "already approved" in repeat.json()["detail"]
+
+
+# ---- #434: the reviewer's choice, not the note's wording, picks the route ----
+
+
+def _route(**state):
+    from types import SimpleNamespace
+
+    gate = SimpleNamespace(auto_approve=False)
+    return FullWorkflow._route_after_phenotype_review(gate, {"phenotype_approved": False, **state})
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "This is not infeasible, just fix the join",
+        "Cohort too small? No - the filter is wrong, redo it",
+        "Not feasible at this site",
+    ],
+)
+def test_a_note_never_changes_the_route(note):
+    revision = {"phenotype_rejection_route": "revision", "phenotype_rejection_reason": note}
+    no_choice = {"phenotype_rejection_reason": note}
+
+    assert _route(**revision) == "feasibility_validation"
+    assert _route(**no_choice) == "feasibility_validation"
+
+
+@pytest.mark.parametrize("note", [None, "", "Wrong join, please regenerate"])
+def test_a_not_feasible_rejection_ends_the_request_whatever_the_note(note):
+    state = {"phenotype_rejection_route": "not_feasible", "phenotype_rejection_reason": note}
+
+    assert _route(**state) == "not_feasible"
+
+
+def test_an_unrecognised_route_is_a_revision():
+    assert _route(phenotype_rejection_route="Not Feasible") == "feasibility_validation"
+
+
+async def test_a_revision_rejection_that_says_infeasible_is_regenerated(
+    facade, saver, ran, monkeypatch
+):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+
+    await _decide(
+        facade,
+        request_id,
+        "phenotype_sql",
+        "reject",
+        notes="This is not infeasible, just fix the join",
+        modifications={"rejection_route": "revision"},
+    )
+
+    assert ran == ["feasibility_validation", "phenotype_review"]
+    await _assert_waiting_at(saver, request_id, "phenotype_review")
+
+
+@pytest.mark.parametrize("notes", [None, "Cohort too small at this site"])
+async def test_a_not_feasible_rejection_is_terminal(facade, saver, ran, monkeypatch, notes):
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+
+    await _decide(
+        facade,
+        request_id,
+        "phenotype_sql",
+        "reject",
+        notes=notes,
+        modifications={"rejection_route": "not_feasible"},
+    )
+
+    assert ran == ["not_feasible"]
+    assert (await _snapshot(saver, request_id)).values["current_state"] == "not_feasible"
+    assert [a.status for a in await _approvals(request_id, "phenotype_sql")] == ["rejected"]
+
+
+async def test_a_rejection_with_no_route_is_a_revision_even_if_the_note_says_not_feasible(
+    facade, saver, ran, monkeypatch
+):
+    # What a client that predates the field, or the API without it, sends.
+    request_id = await _pause_at(facade, saver, ran, monkeypatch, "phenotype_sql")
+
+    await _decide(facade, request_id, "phenotype_sql", "reject", notes="Not feasible at this site")
+
+    assert ran == ["feasibility_validation", "phenotype_review"]

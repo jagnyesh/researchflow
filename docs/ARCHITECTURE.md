@@ -57,7 +57,7 @@ The graph compiles with `interrupt_after` on four review nodes. Each node writes
 | Review node | Approval type | When the graph reaches it | After a rejection |
 |---|---|---|---|
 | `requirements_review` | `requirements` | Only when a caller passes `from_formal_portal=False`. Both portals pass `True`, so neither reaches this gate | `requirements_gathering` |
-| `phenotype_review` | `phenotype_sql` | On every request, before any extraction | `feasibility_validation`. `not_feasible` when the reason says "not feasible", "infeasible", or "cohort too small" |
+| `phenotype_review` | `phenotype_sql` | On every request, before any extraction | `feasibility_validation`. `not_feasible` when the reviewer chose "Reject as not feasible"; the wording of the reason never changes the route |
 | `preview_qa_review` | `preview_qa` | Only when the preview check fails | `feasibility_validation` |
 | `qa_review` | `delivery` | When the full QA passes | `data_extraction` |
 

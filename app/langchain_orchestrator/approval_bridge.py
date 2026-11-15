@@ -39,6 +39,13 @@ from app.database.models import Approval, ResearchRequest
 
 logger = logging.getLogger(__name__)
 
+# A phenotype_sql rejection carries the reviewer's routing choice in the approval's
+# `modifications` JSON, under this key. The free-text review note never picks the
+# route (#434). A rejection without the key is a revision.
+REJECTION_ROUTE_KEY = "rejection_route"
+REJECT_FOR_REVISION = "revision"
+REJECT_NOT_FEASIBLE = "not_feasible"
+
 
 class ApprovalBridge:
     """
@@ -286,10 +293,14 @@ class ApprovalBridge:
                 return state  # Return unchanged state instead of crashing
 
             rejection_field = state_field.replace("_approved", "_rejection_reason")
+            route_field = state_field.replace("_approved", "_rejection_route")
+            has_route = approval_type == "phenotype_sql"
 
             if approval.status == "approved":
                 state[state_field] = True
                 state[rejection_field] = None
+                if has_route:
+                    state[route_field] = None
                 logger.info(
                     f"[ApprovalBridge] Synced approval: {request_id} / "
                     f"{approval_type} → APPROVED"
@@ -298,6 +309,9 @@ class ApprovalBridge:
             elif approval.status == "rejected":
                 state[state_field] = False
                 state[rejection_field] = approval.review_notes or "Rejected by reviewer"
+                if has_route:
+                    chosen = (approval.modifications or {}).get(REJECTION_ROUTE_KEY)
+                    state[route_field] = chosen or REJECT_FOR_REVISION
                 logger.info(
                     f"[ApprovalBridge] Synced approval: {request_id} / "
                     f"{approval_type} → REJECTED"
@@ -306,6 +320,8 @@ class ApprovalBridge:
             elif approval.status == "modified":
                 state[state_field] = True
                 state[rejection_field] = None
+                if has_route:
+                    state[route_field] = None
                 # Apply modifications to state if present
                 if approval.modifications:
                     state = self._apply_modifications(state, approval_type, approval.modifications)
