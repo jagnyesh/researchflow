@@ -26,7 +26,7 @@ class SQLGenerator:
     # is absent: inside an exclusion criterion it restates the list (ADR 0036).
     _NEGATION = re.compile(
         r"\b(?:not|no|non|but|never|nobody|none|cannot|minus|besides|without|ineligible"
-        r"|except\w*|exclu(?!ded\b|sive)\w*|excl|omit\w*|disqualif\w*|remov\w*"
+        r"|except\w*|exclu(?!ded\b|sively\b)\w*|excl|omit\w*|disqualif\w*|remov\w*"
         r"|other\s+than|aside\s+from|rather\s+than|instead\s+of)\b|\bw/o\b|n['’]t\b"
     )
     # "familial" and "FH" are left out: they also name the patient's own diagnosis,

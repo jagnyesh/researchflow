@@ -128,6 +128,7 @@ def test_a_single_gender_builds_that_gender(term, details, value):
         ("gender", "males disqualified"),
         ("gender", "cannot be male"),
         ("gender", "nonmale"),
+        ("gender", "exclusive of males"),
     ],
 )
 def test_a_negated_or_multi_value_gender_fails_the_request(side, term, details):
@@ -248,6 +249,8 @@ def test_exclusively_is_not_a_negation_for_an_age():
         "excepting under 18 or over 65",
         "omit under 18 or over 65",
         "over 65 removed",
+        "exclusive of over 65",
+        "between 18 and 65 exclusive",  # meant strict bounds, not BETWEEN
     ],
 )
 def test_a_negated_age_fails_the_request(side, details):
