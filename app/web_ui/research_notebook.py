@@ -260,13 +260,9 @@ async def handle_user_input(user_input: str):
         if st.session_state.conversation_state == ConversationState.AWAITING_CONFIRMATION:
             # User confirmed feasibility results - direct to formal portal
             if await st.session_state.conversation_manager.is_confirmation(user_input):
-                response = f"""### Take this to the Formal Portal
-
-1. Open the Formal Portal at {FORMAL_PORTAL_URL}
-2. Fill in the research request form
-3. Use this count to size the request
-
-The Formal Portal runs informatician review, data extraction, QA and delivery, with a full audit trail. This portal only returns counts."""
+                # submit_research_request appends its own reply (success or error).
+                await submit_research_request()
+                return
             else:
                 # User rejected - offer to refine
                 response = "Tell me what to change in the criteria."
@@ -423,6 +419,9 @@ async def handle_query(user_input: str):
             "role": "assistant",
             "content": f"Estimated cohort: {cohort_size:,} patients",
             "result": feasibility_data,
+            # The confirmation message follows this one, so the hand-off can't
+            # find the query by message position (#364).
+            "query": user_input,
         }
     )
 
@@ -482,15 +481,16 @@ async def submit_research_request():
             st.session_state.pending_feasibility
         )
 
-        # The user's original query is the message before the confirmation.
+        # The count message carries the researcher's query (#364).
+        query = next(m["query"] for m in reversed(st.session_state.messages) if m.get("query"))
         # Same bound as the formal portal's submit (2 minutes).
         request_id = await asyncio.wait_for(
-            start_formal_request(
-                _formal_facade(), st.session_state.messages[-2]["content"], structured_requirements
-            ),
+            start_formal_request(_formal_facade(), query, structured_requirements),
             timeout=120.0,
         )
         st.session_state.pending_request_id = request_id
+        # One confirmation, one request: a second "proceed" must not resubmit.
+        st.session_state.conversation_state = ConversationState.INITIAL
 
         # Show confirmation message
         confirmation_message = f"""### Request submitted
@@ -604,7 +604,7 @@ def _render_result(feasibility_data: Dict[str, Any], is_last: bool) -> None:
 
     if is_last:
         st.markdown(
-            "Type **proceed** to see how to take this to the Formal Portal, or refine the question"
+            "Type **proceed** to submit this to the Formal Portal for informatician review, or refine the question"
         )
 
 
