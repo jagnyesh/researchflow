@@ -87,7 +87,7 @@ The new information lowers collision risk and re-review churn, not review load:
 
 Review load is what the rules below bound.
 
-*Waiting on you* runs from a PR's first attestation comment with a `SHIP` or `SHIP-WITH-FIXES` verdict until it merges, or until now if it's still open. dials.sh's green→merge can't measure it: its clock restarts whenever a branch is updated from `main`, which strict protection makes routine. For example, #294 shows open→green 608m and green→merge 0m.
+*Waiting on you* runs from a PR's first attestation comment, posted by the repo owner, with a `SHIP` or `SHIP-WITH-FIXES` verdict until it merges, or until now if it's still open. An edited comment still counts, since an edit keeps its creation time; `.claude/skills/plan-lanes/preflight.sh` explains why in the comment above `wait_jq`. dials.sh's green→merge can't measure it: its clock restarts whenever a branch is updated from `main`, which strict protection makes routine. For example, #294 shows open→green 608m and green→merge 0m.
 
 Before opening a lane, all of these must hold:
 - Fewer than 2 PRs await your decision (§10, unchanged).
