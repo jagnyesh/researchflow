@@ -26,6 +26,7 @@ An item is **out of order** when:
 - **scanners that cannot fail the build:** these steps end in `|| true` in `.github/workflows/security-scan.yml`, so CI stays green whatever they find. A count that rose since the previous run is out of order. A count that stayed where it was is known debt (Step 5).
 - **branch protection, repo settings, harness:** the script prints `protection=none` (main has no branch protection), or any of these lines appears under "changed since the previous run". For a harness change, name the commits that made it: `git log --oneline <range> -- .claude/settings.json .claude/hooks`. Ask the user whether the change was deliberate. Don't guess.
 - **main since the previous run:** a line that starts `REWRITTEN:`. The previous run's commit is no longer in main's history, so main was force-pushed or replaced.
+  A line that starts `UNKNOWN:` is not a rewrite: the previous run's commit is missing from this clone (a shallow clone, say), so main could not be compared. Say so, and run `git fetch --unshallow origin` if you need the comparison.
 
 `protection.digest`, `harness.settings_blob` and `harness.hooks_tree` cover every field of what they name. If one of them changed and no itemized line beside it did, say that a field the script doesn't itemize changed.
 
