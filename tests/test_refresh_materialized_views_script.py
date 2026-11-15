@@ -66,7 +66,8 @@ async def test_failed_view_exits_nonzero_and_logs_counts(monkeypatch, caplog):
     assert code == 1
     assert "Views refreshed: 2" in caplog.text
     assert "Views failed: 1" in caplog.text
-    assert "view_b" in caplog.text  # the failing view is named in the error log
+    # Emitted by the script's own error loop; the service's log line has no "  - " prefix.
+    assert "  - view_b: " in caplog.text
 
 
 @pytest.mark.asyncio
