@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0039** — [Family history fails, gender takes one value, and two-bound ages build both bounds (#456)](0039-formal-family-history-gender-two-bound-age.md) (2026-11-14, accepted)
 - **0038** — [Extraction writes every CSV or fails, and never lists a file it didn't write (#477)](0038-extraction-writes-every-csv-or-fails.md) (2026-11-14, accepted)
 - **0037** — [CodeQL alerts under app/ are cleared in code, and /sql_query is removed (#468)](0037-codeql-alerts-cleared-in-code.md) (2026-11-13, accepted)
 - **0036** — [Every formal criterion concept becomes SQL or the request fails (#310)](0036-formal-criteria-build-or-fail.md) (2026-11-11, accepted; amends 0035 for unparseable ages)
@@ -52,6 +53,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0033 — The phenotype estimate counts the approved SQL (amends 0027 for phenotype_agent)](0033-phenotype-estimate-counts-approved-sql.md)
 - [0035 — Formal cohorts with an age criterion count living patients only](0035-formal-age-cohorts-living-only.md)
 - [0036 — Every formal criterion concept becomes SQL or the request fails (amends 0035 for unparseable ages)](0036-formal-criteria-build-or-fail.md)
+- [0039 — Family history fails, gender takes one value, two-bound ages build both bounds](0039-formal-family-history-gender-two-bound-age.md)
 - [0038 — Extraction writes every CSV or fails; no package lists a file it didn't write](0038-extraction-writes-every-csv-or-fails.md)
 - [0028 — Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md)
 - [0031 — Sprint 6.7 gate: which layer stopped the adversarial cases](0031-sprint-6-7-adversarial-gate-attribution.md) (corrects 0028's attribution)
