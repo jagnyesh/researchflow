@@ -14,6 +14,8 @@ The composite pipeline for this repo's per-issue-branch, continuous-merge workfl
 ### 1. Run the change's tests
 Run the tests covering this change with the project venv: `./.venv/bin/pytest <paths> -q`. If the change touches a runtime surface (agents, SQL, API, UI), also drive it end-to-end (the gated integration test, a live probe, or a `requires_services` run) — green unit tests alone do NOT clear the bar. This repo has two wire-level bugs on record that passed unit tests for months; assert at the wire/DB, not just the wrapper. Capture the actual command output — it fills the PR's Testing Evidence section verbatim.
 
+**Red-first check.** A PR that adds or changes a test for a behavior change proves the test can fail: run `scripts/red_first.sh <test files or file::node ids>` before the review. It runs each file once on a temporary worktree at the merge-base with `origin/main` (with only the test files copied in) and once here, and exits 0 only when the base run is red and this one green. It exits 1 when a test passes on the base, collects nothing there, or fails here. It exits 2 for a path on `.claude/lane-never-run.txt` (nothing ran) and 3 when the code under test would import from this checkout instead of the base tree. A non-zero exit is a finding to fix, not a check to skip: a test that can't fail isn't evidence. A docs-only, prose-only or pure-refactor PR has no red step and writes `Red-first: n/a (<reason>)`; the Step 2 reviewer checks that reason against the diff.
+
 ### 2. Fresh-context review (the load-bearing step)
 Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: false`) on the diff. NEVER review in this authoring session — it checks its own homework. Give the reviewer: the issue's acceptance criteria, the ADR/design authority, the explicit out-of-scope list, and instructions to probe empirically (parse/execute against real state, not static reading) and report CONFIRMED vs suspected findings with a SHIP / SHIP-WITH-FIXES / BLOCK verdict. The reviewer's final message must end with a liftable verdict block — the verdict plus one line per finding with its disposition — saved to a scratch file: it feeds the Step 7 attestation comment (one reviewer: verbatim; High tier: combined per the Step 7 template).
 
@@ -24,6 +26,13 @@ Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: fals
 ### 3. Triage findings
 - **Mechanical** (naming, dead code, lint, a missing test case, a clear bug in the new code): fix silently, re-run tests.
 - **Behavior-changing or scope questions**: escalate to the user. Don't decide product scope.
+- **A finding outside the PR's acceptance criteria** takes the first disposition below that applies. The starting values (30 lines, one issue) are the owner's; tune them against the follow-ups-per-PR dial from `scripts/review_metrics.py` (#520).
+  1. **Fixed here**, as its own commit (Step 4), when the fix is in a file the PR already changes, is the same tier or lower, needs no design decision, and is at most 30 changed lines.
+  2. **Routed to #issue** by a comment on an existing open issue, when a search finds one that covers it.
+  3. **Routed to #issue** by a new issue, only when the reviewer reproduced the finding and it gives a wrong result, a security or PHI exposure, or a crash on a supported path. The command and its observed output go in the issue body. Label it `needs-triage`, never `ready-for-agent`: the owner promotes it.
+  4. **Noted, not filed** for everything else. It is recorded on the attestation's Findings line and goes no further.
+
+  A PR files at most one new issue. A second needs the owner's OK; the default is one issue with a checklist.
 - A finding either reviewer confirms goes through this triage. A High-tier PR is `SHIP` only when both reviewers return `SHIP`; any other combination is the worse of the two verdicts.
 - A BLOCK on your own new code is not an escalation — it's a bug to fix, then re-review.
 - Any fix applied after the review is only covered by a fresh attestation (Step 7 staleness rule); a fix that changes behavior goes back through Step 2 (both reviewers on High tier) before it can be attested.
@@ -37,7 +46,7 @@ Stage files **explicitly by path** — never `git add -A` (it sweeps in untracke
 Rebase onto latest `main`, push the branch: `git push -u origin <branch>`.
 
 ### 6. Open the PR with Testing Evidence
-`gh pr create --base main --head <branch> --body-file <file>` (multi-line body → file, same hook reason). Include `Closes #<issue>` and a **Testing evidence** section: commands run + real output, E2E exercised (what was driven, expected vs observed), review verdict + how findings were handled, and what's not covered and why. If the change is behind a flag or has a do-not-flip guardrail, state it and post it on the owning issue.
+`gh pr create --base main --head <branch> --body-file <file>` (multi-line body → file, same hook reason). Include `Closes #<issue>` and a **Testing evidence** section: commands run + real output, a `Red-first:` line with the base run's output from `scripts/red_first.sh` (or `Red-first: n/a (<reason>)`, Step 1), E2E exercised (what was driven, expected vs observed), review verdict + how findings were handled, and what's not covered and why. If the change is behind a flag or has a do-not-flip guardrail, state it and post it on the owning issue.
 
 **Artifacts are pipeline-generated, keyed on what the diff touches** — never left to memory at PR-writing time. All artifacts are text (`gh` cannot attach images to PR bodies or comments; screenshots are not a valid artifact class):
 - Diff touches `app/web_ui/**` → run the Streamlit AppTest covering the touched surface (pattern: `tests/test_researcher_portal_download_ui.py`) and paste the verbatim output. Claims about rendered state cite AppTest assertions, not screenshot descriptions. If the touched surface has no AppTest, say so under "Not covered" — don't fabricate a substitute.
@@ -57,7 +66,7 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    - Reviewed-Commit: <full 40-char sha>
    - Reviewer 1 (<model>): fresh-context subagent (Step 2), <k> pass(es), <verdict>
    - Reviewer 2 (<model>): fresh-context subagent (Step 2), <k> pass(es), <verdict>
-   - Findings: <one per line: finding → disposition (fixed / accepted / routed to #issue)>
+   - Findings: <one per line: finding → disposition (fixed / accepted / routed to #issue / noted, not filed; Step 3)>
    ```
 
    Include the `Reviewer 2` line on High-tier PRs only. The `Verdict:` line is the combined verdict (the worse of the two on a High-tier PR). Per-reviewer lines never start with `- Verdict:`, because the 7.5 reader matches that line exactly. Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
