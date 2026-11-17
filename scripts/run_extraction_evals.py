@@ -8,8 +8,8 @@ to logs/extraction_evals.jsonl.
     ./.venv/bin/python -m scripts.run_extraction_evals [--fail-under PCT]
 
 Exit codes: 0 complete; 1 accuracy below --fail-under; 2 the run can't be
-trusted (no cases, executed != cases in the fixture, a bad fixture, or no live
-LLM client).
+trusted (no cases, executed != cases in the fixture, a bad fixture, no live
+LLM client, every case errored, or the evidence log can't be written).
 """
 
 import argparse
@@ -41,6 +41,10 @@ _DRUG_CLASS = re.compile(r"\bdrug[\s-]+class(?:es)?\b", re.I)
 _WITHIN = re.compile(r"\b(?:last|past)\s+(\d+)\s+(day|week|month|year)s?\b", re.I)
 
 
+_FIXTURE_KEYS = ("format", "cases")
+_CASE_KEYS = ("id", "signoff") + LISTS
+_CRITERION_KEYS = ("criterion", "expected")
+_CONCEPT_KEYS = ("type", "terms", "polarity", "age", "gender", "temporal_within")
 _RECORD_TYPES = ("condition", "medication", "procedure", "lab")
 _POLARITIES = ("has", "excluded", "family_history")
 
@@ -81,13 +85,33 @@ def _valid_age(age) -> bool:
     if op == "BETWEEN":
         return all(_age(v) for v in value)
     if op == "AND":
-        return _bound(value[0], _LOWER) and _bound(value[1], _UPPER)
-    return op == "OR" and _bound(value[0], _UPPER) and _bound(value[1], _LOWER)
+        lower, upper = value
+        if not (_bound(lower, _LOWER) and _bound(upper, _UPPER)):
+            return False
+    elif op == "OR":
+        upper, lower = value
+        if not (_bound(upper, _UPPER) and _bound(lower, _LOWER)):
+            return False
+    else:
+        return False
+    # The parser's own shape check, in whole years: AND must admit an age and OR
+    # must leave one out.
+    youngest = lower[1] + (lower[0] == ">")
+    oldest = upper[1] - (upper[0] == "<")
+    return youngest <= oldest if op == "AND" else oldest + 1 < youngest
+
+
+def _check_keys(where: str, obj: dict, allowed: tuple) -> None:
+    # A misspelled key would be ignored, and its criteria never sent or scored.
+    unknown = sorted(set(obj) - set(allowed))
+    if unknown:
+        raise FixtureError(f"{where}: unknown keys {', '.join(unknown)}")
 
 
 def _check_expected(where: str, expected) -> None:
     if not isinstance(expected, dict):
         raise FixtureError(f"{where}: an expected concept is not an object")
+    _check_keys(where, expected, _CONCEPT_KEYS)
     concept_type = expected.get("type")
     if concept_type in _RECORD_TYPES:
         terms = expected.get("terms")
@@ -121,6 +145,7 @@ def load_cases(path: Path) -> list:
     cases = fixture.get("cases") if isinstance(fixture, dict) else None
     if not isinstance(cases, list):
         raise FixtureError("the fixture has no cases list")
+    _check_keys("the fixture", fixture, _FIXTURE_KEYS)
     seen = set()
     for n, case in enumerate(cases):
         case_id = case.get("id") if isinstance(case, dict) else None
@@ -128,6 +153,7 @@ def load_cases(path: Path) -> list:
         if not _text(case_id) or case_id in seen:
             raise FixtureError(f"{where}: every case needs a unique id")
         seen.add(case_id)
+        _check_keys(where, case, _CASE_KEYS)
         if not _text(case.get("signoff")):
             raise FixtureError(f"{where}: no signoff")
         if not sum(_check_list(where, case.get(name, []), name) for name in LISTS):
@@ -142,6 +168,7 @@ def _check_list(where: str, items, list_name: str) -> int:
     for item in items:
         if not isinstance(item, dict) or not _text(item.get("criterion")):
             raise FixtureError(f"{where}: a criterion has no text")
+        _check_keys(where, item, _CRITERION_KEYS)
         expected = item.get("expected")
         if not (isinstance(expected, list) and expected):
             raise FixtureError(f"{where}: a criterion expects no concepts")
@@ -160,6 +187,21 @@ def _as_tuple(value):
     return value
 
 
+def _demographic(term_text: str, details, details_text: str, in_exclusion: bool) -> tuple:
+    unbuildable = ("demographic", "unbuildable", _norm(term_text))
+    if details is not None and not isinstance(details, str):
+        return unbuildable  # the generator calls details.lower() and raises
+    if not in_exclusion and _EXCLUDED.search(details_text):
+        return unbuildable  # the generator fails any concept marked excluded in an inclusion list
+    if "age" in term_text.lower():
+        op, value = SQLGenerator._parse_age_details(details_text)
+        return ("age", op, _as_tuple(value)) if op is not None else unbuildable
+    sql, params = SQLGenerator()._build_demographic_clause(term_text, details_text)
+    if sql.startswith("p.gender"):
+        return ("gender", "=", next(iter(params.values())))
+    return unbuildable
+
+
 def canonical(concept: dict, in_exclusion: bool) -> tuple:
     """The concept as SQLGenerator reads it."""
     concept_type = concept.get("type")
@@ -171,20 +213,14 @@ def canonical(concept: dict, in_exclusion: bool) -> tuple:
     details_text = "" if details is None else str(details)
 
     if concept_type == "demographic":
-        if not in_exclusion and _EXCLUDED.search(details_text):
-            pass  # the generator fails any concept marked excluded in an inclusion list
-        elif "age" in term_text.lower():
-            op, value = SQLGenerator._parse_age_details(details_text)
-            if op is not None:
-                return ("age", op, _as_tuple(value))
-        else:
-            sql, params = SQLGenerator()._build_demographic_clause(term_text, details_text)
-            if sql.startswith("p.gender"):
-                return ("gender", "=", next(iter(params.values())))
-        return ("demographic", "unbuildable", _norm(term_text))
+        return _demographic(term_text, details, details_text, in_exclusion)
 
+    # The generator's order: the excluded marker, then a drug class, then family history.
     polarity = "has"
-    if concept_type == "medication" and _DRUG_CLASS.search(details_text):
+    if _EXCLUDED.search(details_text) and not in_exclusion:
+        # In an exclusion list the marker restates the list (ADR 0036).
+        polarity = "excluded"
+    elif concept_type == "medication" and _DRUG_CLASS.search(details_text):
         # A class name matches no prescription, so the generator fails it in either
         # list; no fixture polarity can match this one.
         polarity = "drug_class"
@@ -192,9 +228,6 @@ def canonical(concept: dict, in_exclusion: bool) -> tuple:
         f"{term_text} {details_text}"
     ):
         polarity = "family_history"
-    elif _EXCLUDED.search(details_text) and not in_exclusion:
-        # In an exclusion list the marker restates the list (ADR 0036).
-        polarity = "excluded"
     return (concept_type, _norm(term_text), polarity)
 
 
@@ -389,6 +422,24 @@ def _percent(text: str) -> float:
     return value
 
 
+def _prepare(path: Path, extract) -> tuple:
+    """(cases, extract), or (None, None) after printing why the run can't start."""
+    try:
+        cases = load_cases(path)
+    except FixtureError as e:
+        print(f"INTEGRITY: the fixture is malformed: {e}")
+        return None, None
+    if not cases:
+        print(f"INTEGRITY: the fixture holds 0 cases ({path})")
+        return None, None
+    if extract is None:
+        extract = _live_extract()
+        if extract is None:
+            print("INTEGRITY: no live LLM client (ANTHROPIC_API_KEY is empty); not scoring")
+            return None, None
+    return cases, extract
+
+
 def main(argv=None, extract=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cases", type=Path, default=CASES)
@@ -402,19 +453,9 @@ def main(argv=None, extract=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        cases = load_cases(args.cases)
-    except FixtureError as e:
-        print(f"INTEGRITY: the fixture is malformed: {e}")
+    cases, extract = _prepare(args.cases, extract)
+    if cases is None:
         return EXIT_INTEGRITY
-    if not cases:
-        print(f"INTEGRITY: the fixture holds 0 cases ({args.cases})")
-        return EXIT_INTEGRITY
-    if extract is None:
-        extract = _live_extract()
-        if extract is None:
-            print("INTEGRITY: no live LLM client (ANTHROPIC_API_KEY is empty); not scoring")
-            return EXIT_INTEGRITY
 
     results = []
     try:
@@ -422,25 +463,39 @@ def main(argv=None, extract=None) -> int:
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass  # the count check below reports the partial run
     summary = _summary(results, len(cases))
-    _write_log(args.log, results, summary)
+    code, message = _verdict(results, len(cases), args.fail_under)
+    # The log carries the verdict so a reader can drop runs that measured nothing.
+    summary["exit_code"] = code
+    summary["integrity_failure"] = message if code == EXIT_INTEGRITY else None
     _report(summary, results)
-    return _exit_code(results, len(cases), args.fail_under)
-
-
-def _exit_code(results: list, expected: int, fail_under) -> int:
-    """Integrity failures first: a run that can't be trusted has no accuracy."""
-    if len(results) != expected:
-        print(f"INTEGRITY: executed {len(results)} of the fixture's {expected} cases")
+    if message:
+        print(message)
+    try:
+        _write_log(args.log, results, summary)
+    except OSError as e:
+        print(f"INTEGRITY: can't write the evidence log {args.log}: {type(e).__name__}")
         return EXIT_INTEGRITY
+    return code
+
+
+def _verdict(results: list, expected: int, fail_under) -> tuple:
+    """(exit code, message). Integrity failures first: a run that can't be trusted
+    has no accuracy."""
+    if len(results) != expected:
+        return (
+            EXIT_INTEGRITY,
+            f"INTEGRITY: executed {len(results)} of the fixture's {expected} cases",
+        )
     if all(r["error"] for r in results):
         # An expired key or an outage, not a 0% extractor.
-        print("INTEGRITY: every case errored, so nothing was measured")
-        return EXIT_INTEGRITY
+        return EXIT_INTEGRITY, "INTEGRITY: every case errored, so nothing was measured"
     accuracy = 100.0 * sum(r["pass"] for r in results) / expected
     if fail_under is not None and accuracy < fail_under:
-        print(f"FAIL: accuracy {accuracy:.1f}% is below --fail-under {fail_under:g}")
-        return EXIT_BELOW_THRESHOLD
-    return EXIT_OK
+        return (
+            EXIT_BELOW_THRESHOLD,
+            f"FAIL: accuracy {accuracy:.1f}% is below --fail-under {fail_under:g}",
+        )
+    return EXIT_OK, None
 
 
 if __name__ == "__main__":

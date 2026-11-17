@@ -342,12 +342,17 @@ def test_every_case_erroring_exits_integrity_failure(tmp_path, capsys):
     assert _rows(log)[-1]["summary"]["executed"] == 12
 
 
-def test_extraction_returning_the_wrong_number_of_criteria_fails_the_case(tmp_path):
+@pytest.mark.parametrize(
+    "reshape",
+    [lambda r: r[:-1], lambda r: r + [r[-1]]],
+    ids=["one-short", "one-long"],
+)
+def test_extraction_returning_the_wrong_number_of_criteria_fails_the_case(tmp_path, reshape):
     correct = _extractor(CORRECT)
 
     async def extract(criteria):
         results = await correct(criteria)
-        return results[:-1] if len(criteria) == 3 and criteria[0] == "female" else results
+        return reshape(results) if len(criteria) == 3 and criteria[0] == "female" else results
 
     _, log = _run(tmp_path, _fixture(), extract)
     row = _case_row(log, "female_over_65_dm_form_split")
@@ -362,11 +367,89 @@ def test_interrupted_run_exits_integrity_failure_with_its_count(tmp_path, capsys
             raise KeyboardInterrupt  # not an Exception: the per-case handler can't absorb it
         return await correct(criteria)
 
-    code, log = _run(tmp_path, _fixture(), extract, "--fail-under", "0")
+    # 6 of 12 passed is 50%, below 100: exit 1 if the accuracy gate came first.
+    code, log = _run(tmp_path, _fixture(), extract, "--fail-under", "100")
     out = capsys.readouterr().out
     assert code == runner.EXIT_INTEGRITY  # wins over the accuracy gate
     assert "executed 6 / expected 12" in out
-    assert _rows(log)[-1]["summary"]["executed"] == 6
+    summary = _rows(log)[-1]["summary"]
+    assert summary["executed"] == 6
+    # A log reader can tell this run measured nothing.
+    assert summary["exit_code"] == runner.EXIT_INTEGRITY
+    assert "executed 6" in summary["integrity_failure"]
+
+
+def test_a_trusted_run_logs_its_exit_code_and_no_integrity_failure(tmp_path):
+    _, log = _run(tmp_path, _fixture(), _one_case_wrong(), "--fail-under", "95")
+    summary = _rows(log)[-1]["summary"]
+    assert (summary["exit_code"], summary["integrity_failure"]) == (1, None)
+
+
+def test_an_all_error_run_logs_its_integrity_failure(tmp_path):
+    async def extract(criteria):
+        raise RuntimeError("authentication failed")
+
+    _, log = _run(tmp_path, _fixture(), extract)
+    summary = _rows(log)[-1]["summary"]
+    assert summary["exit_code"] == runner.EXIT_INTEGRITY
+    assert "every case errored" in summary["integrity_failure"]
+
+
+def test_an_unwritable_log_exits_integrity_failure(tmp_path, capsys):
+    blocked = tmp_path / "blocked"
+    blocked.write_text("a file, so the log can't be created beneath it")
+    code = runner.main(
+        ["--cases", str(_write(tmp_path, _fixture())), "--log", str(blocked / "evals.jsonl")],
+        extract=_extractor(CORRECT),
+    )
+    assert code == runner.EXIT_INTEGRITY
+    assert "can't write the evidence log" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "concept, in_exclusion, polarity",
+    [
+        # The generator checks the excluded marker before family history.
+        (_c("breast cancer", "condition", "family history, excluded"), False, "excluded"),
+        (_c("breast cancer", "condition", "family history, excluded"), True, "family_history"),
+        # Family history read from the term, not only the details.
+        (_c("family history of breast cancer", "condition", ""), False, "family_history"),
+        # The marker is case-insensitive and a whole word.
+        (_c("insulin", "medication", "EXCLUDED"), False, "excluded"),
+        (_c("insulin", "medication", "nonexcluded"), False, "has"),
+        # A drug class never matches, in either list.
+        (_c("statins", "medication", "drug class"), True, "drug_class"),
+    ],
+)
+def test_record_polarity_follows_the_generator(concept, in_exclusion, polarity):
+    assert runner.canonical(concept, in_exclusion)[2] == polarity
+
+
+@pytest.mark.parametrize("details", [[">", 65], {"op": ">", "age": 65}], ids=["list", "dict"])
+def test_non_string_demographic_details_are_unbuildable(details):
+    # The generator calls details.lower() and raises on these.
+    canon = runner.canonical({"term": "age", "type": "demographic", "details": details}, False)
+    assert canon[:2] == ("demographic", "unbuildable")
+
+
+def test_drug_class_in_an_exclusion_list_fails_its_case(tmp_path):
+    fixture = _fixture()
+    case = next(c for c in fixture["cases"] if c["id"] == "htn_without_dm")
+    case["exclusion"].append(
+        {
+            "criterion": "on statins",
+            "expected": [{"type": "medication", "terms": ["statins"], "polarity": "has"}],
+        }
+    )
+    table = dict(CORRECT, **{"on statins": [_c("statins", "medication", "drug class")]})
+    _, log = _run(tmp_path, fixture, _extractor(table))
+    assert _case_row(log, "htn_without_dm")["pass"] is False
+
+
+def test_term_whitespace_and_case_are_normalized(tmp_path, capsys):
+    table = dict(CORRECT, **{"type 2 diabetes": [_c("Type  2\tDiabetes", "condition", "")]})
+    _run(tmp_path, _fixture(), _extractor(table))
+    assert "12/12 cases passed" in capsys.readouterr().out
 
 
 def _one_case_wrong():
@@ -456,6 +539,27 @@ def _broken(mutate):
         _broken(lambda f: _set_age(f, ["AND", [["<", 65], [">", 18]]])),
         _broken(lambda f: _set_age(f, ["OR", [[">", 65], ["<", 18]]])),
         _broken(lambda f: _set_age(f, ["AND", [[">", 18], [">=", 20]]])),
+        # Shapes _parse_age_details refuses: AND admitting no age, OR leaving none out.
+        _broken(lambda f: _set_age(f, ["AND", [[">", 18], ["<", 19]]])),
+        _broken(lambda f: _set_age(f, ["OR", [["<=", 17], [">=", 18]]])),
+        # Operators swapped, values in order: only the bound-order check refuses it.
+        _broken(lambda f: _set_age(f, ["OR", [[">", 10], ["<", 80]]])),
+        _broken(lambda f: _set_age(f, ["BETWEEN", ["50", 60]])),
+        _broken(lambda f: _set_age(f, ["AND", [[">", "18"], ["<", 65]]])),
+        _broken(
+            lambda f: f["cases"][0]["inclusion"][0]["expected"][0].update(terms=["diabetes", " "])
+        ),
+        # A misspelled key would leave its criteria unsent and unscored.
+        _broken(lambda f: f["cases"][7].update(exclusions=f["cases"][7].pop("exclusion"))),
+        _broken(lambda f: f["cases"][0]["inclusion"][0].update(expect=[])),
+        _broken(
+            lambda f: f["cases"][10]["inclusion"][0]["expected"][0].update(
+                temporal_whithin=f["cases"][10]["inclusion"][0]["expected"][0].pop(
+                    "temporal_within"
+                )
+            )
+        ),
+        _broken(lambda f: f.update(case=[])),
         _broken(lambda f: f.pop("cases")),
     ],
     ids=[
@@ -478,6 +582,16 @@ def _broken(mutate):
         "age-and-upper-first",
         "age-or-lower-first",
         "age-and-two-lower-bounds",
+        "age-and-empty-range",
+        "age-or-no-gap",
+        "age-or-swapped-operators",
+        "age-between-string-value",
+        "age-bound-string-value",
+        "blank-accepted-term",
+        "unknown-case-key",
+        "unknown-criterion-key",
+        "unknown-concept-key",
+        "unknown-top-level-key",
         "no-cases-key",
     ],
 )
