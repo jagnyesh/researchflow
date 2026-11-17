@@ -262,6 +262,20 @@ def test_expected_excluded_in_an_exclusion_list_matches_a_plain_concept(tmp_path
     assert "12/12 cases passed" in capsys.readouterr().out
 
 
+def test_excluded_demographic_in_an_exclusion_list_still_builds(tmp_path, capsys):
+    # The prompt's Example 7 writes "< 18 excluded"; in an exclusion list the
+    # generator builds it, so it must match.
+    fixture = _fixture()
+    case = next(c for c in fixture["cases"] if c["id"] == "htn_without_dm")
+    case["exclusion"].append(
+        {"criterion": "under 18", "expected": [{"type": "demographic", "age": ["<", 18]}]}
+    )
+    table = dict(CORRECT, **{"under 18": [_c("age", "demographic", "< 18 excluded")]})
+    code, _ = _run(tmp_path, fixture, _extractor(table))
+    assert code == runner.EXIT_OK
+    assert "12/12 cases passed" in capsys.readouterr().out
+
+
 def test_plural_demographics_type_reads_as_demographic(tmp_path, capsys):
     table = dict(CORRECT, female=[_c("gender", "demographics", "female")])
     code, _ = _run(tmp_path, _fixture(), _extractor(table))
@@ -389,6 +403,28 @@ def test_no_live_llm_client_refuses_to_run(tmp_path, capsys, monkeypatch):
     assert not log.exists()
 
 
+def _set_age(fixture, age):
+    """Set diabetics_over_65's expected age."""
+    fixture["cases"][2]["inclusion"][0]["expected"][1]["age"] = age
+    return fixture
+
+
+@pytest.mark.parametrize(
+    "details, age",
+    [
+        ("> 18 and < 65", ["AND", [[">", 18], ["<", 65]]]),
+        ("under 18 or over 65", ["OR", [["<", 18], [">", 65]]]),
+    ],
+)
+def test_two_bound_ages_load_and_match_in_the_parser_order(tmp_path, capsys, details, age):
+    fixture = _set_age(_fixture(), age)
+    table = dict(CORRECT, **{"diabetics over 65": [CORRECT["diabetics over 65"][0]]})
+    table["diabetics over 65"].append(_c("age", "demographic", details))
+    code, _ = _run(tmp_path, fixture, _extractor(table))
+    assert code == runner.EXIT_OK
+    assert "12/12 cases passed" in capsys.readouterr().out
+
+
 def _broken(mutate):
     fixture = _fixture()
     mutate(fixture)
@@ -415,6 +451,11 @@ def _broken(mutate):
         _broken(
             lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=["BETWEEN", [50]])
         ),
+        _broken(lambda f: _set_age(f, [">", -1])),
+        # _parse_age_details returns AND as (lower, upper) and OR as (upper, lower).
+        _broken(lambda f: _set_age(f, ["AND", [["<", 65], [">", 18]]])),
+        _broken(lambda f: _set_age(f, ["OR", [[">", 65], ["<", 18]]])),
+        _broken(lambda f: _set_age(f, ["AND", [[">", 18], [">=", 20]]])),
         _broken(lambda f: f.pop("cases")),
     ],
     ids=[
@@ -433,6 +474,10 @@ def _broken(mutate):
         "age-value-bool",
         "age-and-with-scalar",
         "age-between-one-bound",
+        "age-negative",
+        "age-and-upper-first",
+        "age-or-lower-first",
+        "age-and-two-lower-bounds",
         "no-cases-key",
     ],
 )

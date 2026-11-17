@@ -43,7 +43,6 @@ _WITHIN = re.compile(r"\b(?:last|past)\s+(\d+)\s+(day|week|month|year)s?\b", re.
 
 _RECORD_TYPES = ("condition", "medication", "procedure", "lab")
 _POLARITIES = ("has", "excluded", "family_history")
-_AGE_OPS = (">", ">=", "<", "<=", "BETWEEN", "AND", "OR")
 
 
 class ExtractionShapeError(Exception):
@@ -58,27 +57,32 @@ def _text(value) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+_LOWER, _UPPER = (">", ">="), ("<", "<=")
+
+
 def _age(value) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
 
-def _bound(value) -> bool:
-    return (
-        isinstance(value, list) and len(value) == 2 and value[0] in _AGE_OPS[:4] and _age(value[1])
-    )
+def _bound(value, ops) -> bool:
+    return isinstance(value, list) and len(value) == 2 and value[0] in ops and _age(value[1])
 
 
 def _valid_age(age) -> bool:
-    """The shapes SQLGenerator._parse_age_details returns, in JSON."""
+    """The shapes SQLGenerator._parse_age_details returns, in JSON. It returns AND
+    as (lower, upper) and OR as (upper, lower), so no other order can ever match."""
     if not (isinstance(age, list) and len(age) == 2):
         return False
     op, value = age
-    if op in _AGE_OPS[:4]:
+    if op in _LOWER + _UPPER:
         return _age(value)
-    pair = isinstance(value, list) and len(value) == 2
+    if not (isinstance(value, list) and len(value) == 2):
+        return False
     if op == "BETWEEN":
-        return pair and all(_age(v) for v in value)
-    return op in ("AND", "OR") and pair and all(_bound(v) for v in value)
+        return all(_age(v) for v in value)
+    if op == "AND":
+        return _bound(value[0], _LOWER) and _bound(value[1], _UPPER)
+    return op == "OR" and _bound(value[0], _UPPER) and _bound(value[1], _LOWER)
 
 
 def _check_expected(where: str, expected) -> None:
