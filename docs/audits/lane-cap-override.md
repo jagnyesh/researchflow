@@ -6,11 +6,11 @@ This log backs the lane-cap override in `docs/DAILY_DEV_WORKFLOW.md` §3, which 
 - the failed push runs on `main`, with any attribution;
 - `scripts/dials.sh` output.
 
-A PR's wait is §3's "waiting on you". It runs from the PR's first attestation comment with a `SHIP` or `SHIP-WITH-FIXES` verdict until the PR merges. All times are UTC. The tables below were refreshed on 2026-11-14 at about 22:00, against `main` at `202c56e`.
+A PR's wait is §3's "waiting on you". It runs from the PR's first attestation comment with a `SHIP` or `SHIP-WITH-FIXES` verdict until the PR merges. All times are UTC. The tables below were refreshed on 2026-11-15 at about 04:45, against `main` at `71e8b36`.
 
 ## Waits of the PRs merged under the override
 
-`.claude/skills/plan-lanes/preflight.sh` computes these waits. Of the 50 PRs merged since the override landed, three waited over 24 h: #396, #460 and #463. Each is a revert trigger under §3's first bullet, and the decisions on them are below.
+`.claude/skills/plan-lanes/preflight.sh` computes these waits. Of the 65 PRs merged since the override landed, three waited over 24 h: #396, #460 and #463. Each is a revert trigger under §3's first bullet, and the decisions on them are below.
 
 | PR | Merged | Wait |
 |---|---|---|
@@ -64,6 +64,21 @@ A PR's wait is §3's "waiting on you". It runs from the PR's first attestation c
 | [#497](https://github.com/jagnyesh/researchflow/pull/497) | 2026-11-14 21:45 | 3 min |
 | [#496](https://github.com/jagnyesh/researchflow/pull/496) | 2026-11-14 21:50 | 8 min |
 | [#498](https://github.com/jagnyesh/researchflow/pull/498) | 2026-11-14 21:56 | 12 min |
+| [#500](https://github.com/jagnyesh/researchflow/pull/500) | 2026-11-14 22:13 | 3 min |
+| [#502](https://github.com/jagnyesh/researchflow/pull/502) | 2026-11-14 22:19 | 5 min |
+| [#501](https://github.com/jagnyesh/researchflow/pull/501) | 2026-11-14 22:24 | 13 min |
+| [#505](https://github.com/jagnyesh/researchflow/pull/505) | 2026-11-14 22:42 | 23 min |
+| [#506](https://github.com/jagnyesh/researchflow/pull/506) | 2026-11-15 00:34 | 127 min |
+| [#507](https://github.com/jagnyesh/researchflow/pull/507) | 2026-11-15 00:56 | 149 min |
+| [#508](https://github.com/jagnyesh/researchflow/pull/508) | 2026-11-15 01:19 | 3 min |
+| [#514](https://github.com/jagnyesh/researchflow/pull/514) | 2026-11-15 01:25 | 4 min |
+| [#510](https://github.com/jagnyesh/researchflow/pull/510) | 2026-11-15 01:35 | 18 min |
+| [#509](https://github.com/jagnyesh/researchflow/pull/509) | 2026-11-15 01:43 | 27 min |
+| [#511](https://github.com/jagnyesh/researchflow/pull/511) | 2026-11-15 01:52 | 35 min |
+| [#512](https://github.com/jagnyesh/researchflow/pull/512) | 2026-11-15 02:02 | 43 min |
+| [#513](https://github.com/jagnyesh/researchflow/pull/513) | 2026-11-15 02:09 | 50 min |
+| [#518](https://github.com/jagnyesh/researchflow/pull/518) | 2026-11-15 04:18 | 132 min |
+| [#516](https://github.com/jagnyesh/researchflow/pull/516) | 2026-11-15 04:31 | 184 min |
 
 ## Failed push runs on main
 
@@ -80,10 +95,29 @@ For the `3759f90` run, the two pushes to `main` that followed, `29491c0` (#429) 
 
 ## dials.sh output
 
-`scripts/dials.sh 60`, run 2026-11-14. The limit of 60 covers all 50 override-era merges plus older ones. #371, #373 and #379 and the other 2026-11-07 merges before 22:38 landed before the override took effect. dials.sh's green→merge clock restarts whenever a branch is updated from `main`, so it understates the waits above. For example, it shows 42 min for #396 against a wait of 2,732 min.
+`scripts/dials.sh 75`, run 2026-11-15. The limit of 75 covers all 65 override-era merges plus older ones. #371, #373 and #379 and the other 2026-11-07 merges before 22:38 landed before the override took effect. dials.sh's green→merge clock restarts whenever a branch is updated from `main`, so it understates the waits above. For example, it shows 42 min for #396 against a wait of 2,732 min.
 
 ```
-== 2026-11-14  (11 merged) ==
+== 2026-11-15  (11 merged) ==
+  #518  open->green 9m   green->merge 125m   fix: formal SQL generator fails or builds the meant coho
+  #516  open->green 178m   green->merge 7m   fix: the phenotype SQL reject route is the reviewer's ch
+  #514  open->green 4m   green->merge 1m   fix: notebook "proceed" submits the formal request with
+  #513  open->green 51m   green->merge 0m   fix: Synthea loader takes its bundle directory from an a
+  #512  open->green 43m   green->merge 1m   fix: e2e extraction test no longer sets HEALTHCARE_DB_UR
+  #511  open->green 35m   green->merge 1m   fix: refresh script exits 1 and logs real counts when vi
+  #510  open->green 19m   green->merge 0m   docs: fix dead links and stale claims in docs/README.md
+  #509  open->green 26m   green->merge 2m   docs: Merge actor rule says only the owner's unedited at
+  #508  open->green 3m   green->merge 1m   docs: §3 Waiting on you starts at the repo owner's attes
+  #507  open->green 137m   green->merge 13m   fix: attestation workflow step calls set-status, which r
+  #506  open->green 20m   green->merge 108m   fix: POST /mcp/context answers an unsafe request_id with
+  median green->merge: 1m
+  merged-before-all-green: 0 of 11
+  merged-on-red: 0 of 11
+== 2026-11-14  (15 merged) ==
+  #505  open->green 10m   green->merge 13m   fix: security-check follow-ups from the #493 review (#49
+  #502  open->green 4m   green->merge 2m   fix: extraction writes every CSV or fails, never a parti
+  #501  open->green 14m   green->merge 0m   fix: attestation.sh set-status retries transient 5xx on
+  #500  open->green 3m   green->merge 0m   docs: lane-cap override log records the keep-4 decisions
   #498  open->green 13m   green->merge 0m   fix: keep FHIR URL credentials out of httpx logs and exc
   #497  open->green 3m   green->merge 0m   fix: delivery skips CSVs already in place and writes the
   #496  open->green 8m   green->merge 0m   fix: preflight pipeline check counts push runs only (#48
@@ -96,8 +130,8 @@ For the `3759f90` run, the two pushes to `main` that followed, `29491c0` (#429) 
   #484  open->green 149m   green->merge 858m   merged-on-red (1 failed: attestation)  feat: the review attestation becomes a required status c
   #481  open->green 14m   green->merge 144m   fix: CodeQL alerts under app/ cleared in code; /sql_quer
   median green->merge: 0m
-  merged-before-all-green: 0 of 11
-  merged-on-red: 1 of 11
+  merged-before-all-green: 0 of 15
+  merged-on-red: 1 of 15
 == 2026-11-13  (8 merged) ==
   #482  open->green 3m   green->merge 2m   fix: emoji ranges checked as code points, not a regex cl
   #476  open->green 3m   green->merge 1m   feat: a Stop hook runs the tests a lane's change can bre
@@ -188,11 +222,35 @@ The part past 24 h came from the update after a merge. At a cap of 2, the second
 
 **Decision.** On 2026-11-14 you kept the cap at 4 and accepted both waits as one-offs, as you did for #396. The triggers still apply to every later merge. This entry records no cause for the waits. Issue [#388](https://github.com/jagnyesh/researchflow/issues/388) asks separately whether waits caused by a red `main` should count toward the trigger, and it is still open.
 
+## 2026-11-15: nine lanes opened at once, for one round
+
+**Decision.** On 2026-11-15 at 01:11 you chose to open nine lanes at once. You had asked for ten, and the session planning lanes found nine ready issues that shared no planned file. Your choice set aside two of §3's conditions for this round only: the cap of 4, and Stage 2's trigger for every lane beyond the first. §3 still says 4. It calls going past 4 "a separate decision", and this entry records that decision for one round, not a new cap.
+
+§3's other conditions held when the lanes opened. No PR was open, `main` was green, and strict protection was on. One lane was High tier, the lane for #456. The other eight were Low or Medium.
+
+In the same answer you decided that #499, #503 and #504 are not escapes, which are §3's third revert trigger. You read them as scope splits: work split out of an issue on purpose, not bugs filed against a merged PR. #499 was split out of #477 before [#502](https://github.com/jagnyesh/researchflow/pull/502), the PR for #477, opened. #503 and #504 were filed during the review of #502. All three cover gaps that [ADR 0038](../decisions/0038-extraction-writes-every-csv-or-fails.md) leaves open.
+
+**What the round did.** The nine lanes opened at 01:15. Their PRs are #508–#514, #516 and #518 in the table above. Seven had merged by 02:09, and the last merged at 04:31.
+
+- The waits ran from 3 to 184 minutes, so none met the first trigger.
+- Each of the nine merge commits passed Tests, Security Scanning and Documentation on `main` at its first attempt.
+- No PR was reverted, and none of the nine closed issues has reopened.
+- Two issues were filed during the round, [#515](https://github.com/jagnyesh/researchflow/issues/515) and [#517](https://github.com/jagnyesh/researchflow/issues/517). #515 came from the review of the change in #516, and #517 from the review of the change in #518. On 2026-11-15 you decided that neither is an escape.
+  - #515 reports a bug that the review found outside the diff, in code that predates the override.
+  - #517 is a scope split of #456. It proposes an allowlist in place of the word denylist that #518 added. It also lists inputs that still build the wrong cohort after #518, such as a gender of `!= male`. #518's review routed those inputs to #517 before #518 merged. Before #518 the gender clause had no negation check, so `!= male` already built the male cohort.
+
+**Analysis (the coordinating session's reading, not your stated reason).** No wait came near the 24 h bar. The round's cost was the updates that each merge forced on the other open PRs.
+
+- Eight of the nine PRs got their first attestation between 01:15 and 01:27. Under strict protection, each merge left every other open PR behind `main`. After their first attestations, the nine PRs took 15 updates from `main` and 13 carried-forward attestations, across seven PRs.
+- Six of those updates were made through GitHub while the PR's attestation still named its earlier head. Five came between 01:20 and 01:25, on #509–#513. Each PR then waited for its lane to carry the attestation forward under validate-and-ship Step 7.4. #510's first verdict was `SHIP-WITH-FIXES`, which Step 7.4 can't carry, so #510 needed a second review.
+- #516 waited longest, and its wait has the cause the #396 entry gives. #516 was up to date and green from 01:30 until #510 merged at 01:35. It was then behind `main` until 04:21. Four more PRs merged by 02:09, about 8 to 9 minutes apart. Each had auto-merge on, so after its lane's update it merged without a further step from you. #516 had no auto-merge, so after an update it also needed your merge. The coordinating session took no turn between 02:06 and 04:21, so it did not ask #516's lane to update. #516 was updated through GitHub at 04:21 and merged at 04:31.
+- #518 was green and attested from 02:14, and you merged it at 04:18. No other PR merged between those times, so those 124 minutes don't come from the lane count.
+
 ## Logged week
 
 §3 makes the first 7 days after the override landed the logged week that Stage 2's exit asks for. That week runs from 2026-11-07 22:38 to 2026-11-14 22:38. Two of its conditions hold:
 
-- 50 PRs merged in the week, as of 2026-11-14 22:00;
+- 53 PRs merged in the week;
 - #395, #396 and #397 were open together from 2026-11-08 03:23, so 3 lanes ran at once that day.
 
 On 2026-11-10, after the decision, four lanes were open at once: #284, #329, #387 (PR #406) and #403.
