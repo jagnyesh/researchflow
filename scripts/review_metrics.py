@@ -23,13 +23,19 @@ Columns:
                        carry two dispositions ("fixed (...); routed to #517"), so fixed + accepted +
                        routed can exceed findings_total.
   review_passes        the sum of the `<k> pass(es)` values on the Reviewer lines.
-  followups_filed      issues created from the PR's creation to 24 hours after its merge that cite
-                       the PR or an issue it closes, deduplicated by number.
+  followups_filed      issues created from 24 hours before the PR's creation to 24 hours after its
+                       merge that cite the PR or an issue it closes, deduplicated by number, and
+                       that are not counted as an escape. The window opens before the PR because the
+                       Step 2 review runs before the PR exists, so about half of the follow-ups are
+                       filed before it (2026-11-01 onward: 49 inside the PR's own window, 56 earlier,
+                       39 of those in the 6 hours before). Git records no lane start (the first
+                       commit also lands after the review), so 24 hours is a fixed lookback. It can admit a sibling
+                       or planning issue that cites the closing issue the day before the PR opens;
+                       the script can't tell those from review follow-ups.
   escapes              revert commits on origin/main naming the PR, plus reopenings of the closed
                        issue after the merge, plus `bug` issues created after the merge and within
-                       14 days that cite the PR or its closed issue. A `bug` issue filed in the first
-                       24 hours counts as both a follow-up and an escape: the two definitions overlap
-                       there, and the script applies each one as written.
+                       14 days that cite the PR or its closed issue. A follow-up is not an escape: an
+                       issue that qualifies as an escape is never also counted as a follow-up.
   escape_window_closed true once 14 days have passed since the merge.
   parse_warnings       empty, or why a value is empty. An unparseable value is empty, never 0: a 0
                        means the reviewer found nothing.
@@ -264,18 +270,21 @@ def build_row(pr, attestation, issues, reverts, reopened, now):
     closing = [r["number"] for r in pr.get("closingIssuesReferences") or []]
     numbers = [pr["number"], *closing]
 
-    follow = {
-        i["number"]
-        for i in issues
-        if created <= ts(i["createdAt"]) <= merged + timedelta(hours=FOLLOWUP_HOURS)
-        and cites(i, numbers)
-    }
     escaped_issues = {
         i["number"]
         for i in issues
         if any(lab["name"] == "bug" for lab in i.get("labels") or [])
         and merged < ts(i["createdAt"]) <= merged + timedelta(days=ESCAPE_DAYS)
         and cites(i, numbers)
+    }
+    follow = {
+        i["number"]
+        for i in issues
+        if created - timedelta(hours=FOLLOWUP_HOURS)
+        <= ts(i["createdAt"])
+        <= merged + timedelta(hours=FOLLOWUP_HOURS)
+        and cites(i, numbers)
+        and i["number"] not in escaped_issues
     }
     escapes = len(reverts) + reopened + len(escaped_issues)
 
@@ -432,7 +441,9 @@ def main(argv=None):
     if not prs:
         sys.exit("no merged PRs returned")
 
-    since = min(ts(p["createdAt"]) for p in prs).date().isoformat()
+    since = (
+        (min(ts(p["createdAt"]) for p in prs) - timedelta(hours=FOLLOWUP_HOURS)).date().isoformat()
+    )
     flow_start = ((now - timedelta(days=now.weekday())) - timedelta(weeks=3)).date().isoformat()
     fields = "number,createdAt,closedAt,title,body,labels"
     issue_limit = 1000

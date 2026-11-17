@@ -356,6 +356,7 @@ case "$1 $2" in
     trim "$FAKE_DIR/pr$3.json" "$fields" | jq -r "$query"
     ;;
   "issue list")
+    echo "$*" >>"$FAKE_DIR/issue_searches.log"
     jq -c --arg f "$fields" '.[] | . as $d | reduce ($f|split(",")[]) as $k ({}; .[$k] = $d[$k])' \
       "$FAKE_DIR/issues.json" | jq -s .
     ;;
@@ -638,3 +639,53 @@ def test_cli_counts_only_reopenings_after_the_merge(tmp_path):
     _, out = run_cli(tmp_path, env)
 
     assert list(csv.DictReader(out.read_text().splitlines()))[0]["escapes"] == "1"
+
+
+# ------------------------------------------------------------------ follow-up window starts 24 h before the PR
+
+
+def test_an_issue_filed_2_hours_before_the_pr_opened_is_a_follow_up():
+    # PR created 2026-11-15T02:05:41Z; the review runs before the PR opens.
+    i = issue(640, "2026-11-15T00:05:00Z", body="found reviewing #518")
+
+    assert row_for(pr(), root_body(), issues=[i])["followups_filed"] == 1
+
+
+def test_an_issue_filed_30_hours_before_the_pr_opened_is_not_a_follow_up():
+    i = issue(641, "2026-11-13T20:00:00Z", body="mentions #518")
+
+    assert row_for(pr(), root_body(), issues=[i])["followups_filed"] == 0
+
+
+def test_the_follow_up_window_opens_exactly_24_hours_before_the_pr():
+    on_edge = issue(642, "2026-11-14T02:05:41Z", body="#518")
+    just_before = issue(643, "2026-11-14T02:05:40Z", body="#518")
+
+    assert row_for(pr(), root_body(), issues=[on_edge, just_before])["followups_filed"] == 1
+
+
+def test_a_bug_issue_filed_1_hour_after_the_merge_is_an_escape_only():
+    i = issue(644, "2026-11-15T05:18:49Z", body="regression from #518", labels=["bug"])
+
+    r = row_for(pr(), root_body(), issues=[i])
+
+    assert (r["escapes"], r["followups_filed"]) == (1, 0)
+
+
+def test_the_follow_up_window_closes_exactly_24_hours_after_the_merge():
+    at_edge = issue(650, "2026-11-16T04:18:49Z", body="#518")
+    one_second_later = issue(651, "2026-11-16T04:18:50Z", body="#518")
+
+    assert row_for(pr(), root_body(), issues=[at_edge, one_second_later])["followups_filed"] == 1
+
+
+def test_cli_searches_issues_from_24_hours_before_the_oldest_pr(tmp_path):
+    p = listed(518, merged="2026-10-26T05:00:00Z")
+    p["createdAt"] = "2026-10-26T01:00:00Z"
+    env = make_env(tmp_path, [p], [])
+
+    run_cli(tmp_path, env)
+
+    # The earliest search date is the day before the oldest PR opened, so a follow-up filed in
+    # the 24 hours before it is fetched (the issue flow window starts later, 2026-10-26).
+    assert "created:>=2026-10-25" in (tmp_path / "data" / "issue_searches.log").read_text()
