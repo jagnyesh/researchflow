@@ -5,7 +5,7 @@
 #   1. .env contains no sentinel placeholders (e.g. sk-ant-api03-...)
 #   2. Redis is reachable (Sprint 6.1 audit pipeline depends on it)
 #   3. Echo current sprint banner from CONTEXT.md
-#   4. Lane check: red main, review debt, open PRs (DAILY_DEV_WORKFLOW §10)
+#   4. Lane check: red main, PRs awaiting you, open PRs (DAILY_DEV_WORKFLOW §10)
 
 set -uo pipefail
 
@@ -105,7 +105,7 @@ lane_check() {
           and all(.statusCheckRollup[]; ((.conclusion // "") + (.state // ""))
                                         | IN("SUCCESS", "SKIPPED", "NEUTRAL"))))
         | if length >= 2 then
-            "🚦 \(length) PRs await your decision (\(map("#\(.number)") | join(", "))) — §10: no new lane at ≥2"
+            "🚦 \(length) PRs await your decision (\(map("#\(.number)") | join(", "))) — §10 dial"
           else empty end),
       # The repo is public: the branch and title of a fork PR are text anyone
       # can write, and this output becomes the context of every session. Only an
