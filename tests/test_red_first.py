@@ -216,7 +216,7 @@ def test_the_same_change_without_a_stray_path_is_red_first(repo, tmp_path):
     assert _red_first(repo, tmp_path, "tests/test_new.py", package="newpkg").returncode == 0
 
 
-def test_the_script_is_executable_from_a_copy_in_another_repo():
-    # Guards the shebang and exec line: the skill invokes it as scripts/red_first.sh.
+def test_the_script_is_executable():
+    # The skill invokes it as scripts/red_first.sh.
     assert os.access(SCRIPT, os.X_OK)
     assert shutil.which("bash")
