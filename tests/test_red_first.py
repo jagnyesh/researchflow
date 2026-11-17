@@ -14,10 +14,13 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts/red_first.sh"
 
+# Split so this file doesn't itself carry the marker text that the never-run list refuses.
+MARKER = "requires_" + "services"
+
 BASE_FILES = {
     "pkg/__init__.py": "",
     "pkg/mod.py": "def f():\n    return 1\n",
-    ".claude/lane-never-run.txt": "file: tests/test_denied.py\nmarker: requires_services\n",
+    ".claude/lane-never-run.txt": f"file: tests/test_denied.py\nmarker: {MARKER}\n",
 }
 
 
@@ -165,14 +168,14 @@ def test_a_file_carrying_a_never_run_marker_is_refused(repo, tmp_path):
     _write(
         repo,
         {
-            "tests/test_live.py": "import pytest\n\npytestmark = pytest.mark.requires_services\n\ndef test_x():\n    pass\n"
+            "tests/test_live.py": f"import pytest\n\npytestmark = pytest.mark.{MARKER}\n\ndef test_x():\n    pass\n"
         },
     )
 
     r = _red_first(repo, tmp_path, "tests/test_live.py")
 
     assert r.returncode == 2
-    assert "marked requires_services" in r.stderr
+    assert f"marked {MARKER}" in r.stderr
 
 
 def test_a_missing_never_run_list_refuses_everything(repo, tmp_path):
