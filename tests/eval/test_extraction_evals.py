@@ -107,7 +107,10 @@ def test_correct_extraction_passes_every_case_and_logs_evidence(tmp_path, capsys
         assert row["pass"] is True
         assert row["ts"] and row["git_commit"]
         for item in row["criteria"]:
-            assert {"list", "criterion", "expected", "actual", "missing", "extra"} <= set(item)
+            keys = {"list", "criterion", "expected", "returned", "actual", "missing", "extra"}
+            assert keys <= set(item)
+            # The concepts as returned, so a later scoring rule can re-score the run.
+            assert item["returned"] == CORRECT[item["criterion"]]
 
 
 def _case_row(log, case_id):
@@ -175,6 +178,43 @@ def _case_row(log, case_id):
             1,
             0,
         ),
+        # An age marked excluded in an inclusion list: the generator fails the request
+        # (the prompt's Example 7 teaches "< 18 excluded").
+        (
+            "female_htn_under_65",
+            "female patients with hypertension under 65",
+            [
+                _c("gender", "demographic", "female"),
+                _c("hypertension", "condition", ""),
+                _c("age", "demographic", "< 65 excluded"),
+            ],
+            1,
+            1,
+        ),
+        # A gender marked excluded in an inclusion list fails the same way.
+        (
+            "male_over_40_on_metformin",
+            "male patients over 40 on metformin",
+            [
+                _c("gender", "demographic", "male excluded"),
+                _c("age", "demographic", "> 40"),
+                _c("metformin", "medication", ""),
+            ],
+            1,
+            1,
+        ),
+        # A drug class matches no prescription by name, so the generator fails it.
+        (
+            "male_over_40_on_metformin",
+            "male patients over 40 on metformin",
+            [
+                _c("gender", "demographic", "male"),
+                _c("age", "demographic", "> 40"),
+                _c("metformin", "medication", "drug class: biguanides"),
+            ],
+            1,
+            1,
+        ),
     ],
 )
 def test_wrong_extraction_fails_only_its_case(
@@ -213,6 +253,21 @@ def test_excluded_marker_in_an_exclusion_list_restates_the_list(tmp_path, capsys
     assert "12/12 cases passed" in capsys.readouterr().out
 
 
+def test_expected_excluded_in_an_exclusion_list_matches_a_plain_concept(tmp_path, capsys):
+    fixture = _fixture()
+    case = next(c for c in fixture["cases"] if c["id"] == "htn_without_dm")
+    case["exclusion"][0]["expected"][0]["polarity"] = "excluded"
+    code, _ = _run(tmp_path, fixture, _extractor(CORRECT))
+    assert code == runner.EXIT_OK
+    assert "12/12 cases passed" in capsys.readouterr().out
+
+
+def test_plural_demographics_type_reads_as_demographic(tmp_path, capsys):
+    table = dict(CORRECT, female=[_c("gender", "demographics", "female")])
+    code, _ = _run(tmp_path, _fixture(), _extractor(table))
+    assert "12/12 cases passed" in capsys.readouterr().out
+
+
 def test_excluded_marker_in_an_inclusion_list_is_its_own_polarity(tmp_path, capsys):
     table = dict(CORRECT, hypertension=[_c("hypertension", "condition", "excluded")])
     _, log = _run(tmp_path, _fixture(), _extractor(table))
@@ -238,6 +293,39 @@ def test_extraction_error_fails_the_case_but_counts_it_executed(tmp_path, capsys
     row = _case_row(log, "family_history_breast_cancer")
     assert (row["pass"], row["error"]) == (False, "ValueError")
     assert SECRET_TEXT not in log.read_text() + out
+
+
+def test_an_errored_case_counts_its_expected_concepts_as_misses(tmp_path, capsys):
+    correct = _extractor(CORRECT)
+
+    async def extract(criteria):
+        if criteria == ["female patients with hypertension under 65"]:
+            raise ValueError("boom")
+        return await correct(criteria)
+
+    _, log = _run(tmp_path, _fixture(), extract)
+    by_type = _rows(log)[-1]["summary"]["by_type"]
+    # The case expects a gender, an age and a condition.
+    assert by_type["demographic"] == {"tp": 7, "fp": 0, "fn": 2}
+    assert by_type["condition"] == {"tp": 9, "fp": 0, "fn": 1}
+    assert "demographic: precision 1.00, recall 0.78" in capsys.readouterr().out
+
+
+def test_a_missing_concept_lowers_its_type_recall(tmp_path, capsys):
+    table = dict(CORRECT, **{"older than 65": []})
+    _, log = _run(tmp_path, _fixture(), _extractor(table))
+    assert _rows(log)[-1]["summary"]["by_type"]["demographic"] == {"tp": 8, "fp": 0, "fn": 1}
+
+
+def test_every_case_erroring_exits_integrity_failure(tmp_path, capsys):
+    async def extract(criteria):
+        raise RuntimeError("authentication failed")
+
+    code, log = _run(tmp_path, _fixture(), extract)
+    out = capsys.readouterr().out
+    assert code == runner.EXIT_INTEGRITY
+    assert "every case errored" in out
+    assert _rows(log)[-1]["summary"]["executed"] == 12
 
 
 def test_extraction_returning_the_wrong_number_of_criteria_fails_the_case(tmp_path):
@@ -278,9 +366,16 @@ def test_accuracy_below_fail_under_exits_threshold_failure(tmp_path, capsys):
 
 
 def test_accuracy_at_fail_under_passes(tmp_path):
-    # 11/12 = 91.7%.
-    code, _ = _run(tmp_path, _fixture(), _one_case_wrong(), "--fail-under", "91.5")
+    # Exactly 11/12, the same float the runner computes.
+    code, _ = _run(tmp_path, _fixture(), _one_case_wrong(), "--fail-under", repr(100 * 11 / 12))
     assert code == runner.EXIT_OK
+
+
+@pytest.mark.parametrize("pct", ["nan", "-1", "100.5"])
+def test_fail_under_outside_0_to_100_is_refused(tmp_path, pct):
+    with pytest.raises(SystemExit) as refused:
+        _run(tmp_path, _fixture(), _never_called, "--fail-under", pct)
+    assert refused.value.code == 2
 
 
 def test_no_live_llm_client_refuses_to_run(tmp_path, capsys, monkeypatch):
@@ -314,6 +409,12 @@ def _broken(mutate):
         _broken(lambda f: f["cases"][2]["inclusion"][0]["expected"][1].pop("age")),
         _broken(lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=[">"])),
         _broken(lambda f: f["cases"][3]["inclusion"][0]["expected"][0].update(gender="any")),
+        _broken(lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=[">=", "65"])),
+        _broken(lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=[">", True])),
+        _broken(lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=["AND", 65])),
+        _broken(
+            lambda f: f["cases"][2]["inclusion"][0]["expected"][1].update(age=["BETWEEN", [50]])
+        ),
         _broken(lambda f: f.pop("cases")),
     ],
     ids=[
@@ -328,6 +429,10 @@ def _broken(mutate):
         "demographic-without-age-or-gender",
         "malformed-age",
         "bad-gender",
+        "age-value-string",
+        "age-value-bool",
+        "age-and-with-scalar",
+        "age-between-one-bound",
         "no-cases-key",
     ],
 )

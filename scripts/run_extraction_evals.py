@@ -34,8 +34,9 @@ LOG = ROOT / "logs" / "extraction_evals.jsonl"
 EXIT_OK, EXIT_BELOW_THRESHOLD, EXIT_INTEGRITY = 0, 1, 2
 LISTS = ("inclusion", "exclusion")
 
-# The marker SQLGenerator._build_criteria_conditions reads; it has no named constant.
+# Markers SQLGenerator._build_criteria_conditions reads; they have no named constants.
 _EXCLUDED = re.compile(r"\bexcluded\b", re.I)
+_DRUG_CLASS = re.compile(r"\bdrug[\s-]+class(?:es)?\b", re.I)
 # Report-only: no consumer reads timing from details yet (ADR 0040).
 _WITHIN = re.compile(r"\b(?:last|past)\s+(\d+)\s+(day|week|month|year)s?\b", re.I)
 
@@ -57,6 +58,29 @@ def _text(value) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _age(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _bound(value) -> bool:
+    return (
+        isinstance(value, list) and len(value) == 2 and value[0] in _AGE_OPS[:4] and _age(value[1])
+    )
+
+
+def _valid_age(age) -> bool:
+    """The shapes SQLGenerator._parse_age_details returns, in JSON."""
+    if not (isinstance(age, list) and len(age) == 2):
+        return False
+    op, value = age
+    if op in _AGE_OPS[:4]:
+        return _age(value)
+    pair = isinstance(value, list) and len(value) == 2
+    if op == "BETWEEN":
+        return pair and all(_age(v) for v in value)
+    return op in ("AND", "OR") and pair and all(_bound(v) for v in value)
+
+
 def _check_expected(where: str, expected) -> None:
     if not isinstance(expected, dict):
         raise FixtureError(f"{where}: an expected concept is not an object")
@@ -69,9 +93,10 @@ def _check_expected(where: str, expected) -> None:
             raise FixtureError(f"{where}: polarity must be one of {', '.join(_POLARITIES)}")
     elif concept_type == "demographic":
         if "age" in expected:
-            age = expected["age"]
-            if not (isinstance(age, list) and len(age) == 2 and age[0] in _AGE_OPS):
-                raise FixtureError(f"{where}: age must be [op, value]")
+            if not _valid_age(expected["age"]):
+                raise FixtureError(
+                    f"{where}: age must be [op, value] as _parse_age_details returns it"
+                )
         elif expected.get("gender") not in ("female", "male"):
             raise FixtureError(f"{where}: a demographic needs an age or a gender of female or male")
     else:
@@ -142,7 +167,9 @@ def canonical(concept: dict, in_exclusion: bool) -> tuple:
     details_text = "" if details is None else str(details)
 
     if concept_type == "demographic":
-        if "age" in term_text.lower():
+        if not in_exclusion and _EXCLUDED.search(details_text):
+            pass  # the generator fails any concept marked excluded in an inclusion list
+        elif "age" in term_text.lower():
             op, value = SQLGenerator._parse_age_details(details_text)
             if op is not None:
                 return ("age", op, _as_tuple(value))
@@ -153,7 +180,11 @@ def canonical(concept: dict, in_exclusion: bool) -> tuple:
         return ("demographic", "unbuildable", _norm(term_text))
 
     polarity = "has"
-    if concept_type == "condition" and SQLGenerator._FAMILY_HISTORY.search(
+    if concept_type == "medication" and _DRUG_CLASS.search(details_text):
+        # A class name matches no prescription, so the generator fails it in either
+        # list; no fixture polarity can match this one.
+        polarity = "drug_class"
+    elif concept_type == "condition" and SQLGenerator._FAMILY_HISTORY.search(
         f"{term_text} {details_text}"
     ):
         polarity = "family_history"
@@ -228,6 +259,7 @@ def score_case(case: dict, actual: dict) -> dict:
                     "list": list_name,
                     "criterion": criterion["criterion"],
                     "expected": criterion["expected"],
+                    "returned": concepts,
                     "actual": actual_canon,
                     "missing": missing,
                     "extra": [canon for canon, _ in unmatched],
@@ -256,7 +288,14 @@ async def run_cases(cases: list, extract, results: list) -> None:
         except Exception as e:
             # The class only: a message can carry criterion text or raw model output.
             result = {"case_id": case["id"], "pass": False, "error": type(e).__name__}
-            result.update(criteria=[], tally={}, temporal=[])
+            # Every expected concept is a miss, so the error lowers per-type recall.
+            misses = defaultdict(int)
+            for list_name in LISTS:
+                for criterion in case.get(list_name, []):
+                    for expected in criterion["expected"]:
+                        misses[expected["type"]] += 1
+            tally = {kind: {"tp": 0, "fp": 0, "fn": n} for kind, n in misses.items()}
+            result.update(criteria=[], tally=tally, temporal=[])
         results.append(result)
 
 
@@ -339,13 +378,20 @@ def _live_extract():
     return extract
 
 
+def _percent(text: str) -> float:
+    value = float(text)
+    if not 0 <= value <= 100:  # also refuses nan, which compares false to every number
+        raise argparse.ArgumentTypeError(f"{text} is not a percentage from 0 to 100")
+    return value
+
+
 def main(argv=None, extract=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--cases", type=Path, default=CASES)
     parser.add_argument("--log", type=Path, default=LOG)
     parser.add_argument(
         "--fail-under",
-        type=float,
+        type=_percent,
         default=None,
         metavar="PCT",
         help="exit 1 when the case pass rate is below PCT (default: report only)",
@@ -374,12 +420,21 @@ def main(argv=None, extract=None) -> int:
     summary = _summary(results, len(cases))
     _write_log(args.log, results, summary)
     _report(summary, results)
-    if len(results) != len(cases):
-        print(f"INTEGRITY: executed {len(results)} of the fixture's {len(cases)} cases")
+    return _exit_code(results, len(cases), args.fail_under)
+
+
+def _exit_code(results: list, expected: int, fail_under) -> int:
+    """Integrity failures first: a run that can't be trusted has no accuracy."""
+    if len(results) != expected:
+        print(f"INTEGRITY: executed {len(results)} of the fixture's {expected} cases")
         return EXIT_INTEGRITY
-    accuracy = 100.0 * summary["passed"] / len(cases)
-    if args.fail_under is not None and accuracy < args.fail_under:
-        print(f"FAIL: accuracy {accuracy:.1f}% is below --fail-under {args.fail_under:g}")
+    if all(r["error"] for r in results):
+        # An expired key or an outage, not a 0% extractor.
+        print("INTEGRITY: every case errored, so nothing was measured")
+        return EXIT_INTEGRITY
+    accuracy = 100.0 * sum(r["pass"] for r in results) / expected
+    if fail_under is not None and accuracy < fail_under:
+        print(f"FAIL: accuracy {accuracy:.1f}% is below --fail-under {fail_under:g}")
         return EXIT_BELOW_THRESHOLD
     return EXIT_OK
 
