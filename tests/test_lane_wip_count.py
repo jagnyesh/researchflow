@@ -1,5 +1,7 @@
 """#198: lane.sh counts lanes by branch, wherever the worktree lives.
 
+#522: the count is reported, never enforced; a fifth lane opens.
+
 Runs against a throwaway git repo (sandbox-first: lane.sh mutates worktrees).
 """
 
@@ -38,11 +40,11 @@ def repo(tmp_path):
     return root
 
 
-def _wip(repo) -> str:
+def _active(repo) -> str:
     out = subprocess.run(
-        ["bash", "scripts/lane.sh", "list"], cwd=repo, check=True, capture_output=True, text=True
+        ["bash", "scripts/lane.sh", "status"], cwd=repo, check=True, capture_output=True, text=True
     ).stdout
-    return next(line for line in out.splitlines() if line.startswith("WIP:"))
+    return next(line for line in out.splitlines() if line.startswith("Active lanes:"))
 
 
 def test_a_native_claude_worktree_on_an_issue_branch_counts(repo):
@@ -56,34 +58,35 @@ def test_a_native_claude_worktree_on_an_issue_branch_counts(repo):
         ".claude/worktrees/status-check-dc924f",
     )
 
-    assert _wip(repo).startswith("WIP: 1/4")
+    assert _active(repo) == "Active lanes: 1"
 
 
 def test_detached_and_non_issue_worktrees_do_not_count(repo, tmp_path):
     _git(repo, "worktree", "add", "-q", "--detach", ".claude/worktrees/stale-abc123")
     _git(repo, "worktree", "add", "-q", "-b", "chore/notes", str(tmp_path / "scratch"))
 
-    assert _wip(repo).startswith("WIP: 0/4")
+    assert _active(repo) == "Active lanes: 0"
 
 
-def test_open_refuses_at_four_lanes_wherever_they_live(repo, tmp_path):
+def test_a_fifth_lane_opens_and_the_count_reports_it(repo, tmp_path):
     _git(repo, "worktree", "add", "-q", "-b", "fix/10-a", ".claude/worktrees/x1")
     _git(repo, "worktree", "add", "-q", "-b", "feat/11-b", str(tmp_path / "elsewhere"))
     _git(repo, "worktree", "add", "-q", "-b", "fix/13-c", ".claude/worktrees/x3")
     _git(repo, "worktree", "add", "-q", "-b", "feat/14-d", str(tmp_path / "elsewhere2"))
 
     result = subprocess.run(
-        ["bash", "scripts/lane.sh", "open", "12", "--no-deps"],
+        ["bash", "scripts/lane.sh", "open", "12", "--slug", "e", "--no-deps"],
         cwd=repo,
         capture_output=True,
         text=True,
     )
 
-    assert result.returncode != 0
-    assert "WIP limit reached (4/4" in result.stderr + result.stdout
+    assert result.returncode == 0, result.stderr
+    assert "WIP limit" not in result.stderr + result.stdout
+    assert _active(repo) == "Active lanes: 5"
 
 
 def test_the_main_checkout_does_not_count_even_on_an_issue_branch(repo):
     _git(repo, "checkout", "-q", "-b", "fix/277-gender")
 
-    assert _wip(repo).startswith("WIP: 0/4")
+    assert _active(repo) == "Active lanes: 0"

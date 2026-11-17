@@ -10,9 +10,9 @@
 
 This doc's claims are only as good as the repo's own numbers. Before adding a lane, a gate, or a rule, pull the real data:
 
-- `scripts/dials.sh` — open→green (pipeline health) and green→merge, per merge day. green→merge restarts on every push, so under strict protection it no longer measures how long a PR waited on you; §3 has that measure.
-- Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target. Not started yet; begin it before trusting any claim that leans on it.
-- Honest baseline as of 2026-11-07 (dates in US Central), recorded here so nobody mistakes aspiration for practice: **parallel lanes have run on two days, and neither is a steady state.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. On 2026-10-30 two worktree lanes ran at once (#212 → PR #215, #213 → PR #216), at Stage 2's WIP = 2. On 2026-11-07 four ran at once (#289, #310 slice 1, #344, #306 → PRs #357–#360), past WIP = 2 by explicit choice. Later that day #362, #363 and #365 (PRs #366, #369, #370) ran alongside #361 (PR #371). `main`'s Tests workflow stayed green after each of those eight merges, although four of them (#358, #360, #370, #371) merged on bases behind `main` while "require branches to be up to date" was still off. Two days are not the logged week Stage 2's exit asks for (§3), so the multi-lane parts of §4 are design intent tried twice, not observed steady state.
+- `scripts/dials.sh` — open→green (pipeline health) and green→merge, per merge day, plus the review-metrics summary from `scripts/review_metrics.py`. green→merge restarts on every push, so under strict protection it no longer measures how long a PR waited on you; §3 has that measure.
+- Review-minutes per PR and the **catch-rate log** (§6) — the real optimization target. `scripts/review_metrics.py` (#520) computes the catch, escape and follow-up rates.
+- Honest baseline as of 2026-11-07 (dates in US Central), recorded here so nobody mistakes aspiration for practice: **parallel lanes have run on two days, and neither is a steady state.** Sprint 6.7's 11 slices shipped *serially*, before `scripts/lane.sh` existed. On 2026-10-30 two worktree lanes ran at once (#212 → PR #215, #213 → PR #216), when the limit was 2. On 2026-11-07 four ran at once (#289, #310 slice 1, #344, #306 → PRs #357–#360), past that limit by explicit choice. Later that day #362, #363 and #365 (PRs #366, #369, #370) ran alongside #361 (PR #371). `main`'s Tests workflow stayed green after each of those eight merges, although four of them (#358, #360, #370, #371) merged on bases behind `main` while "require branches to be up to date" was still off. Two days are not a steady state, so the multi-lane parts of §4 are design intent tried twice. The lane cap was removed on 2026-11-16 (§3).
 - On the evening of 2026-11-06, `main` went red twice. Both times, PRs opened on 2026-11-04, from a batch authored concurrently over 2026-11-03/04, merged in a batch on stale bases: #332 vs `tests/test_portal_urls.py` (fixed by #347), and #339 vs #319 (fixed by #351). More PRs in flight put more of them on older bases. "Require branches to be up to date" went back on after #371 merged on 2026-11-07, together with validate-and-ship Step 7.4, which carries a review attestation across a clean merge from `main` (#361, #371).
 
 ---
@@ -67,52 +67,24 @@ The binding constraint on everything else is **how many review streams one perso
 
 ---
 
-## 3. The ramp (parallelism is optional and, here, unproven)
+## 3. Launching lanes
 
-**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet. **Stages 2–3 are trigger-gated: Stage 2 has been tried, not held, and Stage 3 has not been entered.** Parallel lanes have run on two days (§0): two at once on 2026-10-30, and four on 2026-11-07, past Stage 2's WIP = 2 by explicit choice. Neither is a logged week, so Stage 2's exit is unmet; the 2026-11-07 run used Stage 3's lane count without that exit — do not climb for its own sake. **The cap is now 4 under a recorded override (2026-11-07, below the stages), with conditions.**
+**Stage 1 is done** (pipeline + continuous merge, proven across 6.7). **Stage 0 is partial:** the risk classifier is new in this edition, and the golden-file lock (§7) and eval gate (§5) are not built yet.
 
 **Stage 0 — Foundations.** Voice input (§8), the risk classifier (§1), memory write-back (§5.1), evidence-PR template (§6), skill vetting (§9). CI runs real tests on every PR.
 
 **Stage 1 — The pipeline.** `/validate-and-ship` end to end; per-issue branches; continuous merge. *Exit:* three consecutive issues where your only post-handoff involvement was escalated decisions.
 
-**Stage 2 — Two lanes (only when the trigger fires).** *Trigger:* a lane is mid-run on a long autonomous task **and** a second independent, well-specified issue is ready **and** review is keeping up. If any clause is false, a second lane is negative throughput (§10). *Substrate, lightest first:* native `claude --worktree <name>` → `scripts/lane.sh` (WIP guard + dep-sync) → raw `git worktree`. WIP = 2 (4 under the override below). *Exit:* one logged week where no PR waited on you > 1 day.
+**Decision, 2026-11-16: there is no lane cap.** The cap (2, then 4 under an override recorded on 2026-11-07) limited how many lanes were in flight, not what feeds them. Between 2026-11-01 and 2026-11-16, 152 issues were opened, and by a regex count 87 of them cite another issue or PR together with review or follow-up wording. The queue stayed level at every lane count. The override's 24-hour revert trigger also fired three times (#396, #460 and #463), and the cap stayed at 4 each time, so the rule no longer described practice. The owner removed it. `scripts/lane.sh` reports the active-lane count and never refuses on it. This accepts a larger pile of green PRs waiting on a human merge than the cap allowed; §10's dials show that pile at the launch gate, and the owner decides there. The record of the override is `docs/audits/lane-cap-override.md`.
 
-**Stage 3 — Scale.** 3–5 lanes; native worktrees + background/cloud agents before any external pool tool. No external worktree-pool or "overnight" binary unless it clears §9. *Exit:* none — cruising altitude, only while §10 holds.
+Three rules still stop a launch. They prevent breakage, and nothing else in this doc or the skills repeats them:
+- **`main` is red or flaky:** only the lane that fixes it opens. Under strict protection a red required check on `main` keeps every PR from merging, so green PRs can't drain until `main` is fixed.
+- **"Require branches to be up to date" is off:** no new lane opens until it is back on. Stale bases caused both 2026-11-06 red-`main` incidents (§0).
+- **Two lanes share a planned file:** they run in series. So do two lanes that both touch `tests/conftest.py`, `app/main.py`, `config/**`, `CLAUDE.md`, `CONTEXT.md`, `BACKLOG.md` or `docs/decisions/INDEX.md`, and two lanes that change the same behavior from different files, such as a code change and a test asserting the old behavior.
 
-**Override, 2026-11-07: up to 4 lanes before Stage 2's exit is met.** This is your decision, recorded as a deliberate override: ADR 0000's pattern of setting a pre-commitment aside on purpose and writing it down. It accepts the review-bandwidth risk Stage 2's exit guards against. That exit is unmet. In the week to 2026-11-07, all 16 merged PRs numbered #317–#338 waited 58–72 h on you, measured as defined below. `scripts/dials.sh 70` shows only 14 of them, at 55–64 h, because later pushes restarted its clock on the other two.
-
-The new information lowers collision risk and re-review churn, not review load:
-- "Require branches to be up to date" is back on, so PRs can no longer merge on stale bases. Stale bases caused both 2026-11-06 red-main incidents (§0).
-- Validate-and-ship Step 7.4 carries a review attestation across an update from `main` when three things hold: the update is a merge, the root verdict is `SHIP`, and `main` changed none of the PR's files. Any other update still needs a fresh review.
-
-Review load is what the rules below bound.
+Everything that depends on load is a dial (§10), not a gate.
 
 *Waiting on you* runs from a PR's first attestation comment, posted by the repo owner, with a `SHIP` or `SHIP-WITH-FIXES` verdict until it merges, or until now if it's still open. An edited comment still counts, since an edit keeps its creation time; `.claude/skills/plan-lanes/preflight.sh` explains why in the comment above `wait_jq`. dials.sh's green→merge can't measure it: its clock restarts whenever a branch is updated from `main`, which strict protection makes routine. For example, #294 shows open→green 608m and green→merge 0m.
-
-Before opening a lane, all of these must hold:
-- Fewer than 2 PRs await your decision (§10, unchanged).
-- No open PR has waited on you more than 24 h. That's the same bar as Stage 2's exit, and §10 uses the same number.
-- Fewer than 4 lanes are open. Count every worktree other than the main checkout whose PR isn't merged or closed, including a lane opened so recently it has no commits yet, and every cloud session. `scripts/lane.sh` refuses a fifth `feat/<n>-` or `fix/<n>-` worktree, but it doesn't see other branch names or cloud sessions.
-- The new lane wouldn't be a second High-tier lane.
-- Once more than two lanes are open, every lane beyond the second is Low or Medium and shares no planned file with any other open lane.
-- Every lane beyond the first meets Stage 2's trigger: a lane is mid-run on a long autonomous task, the new issue is independent and well-specified, and review is keeping up.
-
-Two exceptions:
-- **`main` is red or flaky:** drop to one lane, the one fixing it (§10). That lane may open even while ≥ 2 PRs await your decision, or while a PR has waited on you more than 24 h. Under strict protection, a red required check on `main` keeps every PR from merging, so that review debt can't drain and those waits keep growing until `main` is fixed.
-- **"Require up to date" is off:** this override's premise is gone. The cap is Stage 2's 2 until you turn it back on.
-
-*Revert to WIP = 2* as soon as any of these happens after this block lands on `main`:
-- a PR waits on you more than 24 h before merging;
-- a push workflow on `main` fails on a merge commit. A failure doesn't count if it passed on a re-run, or if you attribute it to something outside the merged PRs, such as a new advisory or a runner outage. Write that attribution in the log;
-- an escape (§6) traces to a PR merged under this override: a `Revert` of it, an issue it closed reopening, or a bug filed against it.
-
-*2026-11-10:* #396 waited 45.5 h, which met the first trigger. You kept the cap at 4, and the log records why. *2026-11-14:* #460 and #463 each waited over 50 h and met it again; you kept the cap at 4 for them too. The triggers still apply to every later merge.
-
-To revert, open one PR that replaces this block with a dated one-line note and sets `WIP_LIMIT=2` back in `scripts/lane.sh` with its test. It touches `tests/**`, so you merge it.
-
-The log is `docs/audits/lane-cap-override.md`, kept for as long as this override stands. It holds each merged PR's wait (as defined above), main's failed push runs with any attribution, and `scripts/dials.sh` output.
-
-The first 7 days after this block lands are the logged week Stage 2's exit asks for. That week counts only if at least 5 PRs merged in it and you ran 3 or more lanes at once on at least one day; note when in the log. Otherwise, extend it until both are true. If the week passes, Stage 2's exit is met and the cap stays at 4, inside Stage 3's 3–5. Going past 4 is a separate decision.
 
 ---
 
@@ -125,10 +97,12 @@ branch per issue           → fix/<issue> or feat/<issue>  (branch BEFORE editi
 classify (§1)              → tier sets planning weight + merge actor + gate
 plan to tier               → low: none · medium: PR intent block · high: grill→design→ADR
 /tdd                       → tests committed BEFORE implementation, then LOCKED (§7)
+                             (validate-and-ship Step 1 runs the red-first check)
 /diagnose                  → if stuck >20 min; wire-level empirical confirmation first
 /validate-and-ship (§5)    → qa → fresh-context review → commit → rebase → PR w/
                              evidence → SHA-bound attestation → CI (+ eval gate when built,
                              if LLM-touching) → merge by tier
+                             (review-filed follow-ups: validate-and-ship Step 3)
 merge                      → human, except docs-only / harness-internal low (§1)
 write-back                 → any correction this change needed → one dated line in
                              CLAUDE.md before the next issue
@@ -136,9 +110,9 @@ write-back                 → any correction this change needed → one dated l
 
 ### 4.2 Multi-lane day shape — tried on two days, not a steady state
 
-> Two runs so far (§0): 2026-10-30 at WIP = 2, and 2026-11-07 at four lanes by explicit choice; no logged week. It runs at up to four lanes under the §3 override of 2026-11-07, and only on that override's conditions. The first qualifying week (§3) is the logged week; until then this is design intent tried twice.
+> Two runs so far (§0), both under a cap that was removed on 2026-11-16 (§3). Launches follow §3's three rules and the owner's reading of §10's dials; until a logged week exists this is design intent tried twice.
 
-PLAN (fill queue to lanes × 2) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
+PLAN (fill the queue, §4.3) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
 
 ### 4.3 Sprint start = queue-fill cadence
 
@@ -163,7 +137,7 @@ One invocation, "code done" → "merged or escalated":
 7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #136/#137/#142 are open) would add a run iff the change is LLM-touching (trigger list below).
 8. On green, **merge by tier** (§1). Green means every workflow run for the head SHA has completed and passed, not just the checks visible so far: a `needs:` job has no check until its dependencies finish, which is how #203 merged early. Then: human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
 
-These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently.
+These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently. In the skill's own numbering, its Step 1 holds the red-first check and its Step 3 holds the follow-up rule for issues a review files.
 
 **LLM-touching trigger for the eval gate** — the surfaces that actually call a model, named correctly (not the retired `query_interpreter.py`):
 
@@ -186,21 +160,26 @@ Delegate outcomes with the *why*. Never review in the authoring session (enforce
 
 The Throughput Edition leaned on an external, uncorroborated "68% of agent changes carried bugs." This edition deletes it and measures the equivalent **here**:
 
-- **Catch-rate log:** tag what the fresh-context review catches before merge.
-- **Escape-rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
+- **Catch rate:** what the fresh-context review catches before merge.
+- **Escape rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
+- **Follow-up rate:** issues a review files per merged PR.
 - **Review-minutes per PR.**
 
-Together these are the **reviewer-hour** picture your own principles call the real target, and the honest evidence for the WIP limit — not a blog post. **Verified merge = evidence section + green CI (+ eval gate if LLM-touching) + consolidated fresh-context verdict.** Unverified merges are inventory of future rework; the faster the models, the faster that inventory accrues, so this matters *more* as capability rises.
+`scripts/review_metrics.py` (#520) computes the first three into `logs/review_metrics.csv`, and `scripts/dials.sh` summarises them.
+
+Together these are the **reviewer-hour** picture your own principles call the real target, and the honest evidence for how many review streams you can sustain — not a blog post. **Verified merge = evidence section + green CI (+ eval gate if LLM-touching) + consolidated fresh-context verdict.** Unverified merges are inventory of future rework; the faster the models, the faster that inventory accrues, so this matters *more* as capability rises.
 
 **Evidence-bearing PR template:**
 
 ```markdown
 ## Testing evidence
 - Risk tier: <low|medium|high> — paths: <...>
+- Red-first: <per validate-and-ship Step 1>
 - Commands run: `pytest ... -x` → N passed / 0 failed
 - E2E exercised: <what was driven; expected vs observed>
 - Eval gate (if LLM-touching): <N cases asserted; per-domain scores>
 - Artifacts: <AppTest output | LangSmith trace URL | verbatim output; text only>
+- Follow-ups: <per validate-and-ship Step 3>
 - Not covered: <gaps and why acceptable>
 ```
 
@@ -235,11 +214,14 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 
 - **Verified merges per week** (defined in §6) — the only merge count that matters.
 - **Cycle time:** plan-handoff → merge; `dials.sh` computes only its open→green and green→merge sub-intervals. Ballooning means thin plans or over-escalation — fix before adding lanes.
-- **WIP = review streams you can actually unblock.** Model-independent ceiling. The cap is 4 under the §3 override of 2026-11-07 and its conditions, and 2 if that override is reverted. `scripts/lane.sh` refuses a fifth `feat`/`fix`-numbered worktree; count other lanes yourself. Scale to N+1 only when escalations-per-lane are low and nothing waits on you > 24 h (§3), except the fix lane (§3).
+- **Dials at the launch gate, not gates.** `/plan-lanes` Step 4 shows these before you pick lanes, and you decide from them. Only §3's three rules stop a launch.
+  - Green PRs awaiting your merge, and the longest wait (§3's *waiting on you*).
+  - High-tier lanes open: each starts with your design time and costs a Fable review (§1).
+  - Plan limits (`/plan-lanes` Step 1).
+  - **Issue flow, the convergence signal:** follow-ups filed per merged PR, and issues opened against closed per week, from `scripts/review_metrics.py` (#520). The 2026-11-16 decision (§3) rests on these: if filing outpaces closing, more lanes make the pile larger, not smaller.
 - **Token spend** is a guardrail beside review load: every lane launches on the model and effort level in §1's table, and the account's plan limits are checked before each launch (`/plan-lanes` Step 1). Each High-tier PR also costs one Fable review (§1, Model, effort).
-- **Review-debt rule:** no new lane while ≥ 2 PRs await your decision, except the one lane fixing a red `main` (§3).
-- **Never scale past validation:** pipeline red/flaky → one lane until green.
-- **Queue health:** refill to lanes × 2; starvation means the plan block was thin.
+- **Never scale past validation:** §3's first rule (red or flaky `main`) applies.
+- **Queue intake:** an issue filed from a review arrives labeled `needs-triage`, and only you move it to `ready-for-agent`. Starvation means the plan block was thin.
 - **The memory loop is the ceiling-raiser:** write-backs, ADRs, retros, generated status — the compounding practices are what make month three faster than month one.
 
 ---
@@ -257,7 +239,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 | Moment | Chain | Rule |
 |---|---|---|
 | New issue | classify (§1) → plan to tier | low: none · medium: PR intent block · high: grill→design→ADR |
-| Build | `/tdd` → **/validate-and-ship** | tests committed + locked before impl (§7) |
+| Build | `/tdd` → **/validate-and-ship** | tests committed + locked before impl (§7); red-first check in the skill's Step 1 |
 | Stuck > 20 min | `/diagnose` | wire-level empirical confirmation first |
 | PR | evidence template (§6) + SHA-bound attestation | tier sets merge actor |
 | Merge | by tier | human, except docs-only / harness-internal self-merge (`--match-head-commit`) |
@@ -265,7 +247,8 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 | Lane close | memory write-back if corrected | one dated CLAUDE.md line |
 | Sprint end | `/improve-codebase-architecture` → `/qa` → `/retro` | ADR appended, point-in-time stamped |
 | New skill/mechanism | §9 vetting | read everything; pin; never mid-task |
-| Scaling check | §10 | escalations low + no review debt + CI green |
+| Launch check | §3, §10 | §3's three rules hold; read §10's dials at the gate |
+| Review follow-ups | validate-and-ship Step 3 | arrive `needs-triage`; you promote |
 
 ---
 
