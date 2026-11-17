@@ -1,0 +1,170 @@
+{
+  "format": {
+    "about": "Extraction eval cases for the Formal Portal's Requirements Agent (#136, ADR 0040). Each case is one synthetic form submission. scripts/run_extraction_evals.py sends each non-empty list through RequirementsAgent._criteria_to_structured and scores the concepts it returns. This file is a golden file (docs/DAILY_DEV_WORKFLOW.md section 7): never fill an expected value from model output.",
+    "cases[].id": "Stable case id, used in the JSONL evidence.",
+    "cases[].signoff": "Who approved the expected values, and when. The loader rejects the file if a case has none.",
+    "cases[].inclusion": "Inclusion criteria: a list of {criterion, expected}.",
+    "cases[].exclusion": "Optional exclusion criteria, same shape. Here an expected polarity of has also matches a concept marked excluded, because the list already negates it (ADR 0036).",
+    "criterion": "The criterion text a researcher submits. Synthetic phrasings only.",
+    "expected": "Every concept the criterion must extract. A case passes when each criterion returns exactly these concepts, with no extras.",
+    "expected[] condition | medication | procedure | lab": "{type, terms, polarity}. terms lists the accepted terms; the extracted term must equal one after lowercasing and collapsing whitespace. polarity is has, excluded (the details hold the word excluded) or family_history (SQLGenerator's family-history pattern matches a condition's term and details).",
+    "expected[] demographic age": "{type: demographic, age: [op, value]}, compared with SQLGenerator._parse_age_details: [\">\", 65], [\">=\", 65], [\"BETWEEN\", [50, 60]].",
+    "expected[] demographic gender": "{type: demographic, gender: female | male}, compared with SQLGenerator's gender rule.",
+    "expected[].temporal_within": "Optional [N, unit], such as [6, \"months\"]. Reported per case; it doesn't affect pass or fail.",
+    "not scored": "Concept codes (always empty until a terminology step exists, #154) and lab value thresholds (no consumer reads them)."
+  },
+  "cases": [
+    {
+      "id": "t2dm_preset",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "type 2 diabetes",
+          "expected": [
+            {"type": "condition", "terms": ["type 2 diabetes", "type 2 diabetes mellitus", "diabetes mellitus type 2"], "polarity": "has"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hypertension_preset",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "hypertension",
+          "expected": [
+            {"type": "condition", "terms": ["hypertension", "hypertensive disorder"], "polarity": "has"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "diabetics_over_65",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "diabetics over 65",
+          "expected": [
+            {"type": "condition", "terms": ["diabetes", "diabetes mellitus"], "polarity": "has"},
+            {"type": "demographic", "age": [">", 65]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "female_over_65_dm_form_split",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {"criterion": "female", "expected": [{"type": "demographic", "gender": "female"}]},
+        {"criterion": "older than 65", "expected": [{"type": "demographic", "age": [">", 65]}]},
+        {
+          "criterion": "diabetes mellitus",
+          "expected": [{"type": "condition", "terms": ["diabetes mellitus"], "polarity": "has"}]
+        }
+      ]
+    },
+    {
+      "id": "female_htn_under_65",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "female patients with hypertension under 65",
+          "expected": [
+            {"type": "demographic", "gender": "female"},
+            {"type": "condition", "terms": ["hypertension"], "polarity": "has"},
+            {"type": "demographic", "age": ["<", 65]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "htn_65_or_older",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {"criterion": "65 or older", "expected": [{"type": "demographic", "age": [">=", 65]}]},
+        {
+          "criterion": "hypertension",
+          "expected": [{"type": "condition", "terms": ["hypertension"], "polarity": "has"}]
+        }
+      ]
+    },
+    {
+      "id": "age_range_and_cabg",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {"criterion": "between 50 and 60 years old", "expected": [{"type": "demographic", "age": ["BETWEEN", [50, 60]]}]},
+        {
+          "criterion": "history of coronary artery bypass graft",
+          "expected": [
+            {"type": "procedure", "terms": ["coronary artery bypass graft", "CABG"], "polarity": "has"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "htn_without_dm",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "hypertension",
+          "expected": [{"type": "condition", "terms": ["hypertension"], "polarity": "has"}]
+        }
+      ],
+      "exclusion": [
+        {
+          "criterion": "diabetes mellitus",
+          "expected": [{"type": "condition", "terms": ["diabetes mellitus"], "polarity": "has"}]
+        }
+      ]
+    },
+    {
+      "id": "t2dm_not_on_insulin",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "type 2 diabetes not on insulin",
+          "expected": [
+            {"type": "condition", "terms": ["type 2 diabetes", "type 2 diabetes mellitus"], "polarity": "has"},
+            {"type": "medication", "terms": ["insulin"], "polarity": "excluded"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "male_over_40_on_metformin",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "male patients over 40 on metformin",
+          "expected": [
+            {"type": "demographic", "gender": "male"},
+            {"type": "demographic", "age": [">", 40]},
+            {"type": "medication", "terms": ["metformin"], "polarity": "has"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hba1c_last_6_months",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "HbA1c above 8% in the last 6 months",
+          "expected": [
+            {"type": "lab", "terms": ["HbA1c", "hemoglobin A1c"], "polarity": "has", "temporal_within": [6, "months"]}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "family_history_breast_cancer",
+      "signoff": "approved: repo owner, 2026-11-16",
+      "inclusion": [
+        {
+          "criterion": "family history of breast cancer",
+          "expected": [{"type": "condition", "terms": ["breast cancer"], "polarity": "family_history"}]
+        }
+      ]
+    }
+  ]
+}

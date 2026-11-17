@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0040** — [The extraction eval scores concepts the way the SQL generator reads them (#136)](0040-extraction-eval-scores-concepts-as-the-generator-reads-them.md) (2026-11-16, accepted)
 - **0039** — [Family history fails, gender takes one value, and two-bound ages build both bounds (#456)](0039-formal-family-history-gender-two-bound-age.md) (2026-11-14, accepted)
 - **0038** — [Extraction writes every CSV or fails, and never lists a file it didn't write (#477)](0038-extraction-writes-every-csv-or-fails.md) (2026-11-14, accepted)
 - **0037** — [CodeQL alerts under app/ are cleared in code, and /sql_query is removed (#468)](0037-codeql-alerts-cleared-in-code.md) (2026-11-13, accepted)
@@ -90,6 +91,10 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0022 — Sprint 8.2 CLOSE: corrected baseline established](0022-sprint-8-2-close-corrected-baseline.md) (corrected by 0023)
 - [0023 — Sprint 8.4: aggregator `cache_read` double-charge fix](0023-sprint-8-4-aggregator-cache-read-double-charge.md)
 - [0025 — Sprint 8.3: cost ceilings re-derived; Sprint 8 series closes](0025-sprint-8-3-cost-ceilings-re-derived.md)
+
+### Evaluation
+
+- [0040 — The extraction eval scores concepts the way the SQL generator reads them](0040-extraction-eval-scores-concepts-as-the-generator-reads-them.md)
 
 ### Workflow & process
 
