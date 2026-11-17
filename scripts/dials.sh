@@ -72,3 +72,8 @@ jq -r '
     "  merged-before-all-green: \(map(select(.early != "")) | length) of \(length)",
     "  merged-on-red: \(map(select(.red != "")) | length) of \(length)"
 '
+
+# The review dials (#520): catch, follow-up and escape rates per risk tier, and issue flow per ISO
+# week. The same run rewrites logs/review_metrics.csv (REVIEW_METRICS_OUT overrides the path).
+echo
+"${PYTHON:-python3}" "$(dirname "$0")/review_metrics.py" --limit "$limit" --summary
