@@ -169,7 +169,7 @@ def test_two_green_prs_trip_the_review_debt_rule(tmp_path):
     green = [_check("test (ubuntu-latest, 3.11)"), _check("Container Security Scan", "SKIPPED")]
     prs = [_pr(195, green), _pr(193, green)]
     assert _lane_lines(tmp_path, prs=prs) == [
-        "🚦 2 PRs await your decision (#195, #193) — §10: no new lane at ≥2",
+        "🚦 2 PRs await your decision (#195, #193) — §10 dial",
         "🚦 In flight: #195 [fix/195-slug] fix: change 195",
         "🚦 In flight: #193 [fix/193-slug] fix: change 193",
     ]
