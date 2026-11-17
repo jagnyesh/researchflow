@@ -112,12 +112,10 @@ def run_preflight(tmp_path):
     _git(tmp_path, "clone", "-q", str(origin), str(work))
     (work / "docs").mkdir()
     (work / "scripts").mkdir()
-    (work / "docs/DAILY_DEV_WORKFLOW.md").write_text(
-        "Override, 2026-11-07: up to 4 lanes\nBefore opening a lane, all of these must hold:\n"
-    )
-    (work / "scripts/lane.sh").write_text("WIP_LIMIT=4\n")
+    (work / "docs/DAILY_DEV_WORKFLOW.md").write_text("workflow\n")
+    (work / "scripts/lane.sh").write_text("lane\n")
     _git(work, "add", "-A")
-    _git(work, "commit", "-q", "-m", "override")
+    _git(work, "commit", "-q", "-m", "init")
     _git(work, "push", "-q", "origin", "HEAD:main")
 
     bindir = tmp_path / "bin"

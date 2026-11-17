@@ -1,13 +1,14 @@
 #!/bin/bash
-# lane.sh — parallel-lane harness for the workflow doc's multi-lane mode (§3 Stage 2+).
+# lane.sh — parallel-lane harness for the workflow doc's multi-lane mode (§3).
 #
-# Automates docs/DAILY_DEV_WORKFLOW.md §3 Stage 2 (worktree add + env copy + dep sync)
-# and the multi-lane day shape (§4.2: one agent/tmux window per lane), with the WIP cap enforced (4 under the §3 override of 2026-11-07).
+# Automates worktree add + env copy + dep sync and the multi-lane day shape
+# (§4.2: one agent/tmux window per lane). It reports the active-lane count and
+# never refuses on it; the launch rules live in §3.
 #
 # A "lane" is a git worktree on its own per-issue branch, running an agent in
 # its own tmux window. One branch per issue, one PR per issue (§2).
 #
-#   scripts/lane.sh open  <issue> [--type feat|fix] [--slug <slug>] [--no-deps] [--force]
+#   scripts/lane.sh open  <issue> [--type feat|fix] [--slug <slug>] [--no-deps]
 #   scripts/lane.sh close <issue> [--force] [--delete-branch]
 #   scripts/lane.sh list
 #
@@ -18,7 +19,6 @@
 set -euo pipefail
 
 TMUX_SESSION="researchflow"
-WIP_LIMIT=4
 
 die()  { echo "lane: $*" >&2; exit 1; }
 info() { echo "  $*"; }
@@ -62,7 +62,7 @@ active_lane_count() {
 tmux_has_session() { tmux has-session -t "$TMUX_SESSION" 2>/dev/null; }
 
 cmd_open() {
-  local issue="" type="feat" slug="" do_deps=1 force=0
+  local issue="" type="feat" slug="" do_deps=1
   [ $# -gt 0 ] || die "open needs an issue number"
   issue="$1"; shift
   [[ "$issue" =~ ^[0-9]+$ ]] || die "issue must be numeric, got '$issue'"
@@ -71,16 +71,10 @@ cmd_open() {
       --type)  type="${2:-}"; shift 2 ;;
       --slug)  slug="${2:-}"; shift 2 ;;
       --no-deps) do_deps=0; shift ;;
-      --force) force=1; shift ;;
       *) die "unknown flag for open: $1" ;;
     esac
   done
   case "$type" in feat|fix) ;; *) die "--type must be feat or fix" ;; esac
-
-  local count; count="$(active_lane_count)"
-  if [ "$count" -ge "$WIP_LIMIT" ] && [ "$force" -eq 0 ]; then
-    die "WIP limit reached ($count/$WIP_LIMIT active lanes). Close a lane first, or --force (see §10: never scale past validation)."
-  fi
 
   local branch dir base main env_src
   branch="${type}/${issue}${slug:+-$slug}"
@@ -196,7 +190,7 @@ cmd_list() {
   echo "Worktrees (lanes):"
   git worktree list
   echo
-  echo "WIP: $(active_lane_count)/$WIP_LIMIT active lane(s)"
+  echo "Active lanes: $(active_lane_count)"
   if tmux_has_session; then
     echo
     echo "tmux windows in '$TMUX_SESSION':"

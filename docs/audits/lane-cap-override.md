@@ -256,3 +256,15 @@ In the same answer you decided that #499, #503 and #504 are not escapes, which a
 On 2026-11-10, after the decision, four lanes were open at once: #284, #329, #387 (PR #406) and #403.
 
 Stage 2's exit also needs a week in which no PR waited on you more than a day. #396, #460 and #463 each waited longer than that, so this week can't meet the exit.
+
+## 2026-11-16: the cap is removed, and this log ends
+
+On 2026-11-16 the owner removed the lane cap. The issue is [#522](https://github.com/jagnyesh/researchflow/issues/522); `docs/DAILY_DEV_WORKFLOW.md` §3 records the decision.
+
+**Why.** The cap limited lanes in flight, not what feeds them. Between 2026-11-01 and 2026-11-16, 152 issues were opened, and by a regex count 87 of them cite another issue or PR together with review or follow-up wording. The queue stayed level at every lane count. The first revert trigger also fired three times (#396, #460 and #463), and each time the cap stayed at 4, so the rule no longer described practice.
+
+**What replaces it.** Three rules in §3 still stop a launch. §10's dials show the load at the launch gate, and the owner decides from them. The dials include two issue-flow measures from `scripts/review_metrics.py`: follow-ups filed per merged PR, and issues opened against closed per week.
+
+**What it accepts.** Green PRs waiting on a human merge can pile up faster than under the cap. The dials show that pile; they don't limit it.
+
+The override's revert triggers, the logged-week test and this log's per-merge records no longer apply, and nothing appends to this file after this entry.
