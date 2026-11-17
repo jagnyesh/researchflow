@@ -419,17 +419,52 @@ def test_an_unwritable_log_exits_integrity_failure(tmp_path, capsys):
         (_c("insulin", "medication", "nonexcluded"), False, "has"),
         # A drug class never matches, in either list.
         (_c("statins", "medication", "drug class"), True, "drug_class"),
+        # The excluded marker comes before the drug-class check, as in the generator.
+        (_c("statins", "medication", "drug class, excluded"), False, "excluded"),
     ],
 )
 def test_record_polarity_follows_the_generator(concept, in_exclusion, polarity):
     assert runner.canonical(concept, in_exclusion)[2] == polarity
 
 
+@pytest.mark.parametrize(
+    "term, details, canon",
+    [("female", [], ("gender", "=", "female")), ("male", 0, ("gender", "=", "male"))],
+    ids=["empty-list", "zero"],
+)
+def test_empty_non_string_demographic_details_read_as_no_details(term, details, canon):
+    # The generator lowercases details only when they're non-empty.
+    assert runner.canonical({"term": term, "type": "demographic", "details": details}, False) == (
+        canon
+    )
+
+
+def test_an_uncaught_error_exits_integrity_failure_not_threshold(tmp_path, capsys):
+    # A set can't be written as JSON; live extraction can't return one, but the
+    # runner must not exit 1, the below-threshold code, on any failure.
+    table = dict(CORRECT, hypertension=[{"term": {"hypertension"}, "type": "x", "details": ""}])
+    code, _ = _run(tmp_path, _fixture(), _extractor(table))
+    assert code == runner.EXIT_INTEGRITY
+    assert "INTEGRITY: the run failed: TypeError" in capsys.readouterr().out
+
+
+def test_a_failing_live_extract_setup_exits_integrity_failure(tmp_path, capsys, monkeypatch):
+    def broken():
+        raise ImportError("no agent")
+
+    monkeypatch.setattr(runner, "_live_extract", broken)
+    code = runner.main(["--log", str(tmp_path / "evals.jsonl")])
+    assert code == runner.EXIT_INTEGRITY
+    assert "INTEGRITY: the run failed: ImportError" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("details", [[">", 65], {"op": ">", "age": 65}], ids=["list", "dict"])
 def test_non_string_demographic_details_are_unbuildable(details):
-    # The generator calls details.lower() and raises on these.
-    canon = runner.canonical({"term": "age", "type": "demographic", "details": details}, False)
-    assert canon[:2] == ("demographic", "unbuildable")
+    # The generator calls details.lower() and raises on these, even when the
+    # term alone names a gender.
+    for term in ("age", "female"):
+        canon = runner.canonical({"term": term, "type": "demographic", "details": details}, False)
+        assert canon[:2] == ("demographic", "unbuildable")
 
 
 def test_drug_class_in_an_exclusion_list_fails_its_case(tmp_path):
@@ -497,6 +532,8 @@ def _set_age(fixture, age):
     [
         ("> 18 and < 65", ["AND", [[">", 18], ["<", 65]]]),
         ("under 18 or over 65", ["OR", [["<", 18], [">", 65]]]),
+        # An AND that admits exactly one age is valid.
+        (">= 18 and < 19", ["AND", [[">=", 18], ["<", 19]]]),
     ],
 )
 def test_two_bound_ages_load_and_match_in_the_parser_order(tmp_path, capsys, details, age):

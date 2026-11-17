@@ -189,8 +189,10 @@ def _as_tuple(value):
 
 def _demographic(term_text: str, details, details_text: str, in_exclusion: bool) -> tuple:
     unbuildable = ("demographic", "unbuildable", _norm(term_text))
-    if details is not None and not isinstance(details, str):
+    if details and not isinstance(details, str):
         return unbuildable  # the generator calls details.lower() and raises
+    if not isinstance(details, str):
+        details_text = ""  # the generator reads empty details as none
     if not in_exclusion and _EXCLUDED.search(details_text):
         return unbuildable  # the generator fails any concept marked excluded in an inclusion list
     if "age" in term_text.lower():
@@ -452,7 +454,16 @@ def main(argv=None, extract=None) -> int:
         help="exit 1 when the case pass rate is below PCT (default: report only)",
     )
     args = parser.parse_args(argv)
+    try:
+        return _main(args, extract)
+    except Exception as e:
+        # Python's default exit code 1 would read as below --fail-under. The class
+        # only: a message can carry criterion text or raw model output.
+        print(f"INTEGRITY: the run failed: {type(e).__name__}")
+        return EXIT_INTEGRITY
 
+
+def _main(args, extract) -> int:
     cases, extract = _prepare(args.cases, extract)
     if cases is None:
         return EXIT_INTEGRITY
