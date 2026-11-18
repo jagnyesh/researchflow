@@ -1,4 +1,4 @@
-"""SessionStart lane check: red main, review debt, open PRs (#196).
+"""SessionStart lane check: red main, PRs awaiting you, open PRs (#196).
 
 The hook runs for real; only `gh` is replaced, by a script on PATH that
 returns JSON in the shape `gh` itself returned on 2026-10-22 (CheckRun items
@@ -17,7 +17,7 @@ import pytest
 HOOK = Path(__file__).resolve().parents[1] / ".claude" / "hooks" / "SessionStart.sh"
 
 RED_SHA = "ae1e80f" + "0" * 33
-RED_LINE = "🚦 main CI red: Tests @ ae1e80f — §10: one lane until green"
+RED_LINE = "🚦 main CI red: Tests @ ae1e80f — §3: only the fix lane opens"
 GH_FAILED = "ℹ️  lane check skipped: gh failed (offline, unauthenticated, or timed out)"
 BAD_OUTPUT = "ℹ️  lane check skipped: unexpected gh output"
 
@@ -165,7 +165,7 @@ def test_cancelled_run_after_success_is_not_red(tmp_path):
     assert _lane_lines(tmp_path, runs=runs) == []
 
 
-def test_two_green_prs_trip_the_review_debt_rule(tmp_path):
+def test_two_green_prs_are_reported_as_awaiting_your_decision(tmp_path):
     green = [_check("test (ubuntu-latest, 3.11)"), _check("Container Security Scan", "SKIPPED")]
     prs = [_pr(195, green), _pr(193, green)]
     assert _lane_lines(tmp_path, prs=prs) == [
