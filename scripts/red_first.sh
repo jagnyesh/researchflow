@@ -187,15 +187,11 @@ PROBE = (
     "    for l in locs: print(os.path.realpath(l))\n"
 )
 
-runs = [0]
-
 def pytest(cwd, target):
-    # The junit file lives in the scratch dir, outside both trees. It gives the counts when a
-    # project's addopts (-q) makes pytest drop its totals line.
-    runs[0] += 1
-    xml = os.path.join(scratch, "junit-%d.xml" % runs[0])
+    # No -q of our own: a project's addopts may already carry one, and -qq drops the totals
+    # line. --no-header keeps the platform and rootdir lines (a local path) out of the output.
     p = subprocess.Popen(
-        [py, "-m", "pytest", target, "-q", "-p", "no:cacheprovider", "--tb=short", "--junitxml=" + xml],
+        [py, "-m", "pytest", target, "--no-header", "-p", "no:cacheprovider", "--tb=short"],
         cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         stdin=subprocess.DEVNULL, start_new_session=True,
     )
@@ -211,35 +207,13 @@ def pytest(cwd, target):
         children.remove(p)
         return None
     children.remove(p)
-    r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
-    r.counts = junit_counts(xml)
-    return r
-
-def junit_counts(path):
-    try:
-        import xml.etree.ElementTree as ET
-        root = ET.parse(path).getroot()
-        suites = [root] if root.tag == "testsuite" else list(root)
-        n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
-        n["passed"] = n["tests"] - n["failures"] - n["errors"] - n["skipped"]
-        return n
-    except Exception:
-        return None
-
-TOTALS = re.compile(r"\bin [\d.]+s\b")
+    return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
 def summary(r):
     lines = [l for l in r.stdout.splitlines() if l.strip()]
-    if lines and TOTALS.search(lines[-1]):
-        return lines[-1].strip("= ")
-    if r.counts:
-        return "%d passed, %d skipped, %d failed (from junit)" % (
-            r.counts["passed"], r.counts["skipped"], r.counts["failures"] + r.counts["errors"])
     return lines[-1].strip("= ") if lines else "no output"
 
 def passed(r):
-    if r.counts:
-        return r.counts["passed"]
     m = re.search(r"(\d+) passed", summary(r))
     return int(m.group(1)) if m else 0
 

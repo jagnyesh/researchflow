@@ -707,3 +707,34 @@ def test_a_sigterm_kills_the_processes_the_test_started(repo, tmp_path):
     assert proc.returncode == 128 + signal.SIGTERM
     assert not leaked
     assert list(scratch_tmp.iterdir()) == []
+
+
+def test_a_run_here_whose_only_green_test_is_an_xpass_is_not_green(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/newmod.py": "def g():\n    return 2\n",
+            "tests/test_g.py": "import pytest\nfrom pkg.newmod import g\n\n"
+            "@pytest.mark.xfail\ndef test_g():\n    assert g() == 2\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_g.py")
+
+    assert r.returncode == 1
+    assert "no test passed here" in r.stderr
+
+
+def test_the_base_output_block_carries_no_platform_or_rootdir_line(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f():\n    assert f() == 2\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py")
+
+    assert r.returncode == 0, r.stderr
+    assert "rootdir" not in r.stdout and "platform" not in r.stdout

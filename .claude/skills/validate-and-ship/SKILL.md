@@ -78,7 +78,9 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
      - finding <n>: <text> → <disposition>
    ```
 
-   Findings format (`scripts/review_metrics.py` parses it): one finding per line, nested under `- Findings:`, as `  - finding <n>: <text> → <disposition>`. The disposition starts with one of `fixed`, `accepted`, `filed #<n>` (a new issue), `routed to #<n>` (a comment on an existing open issue) or `noted, not filed` (Step 3). A `filed #<n>` names the new issue that counts as a follow-up (§6). Write `- Findings: none` when the review found nothing. A note about the review process goes on its own line starting `  - process:` and isn't a finding.
+   Findings format (`scripts/review_metrics.py` parses it): one finding per line, nested under `- Findings:`, as `  - finding <n>: <text> → <disposition>`. The disposition starts with one of `fixed`, `accepted`, `filed #<n>` (a new issue), `routed to #<n>` (a comment on an existing open issue) or `noted, not filed` (Step 3). A `filed #<n>` names the new issue that counts as a follow-up (§6). Several issues are written `#a, #b` or `#a and #b`. Write `- Findings: none` when the review found nothing. A note about the review process goes on its own line starting `  - process:` and isn't a finding.
+
+   Before posting, run `python3 scripts/review_metrics.py --check-body <file>` on the scratch file. It uses the parser the metrics use, prints each problem as `attestation format: ...` and exits 1; fix the file and re-run until it prints `attestation format ok`.
 
    Include the `Reviewer 2` line on High-tier PRs only. The `Verdict:` line is the combined verdict (the worse of the two on a High-tier PR). Per-reviewer lines never start with `- Verdict:`, because the 7.5 reader matches that line exactly. Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
 

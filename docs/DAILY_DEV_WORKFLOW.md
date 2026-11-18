@@ -162,7 +162,7 @@ The Throughput Edition leaned on an external, uncorroborated "68% of agent chang
 
 - **Catch rate:** what the fresh-context review catches before merge.
 - **Escape rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
-- **Follow-up rate:** issues a review files per merged PR. A follow-up is an issue that a PR's attestation names as filed (owner's rule, 2026-11-18); `scripts/review_metrics.py` is where the count is made, and #529 brings it in line with this rule.
+- **Follow-up rate:** issues a review files per merged PR. A follow-up is an issue that a PR's attestation names as filed (owner's rule, 2026-11-18); `scripts/review_metrics.py` applies that rule (#529).
 - **Review-minutes per PR.**
 
 `scripts/review_metrics.py` (#520) computes the first three into `logs/review_metrics.csv`, and `scripts/dials.sh` summarises them.
