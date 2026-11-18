@@ -52,6 +52,8 @@ _RESHAPED = {
     "gender_on_other_table": (_GENDER, "c.gender = 'female'", {("gender", "=", "female")}),
     "gender_negated": (_GENDER, "NOT " + _GENDER, {("gender", "=", "female")}),
     "gender_other_value": (_GENDER, "p.gender = 'male'", {("gender", "=", "female")}),
+    # The view stores 'female'; Postgres = is case-sensitive, so this selects nobody.
+    "gender_upper_case": (_GENDER, "p.gender = 'FEMALE'", {("gender", "=", "female")}),
     "gender_unqualified_in_a_join": (_GENDER, "gender = 'female'", {("gender", "=", "female")}),
 }
 
@@ -75,6 +77,37 @@ def test_a_predicate_inside_a_from_subquery_counts_as_missing():
         ("gender", "=", "female"),
         ("age", "<", 65),
     }
+
+
+_MED = _CASES["female_with_medication"]
+_COUNT_MEDS = "SELECT COUNT(DISTINCT m.patient_id) FROM sqlonfhir.medication_requests m "
+
+# A source that isn't linked on patient_id leaves the counted rows unrestricted
+# by a predicate on it, so the predicate doesn't survive (review finding 2).
+_UNLINKED = {
+    "comma_join": ", sqlonfhir.patient_demographics p",
+    "cross_join": "CROSS JOIN sqlonfhir.patient_demographics p",
+    "on_true": "JOIN sqlonfhir.patient_demographics p ON TRUE",
+    "other_column": "JOIN sqlonfhir.patient_demographics p ON p.gender = m.status",
+    "patient_id_to_itself": "JOIN sqlonfhir.patient_demographics p ON p.patient_id = p.patient_id",
+    "using": "JOIN sqlonfhir.patient_demographics p USING (patient_id)",
+}
+
+
+@pytest.mark.parametrize("join", _UNLINKED.values(), ids=list(_UNLINKED))
+def test_a_predicate_on_an_unlinked_patient_table_counts_as_missing(join):
+    sql = _COUNT_MEDS + join + " WHERE p.gender = 'female'"
+
+    assert missing_predicates(_MED, sql) == {("gender", "=", "female")}
+
+
+def test_a_predicate_on_a_patient_id_linked_table_survives():
+    sql = (
+        _COUNT_MEDS + "JOIN sqlonfhir.patient_demographics p "
+        "ON m.patient_id = p.patient_id AND p.active WHERE p.gender = 'female'"
+    )
+
+    assert missing_predicates(_MED, sql) == set()
 
 
 def test_no_sql_misses_every_stated_predicate():

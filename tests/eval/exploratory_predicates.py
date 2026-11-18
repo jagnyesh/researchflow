@@ -4,7 +4,9 @@ SQL's AST, for the predicate survival check (ADR 0042).
 The formal checker (formal_predicates.py) can't read this SQL: the model
 joins tables, inlines literals and writes age as date arithmetic. A predicate
 counts only as a top-level WHERE conjunct on a sqlonfhir.patient_demographics
-column, with table aliases resolved across FROM and JOINs:
+column, with table aliases resolved across FROM and JOINs. Every JOIN must
+link to an earlier source on patient_id; otherwise nothing survives, since a
+predicate on an unlinked table doesn't restrict the rows counted.
   - ("gender", "=", "female")      <patient>.gender = 'female' (either side)
   - ("age", ">=", 18)              <patient>.birth_date[::date] <=
                                      CURRENT_DATE - INTERVAL '18 years'
@@ -35,6 +37,30 @@ def _sources(select: exp.Select) -> Dict[str, Optional[Tuple[str, str]]]:
     return {n.alias_or_name: (n.db, n.name) if isinstance(n, exp.Table) else None for n in nodes}
 
 
+def _patient_id_link(node: exp.Expression, joined: str, earlier: Set[str]) -> bool:
+    """joined.patient_id = <earlier source>.patient_id, either side."""
+    if not isinstance(node, exp.EQ):
+        return False
+    columns = (node.this, node.expression)
+    if not all(isinstance(c, exp.Column) and c.name == "patient_id" for c in columns):
+        return False
+    tables = {c.table for c in columns}
+    return joined in tables and bool((tables - {joined}) & earlier)
+
+
+def _linked(select: exp.Select) -> bool:
+    """Every JOIN links to an earlier source on patient_id, so a predicate on
+    any source restricts the rows counted (review finding 2). A comma join, a
+    CROSS JOIN, ON TRUE or USING doesn't count."""
+    earlier = {select.args["from_"].this.alias_or_name} if select.args.get("from_") else set()
+    for join in select.args.get("joins") or []:
+        joined, on = join.this.alias_or_name, join.args.get("on")
+        if on is None or not any(_patient_id_link(c, joined, earlier) for c in _conjuncts(on)):
+            return False
+        earlier.add(joined)
+    return True
+
+
 def _on_patients(node: exp.Expression, sources, column: str) -> bool:
     if not isinstance(node, exp.Column) or node.name != column:
         return False
@@ -62,7 +88,8 @@ def _gender(node: exp.Expression, sources) -> Optional[Predicate]:
             and isinstance(value, exp.Literal)
             and value.is_string
         ):
-            return ("gender", "=", value.this.lower())
+            # Exact, not lowercased: = is case-sensitive, and 'FEMALE' matches no row.
+            return ("gender", "=", value.this)
     return None
 
 
@@ -130,7 +157,11 @@ def _age(node: exp.Expression, sources) -> Optional[Predicate]:
 
 def extract_predicates(sql: str) -> Set[Predicate]:
     select = sqlglot.parse_one(sql, read="postgres")
-    if not isinstance(select, exp.Select) or select.args.get("where") is None:
+    if (
+        not isinstance(select, exp.Select)
+        or select.args.get("where") is None
+        or not _linked(select)
+    ):
         return set()
     sources = _sources(select)
     found = set()
