@@ -19,6 +19,7 @@ by a day for people whose birthday is today. Anything else is ignored: the
 survival check asks only whether each stated predicate is present.
 """
 
+import re
 from typing import Dict, Optional, Set, Tuple
 
 import sqlglot
@@ -27,6 +28,8 @@ from sqlglot import exp
 Predicate = Tuple[str, str, object]
 
 _PATIENTS = ("sqlonfhir", "patient_demographics")
+# ASCII digits only, at most 3: Postgres reads no other digits, and int() caps long ones.
+_YEARS_DIGITS = re.compile(r"[0-9]{1,3}")
 
 
 def _sources(select: exp.Select) -> Dict[str, Optional[Tuple[str, str]]]:
@@ -114,7 +117,7 @@ def _years_ago(node: exp.Expression) -> Optional[int]:
     if (
         isinstance(interval, exp.Interval)
         and isinstance(interval.this, exp.Literal)
-        and str(interval.this.this).isdecimal()
+        and _YEARS_DIGITS.fullmatch(str(interval.this.this))
         and interval.text("unit").upper() in ("YEAR", "YEARS")
     ):
         return int(interval.this.this)
@@ -148,7 +151,7 @@ def _age(node: exp.Expression, sources) -> Optional[Predicate]:
         if (
             isinstance(bound, exp.Literal)
             and not bound.is_string
-            and str(bound.this).isdecimal()
+            and _YEARS_DIGITS.fullmatch(str(bound.this))
             and _age_in_years(subject, sources)
         ):
             return ("age", o, int(bound.this))

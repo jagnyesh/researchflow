@@ -192,6 +192,9 @@ _NOT_THE_PREDICATE = {
     "cast_to_text": "p.birth_date::text > CURRENT_DATE - INTERVAL '65 years'",
     "interval_from_another_date": "p.birth_date::date > DATE '2000-01-01' - INTERVAL '65 years'",
     "string_bound": "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) < '65'",
+    # Review finding 9: non-ASCII digits, and a bound too long for int().
+    "fullwidth_digits": "p.birth_date::date > CURRENT_DATE - INTERVAL '６５' YEAR",
+    "huge_bound": "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) < " + "9" * 5000,
 }
 
 
