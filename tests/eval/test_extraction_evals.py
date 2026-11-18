@@ -1166,10 +1166,12 @@ def test_repeat_with_an_untrusted_run_exits_integrity_failure(tmp_path, wire, ca
     assert "--fail-under" not in out.split("re-baseline")[-1]
 
 
-def test_repeat_with_replay_is_refused(tmp_path):
+def test_repeat_with_replay_is_refused(tmp_path, capsys):
     with pytest.raises(SystemExit) as refused:
         runner.main(["--replay", str(tmp_path / "r.json"), "--repeat", "2"])
     assert refused.value.code == 2
+    # The refusal itself, not an unknown-flag error, which also exits 2.
+    assert "--repeat measures live runs" in capsys.readouterr().err
 
 
 def test_a_failed_log_write_leaves_the_log_as_it_was(tmp_path, monkeypatch, capsys):
