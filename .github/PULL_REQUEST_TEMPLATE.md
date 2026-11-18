@@ -11,12 +11,14 @@ Medium tier: add the 5–10 line intent block (what / why / constraints / non-go
 Closes #<issue>
 
 ## Testing evidence
-- **Risk tier:** <low|medium|high> — paths: <...>
-- **Commands run:** `pytest tests/... -x` → <N passed, M failed>
-- **E2E exercised:** <what was driven end-to-end; expected vs. observed>
-- **Eval gate (if LLM-touching):** <N cases asserted; per-domain scores>
-- **Artifacts:** <AppTest output | LangSmith trace URL | verbatim output; text only>
-- **Not covered:** <gaps and why they're acceptable>
+- Risk tier: <low|medium|high> — paths: <...>
+- Red-first: <per validate-and-ship Step 1>
+- Commands run: `pytest tests/... -x` → <N passed, M failed>
+- E2E exercised: <what was driven end-to-end; expected vs. observed>
+- Eval gate (if LLM-touching): <N cases asserted; per-domain scores>
+- Artifacts: <AppTest output | LangSmith trace URL | verbatim output; text only>
+- Follow-ups: <per validate-and-ship Step 3>
+- Not covered: <gaps and why they're acceptable>
 
 ## Review discipline (§5.1)
 - [ ] Reviewed in a **fresh context**, not the authoring session
