@@ -465,6 +465,9 @@ case "$1 $2" in
     jq -c --arg f "$fields" '.[] | . as $d | reduce ($f|split(",")[]) as $k ({}; .[$k] = $d[$k])' \
       "$FAKE_DIR/prs.json" | jq -s .
     ;;
+  "issue view")
+    cat "$FAKE_DIR/issue$3.json" 2>/dev/null || exit 1
+    ;;
   "pr view")
     trim "$FAKE_DIR/pr$3.json" "$fields" | jq -r "$query"
     ;;
@@ -979,3 +982,68 @@ def test_the_summary_lists_prs_with_more_than_one_filed_issue(tmp_path):
 
     assert "files more than one issue" in r.stdout
     assert "#518" in r.stdout
+
+
+# ------------------------------------------------------------------ review of #529: parsing gaps
+
+
+@pytest.mark.parametrize(
+    "disp,filed,routed",
+    [
+        ("filed #12 and #13", [12, 13], []),
+        ("filed #15,#16", [15, 16], []),
+        ("routed to #1, #2", [], [1, 2]),
+        ("fixed (x); filed #4 and routed to #5, #6", [4], [5, 6]),
+    ],
+)
+def test_a_list_of_issues_after_filed_or_routed_is_read_whole(disp, filed, routed):
+    f = rm.parse_findings(att(disp))
+
+    assert (f["filed_issues"], f["routed_issues"]) == (filed, routed)
+
+
+def test_noted_not_filed_followed_by_an_issue_number_is_not_a_filing():
+    f = rm.parse_findings(att("noted, not filed #5"))
+
+    assert f["filed_issues"] == []
+    assert (f["findings_noted"], f["findings_routed"]) == (1, 0)
+
+
+def test_a_comment_that_only_quotes_the_root_hash_mid_line_is_not_the_root():
+    comments = load("pr518.json")["comments"]
+    quote = {
+        **copy.deepcopy(comments[0]),
+        "body": f"## Review attestation\nsee - Reviewed-Commit: {ROOT_SHA} x",
+    }
+    out = f"ROOT {ROOT_SHA} verdict=SHIP\n"
+
+    body, _ = rm.pick_root_body(out, [comments[0], quote], PR518_URL)
+
+    assert body == comments[0]["body"]
+
+
+def test_arrival_labels_are_read_for_a_filed_issue_older_than_the_issue_search(tmp_path):
+    view = load("pr518.json")
+    view["comments"][0]["body"] = (
+        view["comments"][0]["body"]
+        .replace("routed to #517", "filed #99")
+        .replace("routed to #431", "noted, not filed")
+    )
+    p = listed(518)
+    env = make_env(tmp_path, [p], [])
+    (tmp_path / "data" / "pr518.json").write_text(json.dumps(view))
+    (tmp_path / "data" / "issue99.json").write_text(
+        json.dumps({"createdAt": "2026-09-01T00:00:00Z"})
+    )
+    events = [
+        {
+            "event": "labeled",
+            "label": {"name": "ready-for-agent"},
+            "created_at": "2026-09-01T00:00:10Z",
+        }
+    ]
+    (tmp_path / "data" / "events99.json").write_text(json.dumps(events))
+
+    _, out = run_cli(tmp_path, env)
+
+    assert "follow-up #99 arrived ready-for-agent" in out.read_text()

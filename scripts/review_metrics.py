@@ -103,6 +103,15 @@ def ts(s):
 # ---------------------------------------------------------------- parsing
 
 
+def issue_refs(disp, keyword):
+    """Issue numbers after `keyword` in a disposition: `#1`, `#1, #2`, `#1 and #2`, `#1,#2`."""
+    return [
+        int(n)
+        for m in re.finditer(rf"{keyword} ((?:#\d+(?:\s*(?:,|and)\s*)?)+)", disp)
+        for n in re.findall(r"#(\d+)", m.group(1))
+    ]
+
+
 def parse_findings(body):
     """Counts from one attestation body. Counts are None, with warnings, when the block can't be read."""
     out = {
@@ -173,8 +182,8 @@ def parse_findings(body):
         disp = rest[arrow:].lstrip("→->").strip().lower()
         is_fixed = disp.startswith("fixed")
         is_accepted = disp.startswith("accepted")
-        filed_here = [int(x) for x in re.findall(r"\bfiled #(\d+)", disp)]
-        routed_here = [int(x) for x in re.findall(r"\brouted to #(\d+)", disp)]
+        filed_here = issue_refs(disp, r"(?<!not )\bfiled")
+        routed_here = issue_refs(disp, r"\brouted to")
         is_routed = bool(filed_here or routed_here)  # both spellings go to the issue tracker
         is_noted = disp.startswith("noted, not filed")
         if not (is_fixed or is_accepted or is_routed or is_noted):
@@ -271,8 +280,8 @@ def pick_root_body(reader_output, comments, pr_url):
             and c.get("authorAssociation") == "OWNER"
             and c.get("includesCreatedEdit") is False
             and b.startswith("## Review attestation")
-            and f"- Reviewed-Commit: {sha}" in b
-            and "- Carried-From:" not in b
+            and re.search(rf"(?m)^- Reviewed-Commit: {sha}", b)
+            and not re.search(r"(?m)^- Carried-From:", b)
         ):
             return b, warnings
     return None, warnings + ["root attestation comment not found"]
@@ -545,6 +554,17 @@ def issue_events(n):
     return events
 
 
+def created_at(n):
+    """An issue's creation time, or None when it can't be read (then no label check is made)."""
+    r = subprocess.run(
+        ["gh", "issue", "view", str(n), "--json", "createdAt"], capture_output=True, text=True
+    )  # nosec B603 B607 - fixed argument list, no shell
+    try:
+        return json.loads(r.stdout)["createdAt"] if r.returncode == 0 else None
+    except (ValueError, KeyError):
+        return None
+
+
 def check_body(path):
     f = parse_findings(Path(path).read_text())
     for w in f["warnings"]:
@@ -641,8 +661,10 @@ def main(argv=None):
     created = {i["number"]: i["createdAt"] for i in issues}
     labels = {}
     for n in sorted({n for o in owned.values() for n in o or ()}):
-        if n in created:
-            labels[n] = arrival_labels(issue_events(n), created[n])
+        # A filed issue can predate the issue search, so its creation time is read on its own.
+        made = created.get(n) or created_at(n)
+        if made:
+            labels[n] = arrival_labels(issue_events(n), made)
 
     rows = [
         build_row(
