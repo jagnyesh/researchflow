@@ -1,5 +1,7 @@
 # Lane-cap override log
 
+**Closed 2026-11-16.** The lane cap and this override were removed (#522, [#523](https://github.com/jagnyesh/researchflow/pull/523)), and the last entry records that. The paragraphs below describe `docs/DAILY_DEV_WORKFLOW.md` §3 as it stood from 2026-11-07 to 2026-11-16.
+
 This log backs the lane-cap override in `docs/DAILY_DEV_WORKFLOW.md` §3, which raised the lane cap from 2 to 4. The override landed on `main` at 2026-11-07 22:38:02 UTC in [#379](https://github.com/jagnyesh/researchflow/pull/379). §3 asks the log to hold three things:
 
 - each merged PR's wait;

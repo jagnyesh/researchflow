@@ -55,7 +55,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 ### §3 — Launching lanes (and the honesty label)
 
-**What it says:** Stage 1 (pipeline + continuous merge) is **done**. Stage 0 is partial: the golden-file lock and the eval gate are not built yet. Lanes ran on 2026-10-30 and 2026-11-07, both under a cap, and the owner removed the cap on 2026-11-16 (the doc's §3 has the reasons).
+**What it says:** Stage 1 (pipeline + continuous merge) is **done**. Stage 0 is partial: the golden-file lock and the eval gate are not built yet. Multi-lane days ran from 2026-10-30, the largest with nine lanes on 2026-11-15, and the owner removed the lane cap on 2026-11-16 (the doc's §3 has the reasons).
 
 **Why:** earlier analysis over-weighted parallelism. This section demotes it and labels it plainly so nobody reads §4's multi-lane shape as current practice.
 
@@ -65,7 +65,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **§4.1 is your actual mode today:** branch → **classify** → plan to the tier → `/tdd` (tests committed and then locked) → `/validate-and-ship` → merge by tier → memory write-back. Notice classify is step two — it gates everything after.
 
-**§4.2 is marked "tried on two days, not a steady state"** — the multi-lane "manager of a team" day. It was tried under a cap that has since been removed; the doc's §3 sets how lanes launch now.
+**§4.2 is marked "not yet a steady state"** — the multi-lane "manager of a team" day. The doc's §3 sets how lanes launch now.
 
 **§4.3 / §4.4:** sprint start fills a queue of pre-classified issues; sprint end is a *quality + learning* event (integration QA + retro), since shipping already happened continuously.
 
@@ -75,7 +75,7 @@ v2 keeps v1's proven core (the auto pipeline + continuous merge) and fixes those
 
 **Two things to understand here:**
 
-- **The eval-gate trigger is path-specific.** The gate itself is target state (#136/#137/#142 are open). Once built, it fires only for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py`/`multi_llm_client.py` and their callers (`calendar_agent`/`delivery_agent` via `langgraph_workflow`, `conversation_manager.py`), and any prompt/model-config file. It will use the #136/#137/#142 harnesses, set per-domain thresholds, and **assert it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
+- **The eval-gate trigger is path-specific.** The gate itself is target state (#137 and #142 are open; #136's extraction harness merged in #526). Once built, it fires only for files that actually call a model: `sql_synthesis.py` (exploratory NL→SQL), `requirements_agent.py`, `llm_client.py` and its callers (today `conversation_manager.py`), and any prompt/model-config file. It will use the #136/#137/#142 harnesses, set per-domain thresholds, and **assert it actually ran N cases** — because a gate that silently passes on zero cases is worse than no gate.
 - **The reviewer feeds the attestation; it doesn't replace the human.** For High/Medium, a human still reads the one consolidated verdict and merges. For docs-only / harness-internal Low, that verdict + the SHA comment is enough to self-merge. This keeps the merge-governance intact.
 
 **How to use it:** after `/tdd`, you run one command. Your only job afterward is the decisions it escalates.
@@ -116,7 +116,7 @@ Three honest admissions: editor migration isn't worth it; the course's **product
 
 ### §12 — Cheat sheet
 
-The whole doc on one screen, keyed by moment (new issue → build → stuck → PR → merge → sprint end → scaling check).
+The whole doc on one screen, keyed by moment (new issue → build → stuck → PR → merge → sprint end → launch check → review follow-ups).
 
 ---
 
@@ -131,7 +131,7 @@ Touches only `docs/**` + a root `.md`. → **Low.** The issue body is the whole 
 Touches portal UI, no PHI, no SQL generation, no model call. → **Medium.** You write a **5–10 line intent block in the PR body** (what/why/constraints/non-goals) instead of a design doc. Targeted tests. **Human merges.** No eval gate (nothing LLM-touching). Moderate ceremony, no new artifact to drift.
 
 **High — "fix the synthesis prompt so `medication_display` isn't NULL" (#111).**
-Touches `app/services/sql_synthesis.py` — both cohort semantics *and* LLM-touching. → **High.** Full `grill-with-docs → design doc → ADR`. The eval case sets (`tests/eval/`) and any golden fixtures are **locked** (you can't quietly regenerate expected output to make it pass). The **eval gate is required** once it exists (#136/#137/#142 are open) and must assert it ran N cases with per-domain thresholds. **A human merges, always.** Maximum ceremony — because a wrong cohort/medication mapping is expensive and auditable.
+Touches `app/services/sql_synthesis.py` — both cohort semantics *and* LLM-touching. → **High.** Full `grill-with-docs → design doc → ADR`. The eval case sets (`tests/eval/`) and any golden fixtures are **locked** (you can't quietly regenerate expected output to make it pass). The **eval gate is required** once it exists (#137 and #142 are open) and must assert it ran N cases with per-domain thresholds. **A human merges, always.** Maximum ceremony — because a wrong cohort/medication mapping is expensive and auditable.
 
 Same one-command pipeline each time; the tier dials the rigor up or down. That's the entire design.
 

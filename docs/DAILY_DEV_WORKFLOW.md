@@ -105,12 +105,12 @@ plan to tier               → low: none · medium: PR intent block · high: gri
                              (review-filed follow-ups: validate-and-ship Step 3)
 merge                      → human, except docs-only / harness-internal low (§1)
 write-back                 → any correction this change needed → one dated line in
-                             CLAUDE.md before the next issue
+                             CLAUDE.md or .claude/architecture.rules before the next issue
 ```
 
-### 4.2 Multi-lane day shape — tried on two days, not a steady state
+### 4.2 Multi-lane day shape — not yet a steady state
 
-> Two runs so far (§0), both under a cap that was removed on 2026-11-16 (§3). Launches follow §3's three rules and the owner's reading of §10's dials; until a logged week exists this is design intent tried twice.
+> Multi-lane days ran between 2026-10-30 and 2026-11-15, the largest with nine lanes (§0 has the first two, and `docs/audits/lane-cap-override.md` has the rest). The lane cap of that period was removed on 2026-11-16 (§3). Launches follow §3's three rules and the owner's reading of §10's dials.
 
 PLAN (fill the queue, §4.3) → LAUNCH (one agent per lane) → MANAGE (review evidence, answer escalations, merge greens) → WRITE-BACK.
 
@@ -244,7 +244,7 @@ Before any skill or executing tool: read the whole `SKILL.md` **and** bundled sc
 | PR | evidence template (§6) + SHA-bound attestation | tier sets merge actor |
 | Merge | by tier | human, except docs-only / harness-internal self-merge (`--match-head-commit`) |
 | LLM-touching change | eval gate (§5) | per-domain thresholds; assert N cases ran |
-| Lane close | memory write-back if corrected | one dated CLAUDE.md line |
+| Lane close | memory write-back if corrected | one dated line in CLAUDE.md or `.claude/architecture.rules` |
 | Sprint end | `/improve-codebase-architecture` → `/qa` → `/retro` | ADR appended, point-in-time stamped |
 | New skill/mechanism | §9 vetting | read everything; pin; never mid-task |
 | Launch check | §3, §10 | §3's three rules hold; read §10's dials at the gate |
