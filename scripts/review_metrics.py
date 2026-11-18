@@ -7,8 +7,9 @@ Reads merged PRs through `gh` and writes logs/review_metrics.csv (ignored by git
 
 Grain: one row per merged PR. Primary key: `pr`. Row order is the order `gh pr list` returns.
 Rerun rule: the file is overwritten from scratch, so a rerun on the same input is byte-identical.
-`--now` pins the clock that decides `escape_window_closed`; it defaults to the current UTC time.
-Timestamps are UTC. Merged PRs in equals rows out; the script prints both counts.
+`--now` pins the clock that decides `escape_window_closed`; it defaults to the current UTC time, and
+a value with no zone is UTC. Timestamps are UTC. Merged PRs in equals rows out (30 read, 30 written
+on a rerun of the same input); the script prints both counts.
 
 Columns:
   tier, tier_source    the `Risk tier:` line of the PR body (source `line`; an explicit line always
@@ -17,32 +18,42 @@ Columns:
                        high, only docs, tests and harness paths gives low, else medium). `unknown`
                        with source `none` only when the file list is empty or missing. The
                        whole body is searched for the line, not just its Testing evidence section.
-  findings_*           (fixed, accepted, routed, and noted for `noted, not filed`) counted from the root attestation: the one `scripts/attestation.sh read`
-                       reports as ROOT (the owner's newest unedited attestation that is not a
-                       carry-forward). This script never decides which comment counts. A line can
-                       carry two dispositions ("fixed (...); routed to #517"), so fixed + accepted +
-                       routed can exceed findings_total.
+  findings_*           (fixed, accepted, routed, and noted for `noted, not filed`) counted from the root
+                       attestation: the one `scripts/attestation.sh read` reports as ROOT (the owner's
+                       newest unedited attestation that is not a carry-forward). The reader is the
+                       authority on which comment counts; its ROOT line names only a commit, so the
+                       comment is found with the reader's own checks (owner login, OWNER association,
+                       unedited). A line can carry two dispositions ("fixed (...); routed to #517"),
+                       so fixed + accepted + routed can exceed findings_total. `findings_routed`
+                       counts `filed #<n>` and `routed to #<n>` alike.
   review_passes        the sum of the `<k> pass(es)` values on the Reviewer lines.
-  followups_filed      issues created from 24 hours before the PR's creation to 24 hours after its
-                       merge that cite the PR or an issue it closes, deduplicated by number, and
-                       that are not counted as an escape. The window opens before the PR because the
-                       Step 2 review runs before the PR exists, so about half of the follow-ups are
-                       filed before it (2026-11-01 onward: 49 inside the PR's own window, 56 earlier,
-                       39 of those in the 6 hours before). Git records no lane start (the first
-                       commit also lands after the review), so 24 hours is a fixed lookback. It can admit a sibling
-                       or planning issue that cites the closing issue the day before the PR opens;
-                       the script can't tell those from review follow-ups.
+  followups_filed      the issues the root attestation names as filed, counted once each. A Findings
+                       disposition `filed #<n>` names a new issue and counts as is. `routed to #<n>`
+                       is the older spelling for both a new issue and a comment on an old one, so it
+                       counts only when the issue was created from 24 hours before the PR opened to 24
+                       hours after it merged (the Step 2 review runs before the PR exists). An issue
+                       two attestations name counts for the earlier merge. An issue that qualifies as
+                       an escape is never also a follow-up. Citations no longer count (owner,
+                       2026-11-18): a sibling or planning issue that cites the PR is not a follow-up.
+                       Empty, never 0, when the attestation can't be parsed.
   escapes              revert commits on origin/main naming the PR, plus reopenings of the closed
-                       issue after the merge, plus `bug` issues created after the merge and within
+                       issue after the merge, both within 14 days of it, plus `bug` issues created after the merge and within
                        14 days that cite the PR or its closed issue. A follow-up is not an escape: an
                        issue that qualifies as an escape is never also counted as a follow-up.
   escape_window_closed true once 14 days have passed since the merge.
   parse_warnings       empty, or why a value is empty. An unparseable value is empty, never 0: a 0
-                       means the reviewer found nothing.
+                       means the reviewer found nothing. Also set when an attestation files more than
+                       one issue, or a follow-up arrived labelled `ready-for-agent` (the label it was
+                       created with, from the first minute of the issue's events; unreadable means
+                       no warning). The summary lists both.
+
+  review_metrics.py --check-body <file>   parse a drafted attestation body; exit 1 on any warning.
 
 Limits: `git log origin/main` runs without a fetch, so reverts newer than the local ref are missed.
 `gh pr list --state merged` orders by creation time, so "the last 30 merged" can differ at the edge.
-`gh pr list --json files` returns at most 100 files per PR, so a very large PR could miss a High path.
+`gh pr list --json files` and the issue events call return at most 100 each; a list of exactly 100
+prints a warning on stderr, and a High path or a late reopening past the cap can be missed.
+If `scripts/attestation.sh read` fails or prints nothing, the run fails with its error.
 A PR whose attestation lacks a 40-hex `- Reviewed-Commit:` line has no usable root, because
 the reader's ROOT line carries that hash. It gets empty counts and a warning. A comment from a
 non-owner can't win the root slot unless it repeats the owner's commit hash and format.
@@ -84,10 +95,31 @@ ANY_NESTED = re.compile(r"^ {2,}- (?P<rest>.*)$")
 
 
 def ts(s):
-    return datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+    d = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    # A zone-less value is UTC, as --help says; astimezone() would read it as local time.
+    return d.replace(tzinfo=timezone.utc) if d.tzinfo is None else d.astimezone(timezone.utc)
 
 
 # ---------------------------------------------------------------- parsing
+
+
+def issue_refs(disp, keyword):
+    """Issue numbers after `keyword` in a disposition: `#1`, `#1, #2`, `#1 and #2`, `#1,#2`."""
+    return [
+        int(n)
+        for m in re.finditer(rf"{keyword} ((?:#\d+(?:\s*(?:,|and)\s*)?)+)", disp)
+        for n in re.findall(r"#(\d+)", m.group(1))
+    ]
+
+
+def unread_ref(disp):
+    """True when a `#n` follows an issue list directly, as in `filed #1 and then #2`, and was not read."""
+    return any(
+        re.match(r"[\s,&/]*(?:(?:and|then|also)\s+)*#\d", disp[m.end() :])
+        for m in re.finditer(
+            r"(?:(?<!not )\bfiled|\brouted to) (?:#\d+(?:\s*(?:,|and)\s*)?)+", disp
+        )
+    )
 
 
 def parse_findings(body):
@@ -99,6 +131,8 @@ def parse_findings(body):
         "findings_routed": None,
         "findings_noted": None,
         "review_passes": None,
+        "filed_issues": [],
+        "routed_issues": [],
         "warnings": [],
     }
     passes = [
@@ -132,7 +166,8 @@ def parse_findings(body):
         return out
 
     total = fixed = accepted = routed = noted = 0
-    problems = []
+    filed_issues, routed_issues = [], []
+    problems, problems_soft = [], []
     for k, ln in enumerate(lines[head + 1 :], start=head + 1):
         if not ln.strip():
             if any(ANY_NESTED.match(x) for x in lines[k + 1 : k + 2]):
@@ -157,12 +192,20 @@ def parse_findings(body):
         disp = rest[arrow:].lstrip("→->").strip().lower()
         is_fixed = disp.startswith("fixed")
         is_accepted = disp.startswith("accepted")
-        is_routed = re.search(r"routed to #\d+", disp) is not None
+        filed_here = issue_refs(disp, r"(?<!not )\bfiled")
+        routed_here = issue_refs(disp, r"\brouted to")
+        is_routed = bool(filed_here or routed_here)  # both spellings go to the issue tracker
         is_noted = disp.startswith("noted, not filed")
         if not (is_fixed or is_accepted or is_routed or is_noted):
-            problems.append("a disposition is not fixed, accepted, routed or noted")
+            problems.append("a disposition is not fixed, accepted, filed, routed or noted")
             continue
+        if unread_ref(disp):
+            problems_soft.append(
+                "a disposition names an unread issue (use `#a, #b` or `#a and #b`)"
+            )
         total += 1
+        filed_issues += [n for n in filed_here if n not in filed_issues]
+        routed_issues += [n for n in routed_here if n not in routed_issues]
         fixed += is_fixed
         accepted += is_accepted
         routed += is_routed
@@ -176,16 +219,22 @@ def parse_findings(body):
         findings_accepted=accepted,
         findings_routed=routed,
         findings_noted=noted,
+        filed_issues=filed_issues,
+        routed_issues=routed_issues,
     )
+    out["warnings"].extend(dict.fromkeys(problems_soft))
+    if len(filed_issues) > 1:
+        out["warnings"].append(f"attestation files {len(filed_issues)} issues (the rule allows 1)")
     return out
 
 
 # Authority: docs/DAILY_DEV_WORKFLOW.md §1 (the risk classifier), plus the owner's call of
-# 2026-11-14 that cohort fixes in app/services/sql_generator.py are High. Re-read §1 when it changes.
+# 2026-11-14 that cohort fixes in app/utils/sql_generator.py are High. Re-read §1 when it changes.
 # §1 also lists "IRB-scope logic" as High; no path in the repo implements it, so no rule matches it.
 # Paths §1 does not name (.github/**, config/**) fall to medium.
 HIGH_PATHS = re.compile(
-    r"^(app/services/(sql_validator|sql_synthesis|sql_generator|feasibility_service)\.py"
+    r"^(app/services/(sql_validator|sql_synthesis|feasibility_service)\.py"
+    r"|app/utils/sql_generator\.py"
     r"|app/agents/(phenotype_agent|extraction_agent)\.py"
     r"|app/security/"
     r"|app/.*encrypt"
@@ -213,8 +262,21 @@ def parse_tier(body):
     return m.group(1).lower() if m else "unknown"
 
 
-def pick_root_body(reader_output, comments):
-    """(body, warnings). The reader's ROOT line names the root attestation's commit; find that comment."""
+def read_attestation(n):
+    """The reader's lines for PR `n`. The reader always prints something, so a failure or empty output stops the run."""
+    out = run(["bash", str(ATTESTATION_SH), "read", str(n)])
+    if not out.strip():
+        sys.exit(f"attestation.sh read {n}: the reader printed nothing")
+    return out
+
+
+def pick_root_body(reader_output, comments, pr_url):
+    """(body, warnings). The reader's ROOT line names the root attestation's commit; find that comment.
+
+    scripts/attestation.sh read is the authority on which comment counts, and its ROOT line carries
+    only a commit. So the comment is found with the reader's own three checks: the repo owner's
+    login (the PR URL's owner), authorAssociation OWNER, and never edited.
+    """
     warnings = []
     lines = reader_output.splitlines()
     if any(ln.startswith("EDITED ") for ln in lines):
@@ -225,32 +287,49 @@ def pick_root_body(reader_output, comments):
     sha = root.split()[1] if root else ""
     if not re.fullmatch(r"[0-9a-f]{40}", sha):
         return None, warnings + ["root attestation has no Reviewed-Commit hash"]
+    owner = pr_url.split("/")[3]
     for c in reversed(comments):
         b = c["body"]
         if (
-            b.startswith("## Review attestation")
-            and f"- Reviewed-Commit: {sha}" in b
-            and "- Carried-From:" not in b
+            (c.get("author") or {}).get("login") == owner
+            and c.get("authorAssociation") == "OWNER"
+            and c.get("includesCreatedEdit") is False
+            and b.startswith("## Review attestation")
+            and re.search(rf"(?m)^- Reviewed-Commit: {sha}", b)
+            and not re.search(r"(?m)^- Carried-From:", b)
         ):
             return b, warnings
     return None, warnings + ["root attestation comment not found"]
 
 
+REPO_URL = r"github\.com/jagnyesh/researchflow"
+FENCE = re.compile(r"```.*?```", re.S)
+
+
 def cites(issue, numbers):
-    text = f"{issue.get('title') or ''}\n{issue.get('body') or ''}"
+    """Used for escapes only. Fenced code blocks and other repositories' references don't count."""
+    text = FENCE.sub("", f"{issue.get('title') or ''}\n{issue.get('body') or ''}")
     return any(
-        re.search(rf"(?<![\d#/&])#{n}(?!\d)|/(?:pull|issues)/{n}(?!\d)", text) for n in numbers
+        re.search(rf"(?:(?<![\w#/&])|(?<=PR))#{n}(?!\d)|{REPO_URL}/(?:pull|issues)/{n}(?!\d)", text)
+        for n in numbers
     )
 
 
-def reverts_naming(git_log, pr):
-    """Hashes of revert commits in `git log --format=%H%x1f%s%x1f%b%x1e` text that name the PR."""
+def reverts_naming(git_log, pr, merged=None):
+    """Hashes of revert commits in `git log --format=%H%x1f%s%x1f%b%x1f%cI%x1e` text that name the PR.
+
+    With `merged`, a revert dated more than ESCAPE_DAYS after it is not an escape. A record with no
+    date field is kept.
+    """
     found = []
     for rec in git_log.split("\x1e"):
         parts = rec.strip("\n").split("\x1f")
         if len(parts) < 3 or not parts[1].startswith("Revert"):
             continue
         if re.search(rf"(?<![\w#/])#{pr}(?!\d)", parts[1] + "\n" + parts[2]):
+            if merged is not None and len(parts) > 3 and parts[3].strip():
+                if ts(parts[3].strip()) > merged + timedelta(days=ESCAPE_DAYS):
+                    continue
             found.append(parts[0].strip())
     return found
 
@@ -258,15 +337,69 @@ def reverts_naming(git_log, pr):
 # ---------------------------------------------------------------- rows
 
 
-def build_row(pr, attestation, issues, reverts, reopened, now):
-    """One CSV row (strings). `attestation` is (root body or None, warnings)."""
+ARRIVAL_SECONDS = 60
+_UNSET = object()
+
+
+def arrival_labels(events, created_at):
+    """Labels added within a minute of the issue's creation, from `gh api .../issues/<n>/events`."""
+    t0 = ts(created_at)
+    return {
+        e["label"]["name"]
+        for e in events
+        if e.get("event") == "labeled"
+        and timedelta(0) <= ts(e["created_at"]) - t0 <= timedelta(seconds=ARRIVAL_SECONDS)
+    }
+
+
+def followup_candidates(pr, body, issues):
+    """Issue numbers the PR's root attestation names as filed, or None when it can't be parsed.
+
+    `filed #n` counts as is. `routed to #n` is the older spelling for both a new issue and a comment
+    on an old one, so it counts only when the issue was created from 24 hours before the PR opened to
+    24 hours after it merged.
+    """
+    if body is None:
+        return None
+    f = parse_findings(body)
+    if f["findings_total"] is None:
+        return None
+    lo = ts(pr["createdAt"]) - timedelta(hours=FOLLOWUP_HOURS)
+    hi = ts(pr["mergedAt"]) + timedelta(hours=FOLLOWUP_HOURS)
+    made = {i["number"]: ts(i["createdAt"]) for i in issues}
+    named = set(f["filed_issues"])
+    named |= {n for n in f["routed_issues"] if n in made and lo <= made[n] <= hi}
+    return named
+
+
+def claim_followups(prs, candidates):
+    """{pr number: issues it owns}. An issue two attestations name goes to the earlier merge.
+
+    `prs` is {number: gh pr dict}; `candidates` is {number: set or None}. A None stays None.
+    """
+    taken, owned = set(), {}
+    for n in sorted(prs, key=lambda k: (ts(prs[k]["mergedAt"]), k)):
+        if candidates[n] is None:
+            owned[n] = None
+            continue
+        owned[n] = candidates[n] - taken
+        taken |= owned[n]
+    return owned
+
+
+def build_row(pr, attestation, issues, reverts, reopened, now, owned=_UNSET, arrival_labels=None):
+    """One CSV row (strings). `attestation` is (root body or None, warnings).
+
+    `owned` is the PR's issues after claim_followups; left out, the PR owns all it names.
+    `arrival_labels` is {issue: labels it arrived with}; an issue missing from it isn't checked.
+    """
     body, warnings = attestation
     warnings = list(warnings)
     f = None
     if body is not None:
         f = parse_findings(body)
         warnings += f["warnings"]
-    created, merged = ts(pr["createdAt"]), ts(pr["mergedAt"])
+    merged = ts(pr["mergedAt"])
     closing = [r["number"] for r in pr.get("closingIssuesReferences") or []]
     numbers = [pr["number"], *closing]
 
@@ -277,15 +410,12 @@ def build_row(pr, attestation, issues, reverts, reopened, now):
         and merged < ts(i["createdAt"]) <= merged + timedelta(days=ESCAPE_DAYS)
         and cites(i, numbers)
     }
-    follow = {
-        i["number"]
-        for i in issues
-        if created - timedelta(hours=FOLLOWUP_HOURS)
-        <= ts(i["createdAt"])
-        <= merged + timedelta(hours=FOLLOWUP_HOURS)
-        and cites(i, numbers)
-        and i["number"] not in escaped_issues
-    }
+    if owned is _UNSET:
+        owned = followup_candidates(pr, body, issues)
+    follow = None if owned is None else owned - escaped_issues
+    for n in sorted(follow or ()):
+        if "ready-for-agent" in (arrival_labels or {}).get(n, ()):
+            warnings.append(f"follow-up #{n} arrived ready-for-agent")
     escapes = len(reverts) + reopened + len(escaped_issues)
 
     tier = parse_tier(pr.get("body"))
@@ -308,7 +438,7 @@ def build_row(pr, attestation, issues, reverts, reopened, now):
         "findings_routed": n("findings_routed"),
         "findings_noted": n("findings_noted"),
         "review_passes": n("review_passes"),
-        "followups_filed": len(follow),
+        "followups_filed": "" if follow is None else len(follow),
         "escapes": escapes,
         "escape_window_closed": "true" if now >= merged + timedelta(days=ESCAPE_DAYS) else "false",
         "parse_warnings": "; ".join(warnings),
@@ -325,6 +455,7 @@ def summarize(rows, now):
         rs = [r for r in rows if r["tier"] == t]
         parsed = [r for r in rs if r["findings_total"] != ""]
         closed = [r for r in rs if r["escape_window_closed"] == "true"]
+        counted = [r for r in rs if r["followups_filed"] != ""]
         tiers.append(
             {
                 "tier": t,
@@ -336,7 +467,9 @@ def summarize(rows, now):
                     else "n/a"
                 ),
                 "followups_per_pr": (
-                    f"{sum(r['followups_filed'] for r in rs) / len(rs):.2f}" if rs else "n/a"
+                    f"{sum(r['followups_filed'] for r in counted) / len(counted):.2f}"
+                    if counted
+                    else "n/a"
                 ),
                 "escape_rate": _pct(sum(1 for r in closed if r["escapes"] >= 1), len(closed)),
                 "window_open": len(rs) - len(closed),
@@ -395,8 +528,13 @@ def format_summary(rows, flow, now, limit):
         f"escape rate: {open_n} PR(s) with a 14-day window still open left out of the denominators"
     )
     lines.append(
-        f"catch rate and findings/PR: {unparsed} PR(s) whose attestation could not be parsed left out"
+        f"catch rate, findings/PR and follow-ups/PR: {unparsed} PR(s) whose attestation could not be "
+        "parsed left out"
     )
+    many = [f"#{r['pr']}" for r in rows if "attestation files " in r["parse_warnings"]]
+    ready = [f"#{r['pr']}" for r in rows if "arrived ready-for-agent" in r["parse_warnings"]]
+    lines.append(f"PRs whose attestation files more than one issue: {', '.join(many) or 'none'}")
+    lines.append(f"PRs with a follow-up that arrived ready-for-agent: {', '.join(ready) or 'none'}")
     lines.append("")
     lines.append("== issue flow, ISO weeks ==")
     lines.append(f"{'week':<10}{'opened':>7}{'closed':>7}{'net':>5}")
@@ -421,6 +559,36 @@ def gh_json(*args):
     return json.loads(run(["gh", *args]))
 
 
+def issue_events(n):
+    events = gh_json("api", f"repos/{{owner}}/{{repo}}/issues/{n}/events?per_page=100")
+    if len(events) >= 100:
+        print(
+            f"warning: issue #{n} has 100 events; later ones are not read, so a reopening may be missed",
+            file=sys.stderr,
+        )
+    return events
+
+
+def created_at(n):
+    """An issue's creation time, or None when it can't be read (then no label check is made)."""
+    r = subprocess.run(
+        ["gh", "issue", "view", str(n), "--json", "createdAt"], capture_output=True, text=True
+    )  # nosec B603 B607 - fixed argument list, no shell
+    try:
+        return json.loads(r.stdout)["createdAt"] if r.returncode == 0 else None
+    except (ValueError, KeyError):
+        return None
+
+
+def check_body(path):
+    f = parse_findings(Path(path).read_text())
+    for w in f["warnings"]:
+        print(f"attestation format: {w}", file=sys.stderr)
+    if f["warnings"]:
+        sys.exit(1)
+    print("attestation format ok")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--limit", type=int, default=30)
@@ -430,8 +598,15 @@ def main(argv=None):
     ap.add_argument(
         "--summary", action="store_true", help="print the per-tier and issue-flow summary"
     )
-    ap.add_argument("--now", help="ISO 8601 UTC clock override")
+    ap.add_argument("--now", help="ISO 8601 clock override; a value with no zone is UTC")
+    ap.add_argument(
+        "--check-body",
+        metavar="FILE",
+        help="parse a drafted attestation body; exit non-zero on any format warning",
+    )
     a = ap.parse_args(argv)
+    if a.check_body:
+        return check_body(a.check_body)
     now = ts(a.now) if a.now else datetime.now(timezone.utc)
 
     prs = gh_json(
@@ -440,6 +615,12 @@ def main(argv=None):
     )  # fmt: skip
     if not prs:
         sys.exit("no merged PRs returned")
+    for p in prs:
+        if len(p.get("files") or []) == 100:
+            print(
+                f"warning: PR #{p['number']} lists exactly 100 files; the list may be cut, so a High path may be missed",
+                file=sys.stderr,
+            )
 
     since = (
         (min(ts(p["createdAt"]) for p in prs) - timedelta(hours=FOLLOWUP_HOURS)).date().isoformat()
@@ -470,30 +651,49 @@ def main(argv=None):
     issues = list(issues.values())
 
     git_log = run(["git", "log", "origin/main", f"--since={min(ts(p['mergedAt']) for p in prs).isoformat()}",
-                   "--format=%H%x1f%s%x1f%b%x1e"])  # fmt: skip
+                   "--format=%H%x1f%s%x1f%b%x1f%cI%x1e"])  # fmt: skip
 
-    rows = []
+    attested, reopened = {}, {}
     for p in prs:
-        reader = run(["bash", str(ATTESTATION_SH), "read", str(p["number"])], check=False)
-        comments = gh_json("pr", "view", str(p["number"]), "--json", "comments")["comments"]
-        reopened = 0
+        reader = read_attestation(p["number"])
+        view = gh_json("pr", "view", str(p["number"]), "--json", "url,comments")
+        attested[p["number"]] = pick_root_body(reader, view["comments"], view["url"])
+        merged = ts(p["mergedAt"])
+        reopened[p["number"]] = 0
         for n in [r["number"] for r in p.get("closingIssuesReferences") or []]:
-            events = gh_json("api", f"repos/{{owner}}/{{repo}}/issues/{n}/events?per_page=100")
-            reopened += sum(
+            reopened[p["number"]] += sum(
                 1
-                for e in events
-                if e.get("event") == "reopened" and ts(e["created_at"]) > ts(p["mergedAt"])
+                for e in issue_events(n)
+                if e.get("event") == "reopened"
+                and merged < ts(e["created_at"]) <= merged + timedelta(days=ESCAPE_DAYS)
             )
-        rows.append(
-            build_row(
-                p,
-                attestation=pick_root_body(reader, comments),
-                issues=issues,
-                reverts=reverts_naming(git_log, p["number"]),
-                reopened=reopened,
-                now=now,
-            )
+
+    by_number = {p["number"]: p for p in prs}
+    owned = claim_followups(
+        by_number,
+        {n: followup_candidates(by_number[n], attested[n][0], issues) for n in by_number},
+    )
+    created = {i["number"]: i["createdAt"] for i in issues}
+    labels = {}
+    for n in sorted({n for o in owned.values() for n in o or ()}):
+        # A filed issue can predate the issue search, so its creation time is read on its own.
+        made = created.get(n) or created_at(n)
+        if made:
+            labels[n] = arrival_labels(issue_events(n), made)
+
+    rows = [
+        build_row(
+            p,
+            attestation=attested[p["number"]],
+            issues=issues,
+            reverts=reverts_naming(git_log, p["number"], ts(p["mergedAt"])),
+            reopened=reopened[p["number"]],
+            now=now,
+            owned=owned[p["number"]],
+            arrival_labels=labels,
         )
+        for p in prs
+    ]
 
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
