@@ -36,6 +36,7 @@ _spec.loader.exec_module(rm)
 
 NOW = datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
 ROOT_SHA = "9edbfd763453969f34f45f2ae5217819ca766082"
+PR518_URL = "https://github.com/jagnyesh/researchflow/pull/518"
 
 
 def load(name):
@@ -82,6 +83,14 @@ def row_for(pr_, body=None, issues=(), reverts=(), reopened=0, now=NOW):
         reverts=list(reverts),
         reopened=reopened,
         now=now,
+    )
+
+
+def att(*dispositions):
+    """An attestation body whose findings carry the given dispositions, one per finding."""
+    lines = [f"  - finding {k}: x → {d}" for k, d in enumerate(dispositions, 1)]
+    return "\n".join(
+        ["## Review attestation", "- Reviewer 1: x, 1 pass(es), SHIP", "- Findings:", *lines, ""]
     )
 
 
@@ -164,7 +173,7 @@ def test_root_is_chosen_from_the_readers_root_line_not_the_carry_forward():
     comments = load("pr518.json")["comments"]
     out = f"NEWEST 6a492a7 head verdict=SHIP (carried forward) carried-from={ROOT_SHA}\nROOT {ROOT_SHA} verdict=SHIP\n"
 
-    body, warnings = rm.pick_root_body(out, comments)
+    body, warnings = rm.pick_root_body(out, comments, PR518_URL)
 
     assert warnings == []
     assert f"Reviewed-Commit: {ROOT_SHA}" in body
@@ -174,16 +183,18 @@ def test_root_is_chosen_from_the_readers_root_line_not_the_carry_forward():
 def test_a_root_without_a_commit_hash_is_a_warning():
     comments = load("pr317.json")["comments"]
 
-    body, warnings = rm.pick_root_body("ROOT none verdict=none\n", comments)
+    body, warnings = rm.pick_root_body("ROOT none verdict=none\n", comments, PR518_URL)
 
     assert body is None
     assert warnings
 
 
 def test_missing_attestation_and_edited_ones_are_warnings():
-    assert rm.pick_root_body("MISSING\n", [])[1]
+    assert rm.pick_root_body("MISSING\n", [], PR518_URL)[1]
     _, w = rm.pick_root_body(
-        f"EDITED https://x/1\nROOT {ROOT_SHA} verdict=SHIP\n", load("pr518.json")["comments"]
+        f"EDITED https://x/1\nROOT {ROOT_SHA} verdict=SHIP\n",
+        load("pr518.json")["comments"],
+        PR518_URL,
     )
     assert any("edited" in x for x in w)
 
@@ -200,11 +211,11 @@ def test_tier_comes_from_the_risk_tier_line_and_defaults_to_unknown():
 # ------------------------------------------------------------------ follow-ups and escapes
 
 
-def test_issue_filed_before_the_merge_is_a_follow_up_not_an_escape():
-    # Created during review (after the PR opened, before it merged), cites the PR, labelled bug.
-    i = issue(600, "2026-11-15T03:00:00Z", title="review of #518", labels=["bug"])
+def test_an_issue_named_as_filed_during_review_is_a_follow_up_not_an_escape():
+    # Created during review (after the PR opened, before it merged), labelled bug, named `filed`.
+    i = issue(600, "2026-11-15T03:00:00Z", title="review finding", labels=["bug"])
 
-    r = row_for(pr(), root_body(), issues=[i])
+    r = row_for(pr(), att("accepted; filed #600"), issues=[i])
 
     assert r["followups_filed"] == 1
     assert r["escapes"] == 0
@@ -228,27 +239,125 @@ def test_a_bug_issue_after_14_days_or_without_the_bug_label_is_not_an_escape():
     assert r["escapes"] == 0
 
 
-def test_an_issue_that_existed_before_the_pr_opened_is_not_a_follow_up():
-    i = issue(517, "2026-11-14T00:00:00Z", body="routed from #518")
+def test_an_issue_that_only_cites_the_pr_is_not_a_follow_up():
+    # Citation no longer counts (#529): the attestation names no issue, so nothing is filed.
+    i = issue(610, "2026-11-15T03:00:00Z", body="#518 and also #456")
 
-    assert row_for(pr(), root_body(), issues=[i])["followups_filed"] == 0
-
-
-def test_follow_ups_may_cite_the_closed_issue_and_dedupe_by_number():
-    both = issue(610, "2026-11-15T03:00:00Z", body="#518 and also #456")
-    via_issue = issue(611, "2026-11-15T20:00:00Z", body="found while closing #456")
-    unrelated = issue(612, "2026-11-15T20:00:00Z", body="about #4561 and #5180")
-
-    r = row_for(pr(), root_body(), issues=[both, via_issue, unrelated, copy.deepcopy(both)])
-
-    assert r["followups_filed"] == 2
+    assert row_for(pr(), att("fixed"), issues=[i])["followups_filed"] == 0
 
 
-def test_the_follow_up_window_ends_24_hours_after_the_merge():
-    inside = issue(620, "2026-11-16T04:00:00Z", body="#518")
-    outside = issue(621, "2026-11-16T04:30:00Z", body="#518")
+def test_a_filed_issue_counts_without_any_window():
+    # `filed #n` names a new issue, so the creation time is not consulted.
+    i = issue(611, "2026-10-01T00:00:00Z")
 
-    assert row_for(pr(), root_body(), issues=[inside, outside])["followups_filed"] == 1
+    assert row_for(pr(), att("filed #611"), issues=[i])["followups_filed"] == 1
+
+
+def test_a_filed_issue_missing_from_the_issue_list_still_counts():
+    assert row_for(pr(), att("filed #612"), issues=[])["followups_filed"] == 1
+
+
+def test_the_same_issue_named_twice_in_one_attestation_counts_once():
+    i = issue(613, "2026-11-15T03:00:00Z")
+
+    r = row_for(pr(), att("filed #613", "routed to #613"), issues=[i])
+
+    assert r["followups_filed"] == 1
+
+
+def test_older_attestation_routing_counts_only_issues_created_inside_the_window():
+    new = issue(517, "2026-11-15T03:00:00Z")  # created during review
+    old = issue(431, "2026-10-15T03:00:00Z")  # created a month before the PR
+
+    r = row_for(pr(), root_body(), issues=[new, old])
+
+    assert r["followups_filed"] == 1
+
+
+def test_a_routed_issue_not_in_the_issue_list_is_not_counted():
+    # An old issue falls outside the fetched search range, so its creation time is unknown.
+    assert row_for(pr(), att("routed to #99"), issues=[])["followups_filed"] == 0
+
+
+def test_an_issue_two_prs_name_counts_once_for_the_earlier_merge():
+    i = issue(620, "2026-11-15T03:00:00Z")
+    early = pr(1, merged="2026-11-15T04:00:00Z")
+    late = pr(2, merged="2026-11-15T05:00:00Z")
+    named = {
+        1: rm.followup_candidates(early, att("filed #620"), [i]),
+        2: rm.followup_candidates(late, att("filed #620"), [i]),
+    }
+
+    owned = rm.claim_followups({1: early, 2: late}, named)
+
+    assert (owned[1], owned[2]) == ({620}, set())
+
+
+def test_a_pr_whose_attestation_cannot_be_parsed_has_an_empty_count_not_zero():
+    i = issue(621, "2026-11-15T03:00:00Z", body="#518")
+
+    r = row_for(pr(), "## Review attestation\n- Findings: some prose\n", issues=[i])
+
+    assert r["followups_filed"] == ""
+    assert r["parse_warnings"]
+
+
+def test_the_follow_up_window_for_routed_issues_ends_24_hours_after_the_merge():
+    inside = issue(622, "2026-11-16T04:00:00Z")
+    outside = issue(623, "2026-11-16T04:30:00Z")
+
+    r = row_for(pr(), att("routed to #622", "routed to #623"), issues=[inside, outside])
+
+    assert r["followups_filed"] == 1
+
+
+def test_an_attestation_that_files_more_than_one_issue_gets_a_warning():
+    r = row_for(pr(), att("filed #630", "filed #631"), issues=[])
+
+    assert "files 2 issues" in r["parse_warnings"]
+    assert r["followups_filed"] == 2  # still counted: the warning is the signal
+
+
+def test_a_filed_issue_that_arrived_ready_for_agent_gets_a_warning():
+    i = issue(632, "2026-11-15T03:00:00Z")
+
+    flagged = rm.build_row(
+        pr(), (att("filed #632"), []), [i], [], 0, NOW, arrival_labels={632: {"ready-for-agent"}}
+    )
+    clean = rm.build_row(
+        pr(), (att("filed #632"), []), [i], [], 0, NOW, arrival_labels={632: {"needs-triage"}}
+    )
+    unknown = rm.build_row(pr(), (att("filed #632"), []), [i], [], 0, NOW, arrival_labels={})
+
+    assert "ready-for-agent" in flagged["parse_warnings"]
+    assert "ready-for-agent" not in clean["parse_warnings"]
+    assert unknown["parse_warnings"] == ""
+
+
+def test_arrival_labels_are_the_labels_added_within_a_minute_of_creation():
+    events = [
+        {
+            "event": "labeled",
+            "label": {"name": "needs-triage"},
+            "created_at": "2026-11-15T03:00:20Z",
+        },
+        {
+            "event": "labeled",
+            "label": {"name": "ready-for-agent"},
+            "created_at": "2026-11-15T09:00:00Z",
+        },
+        {"event": "closed", "created_at": "2026-11-15T03:00:10Z"},
+    ]
+
+    assert rm.arrival_labels(events, "2026-11-15T03:00:00Z") == {"needs-triage"}
+
+
+def test_filed_and_routed_dispositions_are_parsed_with_their_issue_numbers():
+    f = rm.parse_findings(att("filed #5; fixed", "routed to #6", "noted, not filed"))
+
+    assert (f["filed_issues"], f["routed_issues"]) == ([5], [6])
+    assert f["findings_total"] == 3
+    assert f["findings_routed"] == 2  # filed and routed both go to the tracker
 
 
 def test_reverts_and_reopened_closing_issue_count_as_escapes():
@@ -347,6 +456,10 @@ for ((i = 0; i < ${#args[@]}; i++)); do
     -q) query=${args[i+1]} ;;
   esac
 done
+if [ "$1 $2" = "pr view" ] && [ -n "$FAKE_FAIL_READER" ] && [[ "$fields" == *headRefOid* ]]; then
+  echo "gh: HTTP 403: API rate limit exceeded" >&2
+  exit 1
+fi
 case "$1 $2" in
   "pr list")
     jq -c --arg f "$fields" '.[] | . as $d | reduce ($f|split(",")[]) as $k ({}; .[$k] = $d[$k])' \
@@ -451,7 +564,7 @@ def test_cli_reads_the_root_through_attestation_sh_and_reports_counts_in(tmp_pat
 
 def test_cli_counts_issues_and_reverts_it_reads(tmp_path):
     issues_ = [
-        issue(630, "2026-11-15T03:00:00Z", body="#518"),
+        issue(517, "2026-11-15T03:00:00Z", body="routed from the review"),
         issue(631, "2026-11-20T00:00:00Z", body="#518", labels=["bug"]),
     ]
     gitlog = 'aaa\x1fRevert "x (#518)"\x1fThis reverts commit 1.\x1e'
@@ -509,9 +622,10 @@ def tier_row(tier_line, *paths):
     [
         (["app/services/sql_validator.py"], "high"),
         (
-            ["app/services/sql_generator.py", "docs/x.md"],
+            ["app/utils/sql_generator.py", "docs/x.md"],
             "high",
         ),  # owner's call: cohort fixes are High
+        (["app/services/sql_generator.py"], "medium"),  # no such file: the old, wrong path
         (["app/security/auth.py"], "high"),
         (["tests/fixtures/transpiler_expected_outputs.py"], "high"),  # a golden fixture
         (["tests/eval/fixtures/recorded.json"], "high"),
@@ -644,24 +758,26 @@ def test_cli_counts_only_reopenings_after_the_merge(tmp_path):
 # ------------------------------------------------------------------ follow-up window starts 24 h before the PR
 
 
-def test_an_issue_filed_2_hours_before_the_pr_opened_is_a_follow_up():
+def test_a_routed_issue_filed_2_hours_before_the_pr_opened_is_a_follow_up():
     # PR created 2026-11-15T02:05:41Z; the review runs before the PR opens.
-    i = issue(640, "2026-11-15T00:05:00Z", body="found reviewing #518")
+    i = issue(640, "2026-11-15T00:05:00Z")
 
-    assert row_for(pr(), root_body(), issues=[i])["followups_filed"] == 1
-
-
-def test_an_issue_filed_30_hours_before_the_pr_opened_is_not_a_follow_up():
-    i = issue(641, "2026-11-13T20:00:00Z", body="mentions #518")
-
-    assert row_for(pr(), root_body(), issues=[i])["followups_filed"] == 0
+    assert row_for(pr(), att("routed to #640"), issues=[i])["followups_filed"] == 1
 
 
-def test_the_follow_up_window_opens_exactly_24_hours_before_the_pr():
-    on_edge = issue(642, "2026-11-14T02:05:41Z", body="#518")
-    just_before = issue(643, "2026-11-14T02:05:40Z", body="#518")
+def test_a_routed_issue_created_more_than_24_hours_before_the_pr_opened_is_not_a_follow_up():
+    i = issue(641, "2026-11-13T20:00:00Z")
 
-    assert row_for(pr(), root_body(), issues=[on_edge, just_before])["followups_filed"] == 1
+    assert row_for(pr(), att("routed to #641"), issues=[i])["followups_filed"] == 0
+
+
+def test_the_routed_window_opens_exactly_24_hours_before_the_pr():
+    on_edge = issue(642, "2026-11-14T02:05:41Z")
+    just_before = issue(643, "2026-11-14T02:05:40Z")
+
+    r = row_for(pr(), att("routed to #642", "routed to #643"), issues=[on_edge, just_before])
+
+    assert r["followups_filed"] == 1
 
 
 def test_a_bug_issue_filed_1_hour_after_the_merge_is_an_escape_only():
@@ -672,11 +788,13 @@ def test_a_bug_issue_filed_1_hour_after_the_merge_is_an_escape_only():
     assert (r["escapes"], r["followups_filed"]) == (1, 0)
 
 
-def test_the_follow_up_window_closes_exactly_24_hours_after_the_merge():
-    at_edge = issue(650, "2026-11-16T04:18:49Z", body="#518")
-    one_second_later = issue(651, "2026-11-16T04:18:50Z", body="#518")
+def test_the_routed_window_closes_exactly_24_hours_after_the_merge():
+    at_edge = issue(650, "2026-11-16T04:18:49Z")
+    one_second_later = issue(651, "2026-11-16T04:18:50Z")
 
-    assert row_for(pr(), root_body(), issues=[at_edge, one_second_later])["followups_filed"] == 1
+    r = row_for(pr(), att("routed to #650", "routed to #651"), issues=[at_edge, one_second_later])
+
+    assert r["followups_filed"] == 1
 
 
 def test_cli_searches_issues_from_24_hours_before_the_oldest_pr(tmp_path):
@@ -689,3 +807,175 @@ def test_cli_searches_issues_from_24_hours_before_the_oldest_pr(tmp_path):
     # The earliest search date is the day before the oldest PR opened, so a follow-up filed in
     # the 24 hours before it is fetched (the issue flow window starts later, 2026-10-26).
     assert "created:>=2026-10-25" in (tmp_path / "data" / "issue_searches.log").read_text()
+
+
+# ------------------------------------------------------------------ #529: reader, root comment, clock, windows, caps
+
+
+def test_a_failing_attestation_reader_fails_the_run_and_shows_its_error(tmp_path):
+    env = {**make_env(tmp_path, [listed(518)], []), "FAKE_FAIL_READER": "1"}
+
+    r, out = run_cli(tmp_path, env)
+
+    assert r.returncode != 0
+    assert "rate limit" in r.stderr
+    assert not out.exists()  # no CSV with a misleading parse warning
+
+
+def test_a_reader_that_prints_nothing_fails_the_run(monkeypatch):
+    monkeypatch.setattr(rm, "run", lambda cmd, check=True: "")
+
+    with pytest.raises(SystemExit) as e:
+        rm.read_attestation(518)
+
+    assert "printed nothing" in str(e.value)
+
+
+def comments_with(**overrides):
+    """pr518's root attestation, changed, plus the real comments (the root is replaced)."""
+    comments = copy.deepcopy(load("pr518.json")["comments"])
+    comments[0].update(overrides)
+    return comments
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"author": {"login": "someone-else"}},
+        {"authorAssociation": "CONTRIBUTOR"},
+        {"includesCreatedEdit": True},
+    ],
+)
+def test_a_root_comment_the_reader_would_not_trust_is_not_chosen(overrides):
+    comments = comments_with(**overrides)
+    out = f"ROOT {ROOT_SHA} verdict=SHIP\n"
+
+    body, warnings = rm.pick_root_body(out, comments, PR518_URL)
+
+    assert body is None
+    assert "root attestation comment not found" in warnings
+
+
+def test_the_unedited_owner_root_wins_over_a_later_edited_copy_of_it():
+    comments = load("pr518.json")["comments"]
+    edited = {
+        **copy.deepcopy(comments[0]),
+        "includesCreatedEdit": True,
+        "body": comments[0]["body"] + "\n",
+    }
+    out = f"ROOT {ROOT_SHA} verdict=SHIP\n"
+
+    body, _ = rm.pick_root_body(out, [comments[0], edited], PR518_URL)
+
+    assert body == comments[0]["body"]
+
+
+def test_a_zone_less_now_is_read_as_utc_whatever_the_local_zone(monkeypatch):
+    import time
+
+    monkeypatch.setenv("TZ", "America/Chicago")
+    time.tzset()
+    try:
+        assert rm.ts("2026-11-16T12:00:00") == datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        assert rm.ts("2026-11-16T12:00:00Z") == datetime(2026, 11, 16, 12, 0, tzinfo=timezone.utc)
+        assert rm.ts("2026-11-16T12:00:00-06:00") == datetime(
+            2026, 11, 16, 18, 0, tzinfo=timezone.utc
+        )
+    finally:
+        monkeypatch.delenv("TZ")
+        time.tzset()
+
+
+def test_a_revert_more_than_14_days_after_the_merge_is_not_an_escape():
+    merged = rm.ts("2026-11-15T04:18:49Z")
+    log = (
+        'aaa\x1fRevert "x (#518)"\x1f\x1f2026-11-29T04:18:49+00:00\x1e'  # on the edge: counts
+        'bbb\x1fRevert "x (#518)"\x1f\x1f2026-11-29T04:18:50+00:00\x1e'  # a second late
+    )
+
+    assert rm.reverts_naming(log, 518, merged) == ["aaa"]
+
+
+def test_a_reopening_more_than_14_days_after_the_merge_is_not_an_escape(tmp_path):
+    env = make_env(tmp_path, [listed(518)], [])
+    events = [
+        {"event": "reopened", "created_at": "2026-11-29T04:18:49Z"},  # on the edge
+        {"event": "reopened", "created_at": "2026-11-29T04:18:50Z"},
+    ]
+    (tmp_path / "data" / "events456.json").write_text(json.dumps(events))
+
+    _, out = run_cli(tmp_path, env)
+
+    assert list(csv.DictReader(out.read_text().splitlines()))[0]["escapes"] == "1"
+
+
+def test_an_event_list_of_exactly_100_warns_on_stderr(tmp_path):
+    env = make_env(tmp_path, [listed(518)], [])
+    events = [{"event": "labeled", "created_at": "2026-11-15T03:00:00Z"}] * 100
+    (tmp_path / "data" / "events456.json").write_text(json.dumps(events))
+
+    r, _ = run_cli(tmp_path, env)
+
+    assert "100 events" in r.stderr
+
+
+def test_a_file_list_of_exactly_100_warns_on_stderr(tmp_path):
+    p = listed(518)
+    p["files"] = [{"path": f"docs/f{k}.md"} for k in range(100)]
+    env = make_env(tmp_path, [p], [])
+
+    r, _ = run_cli(tmp_path, env)
+
+    assert "100 files" in r.stderr
+
+
+def test_citations_ignore_fenced_code_blocks():
+    text = "see below\n```\nlog line: #518 failed\n```\nend"
+
+    assert not rm.cites({"title": "x", "body": text}, [518])
+    assert rm.cites({"title": "x", "body": "```\ncode\n```\nbut also #518"}, [518])
+
+
+def test_citations_ignore_references_to_other_repositories():
+    other = "other-org/other-repo#518 and https://github.com/other-org/other-repo/issues/518"
+
+    assert not rm.cites({"title": other, "body": ""}, [518])
+    assert rm.cites(
+        {"title": "https://github.com/jagnyesh/researchflow/pull/518", "body": ""}, [518]
+    )
+
+
+def test_check_body_exits_zero_for_a_well_formed_body_and_non_zero_with_warnings(tmp_path):
+    good = tmp_path / "good.md"
+    good.write_text(att("fixed", "filed #9"))
+    bad = tmp_path / "bad.md"
+    bad.write_text("## Review attestation\n- Findings:\n  - finding 1: a → looks fine\n")
+    two = tmp_path / "two.md"
+    two.write_text(att("filed #1", "filed #2"))
+    cmd = [sys.executable, "-I", str(REPO / "scripts/review_metrics.py"), "--check-body"]
+
+    ok = subprocess.run([*cmd, str(good)], capture_output=True, text=True)
+    no = subprocess.run([*cmd, str(bad)], capture_output=True, text=True)
+    many = subprocess.run([*cmd, str(two)], capture_output=True, text=True)
+
+    assert ok.returncode == 0, ok.stderr
+    assert no.returncode != 0 and "disposition" in no.stderr
+    assert many.returncode != 0 and "files 2 issues" in many.stderr
+
+
+def test_the_summary_lists_prs_with_more_than_one_filed_issue(tmp_path):
+    p = listed(518)
+    env = make_env(tmp_path, [p], [])
+    # 518's recorded attestation routes to two issues; make the fixture file two instead.
+    view = load("pr518.json")
+    view["comments"][0]["body"] = (
+        view["comments"][0]["body"]
+        .replace("routed to #517", "filed #517")
+        .replace("routed to #431", "filed #431")
+    )
+    (tmp_path / "data" / "pr518.json").write_text(json.dumps(view))
+
+    r, _ = run_cli(tmp_path, env, "--summary")
+
+    assert "files more than one issue" in r.stdout
+    assert "#518" in r.stdout

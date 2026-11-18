@@ -44,7 +44,7 @@ trim='.[] | . as $d | reduce ($f|split(",")[]) as $k ({}; .[$k] = $d[$k])'
 case "$1 $2" in
   "pr list") jq -c --arg f "$fields" "$trim" "$FAKE_PRS" | jq -s . ;;
   "issue list") echo '[]' ;;
-  "pr view") case "$*" in *" -q "*) echo MISSING ;; *) echo '{"comments":[]}' ;; esac ;;
+  "pr view") case "$*" in *" -q "*) echo MISSING ;; *) echo '{"url":"https://github.com/o/r/pull/1","comments":[]}' ;; esac ;;
   api) echo '[]' ;;
   *) echo "fake gh: unsupported: $*" >&2; exit 64 ;;
 esac
