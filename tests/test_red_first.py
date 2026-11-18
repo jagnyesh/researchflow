@@ -738,3 +738,38 @@ def test_the_base_output_block_carries_no_platform_or_rootdir_line(repo, tmp_pat
 
     assert r.returncode == 0, r.stderr
     assert "rootdir" not in r.stdout and "platform" not in r.stdout
+
+
+def test_text_that_says_passed_after_the_totals_line_does_not_make_an_all_skipped_run_green(
+    repo, tmp_path
+):
+    _write(
+        repo,
+        {
+            "pkg/newmod.py": "import atexit\natexit.register(print, '9 passed in 0.01s')\n"
+            "def g():\n    return 2\n",
+            "tests/test_g.py": "import pytest\nfrom pkg.newmod import g\n\n"
+            "@pytest.mark.skip(reason='4 passed on ci')\ndef test_g():\n    assert g() == 2\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_g.py")
+
+    assert r.returncode == 1
+    assert "no test passed here" in r.stderr
+
+
+def test_the_base_output_block_has_no_local_paths(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/newmod.py": "def g():\n    return 5\n",
+            "tests/test_g.py": "from pkg.newmod import g\n\ndef test_g():\n    assert g() == 5\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_g.py")
+
+    assert r.returncode == 0, r.stderr
+    assert str(tmp_path.resolve()) not in r.stdout and str(tmp_path) not in r.stdout
+    assert "<base>/tests/test_g.py" in r.stdout

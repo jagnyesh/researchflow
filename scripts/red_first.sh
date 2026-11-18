@@ -209,13 +209,37 @@ def pytest(cwd, target):
     children.remove(p)
     return subprocess.CompletedProcess(p.args, p.returncode, out, err)
 
+# pytest's own totals line: "== 1 passed, 1 skipped in 0.02s ==", or the same without the "="
+# decoration under a project -q. Other text (a skip reason, a print at exit) can say "N passed"
+# too, so a line counts only when it has this shape, and the decorated form wins.
+DECORATED = re.compile(r"^=+ (.+) in [\d.]+s(?: \([\d:]+\))? =+$")
+PLAIN = re.compile(r"^((?:\d+ \w[\w ]*?)(?:, \d+ \w[\w ]*?)*) in [\d.]+s(?: \([\d:]+\))?$")
+
+def totals(r):
+    lines = [l.rstrip() for l in r.stdout.splitlines() if l.strip()]
+    for rx in (DECORATED, PLAIN):
+        for l in reversed(lines):
+            m = rx.match(l)
+            if m:
+                return l.strip("= "), m.group(1)
+    return None, ""
+
 def summary(r):
-    lines = [l for l in r.stdout.splitlines() if l.strip()]
-    return lines[-1].strip("= ") if lines else "no output"
+    line, _ = totals(r)
+    return line or "no totals line"
 
 def passed(r):
-    m = re.search(r"(\d+) passed", summary(r))
+    m = re.search(r"(\d+) passed", totals(r)[1])
     return int(m.group(1)) if m else 0
+
+def scrub(text):
+    # The output goes into a PR: keep the scratch worktree, this checkout and the home
+    # directory out of it.
+    for path, label in ((wt, "<base>"), (scratch, "<scratch>"), (os.path.realpath(scratch), "<scratch>"),
+                        (repo, "<repo>"), (os.path.expanduser("~"), "~")):
+        if path and path != "/":
+            text = text.replace(path, label)
+    return text
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
 
@@ -305,7 +329,7 @@ try:
             print("Red-first note: %s: %d test(s) pass on the base, so only the failing ones prove the change. "
                   "Pass file::node ids for the tests you added or changed." % (target, n_base))
         print("--- base run output ---")
-        print(out)
+        print(scrub(out))
         print("--- end base run output ---")
 finally:
     cleanup()
