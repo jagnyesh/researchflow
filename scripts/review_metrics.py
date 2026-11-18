@@ -157,7 +157,7 @@ def parse_findings(body):
 
     total = fixed = accepted = routed = noted = 0
     filed_issues, routed_issues = [], []
-    problems = []
+    problems, problems_soft = [], []
     for k, ln in enumerate(lines[head + 1 :], start=head + 1):
         if not ln.strip():
             if any(ANY_NESTED.match(x) for x in lines[k + 1 : k + 2]):
@@ -189,6 +189,13 @@ def parse_findings(body):
         if not (is_fixed or is_accepted or is_routed or is_noted):
             problems.append("a disposition is not fixed, accepted, filed, routed or noted")
             continue
+        first = re.search(r"(?<!not )\bfiled #|\brouted to #", disp)
+        if first and len(re.findall(r"#\d+", disp[first.start() :])) > len(
+            filed_here + routed_here
+        ):
+            problems_soft.append(
+                "a disposition names an unread issue (use `#a, #b` or `#a and #b`)"
+            )
         total += 1
         filed_issues += [n for n in filed_here if n not in filed_issues]
         routed_issues += [n for n in routed_here if n not in routed_issues]
@@ -208,6 +215,7 @@ def parse_findings(body):
         filed_issues=filed_issues,
         routed_issues=routed_issues,
     )
+    out["warnings"].extend(dict.fromkeys(problems_soft))
     if len(filed_issues) > 1:
         out["warnings"].append(f"attestation files {len(filed_issues)} issues (the rule allows 1)")
     return out

@@ -1047,3 +1047,16 @@ def test_arrival_labels_are_read_for_a_filed_issue_older_than_the_issue_search(t
     _, out = run_cli(tmp_path, env)
 
     assert "follow-up #99 arrived ready-for-agent" in out.read_text()
+
+
+@pytest.mark.parametrize(
+    "disp", ["filed #1 and then #2", "filed #1 #2", "filed #1 & #2", "routed to #1/#2"]
+)
+def test_an_issue_list_the_parser_cannot_read_whole_is_a_warning(disp):
+    f = rm.parse_findings(att(disp))
+
+    assert any("unread issue" in w for w in f["warnings"])
+
+
+def test_an_issue_mentioned_before_the_disposition_keyword_is_not_a_warning():
+    assert rm.parse_findings(att("fixed (see #12); filed #4"))["warnings"] == []
