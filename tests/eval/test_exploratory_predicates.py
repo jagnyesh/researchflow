@@ -91,6 +91,14 @@ _UNLINKED = {
     "other_column": "JOIN sqlonfhir.patient_demographics p ON p.gender = m.status",
     "patient_id_to_itself": "JOIN sqlonfhir.patient_demographics p ON p.patient_id = p.patient_id",
     "using": "JOIN sqlonfhir.patient_demographics p USING (patient_id)",
+    "link_under_or": "JOIN sqlonfhir.patient_demographics p ON m.patient_id = p.patient_id OR TRUE",
+    "link_to_a_later_source": (
+        "JOIN sqlonfhir.patient_demographics p ON p.patient_id = c.patient_id "
+        "JOIN sqlonfhir.condition_simple c ON c.patient_id = m.patient_id"
+    ),
+    "link_between_earlier_sources": (
+        "JOIN sqlonfhir.patient_demographics p ON m.patient_id = m.patient_id"
+    ),
 }
 
 
