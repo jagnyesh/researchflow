@@ -393,13 +393,17 @@ def _report(summary: dict, results: list) -> None:
 
 def _write_log(path: Path, results: list, summary: dict) -> None:
     ts, commit = datetime.now(timezone.utc).isoformat(), _git_commit()
+    lines = []
+    for result in results:
+        row = {"ts": ts, "git_commit": commit, **result}
+        row.pop("tally")
+        lines.append(json.dumps(row))
+    lines.append(json.dumps({"ts": ts, "git_commit": commit, "summary": summary}))
+    # Every row is JSON before the first write, so a row that can't be written
+    # leaves no case rows without their summary row (#526 finding 22).
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a") as log:
-        for result in results:
-            row = {"ts": ts, "git_commit": commit, **result}
-            row.pop("tally")
-            log.write(json.dumps(row) + "\n")
-        log.write(json.dumps({"ts": ts, "git_commit": commit, "summary": summary}) + "\n")
+        log.write("".join(line + "\n" for line in lines))
 
 
 def _live_extract():

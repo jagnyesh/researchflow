@@ -692,3 +692,23 @@ def test_emptied_fixture_exits_integrity_failure(tmp_path, capsys):
     code, _ = _run(tmp_path, fixture, _never_called)
     assert code == runner.EXIT_INTEGRITY == 2
     assert "0 cases" in capsys.readouterr().out
+
+
+def test_an_all_error_run_under_fail_under_exits_integrity_not_threshold(tmp_path, capsys):
+    # #526 finding 23: 0% is below any threshold, but an outage measures nothing.
+    async def extract(criteria):
+        raise RuntimeError("authentication failed")
+
+    code, _ = _run(tmp_path, _fixture(), extract, "--fail-under", "50")
+    assert code == runner.EXIT_INTEGRITY
+    assert "every case errored" in capsys.readouterr().out
+
+
+def test_a_row_that_cant_be_written_leaves_no_case_rows_in_the_log(tmp_path):
+    # #526 finding 22: case rows with no summary row would read as a run.
+    log = tmp_path / "evals.jsonl"
+    log.write_text('{"earlier": "run"}\n')
+    table = dict(CORRECT, hypertension=[{"term": {"hypertension"}, "type": "x", "details": ""}])
+    code, _ = _run(tmp_path, _fixture(), _extractor(table))
+    assert code == runner.EXIT_INTEGRITY
+    assert log.read_text() == '{"earlier": "run"}\n'
