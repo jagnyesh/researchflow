@@ -8,6 +8,8 @@ single bound parameter in every placeholder position:
   - ("gender", "=", "female")         p.gender = :g
   - ("age", ">", 65)                  EXTRACT(YEAR FROM AGE(CURRENT_DATE,
                                         CAST(p.birth_date AS DATE))) > :a
+  - ("age", "between", (50, 60))      the same age expression BETWEEN :lo AND
+                                        :hi, each bound its own parameter
   - ("condition", "has", "term")      EXISTS(.. condition_simple c WHERE
                                         c.patient_id = p.patient_id AND
                                         (LOWER(<col>) LIKE LOWER(:c) OR ..))
@@ -47,10 +49,9 @@ def _template(sql: str) -> str:
 
 _LIVING = _template("p.deceased IS NOT TRUE")
 _GENDER = _template("p.gender = :x")
-_AGE = {
-    op: _template(f"EXTRACT(YEAR FROM AGE(CURRENT_DATE, CAST(p.birth_date AS DATE))) {op} :x")
-    for op in _COMPARISONS
-}
+_AGE_EXPR = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, CAST(p.birth_date AS DATE)))"
+_AGE = {op: _template(f"{_AGE_EXPR} {op} :x") for op in _COMPARISONS}
+_AGE_EXPR = _template(_AGE_EXPR)
 _HAS_CONDITION = _template(
     "EXISTS (SELECT 1 FROM sqlonfhir.condition_simple AS c "
     "WHERE c.patient_id = p.patient_id AND ("
@@ -90,10 +91,25 @@ def _normalized(node: exp.Expression) -> Tuple[str, Optional[str]]:
     return _sql(copy), names.pop()
 
 
+def _age_range(node: exp.Between, params: Dict) -> Optional[Predicate]:
+    """("age", "between", (lo, hi)) for the age expression BETWEEN two bound
+    parameters; SYMMETRIC would also match reversed bounds, so it doesn't count."""
+    bounds = [node.args.get(k) for k in ("low", "high")]
+    if (
+        node.args.get("symmetric")
+        or _sql(node.this) != _AGE_EXPR
+        or not all(isinstance(b, exp.Placeholder) and b.name in params for b in bounds)
+    ):
+        return None
+    return ("age", "between", tuple(params[b.name] for b in bounds))
+
+
 def _predicate(node: exp.Expression, params: Dict) -> Predicate:
     unrecognized = ("unrecognized", _sql(node), None)
     if _sql(node) == _LIVING:
         return ("deceased", "=", False)
+    if isinstance(node, exp.Between):
+        return _age_range(node, params) or unrecognized
     negated = isinstance(node, exp.Not)
     shape, name = _normalized(node.this if negated else node)
     if name is None or name not in params:

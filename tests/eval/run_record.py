@@ -45,6 +45,10 @@ async def main(model: str) -> None:
     print(
         f"adversarial      : {summary['adversarial_escapes']} escapes / {summary['adversarial_total']}"
     )
+    print(
+        f"Predicate survival: {summary['predicate_survival']:.2f}"
+        f" ({summary['predicate_survived']}/{summary['predicate_stated']})"
+    )
     median, per_pass = summary["median_cost_per_attempt_usd"], summary["cost_per_passing_query_usd"]
     print(f"median cost/try  : {'unknown' if median is None else f'${median:.6f}'}")
     print(f"cost per passing : {'unknown' if per_pass is None else f'${per_pass:.6f}'}")

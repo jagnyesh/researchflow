@@ -184,6 +184,35 @@ def test_a_reshaped_predicate_is_not_matched(old, new):
     assert missing or extra, sql
 
 
+_RANGE_CASE = next(c for c in FORMAL_CASES if c.id == "hypertension_aged_50_to_60")
+_RANGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) BETWEEN :age_lo_1 AND :age_hi_2"
+
+_RANGE_ESCAPES = {
+    "not_between": (_RANGE, _RANGE.replace(" BETWEEN ", " NOT BETWEEN ")),
+    "symmetric": (_RANGE, _RANGE.replace(" BETWEEN ", " BETWEEN SYMMETRIC ")),
+    "literal_bound": (_RANGE, _RANGE.replace(":age_hi_2", "99")),
+    "birth_year_not_age": (
+        _RANGE,
+        "EXTRACT(YEAR FROM p.birth_date) BETWEEN :age_lo_1 AND :age_hi_2",
+    ),
+    "swapped_bounds": (
+        _RANGE,
+        _RANGE.replace(":age_lo_1 AND :age_hi_2", ":age_hi_2 AND :age_lo_1"),
+    ),
+}
+
+
+@pytest.mark.parametrize("old,new", _RANGE_ESCAPES.values(), ids=list(_RANGE_ESCAPES))
+def test_a_reshaped_age_range_is_not_matched(old, new):
+    sql, params = _sql(_recorded(_RANGE_CASE))
+    assert old in sql
+    sql = sql.replace(old, new, 1)
+
+    missing, extra = check_predicates(_RANGE_CASE, sql, params)
+
+    assert missing or extra, sql
+
+
 def test_a_one_column_medication_match_is_not_the_oracle_match():
     insulin = next(c for c in FORMAL_CASES if c.id == "diabetes_mellitus_not_on_insulin")
     sql, params = _sql(_recorded(insulin))
@@ -202,6 +231,22 @@ def test_a_prefix_pattern_is_not_the_requested_contains_match():
     missing, extra = check_predicates(CASE_1, sql, params)
 
     assert ("condition", "has", "diabetes mellitus") in missing and extra
+
+
+def test_the_summary_reports_predicate_survival():
+    from tests.eval.formal_harness import CaseScore
+    from tests.eval.formal_record import summary
+
+    ids = [c.id for c in FORMAL_CASES[:3]]
+    scores = [
+        # An extra predicate fails Pass@1 but doesn't lower survival (ADR 0042).
+        CaseScore(id=ids[0], executed=True, passed=False, vacuous=False, extra_predicates="x"),
+        CaseScore(id=ids[1], executed=True, passed=False, vacuous=False, missing_predicates="x"),
+        # A case that didn't run can't show its predicates survived.
+        CaseScore(id=ids[2], executed=False, passed=False, vacuous=False),
+    ]
+
+    assert "Predicate survival: 0.33 (1/3)" in summary(scores)
 
 
 def test_a_missing_predicate_alone_fails_the_case():
