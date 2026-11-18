@@ -189,9 +189,10 @@ PROBE = (
 
 def pytest(cwd, target):
     # No -q of our own: a project's addopts may already carry one, and -qq drops the totals
-    # line. --no-header keeps the platform and rootdir lines (a local path) out of the output.
+    # line. --no-header keeps the platform and rootdir lines (a local path) out of the output,
+    # and --color=no keeps ANSI escapes (PY_COLORS, FORCE_COLOR) out of the totals line.
     p = subprocess.Popen(
-        [py, "-m", "pytest", target, "--no-header", "-p", "no:cacheprovider", "--tb=short"],
+        [py, "-m", "pytest", target, "--no-header", "--color=no", "-p", "no:cacheprovider", "--tb=short"],
         cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         stdin=subprocess.DEVNULL, start_new_session=True,
     )

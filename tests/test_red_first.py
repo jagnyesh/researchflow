@@ -773,3 +773,39 @@ def test_the_base_output_block_has_no_local_paths(repo, tmp_path):
     assert r.returncode == 0, r.stderr
     assert str(tmp_path.resolve()) not in r.stdout and str(tmp_path) not in r.stdout
     assert "<base>/tests/test_g.py" in r.stdout
+
+
+def test_a_colored_environment_does_not_hide_the_totals_line(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f():\n    assert f() == 2\n",
+        },
+    )
+
+    r = _red_first(
+        repo, tmp_path, "tests/test_f.py", extra_env={"PY_COLORS": "1", "FORCE_COLOR": "1"}
+    )
+
+    assert r.returncode == 0, r.stderr
+    assert "1 passed" in next(ln for ln in r.stdout.splitlines() if ln.startswith("Red-first:"))
+
+
+def test_the_base_output_block_replaces_the_repo_and_home_paths(repo, tmp_path):
+    home = tmp_path / "fakehome"
+    home.mkdir()
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f():\n"
+            f"    assert f() == 2, 'repo={str(repo.resolve())} home={str(home.resolve())}'\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py", extra_env={"HOME": str(home.resolve())})
+
+    assert r.returncode == 0, r.stderr
+    assert "repo=<repo> home=~" in r.stdout
+    assert str(repo.resolve()) not in r.stdout and str(home.resolve()) not in r.stdout
