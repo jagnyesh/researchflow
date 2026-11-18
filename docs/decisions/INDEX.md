@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0041** — [The extraction eval gate replays recorded wire responses in CI (#137)](0041-extraction-eval-gate-replays-recorded-wire-responses.md) (2026-11-18, accepted)
 - **0040** — [The extraction eval scores concepts the way the SQL generator reads them (#136)](0040-extraction-eval-scores-concepts-as-the-generator-reads-them.md) (2026-11-16, accepted)
 - **0039** — [Family history fails, gender takes one value, and two-bound ages build both bounds (#456)](0039-formal-family-history-gender-two-bound-age.md) (2026-11-14, accepted)
 - **0038** — [Extraction writes every CSV or fails, and never lists a file it didn't write (#477)](0038-extraction-writes-every-csv-or-fails.md) (2026-11-14, accepted)
@@ -95,6 +96,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 ### Evaluation
 
 - [0040 — The extraction eval scores concepts the way the SQL generator reads them](0040-extraction-eval-scores-concepts-as-the-generator-reads-them.md)
+- [0041 — The extraction eval gate replays recorded wire responses in CI](0041-extraction-eval-gate-replays-recorded-wire-responses.md)
 
 ### Workflow & process
 

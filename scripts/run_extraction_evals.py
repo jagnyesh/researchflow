@@ -7,29 +7,47 @@ to logs/extraction_evals.jsonl.
 
     ./.venv/bin/python -m scripts.run_extraction_evals [--fail-under PCT]
 
+#137 (ADR 0041) adds recorded wire responses. CI runs --replay, which answers
+every model call from tests/eval/fixtures/extraction_recording.json with no API
+key. A re-baseline runs --repeat 5 --record: five billed live runs, run 1 saved
+as the recording, and the lowest pass rate printed for --fail-under.
+
 Exit codes: 0 complete; 1 accuracy below --fail-under; 2 the run can't be
-trusted (no cases, executed != cases in the fixture, a bad fixture, no live
-LLM client, every case errored, or the evidence log can't be written).
+trusted (no cases, fewer than --min-cases, executed != cases in the fixture, a
+bad fixture or recording, no live LLM client, every case errored, a replayed
+request with no recorded response or a recorded response never requested, an
+untrusted run in a --repeat, or the evidence log can't be written).
 """
 
 import argparse
 import asyncio
+import contextlib
+import hashlib
 import json
+import math
+import os
 import re
 import subprocess  # nosec B404 - fixed git command, no input
 import sys
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from anthropic.resources.messages.messages import AsyncMessages  # noqa: E402
+from anthropic.types import Message  # noqa: E402
+
 from app.utils.sql_generator import SQLGenerator  # noqa: E402
 
 CASES = ROOT / "tests" / "eval" / "fixtures" / "extraction_cases.json"
 LOG = ROOT / "logs" / "extraction_evals.jsonl"
+RECORDING = ROOT / "tests" / "eval" / "fixtures" / "extraction_recording.json"
+# A key no real API accepts, so a replay that missed the patch couldn't bill.
+REPLAY_KEY = "replay-placeholder-not-a-key"  # nosec B105 - not a credential
 
 EXIT_OK, EXIT_BELOW_THRESHOLD, EXIT_INTEGRITY = 0, 1, 2
 LISTS = ("inclusion", "exclusion")
@@ -339,12 +357,18 @@ async def run_cases(cases: list, extract, results: list) -> None:
 
 
 def _git_commit() -> str:
+    """HEAD, with -dirty when the tree has uncommitted or untracked changes, so a
+    run made from uncommitted code doesn't claim a commit that didn't hold it."""
     try:
-        return subprocess.run(  # nosec B603 B607
+        commit = subprocess.run(  # nosec B603 B607
             ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True, check=True
         ).stdout.strip()
+        status = subprocess.run(  # nosec B603 B607
+            ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=True
+        ).stdout
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
+    return commit + ("-dirty" if status.strip() else "")
 
 
 def _summary(results: list, expected: int) -> dict:
@@ -402,16 +426,195 @@ def _write_log(path: Path, results: list, summary: dict) -> None:
     # Every row is JSON before the first write, so a row that can't be written
     # leaves no case rows without their summary row (#526 finding 22).
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a") as log:
-        log.write("".join(line + "\n" for line in lines))
+    start = path.stat().st_size if path.exists() else 0
+    try:
+        with path.open("a") as log:
+            log.write("".join(line + "\n" for line in lines))
+    except OSError:
+        # A disk-full error can land partway through; cut the log back to the
+        # earlier runs rather than leave a torn one.
+        os.truncate(path, start)
+        raise
 
 
-def _live_extract():
+# --- Recorded wire responses (ADR 0041) -------------------------------------------
+
+_RECORDING_KEYS = ("format", "recorded_at", "git_commit", "calls")
+_CALL_KEYS = ("request_sha256", "model", "system_sha256", "user", "response")
+_RECORDING_FORMAT = {
+    "about": (
+        "Recorded Anthropic API responses for one live run of "
+        "scripts/run_extraction_evals.py (ADR 0041). CI replays them with no API key. "
+        "Regenerate with --repeat 5 --record; never edit by hand."
+    ),
+    "calls[]": "One outbound AsyncMessages.create call, in call order.",
+    "calls[].request_sha256": (
+        "SHA-256 of the whole request: model, max_tokens, temperature, system, messages."
+    ),
+    "calls[].system_sha256": "The system prompt, by hash only.",
+    "calls[].user": "The last user message, for review. Synthetic criteria only.",
+    "calls[].response": "The response's text, stop reason and token usage.",
+}
+
+
+class ReplayMiss(Exception):
+    """A request the recording has no response for."""
+
+
+def _canonical_json(value) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def _request_key(kwargs: dict) -> str:
+    return _sha256(_canonical_json(kwargs))
+
+
+def _user_text(kwargs: dict) -> str:
+    content = (kwargs.get("messages") or [{}])[-1].get("content", "")
+    return content if isinstance(content, str) else _canonical_json(content)
+
+
+def _recorder(calls: list, failures: list, original):
+    async def create(self, *args, **kwargs):
+        try:
+            response = await original(self, *args, **kwargs)
+        except Exception as e:
+            # The agent's fallback can recover the case, but the failed request has
+            # no response to record, so this recording could never replay.
+            failures.append(type(e).__name__)
+            raise
+        calls.append(
+            {
+                "request_sha256": _request_key(kwargs),
+                "model": kwargs.get("model"),
+                "system_sha256": _sha256(_canonical_json(kwargs.get("system"))),
+                "user": _user_text(kwargs),
+                "response": {
+                    "text": "".join(b.text for b in response.content if b.type == "text"),
+                    "stop_reason": response.stop_reason,
+                    "usage": response.usage.model_dump(exclude_none=True),
+                },
+            }
+        )
+        return response
+
+    return create
+
+
+class _Replay:
+    """Answers each request from the recording, in call order for repeated requests."""
+
+    def __init__(self, calls: list):
+        self.queues = defaultdict(deque)
+        for call in calls:
+            self.queues[call["request_sha256"]].append(call)
+        self.misses = 0
+
+    def create(self, original):
+        async def create(_self, *args, **kwargs):
+            queue = self.queues.get(_request_key(kwargs))
+            if not queue:
+                self.misses += 1
+                raise ReplayMiss()
+            call = queue.popleft()
+            return Message.model_validate(
+                {
+                    "id": "msg_replay",
+                    "type": "message",
+                    "role": "assistant",
+                    "model": call["model"],
+                    "content": [{"type": "text", "text": call["response"]["text"]}],
+                    "stop_reason": call["response"]["stop_reason"],
+                    "stop_sequence": None,
+                    "usage": call["response"]["usage"],
+                }
+            )
+
+        return create
+
+    def problem(self):
+        # The agent absorbs a miss as a failed call, so the replay counts its own.
+        unused = sum(len(q) for q in self.queues.values())
+        if self.misses:
+            return (
+                f"INTEGRITY: {self.misses} request(s) have no recorded response; "
+                "a prompt, the model or a case changed, so re-baseline"
+            )
+        if unused:
+            return (
+                f"INTEGRITY: {unused} recorded response(s) were never requested; "
+                "the extraction calls no longer match the recording, so re-baseline"
+            )
+        return None
+
+
+def load_recording(path: Path) -> list:
+    """The recording's calls, or FixtureError if it can't be replayed as written."""
+    try:
+        recording = json.loads(Path(path).read_text())
+    except (OSError, ValueError) as e:
+        raise FixtureError(f"can't read the recording {path}: {type(e).__name__}") from e
+    calls = recording.get("calls") if isinstance(recording, dict) else None
+    if not (isinstance(calls, list) and calls):
+        raise FixtureError("the recording has no calls")
+    _check_keys("the recording", recording, _RECORDING_KEYS)
+    for n, call in enumerate(calls):
+        where = f"recorded call {n}"
+        if not isinstance(call, dict):
+            raise FixtureError(f"{where} is not an object")
+        _check_keys(where, call, _CALL_KEYS)
+        response = call.get("response")
+        if not (
+            _text(call.get("request_sha256"))
+            and _text(call.get("model"))
+            and isinstance(response, dict)
+            and isinstance(response.get("text"), str)
+            and isinstance(response.get("usage"), dict)
+        ):
+            raise FixtureError(f"{where} lacks a key, a model or a response")
+    return calls
+
+
+def _write_recording(path: Path, calls: list) -> None:
+    recording = {
+        "format": _RECORDING_FORMAT,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "git_commit": _git_commit(),
+        "calls": calls,
+    }
+    text = json.dumps(recording, indent=1) + "\n"
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(text)
+
+
+@contextlib.contextmanager
+def _create_patched(make):
+    """Replace AsyncMessages.create with make(original) for the block, if make is set."""
+    if make is None:
+        yield
+        return
+    original = AsyncMessages.create
+    AsyncMessages.create = make(original)
+    try:
+        yield
+    finally:
+        AsyncMessages.create = original
+
+
+def _live_extract(api_key=None):
     """The portal's extraction path, or None when LLMClient has no API key (it
-    would answer every call with canned output)."""
+    would answer every call with canned output). api_key replaces the key from
+    the environment; replay passes a placeholder no real API accepts."""
     from app.agents.requirements_agent import RequirementsAgent
+    from app.utils.llm_client import LLMClient
 
     agent = RequirementsAgent()
+    if api_key is not None:
+        agent.llm_client = LLMClient(api_key=api_key)
     if agent.llm_client.client is None:
         return None
 
@@ -428,22 +631,43 @@ def _percent(text: str) -> float:
     return value
 
 
-def _prepare(path: Path, extract) -> tuple:
-    """(cases, extract), or (None, None) after printing why the run can't start."""
+def _positive(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"{text} is not a whole number of at least 1")
+    return value
+
+
+def _prepare(args, extract) -> tuple:
+    """(cases, extract, replay), or None after printing why the run can't start."""
     try:
-        cases = load_cases(path)
+        cases = load_cases(args.cases)
     except FixtureError as e:
         print(f"INTEGRITY: the fixture is malformed: {e}")
-        return None, None
+        return None
     if not cases:
-        print(f"INTEGRITY: the fixture holds 0 cases ({path})")
-        return None, None
+        print(f"INTEGRITY: the fixture holds 0 cases ({args.cases})")
+        return None
+    if args.min_cases is not None and len(cases) < args.min_cases:
+        # Deleting cases keeps executed equal to expected (ADR 0040), so CI pins a floor.
+        print(
+            f"INTEGRITY: the fixture holds {len(cases)} cases, "
+            f"fewer than --min-cases {args.min_cases}"
+        )
+        return None
+    replay = None
+    if args.replay:
+        try:
+            replay = _Replay(load_recording(args.replay))
+        except FixtureError as e:
+            print(f"INTEGRITY: the recording is malformed: {e}")
+            return None
     if extract is None:
-        extract = _live_extract()
+        extract = _live_extract(REPLAY_KEY) if replay else _live_extract()
         if extract is None:
             print("INTEGRITY: no live LLM client (ANTHROPIC_API_KEY is empty); not scoring")
-            return None, None
-    return cases, extract
+            return None
+    return cases, extract, replay
 
 
 def main(argv=None, extract=None) -> int:
@@ -457,7 +681,40 @@ def main(argv=None, extract=None) -> int:
         metavar="PCT",
         help="exit 1 when the case pass rate is below PCT (default: report only)",
     )
+    parser.add_argument(
+        "--min-cases",
+        type=_positive,
+        default=None,
+        metavar="N",
+        help="exit 2 when the fixture holds fewer than N cases",
+    )
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--replay",
+        type=Path,
+        nargs="?",
+        const=RECORDING,
+        metavar="PATH",
+        help=f"answer every model call from a recording, no API key (default {RECORDING.name})",
+    )
+    mode.add_argument(
+        "--record",
+        type=Path,
+        nargs="?",
+        const=RECORDING,
+        metavar="PATH",
+        help="live: save run 1's model responses as the recording",
+    )
+    parser.add_argument(
+        "--repeat",
+        type=_positive,
+        default=1,
+        metavar="K",
+        help="live: run the whole case set K times and report the lowest pass rate",
+    )
     args = parser.parse_args(argv)
+    if args.replay and args.repeat > 1:
+        parser.error("--repeat measures live runs; a replay gives the same answers every time")
     try:
         return _main(args, extract)
     except Exception as e:
@@ -468,19 +725,66 @@ def main(argv=None, extract=None) -> int:
 
 
 def _main(args, extract) -> int:
-    cases, extract = _prepare(args.cases, extract)
-    if cases is None:
+    prepared = _prepare(args, extract)
+    if prepared is None:
         return EXIT_INTEGRITY
+    cases, extract, replay = prepared
+    mode = "replay" if replay else "record" if args.record else "live"
 
+    runs, recorded = [], None
+    for run in range(1, args.repeat + 1):
+        if args.repeat > 1:
+            print(f"--- run {run} of {args.repeat}")
+        calls, failures = ([], []) if args.record and run == 1 else (None, None)
+        make = (
+            replay.create
+            if replay
+            else partial(_recorder, calls, failures) if calls is not None else None
+        )
+        with _create_patched(make):
+            code, results = _run_once(args, cases, extract, replay, mode, run)
+        if calls is not None:
+            if code == EXIT_INTEGRITY:
+                print("INTEGRITY: run 1 can't be trusted, so no recording was written")
+            elif failures:
+                print(
+                    f"INTEGRITY: {len(failures)} call(s) failed while recording, so the "
+                    "recording couldn't replay; no recording was written"
+                )
+                code = EXIT_INTEGRITY
+            else:
+                recorded = calls
+            if code == EXIT_INTEGRITY and args.repeat > 1:
+                # Every later run is billed, and the re-baseline can only exit 2.
+                print("INTEGRITY: stopping before run 2: the recorded run can't be trusted")
+                return EXIT_INTEGRITY
+        runs.append((code, results))
+    code = _report_repeats(runs, len(cases)) if args.repeat > 1 else runs[0][0]
+    if recorded is not None:
+        # Written only once every run is trusted, so a failed re-baseline leaves
+        # the committed recording as it was.
+        if code == EXIT_INTEGRITY:
+            print("INTEGRITY: a run can't be trusted, so no recording was written")
+        else:
+            _write_recording(args.record, recorded)
+            print(f"recorded {len(recorded)} calls to {args.record}")
+    return code
+
+
+def _run_once(args, cases, extract, replay, mode, run) -> tuple:
     results = []
     try:
         asyncio.run(run_cases(cases, extract, results))
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass  # the count check below reports the partial run
     summary = _summary(results, len(cases))
-    code, message = _verdict(results, len(cases), args.fail_under)
+    problem = replay.problem() if replay else None
+    if problem:
+        code, message = EXIT_INTEGRITY, problem
+    else:
+        code, message = _verdict(results, len(cases), args.fail_under)
     # The log carries the verdict so a reader can drop runs that measured nothing.
-    summary["exit_code"] = code
+    summary.update(mode=mode, run=run, exit_code=code)
     summary["integrity_failure"] = message if code == EXIT_INTEGRITY else None
     _report(summary, results)
     if message:
@@ -489,8 +793,33 @@ def _main(args, extract) -> int:
         _write_log(args.log, results, summary)
     except OSError as e:
         print(f"INTEGRITY: can't write the evidence log {args.log}: {type(e).__name__}")
+        return EXIT_INTEGRITY, results
+    return code, results
+
+
+def _report_repeats(runs: list, expected: int) -> int:
+    """Each run's pass rate, the lowest over trusted runs, and the cases that flipped."""
+    trusted = [results for code, results in runs if code != EXIT_INTEGRITY]
+    print(f"re-baseline: {len(trusted)} of {len(runs)} runs trusted")
+    rates = []
+    for n, (code, results) in enumerate(runs, 1):
+        passed = sum(r["pass"] for r in results)
+        note = " (untrusted)" if code == EXIT_INTEGRITY else ""
+        if code != EXIT_INTEGRITY:
+            rates.append(100.0 * passed / expected)
+        print(f"  run {n}: {passed}/{expected} passed{note}")
+    outcomes = defaultdict(set)
+    for results in trusted:
+        for r in results:
+            outcomes[r["case_id"]].add(r["pass"])
+    flipped = sorted(case_id for case_id, seen in outcomes.items() if len(seen) > 1)
+    print(f"  flipped between runs: {', '.join(flipped) if flipped else 'none'}")
+    if len(trusted) != len(runs):
+        print("INTEGRITY: a re-baseline needs every run trusted")
         return EXIT_INTEGRITY
-    return code
+    lowest = math.floor(min(rates) * 10) / 10
+    print(f"  lowest pass rate {min(rates):.1f}%: set --fail-under {lowest:.1f}")
+    return max(code for code, _ in runs)
 
 
 def _verdict(results: list, expected: int, fail_under) -> tuple:
