@@ -187,13 +187,19 @@ PROBE = (
     "    for l in locs: print(os.path.realpath(l))\n"
 )
 
+runs = [0]
+
 def pytest(cwd, target):
+    # The junit file lives in the scratch dir, outside both trees. It gives the counts when a
+    # project's addopts (-q) makes pytest drop its totals line.
+    runs[0] += 1
+    xml = os.path.join(scratch, "junit-%d.xml" % runs[0])
     p = subprocess.Popen(
-        [py, "-m", "pytest", target, "-q", "-p", "no:cacheprovider", "--tb=short"],
+        [py, "-m", "pytest", target, "-q", "-p", "no:cacheprovider", "--tb=short", "--junitxml=" + xml],
         cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
         stdin=subprocess.DEVNULL, start_new_session=True,
     )
-    children.append(p)
+    children.append(p)  # stays listed until pytest returns, so a signal's cleanup() still kills it
     try:
         out, err = p.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -202,17 +208,39 @@ def pytest(cwd, target):
             p.communicate(timeout=5)
         except subprocess.TimeoutExpired:
             pass  # a descendant that left the group still holds the pipes
-        return None
-    finally:
         children.remove(p)
-    return subprocess.CompletedProcess(p.args, p.returncode, out, err)
+        return None
+    children.remove(p)
+    r = subprocess.CompletedProcess(p.args, p.returncode, out, err)
+    r.counts = junit_counts(xml)
+    return r
 
-def summary(out):
-    lines = [l for l in out.splitlines() if l.strip()]
+def junit_counts(path):
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.parse(path).getroot()
+        suites = [root] if root.tag == "testsuite" else list(root)
+        n = {k: sum(int(s.get(k, 0)) for s in suites) for k in ("tests", "failures", "errors", "skipped")}
+        n["passed"] = n["tests"] - n["failures"] - n["errors"] - n["skipped"]
+        return n
+    except Exception:
+        return None
+
+TOTALS = re.compile(r"\bin [\d.]+s\b")
+
+def summary(r):
+    lines = [l for l in r.stdout.splitlines() if l.strip()]
+    if lines and TOTALS.search(lines[-1]):
+        return lines[-1].strip("= ")
+    if r.counts:
+        return "%d passed, %d skipped, %d failed (from junit)" % (
+            r.counts["passed"], r.counts["skipped"], r.counts["failures"] + r.counts["errors"])
     return lines[-1].strip("= ") if lines else "no output"
 
-def passed(out):
-    m = re.search(r"(\d+) passed", summary(out))
+def passed(r):
+    if r.counts:
+        return r.counts["passed"]
+    m = re.search(r"(\d+) passed", summary(r))
     return int(m.group(1)) if m else 0
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
@@ -226,7 +254,7 @@ def support_files():
     keep = []
     for rel in sorted(c for c in changed if c):
         parts = rel.split("/")
-        if (parts[0] in ("tests", "test") and len(parts) > 1) or parts[-1] == "conftest.py" or rel in SUPPORT_CONFIG:
+        if (parts[0] == "tests" and len(parts) > 1) or parts[-1] == "conftest.py" or rel in SUPPORT_CONFIG:
             if os.path.isfile(os.path.join(repo, rel)):
                 keep.append(rel)
     return keep
@@ -265,7 +293,8 @@ try:
             sys.exit(4)
         out = (b.stdout + b.stderr).rstrip()
         if b.returncode in (3, 4, 6):
-            sys.stderr.write("red_first: pytest broke on the base run of %s (exit %d):\n%s\n" % (target, b.returncode, out))
+            sys.stderr.write("red_first: pytest broke on the base run of %s (exit %d). A conftest.py that "
+                             "imports code the change adds can't load on the base:\n%s\n" % (target, b.returncode, out))
             sys.exit(4)
         if b.returncode == 5:
             sys.stderr.write("red_first: %s collected no tests on the base; nothing proves it can fail.\n%s\n" % (target, out))
@@ -286,19 +315,19 @@ try:
         if h.returncode != 0:
             sys.stderr.write("red_first: %s fails here too (pytest exit %d):\n%s\n" % (target, h.returncode, here_out))
             sys.exit(1)
-        if passed(h.stdout) == 0:
+        if passed(h) == 0:
             sys.stderr.write(
                 "red_first: no test passed here for %s (%s); an all-skipped run proves nothing.\n%s\n"
-                % (target, summary(h.stdout), here_out))
+                % (target, summary(h), here_out))
             sys.exit(1)
 
         print("Red-first: %s: base %s pytest exit %d (red); here %s pytest exit 0 (green: %s)"
-              % (target, base_sha[:12], b.returncode, here_sha, summary(h.stdout)))
+              % (target, base_sha[:12], b.returncode, here_sha, summary(h)))
         if b.returncode == 2:
             print("Red-first note: %s: the base red is a collection error (pytest exit 2). It proves only that "
                   "the test needs the change in order to import; it does not show that an assertion can fail." % target)
-        n_base = passed(b.stdout)
-        if n_base and "::" not in target:
+        n_base = passed(b)
+        if n_base:
             print("Red-first note: %s: %d test(s) pass on the base, so only the failing ones prove the change. "
                   "Pass file::node ids for the tests you added or changed." % (target, n_base))
         print("--- base run output ---")

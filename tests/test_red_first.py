@@ -561,3 +561,149 @@ def test_the_import_path_probe_takes_several_packages(repo, tmp_path):
 
     assert r.returncode == 3
     assert "import-path check failed" in r.stderr and "newpkg" in r.stderr
+
+
+def test_a_root_conftest_added_by_the_change_is_copied_to_the_base(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "conftest.py": "import pytest\n\n@pytest.fixture\ndef one():\n    return 1\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f(one):\n    assert f() == one\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py")
+
+    assert r.returncode == 1
+    assert "PASSES on the base" in r.stderr
+
+
+@pytest.mark.parametrize(
+    "name,before,after",
+    [
+        (
+            "pyproject.toml",
+            '[tool.pytest.ini_options]\naddopts = "--strict-markers"\n',
+            '[tool.pytest.ini_options]\naddopts = "--strict-markers"\nmarkers = ["slow: slow"]\n',
+        ),
+        (
+            "setup.cfg",
+            "[tool:pytest]\naddopts = --strict-markers\n",
+            "[tool:pytest]\naddopts = --strict-markers\nmarkers =\n    slow: slow\n",
+        ),
+        (
+            "tox.ini",
+            "[pytest]\naddopts = --strict-markers\n",
+            "[pytest]\naddopts = --strict-markers\nmarkers =\n    slow: slow\n",
+        ),
+    ],
+)
+def test_every_pytest_config_file_the_change_touches_is_copied_to_the_base(
+    repo, tmp_path, name, before, after
+):
+    (repo / name).write_text(before)
+    _commit_all(repo, "config")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _write(
+        repo,
+        {
+            name: after,
+            "tests/test_f.py": "import pytest\nfrom pkg.mod import f\n\n@pytest.mark.slow\n"
+            "def test_f():\n    assert f() == 1\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py")
+
+    assert r.returncode == 1
+    assert "PASSES on the base" in r.stderr
+
+
+def test_a_project_that_adds_dash_q_still_gets_its_counts(repo, tmp_path):
+    # With -q in addopts the script's own -q makes -qq, and pytest prints no totals line.
+    (repo / "pytest.ini").write_text("[pytest]\naddopts = -q\n")
+    _commit_all(repo, "ini")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "import pytest\nfrom pkg.mod import f\n\n"
+            "def test_f():\n    assert f() == 2\n\n"
+            "@pytest.mark.skip(reason='x')\ndef test_skipped():\n    pass\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py")
+
+    assert r.returncode == 0, r.stderr
+    line = next(ln for ln in r.stdout.splitlines() if ln.startswith("Red-first:"))
+    assert "1 passed, 1 skipped" in line
+
+
+def test_a_conftest_that_cannot_import_on_the_base_says_so(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/newmod.py": "VALUE = 1\n",
+            "tests/conftest.py": "from pkg.newmod import VALUE\n",
+            "tests/test_f.py": "def test_f():\n    assert True\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py")
+
+    assert r.returncode == 4
+    assert "conftest.py" in r.stderr and "can't load on the base" in r.stderr
+
+
+def test_a_sigterm_kills_the_processes_the_test_started(repo, tmp_path):
+    pidfile = tmp_path / "child.pid"
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "import subprocess, time\n\ndef test_f():\n"
+            "    p = subprocess.Popen(['sleep', '600'])\n"
+            f"    open({str(pidfile)!r}, 'w').write(str(p.pid))\n"
+            "    time.sleep(120)\n",
+        },
+    )
+    scratch_tmp = tmp_path / "scratch-tmp"
+    scratch_tmp.mkdir()
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env.update(TMPDIR=str(scratch_tmp), RED_FIRST_PYTHON=sys.executable, RED_FIRST_PACKAGE="pkg")
+    proc = subprocess.Popen(
+        ["bash", str(SCRIPT), "tests/test_f.py"],
+        cwd=repo,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    child = None
+    try:
+        for _ in range(100):
+            if pidfile.exists() and pidfile.read_text():
+                child = int(pidfile.read_text())
+                break
+            time.sleep(0.1)
+        assert child is not None, "the test never started its child"
+        proc.send_signal(signal.SIGTERM)
+        proc.wait(timeout=30)
+        for _ in range(50):
+            if not _alive(child):
+                break
+            time.sleep(0.1)
+        leaked = _alive(child)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+        if child is not None:
+            try:
+                os.kill(child, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    assert proc.returncode == 128 + signal.SIGTERM
+    assert not leaked
+    assert list(scratch_tmp.iterdir()) == []
