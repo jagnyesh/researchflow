@@ -153,3 +153,66 @@ def test_equivalent_forms_survive():
     )
 
     assert missing_predicates(_CASES["female_under_65"], sql) == set()
+
+
+_UNREADABLE = {
+    "unparseable": "SELEC COUNT(* FROM",
+    "non_decimal_digit": (
+        "SELECT COUNT(*) FROM sqlonfhir.patient_demographics p "
+        "WHERE p.birth_date::date > CURRENT_DATE - INTERVAL '²' YEAR"
+    ),
+}
+
+
+@pytest.mark.parametrize("sql", _UNREADABLE.values(), ids=list(_UNREADABLE))
+def test_sql_that_cant_be_read_misses_every_stated_predicate(sql):
+    # Review finding 5: one bad SQL string mustn't crash the summary of a billed run.
+    case = _CASES["female_under_65"]
+
+    assert missing_predicates(case, sql) == set(case.required_predicates)
+    rows = [
+        {
+            "id": case.id,
+            "kind": "scored",
+            "matched": False,
+            "escaped": None,
+            "cost_usd": None,
+            "sql": sql,
+        }
+    ]
+    assert summarize(rows, n_unsupported=0)["predicate_survived"] == 0
+
+
+_UNDER_65 = "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p WHERE "
+
+# Review finding 6: each guard against a false survival of age < 65 or gender.
+_NOT_THE_PREDICATE = {
+    "extract_month": "EXTRACT(MONTH FROM AGE(CURRENT_DATE, p.birth_date::date)) < 65",
+    "age_from_another_date": "EXTRACT(YEAR FROM AGE(DATE '2000-01-01', p.birth_date::date)) < 65",
+    "cast_to_text": "p.birth_date::text > CURRENT_DATE - INTERVAL '65 years'",
+    "interval_from_another_date": "p.birth_date::date > DATE '2000-01-01' - INTERVAL '65 years'",
+    "string_bound": "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date)) < '65'",
+}
+
+
+@pytest.mark.parametrize("where", _NOT_THE_PREDICATE.values(), ids=list(_NOT_THE_PREDICATE))
+def test_a_near_miss_age_form_counts_as_missing(where):
+    assert ("age", "<", 65) in missing_predicates(_CASES["age_under_65"], _UNDER_65 + where)
+
+
+def test_a_table_outside_the_sqlonfhir_schema_is_not_the_patient_table():
+    sql = _RECORDED["gender_female"][0].replace("sqlonfhir.", "public.")
+
+    assert missing_predicates(_CASES["gender_female"], sql) == {("gender", "=", "female")}
+
+
+@pytest.mark.parametrize(
+    "where",
+    [
+        "CURRENT_DATE - INTERVAL '65 years' < p.birth_date::date",
+        "65 > EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date))",
+    ],
+    ids=["birth_date", "extract"],
+)
+def test_a_mirrored_age_comparison_flips_its_operator(where):
+    assert missing_predicates(_CASES["age_under_65"], _UNDER_65 + where) == set()

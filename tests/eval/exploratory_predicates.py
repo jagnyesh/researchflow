@@ -114,7 +114,7 @@ def _years_ago(node: exp.Expression) -> Optional[int]:
     if (
         isinstance(interval, exp.Interval)
         and isinstance(interval.this, exp.Literal)
-        and str(interval.this.this).isdigit()
+        and str(interval.this.this).isdecimal()
         and interval.text("unit").upper() in ("YEAR", "YEARS")
     ):
         return int(interval.this.this)
@@ -148,7 +148,7 @@ def _age(node: exp.Expression, sources) -> Optional[Predicate]:
         if (
             isinstance(bound, exp.Literal)
             and not bound.is_string
-            and str(bound.this).isdigit()
+            and str(bound.this).isdecimal()
             and _age_in_years(subject, sources)
         ):
             return ("age", o, int(bound.this))
@@ -156,7 +156,12 @@ def _age(node: exp.Expression, sources) -> Optional[Predicate]:
 
 
 def extract_predicates(sql: str) -> Set[Predicate]:
-    select = sqlglot.parse_one(sql, read="postgres")
+    try:
+        select = sqlglot.parse_one(sql, read="postgres")
+    except sqlglot.errors.SqlglotError:
+        # SQL the parser can't read carries no predicate; the case still gets
+        # scored, so one bad string can't crash a billed run's summary.
+        return set()
     if (
         not isinstance(select, exp.Select)
         or select.args.get("where") is None
