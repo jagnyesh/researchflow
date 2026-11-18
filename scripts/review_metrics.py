@@ -112,6 +112,16 @@ def issue_refs(disp, keyword):
     ]
 
 
+def unread_ref(disp):
+    """True when a `#n` follows an issue list directly, as in `filed #1 and then #2`, and was not read."""
+    return any(
+        re.match(r"[\s,&/]*(?:(?:and|then|also)\s+)*#\d", disp[m.end() :])
+        for m in re.finditer(
+            r"(?:(?<!not )\bfiled|\brouted to) (?:#\d+(?:\s*(?:,|and)\s*)?)+", disp
+        )
+    )
+
+
 def parse_findings(body):
     """Counts from one attestation body. Counts are None, with warnings, when the block can't be read."""
     out = {
@@ -189,10 +199,7 @@ def parse_findings(body):
         if not (is_fixed or is_accepted or is_routed or is_noted):
             problems.append("a disposition is not fixed, accepted, filed, routed or noted")
             continue
-        first = re.search(r"(?<!not )\bfiled #|\brouted to #", disp)
-        if first and len(re.findall(r"#\d+", disp[first.start() :])) > len(
-            filed_here + routed_here
-        ):
+        if unread_ref(disp):
             problems_soft.append(
                 "a disposition names an unread issue (use `#a, #b` or `#a and #b`)"
             )

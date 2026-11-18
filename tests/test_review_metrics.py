@@ -1060,3 +1060,11 @@ def test_an_issue_list_the_parser_cannot_read_whole_is_a_warning(disp):
 
 def test_an_issue_mentioned_before_the_disposition_keyword_is_not_a_warning():
     assert rm.parse_findings(att("fixed (see #12); filed #4"))["warnings"] == []
+
+
+@pytest.mark.parametrize(
+    "disp",
+    ["filed #4 (related to #3)", "routed to #517 (part of #400)", "filed #4; see #3"],
+)
+def test_a_cross_reference_after_a_filed_issue_is_not_an_unread_issue(disp):
+    assert rm.parse_findings(att(disp))["warnings"] == []
