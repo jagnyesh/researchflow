@@ -26,7 +26,7 @@ Run `.claude/skills/plan-lanes/preflight.sh`. It runs git and gh queries only, a
 3. **Open PRs:**
    - **Green PRs awaiting merge:** the green, non-draft ones, each waiting on your merge, plus any lane waiting on your answer. A dial (§10).
    - **Wait:** every non-draft open PR, green or not, shows how long it has waited on you since its first `SHIP` attestation. That's §3's definition; dials.sh's green→merge restarts on every update from main. `OVER 24h` marks a long one; it's information, not a gate.
-4. **Merges in the last 7 days:** how many merged, which of them waited over 24 h, and any merged without a SHIP attestation (its wait can't be measured and it may be a merge-policy breach, so ask the user). Information for the gate, not a gate. `preflight.sh` also lists failed or never-started push runs on main, which feed the main-red rule below.
+4. **Merges in the last 7 days:** how many merged, which of them waited over 24 h, and any merged without a SHIP attestation (its wait can't be measured and it may be a merge-policy breach, so ask the user). Information for the gate, not a gate. The failed push runs on main are in the pipeline section (item 2), and they feed §3's first rule.
 5. **Active lanes:** every worktree other than the main checkout whose PR isn't merged or closed, a lane with no commits yet included, plus cloud sessions. `scripts/lane.sh status` reports a count of the `feat/<n>-` and `fix/<n>-` ones; it doesn't see other branch names or cloud sessions. A worktree counts as an active lane unless:
    - its PR is `MERGED` or `CLOSED`;
    - it's marked `this-checkout` with 0 commits ahead and no open PR (the checkout you're planning from; run the skill from the main checkout when you can);
@@ -35,6 +35,7 @@ Run `.claude/skills/plan-lanes/preflight.sh`. It runs git and gh queries only, a
    A branch with 0 commits ahead and no PR counts unless the user says it's a scratch checkout. A branch with commits ahead and no PR is live, unreviewed work, and it counts. Ask the user about cloud sessions and any other lane with no local worktree. Merged or closed lanes are cleanup candidates for Step 4. Note how many active lanes are High tier (a dial).
 6. **Plan limits:** the account's plan limits, read from the app's usage report when the session has one, otherwise "not available". Show the row at the gate; the owner decides whether to launch. Don't write the figures into any committed file.
 7. **Queue:** the ready-for-agent count.
+8. **Issue flow:** run `scripts/review_metrics.py --summary` and read its two blocks: follow-ups filed per merged PR, by tier, and issues opened against closed per week. It reads GitHub and rewrites `logs/review_metrics.csv`, which git ignores. A dial (§10).
 
 **What stops a launch.** Only §3's rules do. Apply them to the pipeline and protection sections above and to Step 3's overlap check, and say which holds or breaks. Everything else in this step is a dial: show it at the gate (Step 4) and leave the call to the user. Never turn a dial into a refusal on your own.
 
@@ -58,7 +59,7 @@ Run `.claude/skills/plan-lanes/preflight.sh`. It runs git and gh queries only, a
 
 Show:
 
-- the §3 rules table (each rule, holds or broken), then the dials: green PRs awaiting merge, the longest wait, High-tier lanes open, plan limits, and issue flow (follow-ups filed per merged PR, issues opened against closed per week, from `scripts/review_metrics.py`, or "not available" if it hasn't run);
+- the §3 rules table (each rule, holds or broken), then the dials: green PRs awaiting merge, the longest wait, High-tier lanes open, plan limits, and issue flow (Step 1's item 8);
 - the candidate table:
 
   | # | Tier (paths) | Model, effort | Predicted files | Blocked / overlap | Verdict |
