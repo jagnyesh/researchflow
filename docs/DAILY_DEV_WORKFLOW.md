@@ -23,7 +23,7 @@ The single structural idea in this edition. A change's **risk tier** — decided
 
 | Tier | What's in it (ResearchFlow paths) | Planning weight | Merge actor | Eval gate | Golden files | Model, effort |
 |---|---|---|---|---|---|---|
-| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) | Opus 5.5, high |
+| **High** | PHI boundary — `app/services/sql_validator.py` (`SQLValidator`, aggregate-only gate); cohort & phenotype semantics — `app/utils/sql_generator.py` (owner's call, 2026-11-14), `app/services/sql_synthesis.py`, `app/agents/phenotype_agent.py`, `app/services/feasibility_service.py`, `app/agents/extraction_agent.py`; auth / RBAC / audit — `app/security/**`; encryption; IRB-scope logic; the golden fixtures themselves | Full `grill-with-docs` → design doc → ADR | **Human**, always | **Required if LLM-touching** (§5); otherwise rigor comes from the grill→design→ADR chain + always-human merge + locked goldens | Locked (by rule today; the CI diff check in §7 is not built) | Opus 5.5, high |
 | **Medium** | Behavior changes *outside* high-risk paths — portal UI (non-SQL), non-PHI API endpoints, runner plumbing (`app/sql_on_fhir/runner/**`), orchestration wiring, dev scripts | 5–10 line **intent block in the PR body** (what / why / constraints / non-goals) | Human | If LLM-touching (§5), else no | n/a | Sonnet 5.5, medium; high when the change spans layers |
 | **Low** | docs-only; test-only (non-golden); pure refactors with no behavior change outside high-risk paths; harness-internal (`.claude/**`, `scripts/lane.sh`, `scripts/dials.sh`, `docs/DAILY_DEV_WORKFLOW.md`, `CLAUDE.md`) | The issue body **is** the intent — no extra artifact | **Self-merge only for docs-only** (`docs:` title prefix AND only `docs/**` or root-level `*.md`) **and harness-internal** paths — `Merged-By` trailer, SHA-bound attestation. **Human** for test-only and refactors (any `app/**` or `tests/**` path is behavior-touching) and for any PR that changes the merge policy itself (self-amendment carve-out) | no | n/a | Sonnet 5.5, low for a one-file docs change, otherwise medium |
 
@@ -134,7 +134,7 @@ One invocation, "code done" → "merged or escalated":
 4. Conventional commit on the issue branch; rebase onto latest `main`.
 5. Push; open PR with the Testing-Evidence section filled from step 1's real output.
 6. Post the **SHA-bound review attestation** (step 2's consolidated verdict + reviewed commit SHA == `headRefOid`).
-7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #136/#137/#142 are open) would add a run iff the change is LLM-touching (trigger list below).
+7. CI runs real tests, including the docker-compose `service-dependent-tests` job and `tests/eval/test_eval_replay.py` on every PR. The **eval gate** (target state, not built: #137 and #142 are open; #136's extraction harness landed in #526, ADR 0040) would add a run iff the change is LLM-touching (trigger list below).
 8. On green, **merge by tier** (§1). Green means every workflow run for the head SHA has completed and passed, not just the checks visible so far: a `needs:` job has no check until its dependencies finish, which is how #203 merged early. Then: human reads the consolidated verdict and signs for high/medium; docs-only / harness-internal low self-merges under the standing rule with `--match-head-commit`; everything else, and any change to the merge policy itself, is human-merge.
 
 These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKILL.md` is authoritative for execution and numbers its steps differently. In the skill's own numbering, its Step 1 holds the red-first check and its Step 3 holds the follow-up rule for issues a review files.
@@ -143,7 +143,7 @@ These steps are the workflow-level shape; `.claude/skills/validate-and-ship/SKIL
 
 - `app/services/sql_synthesis.py` (exploratory NL→SQL synthesis — #76 territory),
 - `app/agents/requirements_agent.py` (concept extraction),
-- `app/utils/llm_client.py` / `app/utils/multi_llm_client.py` and every caller — today `calendar_agent` / `delivery_agent` (via `langgraph_workflow`) and `app/services/conversation_manager.py` (`LLMClient` fallback); re-derive with `git grep -ln 'LLMClient\|MultiLLMClient\|import anthropic' app/` rather than trusting this list,
+- `app/utils/llm_client.py` and every caller — today, besides the two files above, `app/services/conversation_manager.py` (`LLMClient` fallback); re-derive with `git grep -ln 'LLMClient\|import anthropic' app/` rather than trusting this list,
 - any prompt or model-config file.
 
 When built, the gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain thresholds**, runs on those paths + nightly, and **asserts it executed N cases** — an eval that passes on zero cases is worse than none (this repo has already had one integration job that was silently a no-op).
@@ -152,7 +152,7 @@ When built, the gate uses `#136`/`#137`/`#142`'s harnesses, sets **per-domain th
 
 ### 5.1 Delegation + memory (unchanged principles)
 
-Delegate outcomes with the *why*. Never review in the authoring session (enforced by §5 step 2). Escalation split: behavior → human, mechanical → the agent. Don't take back control — teach via a dated CLAUDE.md line. **Lane-close check:** "Did this change need a correction? If yes, one dated rule-line in CLAUDE.md before the next issue."
+Delegate outcomes with the *why*. Never review in the authoring session (enforced by §5 step 2). Escalation split: behavior → human, mechanical → the agent. Don't take back control — teach via a dated line in CLAUDE.md or `.claude/architecture.rules`. **Lane-close check:** "Did this change need a correction? If yes, one dated rule-line in CLAUDE.md or `.claude/architecture.rules` before the next issue."
 
 ---
 
@@ -162,7 +162,7 @@ The Throughput Edition leaned on an external, uncorroborated "68% of agent chang
 
 - **Catch rate:** what the fresh-context review catches before merge.
 - **Escape rate:** reverts, reopened issues, and bugs filed against recently-merged PRs.
-- **Follow-up rate:** issues a review files per merged PR.
+- **Follow-up rate:** issues a review files per merged PR. A follow-up is an issue that a PR's attestation names as filed (owner's rule, 2026-11-18); `scripts/review_metrics.py` applies that rule (#529).
 - **Review-minutes per PR.**
 
 `scripts/review_metrics.py` (#520) computes the first three into `logs/review_metrics.csv`, and `scripts/dials.sh` summarises them.

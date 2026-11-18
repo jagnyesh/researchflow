@@ -5,7 +5,7 @@
 #   1. .env contains no sentinel placeholders (e.g. sk-ant-api03-...)
 #   2. Redis is reachable (Sprint 6.1 audit pipeline depends on it)
 #   3. Echo current sprint banner from CONTEXT.md
-#   4. Lane check: red main, PRs awaiting you, open PRs (DAILY_DEV_WORKFLOW §10)
+#   4. Lane check: red main, PRs awaiting you, open PRs (DAILY_DEV_WORKFLOW §3 rules, §10 dials)
 
 set -uo pipefail
 
@@ -57,7 +57,7 @@ if [[ -f "$ctx" ]]; then
 fi
 
 # 4. Lane check. Desktop-app and cloud sessions never run scripts/lane.sh, so
-# this is the one place every session sees the §10 rules (#196). Any failure
+# this is the one place every session sees the §3 rules and §10 dials (#196). Any failure
 # prints a skip line: silence has to mean "checked and clear", not "didn't run".
 # gh is a Go binary, and Go ignores SIGALRM, so `alarm; exec gh` never stops
 # it: fork, and TERM the child when the alarm fires. Exit 124 like timeout(1).
@@ -98,7 +98,7 @@ lane_check() {
         | group_by(.workflowName) | map(max_by(.createdAt))
         | map(select(.conclusion | IN("failure", "timed_out", "startup_failure")))
         | if length > 0 then
-            "🚦 main CI red: \(map("\(.workflowName) @ \(.headSha[0:7])") | join(", ")) — §10: one lane until green"
+            "🚦 main CI red: \(map("\(.workflowName) @ \(.headSha[0:7])") | join(", ")) — §3: only the fix lane opens"
           else empty end),
       # Awaiting a decision = open, not draft, every check finished and passing.
       ($prs[0] | map(select((.isDraft | not) and (.statusCheckRollup | length) > 0

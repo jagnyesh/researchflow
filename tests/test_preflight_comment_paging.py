@@ -29,6 +29,9 @@ from pathlib import Path
 args = sys.argv[1:]
 data = json.loads(Path(os.environ["FAKE_GH_DATA"]).read_text())
 Path(os.environ["FAKE_GH_LOG"]).open("a").write(" ".join(args) + "\n")
+if data.get("fail_on") and args[:2] == data["fail_on"]:
+    print("gh: simulated failure", file=sys.stderr)
+    sys.exit(1)
 
 def opt(name):
     return args[args.index(name) + 1] if name in args else None
@@ -124,8 +127,8 @@ def run_preflight(tmp_path):
     gh.write_text(FAKE_GH.replace("__PYTHON__", sys.executable))
     gh.chmod(0o755)
 
-    def run(prs):
-        (tmp_path / "data.json").write_text(json.dumps({"prs": prs}))
+    def run(prs, fail_on=None):
+        (tmp_path / "data.json").write_text(json.dumps({"prs": prs, "fail_on": fail_on}))
         log = tmp_path / "gh.log"
         log.write_text("")
         env = {
@@ -175,3 +178,10 @@ def test_under_the_cap_makes_no_extra_call(run_preflight):
     assert result.returncode == 0, result.stdout + result.stderr
     assert re.search(r"^#1 not green, waited 5m$", result.stdout, re.M)
     assert not [c for c in calls if c.startswith("pr view")]
+
+
+def test_a_failing_gh_query_makes_preflight_fail_visibly(run_preflight):
+    result, _ = run_preflight([], fail_on=["pr", "list"])
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "ERROR:" in result.stdout, result.stdout
