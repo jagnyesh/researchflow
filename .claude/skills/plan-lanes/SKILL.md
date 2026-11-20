@@ -100,7 +100,7 @@ Lanes run `/validate-and-ship` to its end. A standing-rule PR self-merges in its
 - **Merge order:** if several PRs are ready, suggest `priority:high` (from the linked issue) first, then the oldest.
 - **After every merge you see, whether a lane's or the user's,** wait for main's push runs on the new `origin/main` commit (validate-and-ship Step 8's `until` loop with that SHA, plus `--event push`, the filter `preflight.sh`'s pipeline section uses: comment-triggered `Attestation` runs attach to main's head and can end `cancelled`), then re-run `preflight.sh` and read the protection and pipeline sections.
   - `MAIN OK` and protection `true`: carry on.
-  - Anything red: launch nothing beyond the one fix lane Step 1 allows, and tell the user which run failed and which PR just merged. Offer to ask the other lanes to hold their merges until the user chooses between a fix forward and a revert. Only the user can call a hold: send it with the user's OK (SendMessage in the desktop app; in a terminal, the user relays it).
+  - Anything red: launch nothing beyond the one fix lane §3 allows, and tell the user which run failed and which PR just merged. Offer to ask the other lanes to hold their merges until the user chooses between a fix forward and a revert. Only the user can call a hold: send it with the user's OK (SendMessage in the desktop app; in a terminal, the user relays it).
   - Protection no longer `true`: tell the user (§3).
 
 ## 7. Lane close
