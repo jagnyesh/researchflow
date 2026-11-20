@@ -809,3 +809,118 @@ def test_the_base_output_block_replaces_the_repo_and_home_paths(repo, tmp_path):
     assert r.returncode == 0, r.stderr
     assert "repo=<repo> home=~" in r.stdout
     assert str(repo.resolve()) not in r.stdout and str(home.resolve()) not in r.stdout
+
+
+# #535: code under test that lives under tests/ (the eval harness) is held at the base.
+HARNESS_TEST = "from harness import score\n\ndef test_score():\n    assert score() == 2\n"
+
+
+def _repo_with_a_harness(repo):
+    _write(repo, {"tests/eval/harness.py": "def score():\n    return 1\n"})
+    _commit_all(repo, "harness")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _write(
+        repo,
+        {
+            "tests/eval/harness.py": "def score():\n    return 2\n",
+            "tests/eval/test_score.py": HARNESS_TEST,
+        },
+    )
+
+
+def test_harness_code_under_tests_is_copied_to_the_base_without_code(repo, tmp_path):
+    _repo_with_a_harness(repo)
+
+    r = _red_first(repo, tmp_path, "tests/eval/test_score.py")
+
+    assert r.returncode == 1
+    assert "PASSES on the base" in r.stderr
+
+
+def test_a_code_path_keeps_its_base_version_and_the_test_is_red_there(repo, tmp_path):
+    _repo_with_a_harness(repo)
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval/harness.py", "tests/eval/test_score.py")
+
+    assert r.returncode == 0, r.stderr
+    assert "assert 1 == 2" in r.stdout
+    assert (
+        "Red-first note: tests/eval/test_score.py: code under test held at the base (--code): "
+        "tests/eval/harness.py" in r.stdout
+    )
+    assert "collection error" not in r.stdout
+
+
+def test_a_code_directory_holds_every_file_under_it(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "tests/eval/lib/harness.py": "def score():\n    return 2\n",
+            "tests/eval/lib/extra.py": "X = 1\n",
+            "tests/eval/cases.py": "CASES = [1]\n",
+            "tests/eval/test_score.py": "import sys, os\n"
+            "sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'lib'))\n"
+            "from cases import CASES\n" + HARNESS_TEST,
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval/lib", "tests/eval/test_score.py")
+
+    # harness.py is new and held back, so the base can't import it; cases.py is support
+    # and is copied, so the base error names harness, not cases.
+    assert r.returncode == 0, r.stderr
+    assert "No module named 'harness'" in r.stdout
+    assert "tests/eval/lib/extra.py, tests/eval/lib/harness.py" in r.stdout
+    assert "tests/eval/cases.py" not in r.stdout.split("held at the base")[1].splitlines()[0]
+
+
+def test_a_code_path_the_change_does_not_touch_says_nothing_was_held(repo, tmp_path):
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f():\n    assert f() == 2\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "--code", "pkg/mod.py", "tests/test_f.py")
+
+    assert r.returncode == 0, r.stderr
+    assert "held at the base (--code): none;" in r.stdout
+
+
+def test_a_code_path_that_exists_nowhere_is_a_usage_error(repo, tmp_path):
+    _write(repo, {"tests/test_f.py": F_TEST})
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval/harnes.py", "tests/test_f.py")
+
+    assert r.returncode == 2
+    assert "exists neither here nor on the base" in r.stderr
+
+
+@pytest.mark.parametrize("path", ["/tmp", "../x", "."])
+def test_a_code_path_outside_the_repo_is_a_usage_error(repo, tmp_path, path):
+    _write(repo, {"tests/test_f.py": F_TEST})
+
+    r = _red_first(repo, tmp_path, "--code", path, "tests/test_f.py")
+
+    assert r.returncode == 2
+    assert "not a path inside the repo" in r.stderr
+
+
+def test_a_target_inside_a_code_path_is_a_usage_error(repo, tmp_path):
+    _repo_with_a_harness(repo)
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval", "tests/eval/test_score.py")
+
+    assert r.returncode == 2
+    assert "inside a --code path" in r.stderr
+
+
+def test_code_with_no_value_is_a_usage_error(repo, tmp_path):
+    _write(repo, {"tests/test_f.py": F_TEST})
+
+    r = _red_first(repo, tmp_path, "tests/test_f.py", "--code")
+
+    assert r.returncode == 2
+    assert "usage" in r.stderr
