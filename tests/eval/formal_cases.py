@@ -309,6 +309,25 @@ FORMAL_CASES += [
         signoff="approved",  # repo owner, 2026-11-07
         verified_count=15,
         seed_count=1,
-        expected_fail="#242's predicate check has no BETWEEN template",
+    ),
+]
+
+# #142: the gender-only shape (ADR 0042). No age criterion, so no living
+# filter (ADR 0035 covers age cohorts only).
+FORMAL_CASES += [
+    FormalCase(
+        id="women_with_hypertension",
+        request=_request("Female patients with hypertension", ["female", "hypertension"]),
+        oracle_sql=f"""
+            SELECT p.patient_id FROM sqlonfhir.patient_demographics p
+            WHERE p.gender = 'female' AND {_has_condition('hypertension')}
+        """,
+        required_predicates=[
+            ("gender", "=", "female"),
+            ("condition", "has", "hypertension"),
+        ],
+        signoff="approved",  # repo owner, 2026-11-18
+        verified_count=20,  # local corpus, 2026-11-18 record run
+        seed_count=2,  # fixture patients b and d
     ),
 ]

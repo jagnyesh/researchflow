@@ -432,5 +432,47 @@
         "start": null
       }
     }
+  },
+  "women_with_hypertension": {
+    "cost_usd": 0.023872,
+    "requirements": {
+      "data_elements": [
+        "demographics"
+      ],
+      "delivery_format": "CSV",
+      "exclusion_criteria": [],
+      "inclusion_criteria": [
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "female",
+              "term": "gender",
+              "type": "demographic"
+            }
+          ],
+          "description": "female"
+        },
+        {
+          "codes": [],
+          "concepts": [
+            {
+              "details": "HTN diagnosis",
+              "term": "hypertension",
+              "type": "condition"
+            }
+          ],
+          "description": "hypertension"
+        }
+      ],
+      "irb_number": "IRB-GOLD-0001",
+      "phi_level": "limited_dataset",
+      "principal_investigator": "Gold Set",
+      "study_title": "Female Patients with Hypertension",
+      "time_period": {
+        "end": null,
+        "start": null
+      }
+    }
   }
 }
