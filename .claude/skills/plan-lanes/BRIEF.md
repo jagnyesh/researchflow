@@ -6,6 +6,7 @@ Fill every `<…>`. The brief is the lane's only context, so state the why and t
 Issue #<n>: <title> — <issue url>
 Tier: <Low|Medium|High> (<the paths that set it>; docs/DAILY_DEV_WORKFLOW.md §1)
 Model: <model and effort from §1's table>, set at launch; do not change your own model
+Advisor: <opus on a Sonnet lane, none otherwise>, set at launch; do not run /advisor yourself
 Why: <one or two lines on what breaks for whom, from the issue>
 
 Setup, before editing:
@@ -49,7 +50,7 @@ Never:
 - Bypass git hooks, or rebase or force-push after the attestation. Update a stale PR by
   merging origin/main in (validate-and-ship Step 7.4).
 
-If a check keeps failing or you stall, escalate in this order: give the model a check it can run (a failing test, a command that prints the value), then raise effort one level, then ask the user before moving up a model. You do not change your own model.
+If a check keeps failing or you stall, escalate in this order: give the model a check it can run (a failing test, a command that prints the value), then raise effort one level, then, on a Sonnet lane, ask your Opus advisor, then ask the user before moving up a model. You do not change your own model.
 
 For file searches use the `file-finder` subagent, and for reading test output and logs use the `log-reader` subagent (`.claude/agents/`). The validate-and-ship Step 2 reviewer stays on your model; on a High-tier lane, Step 2 also spawns a Fable second reviewer (see §1, Model, effort).
 
