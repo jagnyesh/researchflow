@@ -910,6 +910,22 @@ def test_status_a_crashing_format_check_exits_3_and_set_status_posts_error(fake_
     assert "state=error" in call, (r.stdout, r.stderr)
 
 
+@pytest.mark.parametrize(
+    "failure",
+    [
+        'cat >/dev/null; echo "Traceback (most recent call last):" >&2; exit 1',
+        "cat >/dev/null; exit 10",
+    ],
+)
+def test_status_a_crashing_red_first_check_exits_3(fake_gh, failure):
+    # The root check runs on the real interpreter and passes; only the second call breaks.
+    real = shutil.which("python3", path=os.environ["PATH"])
+    fake_python(fake_gh, f'case "$*" in *--check-root*) exec "{real}" "$@" ;; esac\n{failure}')
+    pr = conform(root_only("pr536.json"))
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, ""), r.stderr
+
+
 def test_status_root_body_naming_another_commit_exits_3(fake_gh, tmp_path):
     # The format check must read the comment the reader calls ROOT. A gh that serves the root-body
     # query a different root makes them disagree, and the check must refuse to decide.
