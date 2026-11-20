@@ -1,0 +1,24 @@
+{
+  "headRefOid": "d521b1d103a5127852af8ccbca6765dd3cb87f22",
+  "url": "https://github.com/jagnyesh/researchflow/pull/536",
+  "comments": [
+    {
+      "author": {
+        "login": "jagnyesh"
+      },
+      "authorAssociation": "OWNER",
+      "body": "## Review attestation\n- Verdict: SHIP\n- Reviewed-Commit: 777b726faa60205636808f93291109118fc62563\n- Reviewer 1 (claude-opus-5-5): fresh-context subagent (Step 2), 3 pass(es), SHIP. Pass 1 on 8dc7058 returned SHIP-WITH-FIXES, pass 2 on aaf7eda SHIP, and pass 3 SHIP on this commit, the rebase of aaf7eda onto 5739e4b (all three files byte-identical to aaf7eda).\n- Findings:\n  - Finding 1: no test caught dropping the directory boundary in is_code → fixed (test_a_code_directory_does_not_hold_a_sibling_that_shares_its_prefix; mutation now fails)\n  - Finding 2: no test covered a --code path that exists only on the base → fixed (test_a_code_path_the_change_deleted_is_accepted; mutation now fails)\n  - Finding 3: the held note printed only on exit 0 → fixed (the exit-1 base-pass error names what was held)\n  - Finding 4: Step 1 didn't warn against holding case data or fixtures → fixed (SKILL.md Step 1)\n",
+      "includesCreatedEdit": false,
+      "url": "https://github.com/jagnyesh/researchflow/pull/536#issuecomment-7027037934"
+    },
+    {
+      "author": {
+        "login": "jagnyesh"
+      },
+      "authorAssociation": "OWNER",
+      "body": "## Review attestation\n- Verdict: SHIP (carried forward)\n- Reviewed-Commit: d521b1d103a5127852af8ccbca6765dd3cb87f22\n- Carried-From: 777b726faa60205636808f93291109118fc62563\n- Basis: merge from main f2d5be4d838a74b01126a78a14f07e566c38b55f; tree f718d51891022798bde6277452956137d50fe9c6 equals merge-tree(Carried-From, main)\n- Reviewer: no new review; carried from the root attestation\n- Findings: as in the root attestation\n",
+      "includesCreatedEdit": false,
+      "url": "https://github.com/jagnyesh/researchflow/pull/536#issuecomment-7027054849"
+    }
+  ]
+}

@@ -47,7 +47,15 @@ Columns:
                        created with, from the first minute of the issue's events; unreadable means
                        no warning). The summary lists both.
 
-  review_metrics.py --check-body <file>   parse a drafted attestation body; exit 1 on any warning.
+  review_metrics.py --check-body <file>   parse a drafted attestation body; exit 1 on any warning,
+                                          or when its `- Reviewed-Commit:` line is missing or not 40 hex.
+  review_metrics.py --check-root <file|->       the required `attestation` status's Findings rule (#542):
+                                          exit 10, with one line on stdout, only on a problem that leaves a
+                                          metric column empty. Soft warnings (two filed issues, an unread
+                                          issue reference) pass here; --check-body still reports them.
+  review_metrics.py --check-red-first <file|->  the status's Red-first rule (#542): the PR body needs a
+                                          filled `Red-first:` line, and `n/a` needs `n/a (<reason>)`.
+                                          Exit 10 and one line on a problem, as --check-root.
 
 Limits: `git log origin/main` runs without a fetch, so reverts newer than the local ref are missed.
 `gh pr list --state merged` orders by creation time, so "the last 30 merged" can differ at the edge.
@@ -580,13 +588,69 @@ def created_at(n):
         return None
 
 
+def blocking_problems(body):
+    """The parse problems that leave a metric column empty. The `attestation` status fails on these."""
+    f = parse_findings(body)
+    problems = [] if f["review_passes"] is not None else ["no pass count on a Reviewer line"]
+    if f["findings_total"] is None:
+        problems += [w for w in f["warnings"] if w not in problems]
+    return problems
+
+
+# A list item, a numbered item or a quote may carry it, and the label may be bold with the colon
+# inside or outside the bold: `- **Red-first:** x` and `- **Red-first**: x` both count.
+RED_FIRST_LINE = re.compile(
+    r"(?mi)^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|\d+[.)])[ \t]+)?\**red-first\**:\**(?P<v>.*)$"
+)
+# --check-root and --check-red-first exit with this code, and print one line, when they find a
+# problem. A Python crash exits 1 with nothing on stdout, so 1 can never mean "problem found":
+# scripts/attestation.sh reads any other non-zero exit as "the check didn't run" and posts error.
+PROBLEM_EXIT = 10
+
+
+def red_first_problem(body):
+    """None when every `Red-first:` line in a PR body is filled and there is at least one, else why not."""
+    values = [m.group("v").strip() for m in RED_FIRST_LINE.finditer(body or "")]
+    if values and any(not v for v in values):
+        # A bare `- Red-first:` label with the script's lines nested under it reads as empty.
+        return "PR body has an empty Red-first: line; put a value on the label line itself (validate-and-ship Step 1)."
+    if not values or any(re.fullmatch(r"<[^>]*>", v) for v in values):
+        return "PR body has no filled Red-first: line (validate-and-ship Step 1)."
+    for v in values:
+        if re.match(r"n/a\b", v, re.I) and not re.match(r"n/a\s*\(\s*[^\s)]", v, re.I):
+            return "PR body's Red-first: n/a has no reason; write n/a (<reason>) (validate-and-ship Step 1)."
+    return None
+
+
+def read_text(path):
+    return sys.stdin.read() if path == "-" else Path(path).read_text()
+
+
 def check_body(path):
-    f = parse_findings(Path(path).read_text())
-    for w in f["warnings"]:
+    text = read_text(path)
+    f = parse_findings(text)
+    warnings = list(f["warnings"])
+    if not re.search(r"(?m)^- Reviewed-Commit: [0-9a-f]{40}\r?$", text):
+        warnings.append("no `- Reviewed-Commit: <40-hex sha>` line (spelled exactly)")
+    for w in warnings:
         print(f"attestation format: {w}", file=sys.stderr)
-    if f["warnings"]:
+    if warnings:
         sys.exit(1)
     print("attestation format ok")
+
+
+def check_root(path):
+    problems = blocking_problems(read_text(path))
+    if problems:
+        print(f"Root attestation's Findings don't parse: {'; '.join(problems)}.")
+        sys.exit(PROBLEM_EXIT)
+
+
+def check_red_first(path):
+    problem = red_first_problem(read_text(path))
+    if problem:
+        print(problem)
+        sys.exit(PROBLEM_EXIT)
 
 
 def main(argv=None):
@@ -604,9 +668,17 @@ def main(argv=None):
         metavar="FILE",
         help="parse a drafted attestation body; exit non-zero on any format warning",
     )
+    ap.add_argument("--check-root", metavar="FILE", help="the attestation status's Findings rule")
+    ap.add_argument(
+        "--check-red-first", metavar="FILE", help="the attestation status's Red-first rule"
+    )
     a = ap.parse_args(argv)
     if a.check_body:
         return check_body(a.check_body)
+    if a.check_root:
+        return check_root(a.check_root)
+    if a.check_red_first:
+        return check_red_first(a.check_red_first)
     now = ts(a.now) if a.now else datetime.now(timezone.utc)
 
     prs = gh_json(
