@@ -611,7 +611,10 @@ PROBLEM_EXIT = 10
 def red_first_problem(body):
     """None when every `Red-first:` line in a PR body is filled and there is at least one, else why not."""
     values = [m.group("v").strip() for m in RED_FIRST_LINE.finditer(body or "")]
-    if not values or any(not v or re.fullmatch(r"<[^>]*>", v) for v in values):
+    if values and any(not v for v in values):
+        # A bare `- Red-first:` label with the script's lines nested under it reads as empty.
+        return "PR body has an empty Red-first: line; put a value on the label line itself (validate-and-ship Step 1)."
+    if not values or any(re.fullmatch(r"<[^>]*>", v) for v in values):
         return "PR body has no filled Red-first: line (validate-and-ship Step 1)."
     for v in values:
         if re.match(r"n/a\b", v, re.I) and not re.match(r"n/a\s*\(\s*[^\s)]", v, re.I):

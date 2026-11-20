@@ -910,6 +910,7 @@ def test_status_a_crashing_format_check_exits_3_and_set_status_posts_error(fake_
     assert "state=error" in call, (r.stdout, r.stderr)
 
 
+@pytest.mark.parametrize("works", ["--check-root", "--check-red-first"])
 @pytest.mark.parametrize(
     "failure",
     [
@@ -917,10 +918,11 @@ def test_status_a_crashing_format_check_exits_3_and_set_status_posts_error(fake_
         "cat >/dev/null; exit 10",
     ],
 )
-def test_status_a_crashing_red_first_check_exits_3(fake_gh, failure):
-    # The root check runs on the real interpreter and passes; only the second call breaks.
+def test_status_one_crashing_format_check_exits_3(fake_gh, failure, works):
+    # One check runs on the real interpreter and passes; only the other breaks, so each call
+    # site's own fail-closed arm is what decides.
     real = shutil.which("python3", path=os.environ["PATH"])
-    fake_python(fake_gh, f'case "$*" in *--check-root*) exec "{real}" "$@" ;; esac\n{failure}')
+    fake_python(fake_gh, f'case "$*" in *{works}*) exec "{real}" "$@" ;; esac\n{failure}')
     pr = conform(root_only("pr536.json"))
     r = status(fake_gh, pr, raw=True)
     assert (r.returncode, r.stdout) == (3, ""), r.stderr
@@ -946,3 +948,27 @@ def test_status_root_body_naming_another_commit_exits_3(fake_gh, tmp_path):
     fake_gh.env["FAKE_GH_OTHER"] = str(other)
     r = status(fake_gh, pr, raw=True)
     assert (r.returncode, r.stdout) == (3, "")
+
+
+def test_status_a_crashing_format_check_on_a_carry_forward_exits_3(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    well_formed(pr["comments"][0])
+    pr["body"] = RED_FIRST_BODY
+    fake_python(fake_gh, 'cat >/dev/null; echo "Traceback" >&2; exit 1')
+    r = status(fake_gh, pr, cwd=repo.work, raw=True)
+    assert (r.returncode, r.stdout) == (3, ""), r.stderr
+
+
+def test_status_a_non_owner_copy_does_not_cure_a_malformed_owner_root(fake_gh):
+    # Only the owner's attestations count, so a well-formed copy from another account,
+    # posted after the owner's malformed root, is not the body the check reads.
+    pr = root_only("pr536.json")
+    copy_ = comment(pr, 0)
+    copy_["body"] = copy_["body"].replace("  - Finding ", "  - finding ")
+    copy_["author"] = {"login": "someone-else"}
+    copy_["authorAssociation"] = "NONE"
+    pr["comments"].append(copy_)
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert state == "failure"
+    assert desc.startswith("Root attestation's Findings don't parse:")
