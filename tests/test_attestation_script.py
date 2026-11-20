@@ -867,6 +867,66 @@ def test_workflow_reruns_on_a_body_edit_without_cancelling_a_run_on_the_head():
     # An `edited` run is on the PR's head, like a push's run. Sharing their cancel group would
     # leave a cancelled run on the attested commit, which Step 8 reads as not green.
     group = wf["concurrency"]["group"]
-    assert "github.event.action == 'edited'" in group and "github.run_id" in group
+    # Only a PR body edit: a comment edit's run isn't on the head and keeps its cancel group.
+    assert "github.event_name == 'pull_request' && github.event.action == 'edited'" in group
+    assert "github.run_id" in group
     (checkout,) = [s for s in wf["jobs"]["set-attestation-status"]["steps"] if "uses" in s]
     assert "head" not in checkout["with"]["ref"]
+
+
+def test_status_passes_after_a_corrected_root_for_the_same_commit(fake_gh):
+    # Step 7.2's fix path: the malformed root stays, unedited, and a corrected one follows it.
+    pr = root_only("pr536.json")
+    fixed = comment(pr, 0)
+    fixed["body"] = fixed["body"].replace("  - Finding ", "  - finding ")
+    pr["comments"].append(fixed)
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert (state, desc[:16]) == ("success", "Owner attestatio")
+
+
+def fake_python(fake_gh, script):
+    py = Path(fake_gh.env["PATH"].split(os.pathsep)[0]) / "python3"
+    py.write_text(f"#!/usr/bin/env bash\n{script}\n")
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        # An uncaught exception: exit 1 and nothing on stdout.
+        'cat >/dev/null; echo "Traceback (most recent call last):" >&2; exit 1',
+        # A problem exit with nothing to say is a broken check, not a pass.
+        "cat >/dev/null; exit 10",
+        "exit 127",
+    ],
+)
+def test_status_a_crashing_format_check_exits_3_and_set_status_posts_error(fake_gh, script):
+    fake_python(fake_gh, script)
+    pr = conform(root_only("pr536.json"))
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, "")
+    r = set_status(fake_gh, pr)
+    (call,) = posted(fake_gh)
+    assert "state=error" in call, (r.stdout, r.stderr)
+
+
+def test_status_root_body_naming_another_commit_exits_3(fake_gh, tmp_path):
+    # The format check must read the comment the reader calls ROOT. A gh that serves the root-body
+    # query a different root makes them disagree, and the check must refuse to decide.
+    other = tmp_path / "other.json"
+    pr = conform(root_only("pr536.json"))
+    alt = copy.deepcopy(pr)
+    alt["comments"][0]["body"] = alt["comments"][0]["body"].replace(pr["headRefOid"], "0" * 40)
+    other.write_text(json.dumps(alt))
+    real = Path(fake_gh.env["PATH"].split(os.pathsep)[0]) / "gh"
+    real.write_text(
+        FAKE_GH.replace(
+            'jq -e --arg f "$fields"',
+            'case "$query" in *"last // empty"*) FAKE_GH_FIXTURE=$FAKE_GH_OTHER ;; esac\n'
+            'jq -e --arg f "$fields"',
+            1,
+        )
+    )
+    fake_gh.env["FAKE_GH_OTHER"] = str(other)
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, "")

@@ -1094,6 +1094,8 @@ def cli(*args, stdin=None):
         "- Reviewed commit: " + ROOT_SHA,
         "- Reviewed-Commit: 9edbfd7",
         "- Reviewed-Commit: none",
+        # The 7.5 reader keeps trailing whitespace and then calls the attestation stale.
+        f"- Reviewed-Commit: {ROOT_SHA} ",
     ],
 )
 def test_check_body_fails_a_missing_or_misspelled_reviewed_commit(tmp_path, line):
@@ -1122,7 +1124,7 @@ def test_check_root_reads_stdin_and_prints_one_line():
     ok = cli("--check-root", "-", stdin=att("fixed"))
     bad = cli("--check-root", "-", stdin=att("fixed").replace("  - finding 1", "  - Finding 1"))
     assert (ok.returncode, ok.stdout) == (0, "")
-    assert bad.returncode == 1
+    assert bad.returncode == rm.PROBLEM_EXIT
     assert bad.stdout.count("\n") == 1 and "finding N" in bad.stdout
 
 
@@ -1136,6 +1138,10 @@ def test_check_root_reads_stdin_and_prints_one_line():
         ),
         ("- **Red-first:** a manual equivalent was run\n", None),
         ("- red-first: n/a (pure refactor)\n", None),
+        ("- **Red-first**: a manual equivalent was run\n", None),
+        ("1. Red-first: n/a (docs-only)\n", None),
+        ("> - Red-first: n/a (docs-only)\n", None),
+        ("- Red-first: n/a (docs-only)\r\n", None),
         ("", "no filled"),
         ("- Red-first note: x: 2 test(s) pass on the base\n", "no filled"),
         ("- Red-first: <per validate-and-ship Step 1>\n", "no filled"),
@@ -1155,4 +1161,5 @@ def test_check_red_first_cli():
     ok = cli("--check-red-first", "-", stdin="- Red-first: n/a (docs-only)\n")
     bad = cli("--check-red-first", "-", stdin="- Commands run: pytest\n")
     assert (ok.returncode, ok.stdout) == (0, "")
-    assert bad.returncode == 1 and bad.stdout.startswith("PR body has no filled Red-first: line")
+    assert bad.returncode == rm.PROBLEM_EXIT
+    assert bad.stdout.startswith("PR body has no filled Red-first: line")

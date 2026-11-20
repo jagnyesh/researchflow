@@ -31,11 +31,11 @@ permissions:
 concurrency:
   # One group per PR. The newest run reads the current head and comments, so it supersedes the rest.
   # Per event type too: a comment run must not cancel the run on the PR's head, because a cancelled
-  # run on the attested commit reads as not-green to validate-and-ship Step 8. An `edited` run is on the
-  # head too, so it gets a group of its own (its run id): it neither cancels a push's run nor is
+  # run on the attested commit reads as not-green to validate-and-ship Step 8. A PR body `edited` run is
+  # on the head too, so it gets a group of its own (its run id): it neither cancels a push's run nor is
   # cancelled by the next edit. Each run reads the body when it runs, so the last to finish may not
   # be the last edit; another edit or comment re-decides.
-  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}${{ github.event.action == 'edited' && format('-edited-{0}', github.run_id) || '' }}
+  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}${{ github.event_name == 'pull_request' && github.event.action == 'edited' && format('-edited-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:

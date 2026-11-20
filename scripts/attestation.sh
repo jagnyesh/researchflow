@@ -84,7 +84,8 @@ carry_checks() {
 
 # The #542 format rules, checked only where the status would otherwise pass: the root attestation's
 # Findings parse the way scripts/review_metrics.py reads them, and the PR body has a filled Red-first:
-# line. Prints the failure description, or nothing when both hold. Returns 3 when a check can't run.
+# line. Prints the failure description, or nothing when both hold. Returns 3 when a check can't run:
+# only exit 10 with a line on stdout means "problem found", because a Python crash exits 1 with none.
 # $1 is the ROOT line's commit. The root's body is picked with the reader's checks (owner login, OWNER
 # association, unedited, not a carry-forward), and must name that commit, so the two can't disagree.
 format_problem() {
@@ -96,14 +97,14 @@ format_problem() {
   out=$(printf '%s\n' "$body" | python3 -I "$metrics" --check-root -) && rc=0 || rc=$?
   case $rc in
     0) ;;
-    1) printf '%s\n' "$out" && return 0 ;;
+    10) [ -n "$out" ] || return 3; printf '%s\n' "$out"; return 0 ;;
     *) return 3 ;;
   esac
   body=$(gh_retry pr view "$pr" --json body -q .body) || return 3
   out=$(printf '%s\n' "$body" | python3 -I "$metrics" --check-red-first -) && rc=0 || rc=$?
   case $rc in
     0) ;;
-    1) printf '%s\n' "$out" ;;
+    10) [ -n "$out" ] || return 3; printf '%s\n' "$out" ;;
     *) return 3 ;;
   esac
 }
