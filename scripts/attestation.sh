@@ -82,9 +82,35 @@ carry_checks() {
   [ "$ok" -eq 3 ]
 }
 
+# The #542 format rules, checked only where the status would otherwise pass: the root attestation's
+# Findings parse the way scripts/review_metrics.py reads them, and the PR body has a filled Red-first:
+# line. Prints the failure description, or nothing when both hold. Returns 3 when a check can't run.
+# $1 is the ROOT line's commit. The root's body is picked with the reader's checks (owner login, OWNER
+# association, unedited, not a carry-forward), and must name that commit, so the two can't disagree.
+format_problem() {
+  local root_commit=$1 body out rc
+  local metrics
+  metrics="$(dirname "$0")/review_metrics.py"
+  body=$(gh_retry pr view "$pr" --json url,comments -q 'def own($o): .author.login == $o and .authorAssociation == "OWNER"; (.url | split("/")[3]) as $owner | [.comments[] | select((.body | test("^## Review attestation")) and own($owner) and .includesCreatedEdit == false) | .body | select(test("(?m)^- Carried-From:") | not)] | last // empty') || return 3
+  grep -Eq "^- Reviewed-Commit: ${root_commit}[[:space:]]*\$" <<<"$body" || return 3
+  out=$(printf '%s\n' "$body" | python3 -I "$metrics" --check-root -) && rc=0 || rc=$?
+  case $rc in
+    0) ;;
+    1) printf '%s\n' "$out" && return 0 ;;
+    *) return 3 ;;
+  esac
+  body=$(gh_retry pr view "$pr" --json body -q .body) || return 3
+  out=$(printf '%s\n' "$body" | python3 -I "$metrics" --check-red-first -) && rc=0 || rc=$?
+  case $rc in
+    0) ;;
+    1) printf '%s\n' "$out" ;;
+    *) return 3 ;;
+  esac
+}
+
 # The decision the required status makes: Step 8's attestation conditions, minus CI and merge class.
 status_decision() {
-  local head out edited newest root verdict carried s state root_commit root_verdict missing=""
+  local head out edited newest root verdict carried s state root_commit root_verdict problem missing=""
   # bash clears errexit inside $(...), so a gh failure must return explicitly, not fall through to a verdict.
   head=$(gh_retry pr view "$pr" --json headRefOid -q .headRefOid) || return 3
   [ -n "$head" ] || return 3
@@ -115,7 +141,15 @@ status_decision() {
 
   if [ "$carried" = none ]; then
     case "$verdict" in
-      SHIP | SHIP-WITH-FIXES) emit success "Owner attestation ($verdict) covers head ${head:0:7}." ;;
+      SHIP | SHIP-WITH-FIXES)
+        # Not a carry, so the newest attestation is the root.
+        problem=$(format_problem "$s") || return 3
+        if [ -n "$problem" ]; then
+          emit failure "$problem"
+        else
+          emit success "Owner attestation ($verdict) covers head ${head:0:7}."
+        fi
+        ;;
       BLOCK) emit failure "Newest attestation's verdict is BLOCK." ;;
       *) emit failure "Newest attestation's verdict isn't SHIP or SHIP-WITH-FIXES, or its Carried-From key is misspelled." ;;
     esac
@@ -145,6 +179,11 @@ status_decision() {
   done
   if [ -n "$missing" ]; then
     emit failure "Carry-forward fails the Step 7.4 checks; missing:$missing. Needs a fresh review."
+    return
+  fi
+  problem=$(format_problem "$root_commit") || return 3
+  if [ -n "$problem" ]; then
+    emit failure "$problem"
     return
   fi
   emit success "Carried-forward attestation covers head ${head:0:7}; Step 7.4 checks pass on ${carried:0:7}."

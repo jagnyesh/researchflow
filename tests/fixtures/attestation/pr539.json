@@ -1,0 +1,24 @@
+{
+  "headRefOid": "b92accbd48bb7df097025cc33581462efc3dd962",
+  "url": "https://github.com/jagnyesh/researchflow/pull/539",
+  "comments": [
+    {
+      "author": {
+        "login": "jagnyesh"
+      },
+      "authorAssociation": "OWNER",
+      "body": "## Review attestation\n- Verdict: SHIP\n- Reviewed-Commit: 395709776683d8389495594960eb4a2832a2ddc8\n- Reviewer 1 (claude-opus-5-5): fresh-context subagent (Step 2), 3 pass(es), SHIP\n- Findings: finding 1 (the pytest-of pattern swallowed punctuation after the name) → fixed in 3e7709e\n- Findings: finding 2 (the pattern in 3e7709e leaked names containing + ~ ( ) , : #) → fixed in 3957097 (exact getuser() replace first, plus an odd-LOGNAME test case)\n- Findings: finding 3 (a repr-escaped name such as DOMAIN\\user leaks its tail in --showlocals repr) → accepted (rare on POSIX), noted in the PR\n- Findings: finding 4 (no test pins the /private twin or the fallback pattern) → accepted\n- Findings: finding 5 (a short temp root such as /tmp also rewrites /usr/tmp or /tmpl; prefix match on short user names) → accepted (no leak; a redesign is out of scope)\n- Findings: finding 6 (PYTEST_DEBUG_TEMPROOT or --basetemp outside gettempdir()) → out of scope, noted under Not covered\n",
+      "includesCreatedEdit": false,
+      "url": "https://github.com/jagnyesh/researchflow/pull/539#issuecomment-7027696729"
+    },
+    {
+      "author": {
+        "login": "jagnyesh"
+      },
+      "authorAssociation": "OWNER",
+      "body": "## Review attestation\n- Verdict: SHIP (carried forward)\n- Reviewed-Commit: b92accbd48bb7df097025cc33581462efc3dd962\n- Carried-From: 395709776683d8389495594960eb4a2832a2ddc8\n- Basis: merge from main d1017915264a989be48ae7efb7bb11ab6ed8522a; tree f1ab5fb38745b8613bbce357519884f33e772059 equals merge-tree(Carried-From, main)\n- Reviewer: no new review; carried from the root attestation\n- Findings: as in the root attestation\n",
+      "includesCreatedEdit": false,
+      "url": "https://github.com/jagnyesh/researchflow/pull/539#issuecomment-7027760466"
+    }
+  ]
+}

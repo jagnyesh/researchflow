@@ -1,8 +1,9 @@
 name: Attestation
 
 # Sets the `attestation` commit status on a PR's head: success only when the repo owner's newest
-# unedited review attestation names that head (scripts/attestation.sh decides; the rules live in
-# .claude/skills/validate-and-ship/SKILL.md Steps 7-8). Once `attestation` is a required check on
+# unedited review attestation names that head, its root attestation's Findings parse, and the PR body
+# has a filled Red-first: line (scripts/attestation.sh decides; the rules live in
+# .claude/skills/validate-and-ship/SKILL.md Steps 1 and 7-8). Once `attestation` is a required check on
 # main, GitHub refuses any merge, by any route, whose head has no current attestation.
 #
 # Trust boundary: this workflow never checks out, builds or runs the PR's code. Scripts come from
@@ -10,7 +11,8 @@ name: Attestation
 # through the API and runs git plumbing on fetched PR objects.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # edited: a PR body fix (the Red-first: line) re-runs the check with no push.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   issue_comment:
     types: [created, edited, deleted]
   # Manual re-run for one PR, e.g. a PR that was already open when this check became required.
@@ -29,8 +31,11 @@ permissions:
 concurrency:
   # One group per PR. The newest run reads the current head and comments, so it supersedes the rest.
   # Per event type too: a comment run must not cancel the run on the PR's head, because a cancelled
-  # run on the attested commit reads as not-green to validate-and-ship Step 8.
-  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}
+  # run on the attested commit reads as not-green to validate-and-ship Step 8. An `edited` run is on the
+  # head too, so it gets a group of its own (its run id): it neither cancels a push's run nor is
+  # cancelled by the next edit. Each run reads the body when it runs, so the last to finish may not
+  # be the last edit; another edit or comment re-decides.
+  group: attestation-${{ github.event_name }}-${{ github.event.pull_request.number || github.event.issue.number || inputs.pr }}${{ github.event.action == 'edited' && format('-edited-{0}', github.run_id) || '' }}
   cancel-in-progress: true
 
 jobs:
