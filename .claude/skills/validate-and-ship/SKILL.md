@@ -24,6 +24,8 @@ Run the tests covering this change with the project venv: `./.venv/bin/pytest <p
 
 A non-zero exit is a finding to fix, not a check to skip: a test that can't fail isn't evidence. In the PR, the `- Red-first:` item holds the script's `Red-first:` line, one per target, with its base output block fenced underneath and any `Red-first note:` lines kept. The line names the commit it ran on, with `+uncommitted` after the SHA when the tree was dirty, so commit before the PR and re-run if the code changed after the check. A docs-only, prose-only or pure-refactor PR has no red step and writes `Red-first: n/a (<reason>)`; the Step 2 reviewer checks that reason against the diff.
 
+Every PR body carries the line, docs-only ones included, because the required `attestation` status (Step 7.6) checks for it (#542). The status fails a body with no line starting `Red-first:`, a line whose value is empty or the template's `<...>` placeholder, and an `n/a` without a reason in parentheses. The label line itself needs a value, so with several targets put the first script line on the `- Red-first:` line and the rest under it. It doesn't judge the content: prose for a manual equivalent passes, and the Step 2 reviewer judges it. To fix a failure, edit the PR body. The edit re-runs the check, and no push is needed.
+
 ### 2. Fresh-context review (the load-bearing step)
 Spawn a **clean** reviewer subagent (`general-purpose`, `run_in_background: false`) on the diff. NEVER review in this authoring session — it checks its own homework. Give the reviewer: the issue's acceptance criteria, the ADR/design authority, the explicit out-of-scope list, the Step 1 `Red-first:` line (the script's output, or the `n/a` reason) with a request to say in its report whether it holds against the diff, and instructions to probe empirically (parse/execute against real state, not static reading) and report CONFIRMED vs suspected findings with a SHIP / SHIP-WITH-FIXES / BLOCK verdict. The reviewer's final message must end with a liftable verdict block — the verdict plus one line per finding with its disposition — saved to a scratch file: it feeds the Step 7 attestation comment (one reviewer: verbatim; High tier: combined per the Step 7 template).
 
@@ -60,7 +62,7 @@ Rebase onto latest `main`, push the branch: `git push -u origin <branch>`.
 - Diff touches `app/web_ui/**` → run the Streamlit AppTest covering the touched surface (pattern: `tests/test_researcher_portal_download_ui.py`) and paste the verbatim output. Claims about rendered state cite AppTest assertions, not screenshot descriptions. If the touched surface has no AppTest, say so under "Not covered" — don't fabricate a substitute.
 - The PR makes an LLM or wire-level claim (prompt change, provider adapter, SQL synthesis, caching) → a LangSmith trace URL for the driven run, or the dumped request payload (keys redacted) as fenced text.
 - Everything else → the verbatim Step 1 command output (the current norm).
-- **Carve-out:** a `docs:`-prefixed PR whose diff is docs-only skips the Testing Evidence section — write `Testing evidence: n/a (docs-only)`, with the `- Risk tier:` line first. Fabricated evidence on a docs PR is worse than none.
+- **Carve-out:** a `docs:`-prefixed PR whose diff is docs-only skips the Testing Evidence section — write `Testing evidence: n/a (docs-only)`, with the `- Risk tier:` line first and `- Red-first: n/a (docs-only)` after it (Step 1: the required status checks for the line). Fabricated evidence on a docs PR is worse than none.
 
 ### 7. Post the SHA-bound review attestation
 The Step 2 verdict must live on the PR as a comment bound to the exact commit it covers — prose in the PR body is not attestation (it isn't timestamped against pushes). Immediately after the PR opens:
@@ -80,7 +82,9 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
 
    Findings format (`scripts/review_metrics.py` parses it): one finding per line, nested under `- Findings:`, as `  - finding <n>: <text> → <disposition>`. The disposition starts with one of `fixed`, `accepted`, `filed #<n>` (a new issue), `routed to #<n>` (a comment on an existing open issue) or `noted, not filed` (Step 3). A `filed #<n>` names the new issue that counts as a follow-up (§6). Several issues are written `#a, #b` or `#a and #b`. Write `- Findings: none` when the review found nothing. A note about the review process goes on its own line starting `  - process:` and isn't a finding.
 
-   Before posting, run `python3 scripts/review_metrics.py --check-body <file>` on the scratch file. It uses the parser the metrics use, prints each problem as `attestation format: ...` and exits 1; fix the file and re-run until it prints `attestation format ok`.
+   Before posting, run `python3 scripts/review_metrics.py --check-body <file>` on the scratch file. It uses the parser the metrics use, prints each problem as `attestation format: ...` and exits 1; fix the file and re-run until it prints `attestation format ok`. It also refuses a body whose `- Reviewed-Commit:` line is missing, misspelled or not 40 hex characters.
+
+   The required `attestation` status (7.6) runs the same parser on the root attestation, the one the 7.5 reader prints as `ROOT` (#542). The status fails when a problem leaves a metric empty: no `- Findings:` line, a nested line that isn't `finding <n>:`, a finding with a missing or unknown disposition, inline text other than `none`, a blank line inside the block, or no pass count on a Reviewer line. #536 and #539 merged with roots like that. Soft warnings that `--check-body` also prints, such as an attestation that files two issues, don't fail the status. A carry-forward's own `Findings: as in the root attestation` isn't checked. To fix a root that fails, post a new attestation for the same commit, with the same verdict and findings written in the format, and leave the old one unedited. That corrects the record without a new review, so it needs no Step 2 pass. If the PR's newest attestation is a carry-forward, post a new carry-forward from the corrected root afterwards (7.4), because the newest attestation must name the head.
 
    Include the `Reviewer 2` line on High-tier PRs only. The `Verdict:` line is the combined verdict (the worse of the two on a High-tier PR). Per-reviewer lines never start with `- Verdict:`, because the 7.5 reader matches that line exactly. Spell the key exactly `Reviewed-Commit:`. #317, #327, #340 and #348 drifted to `Reviewed commit:`.
 
@@ -134,6 +138,7 @@ The Step 2 verdict must live on the PR as a comment bound to the exact commit it
    - The status records a decision made when a run last executed. A failed or missed run leaves the previous status on that commit, so a status that disagrees with `scripts/attestation.sh status <n>` is stale: Step 8 trusts the command, and a new run replaces the status.
    - Every PR starts with `failure` until you post its attestation. The comment triggers a new run, so nothing needs a manual re-run; allow about a minute.
    - A PR that was open before the check became required has no status until something triggers a run: `gh workflow run attestation.yml -f pr=<n>`.
+   - Since #542, `success` also needs the root's Findings to parse (7.2) and the PR body to carry a filled `Red-first:` line (Step 1). These run only where the status would otherwise pass, so a missing, stale or BLOCK attestation reports that first. An edit to the PR body triggers a run too. Merged PRs are never re-checked. A PR that was open when #542 merged keeps its posted status until its next push, comment or edit, and Step 8's `scripts/attestation.sh status` applies the new rules at once.
 
 Honesty note: attestation author and merge actor are the same `gh` account — the value is the timestamped, SHA-bound, append-only record, not identity separation. The 7.5 reader keeps other accounts' attestations and edited ones from counting. It doesn't separate the reviewer from the merge actor, and it can't see a comment that someone with write access deleted. A separate reviewer bot token is a future upgrade, not a claim this design already makes.
 
@@ -165,6 +170,8 @@ Anything else, a non-zero exit included, never merges. The reason says which rul
 - Missing or stale → back to Step 7.
 - A `BLOCK` verdict, or a verdict that isn't `SHIP` or `SHIP-WITH-FIXES`, which includes a carry-forward whose `Carried-From` key is misspelled (the reader can't recognize it as a carry) → never merge.
 - A carry-forward whose root isn't verdict `SHIP`, whose `Carried-From` isn't the root's commit, or whose 7.4 checks, re-run now against the root, don't all pass → fresh review (Step 2).
+- The root's Findings don't parse → post a corrected attestation for the same commit (7.2). No new review.
+- The PR body has no filled `Red-first:` line, or an `n/a` with no reason → edit the PR body (Step 1).
 
 Name each `IGNORED` line from `read` in the merge report (the hand-over for a human merge, the lane's report for a self-merge). The GitHub rollup above includes the posted `attestation` status once it exists; this command is the check that doesn't wait for the workflow.
 

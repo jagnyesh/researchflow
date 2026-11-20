@@ -21,11 +21,24 @@ output recorded from this repo (2026-11-14), trimmed to the fields the script re
 No real BLOCK, SHIP-WITH-FIXES or non-owner attestation exists on this repo, so those
 cases take a real comment and change one field in the test (verdict, author,
 association, head). The structure is the recorded one; only the changed value is ours.
+
+Since #542 a root attestation passes only when scripts/review_metrics.py can parse its
+Reviewer and Findings lines, and the PR body needs a filled `Red-first:` line. The recorded
+comments predate that rule: #484's root writes its findings inline and #475's Reviewer line
+has no pass count. So `serve()` rewrites those two lines of every non-carry attestation to
+the Step 7 shape and adds a passing PR body, which keeps the verdict tests about verdicts.
+`serve(pr, raw=True)` serves the recording as it is. Two more recordings test the rule:
+
+- pr536.json, pr539.json: `gh pr view <n> --json headRefOid,url,comments` (2026-11-19),
+  trimmed the same way. Each is a root SHIP plus a carry-forward. #536's root writes
+  `Finding 1:` with a capital F; #539's writes each finding inline on a `- Findings:` line.
+  Both merged with roots the metrics can't parse.
 """
 
 import copy
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -94,6 +107,40 @@ def with_verdict(c, verdict):
     return c
 
 
+WELL_FORMED_REVIEW = [
+    "- Reviewer 1 (test): fresh-context subagent (Step 2), 1 pass(es), SHIP",
+    "- Findings:",
+    "  - finding 1: x → fixed",
+]
+RED_FIRST_BODY = (
+    "## Testing evidence\n"
+    "- Risk tier: low — paths: scripts/x.sh\n"
+    "- Red-first: tests/test_x.py::test_y: base 0123456789ab pytest exit 1 (red); "
+    "here 0123456789ab pytest exit 0 (green: 1 passed in 0.01s)\n"
+)
+
+
+def well_formed(c):
+    """The comment with its Reviewer and Findings lines replaced by the Step 7 shape."""
+    kept = [
+        ln for ln in c["body"].split("\n") if not ln.startswith(("- Reviewer", "- Findings", "  "))
+    ]
+    c["body"] = "\n".join([*kept, *WELL_FORMED_REVIEW])
+    return c
+
+
+def conform(pr):
+    """pr with a passing PR body and every non-carry attestation in the Step 7 shape."""
+    pr = copy.deepcopy(pr)
+    pr.setdefault("body", RED_FIRST_BODY)
+    if isinstance(pr.get("comments"), list):
+        for c in pr["comments"]:
+            b = c.get("body") or ""
+            if b.startswith("## Review attestation") and "\n- Carried-From:" not in b:
+                well_formed(c)
+    return pr
+
+
 @pytest.fixture
 def fake_gh(tmp_path):
     bindir = tmp_path / "bin"
@@ -124,8 +171,8 @@ def fake_gh(tmp_path):
         cwd = tmp_path
 
         @classmethod
-        def serve(cls, pr):
-            Path(cls.env["FAKE_GH_FIXTURE"]).write_text(json.dumps(pr))
+        def serve(cls, pr, raw=False):
+            Path(cls.env["FAKE_GH_FIXTURE"]).write_text(json.dumps(pr if raw else conform(pr)))
 
         @classmethod
         def run(cls, *args, cwd=None):
@@ -141,11 +188,11 @@ def fake_gh(tmp_path):
     return Fake
 
 
-def status(fake_gh, pr, head=None, cwd=None):
+def status(fake_gh, pr, head=None, cwd=None, raw=False):
     pr = copy.deepcopy(pr)
     if head is not None:
         pr["headRefOid"] = head
-    fake_gh.serve(pr)
+    fake_gh.serve(pr, raw=raw)
     r = fake_gh.run("status", "1", cwd=cwd)
     return r
 
@@ -675,3 +722,253 @@ def test_carry_without_root_prints_usage(fake_gh):
     fake_gh.serve(load("pr484.json"))
     r = fake_gh.run("carry", "1")
     assert r.returncode == 2
+
+
+# ------------------------------------------- format rules (#542): Findings and Red-first
+
+
+def root_only(name):
+    """The recording's root attestation alone, on a head equal to its Reviewed-Commit."""
+    pr = load(name)
+    pr["comments"] = [comment(pr, 0)]
+    pr["headRefOid"] = re.search(r"(?m)^- Reviewed-Commit: (\w+)", pr["comments"][0]["body"])[1]
+    pr["body"] = RED_FIRST_BODY
+    return pr
+
+
+def test_status_fails_a_root_shaped_like_536_with_a_capital_finding(fake_gh):
+    state, _, desc = parse(status(fake_gh, root_only("pr536.json"), raw=True))
+    assert state == "failure"
+    assert desc.startswith("Root attestation's Findings don't parse:")
+    assert "finding N" in desc
+
+
+def test_status_passes_536_once_finding_is_lower_case(fake_gh):
+    pr = root_only("pr536.json")
+    c = pr["comments"][0]
+    c["body"] = c["body"].replace("  - Finding ", "  - finding ")
+    state, head, desc = parse(status(fake_gh, pr, raw=True))
+    assert (state, head) == ("success", pr["headRefOid"])
+    assert desc.startswith("Owner attestation (SHIP) covers head")
+
+
+def test_status_fails_a_root_shaped_like_539_with_inline_findings(fake_gh):
+    state, _, desc = parse(status(fake_gh, root_only("pr539.json"), raw=True))
+    assert state == "failure"
+    assert desc.startswith("Root attestation's Findings don't parse:")
+    assert "inline" in desc
+
+
+def test_status_fails_a_root_with_no_pass_count(fake_gh):
+    pr = load("pr475.json")
+    pr["comments"] = [comment(pr, 1)]
+    pr["headRefOid"] = "cd99c9c2e8222a96c9002e993105afc1f2ea86f7"
+    pr["body"] = RED_FIRST_BODY
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert state == "failure"
+    assert "pass count" in desc
+
+
+def test_status_passes_a_root_with_only_a_soft_warning(fake_gh):
+    # Filing two issues is a metrics warning, not a blocking one: the owner may have allowed it.
+    pr = ship_on_head()
+    c = pr["comments"][0]
+    well_formed(c)
+    c["body"] = c["body"].replace(
+        "  - finding 1: x → fixed", "  - finding 1: x → filed #1\n  - finding 2: y → filed #2"
+    )
+    pr["body"] = RED_FIRST_BODY
+    assert parse(status(fake_gh, pr, raw=True))[0] == "success"
+
+
+def test_status_fails_a_carry_forward_whose_root_is_shaped_like_539(fake_gh, repo):
+    # #484's recorded root writes its findings inline, as #539's does; the carry's own
+    # "Findings: as in the root attestation" is not what fails.
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    pr["body"] = RED_FIRST_BODY
+    state, _, desc = parse(status(fake_gh, pr, cwd=repo.work, raw=True))
+    assert state == "failure"
+    assert desc.startswith("Root attestation's Findings don't parse:")
+
+
+def test_status_passes_a_carry_forward_whose_root_is_well_formed(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    well_formed(pr["comments"][0])
+    pr["body"] = RED_FIRST_BODY
+    state, _, desc = parse(status(fake_gh, pr, cwd=repo.work, raw=True))
+    assert state == "success"
+    assert "Carried-forward" in desc
+
+
+def with_pr_body(text):
+    pr = conform(ship_on_head())
+    pr["body"] = text
+    return pr
+
+
+def test_status_fails_a_pr_body_with_no_red_first_line(fake_gh):
+    body = "## Testing evidence\n- Risk tier: low — paths: x\n- Commands run: pytest → 1 passed\n"
+    state, _, desc = parse(status(fake_gh, with_pr_body(body), raw=True))
+    assert state == "failure"
+    assert desc.startswith("PR body has no filled Red-first: line")
+
+
+def test_status_fails_a_pr_body_that_keeps_the_template_placeholder(fake_gh):
+    body = Path(REPO / ".github/PULL_REQUEST_TEMPLATE.md").read_text()
+    state, _, desc = parse(status(fake_gh, with_pr_body(body), raw=True))
+    assert state == "failure"
+    assert desc.startswith("PR body has no filled Red-first: line")
+
+
+@pytest.mark.parametrize(
+    "line", ["- Red-first: n/a", "- Red-first: n/a ()", "- Red-first: N/A, docs"]
+)
+def test_status_fails_an_n_a_with_no_reason(fake_gh, line):
+    state, _, desc = parse(
+        status(fake_gh, with_pr_body(f"## Testing evidence\n{line}\n"), raw=True)
+    )
+    assert state == "failure"
+    assert "n/a (<reason>)" in desc
+
+
+def test_status_passes_a_docs_only_n_a_with_a_reason(fake_gh):
+    # #538's line, verbatim, under the Step 6 docs-only carve-out.
+    body = (
+        "## Testing evidence\n\n- Risk tier: low — paths: CONTEXT.md, docs/decisions/INDEX.md\n\n"
+        "Testing evidence: n/a (docs-only)\n\n"
+        "- Red-first: n/a (docs-only; no test is added or changed)\n"
+    )
+    assert parse(status(fake_gh, with_pr_body(body), raw=True))[0] == "success"
+
+
+def test_status_passes_a_prose_red_first_line(fake_gh):
+    # #534 wrote prose for a manual equivalent; the reviewer, not the check, judges it.
+    body = "- Red-first: the script reports a false negative for this PR, so a manual equivalent was run.\n"
+    assert parse(status(fake_gh, with_pr_body(body), raw=True))[0] == "success"
+
+
+def test_status_block_verdict_still_reports_the_verdict_not_the_format(fake_gh):
+    # The format checks run only where the status would otherwise pass.
+    pr = load("pr539.json")
+    pr["comments"] = [with_verdict(comment(pr, 0), "BLOCK")]
+    pr["headRefOid"] = re.search(r"(?m)^- Reviewed-Commit: (\w+)", pr["comments"][0]["body"])[1]
+    pr["body"] = ""
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert (state, desc) == ("failure", "Newest attestation's verdict is BLOCK.")
+
+
+def test_workflow_reruns_on_a_body_edit_without_cancelling_a_run_on_the_head():
+    import yaml
+
+    wf = yaml.safe_load((REPO / ".github/workflows/attestation.yml").read_text())
+    assert "edited" in wf[True]["pull_request"]["types"]
+    # An `edited` run is on the PR's head, like a push's run. Sharing their cancel group would
+    # leave a cancelled run on the attested commit, which Step 8 reads as not green.
+    group = wf["concurrency"]["group"]
+    # Only a PR body edit: a comment edit's run isn't on the head and keeps its cancel group.
+    assert "github.event_name == 'pull_request' && github.event.action == 'edited'" in group
+    assert "github.run_id" in group
+    (checkout,) = [s for s in wf["jobs"]["set-attestation-status"]["steps"] if "uses" in s]
+    assert "head" not in checkout["with"]["ref"]
+
+
+def test_status_passes_after_a_corrected_root_for_the_same_commit(fake_gh):
+    # Step 7.2's fix path: the malformed root stays, unedited, and a corrected one follows it.
+    pr = root_only("pr536.json")
+    fixed = comment(pr, 0)
+    fixed["body"] = fixed["body"].replace("  - Finding ", "  - finding ")
+    pr["comments"].append(fixed)
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert (state, desc[:16]) == ("success", "Owner attestatio")
+
+
+def fake_python(fake_gh, script):
+    py = Path(fake_gh.env["PATH"].split(os.pathsep)[0]) / "python3"
+    py.write_text(f"#!/usr/bin/env bash\n{script}\n")
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        # An uncaught exception: exit 1 and nothing on stdout.
+        'cat >/dev/null; echo "Traceback (most recent call last):" >&2; exit 1',
+        # A problem exit with nothing to say is a broken check, not a pass.
+        "cat >/dev/null; exit 10",
+        "exit 127",
+    ],
+)
+def test_status_a_crashing_format_check_exits_3_and_set_status_posts_error(fake_gh, script):
+    fake_python(fake_gh, script)
+    pr = conform(root_only("pr536.json"))
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, "")
+    r = set_status(fake_gh, pr)
+    (call,) = posted(fake_gh)
+    assert "state=error" in call, (r.stdout, r.stderr)
+
+
+@pytest.mark.parametrize("works", ["--check-root", "--check-red-first"])
+@pytest.mark.parametrize(
+    "failure",
+    [
+        'cat >/dev/null; echo "Traceback (most recent call last):" >&2; exit 1',
+        "cat >/dev/null; exit 10",
+    ],
+)
+def test_status_one_crashing_format_check_exits_3(fake_gh, failure, works):
+    # One check runs on the real interpreter and passes; only the other breaks, so each call
+    # site's own fail-closed arm is what decides.
+    real = shutil.which("python3", path=os.environ["PATH"])
+    fake_python(fake_gh, f'case "$*" in *{works}*) exec "{real}" "$@" ;; esac\n{failure}')
+    pr = conform(root_only("pr536.json"))
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, ""), r.stderr
+
+
+def test_status_root_body_naming_another_commit_exits_3(fake_gh, tmp_path):
+    # The format check must read the comment the reader calls ROOT. A gh that serves the root-body
+    # query a different root makes them disagree, and the check must refuse to decide.
+    other = tmp_path / "other.json"
+    pr = conform(root_only("pr536.json"))
+    alt = copy.deepcopy(pr)
+    alt["comments"][0]["body"] = alt["comments"][0]["body"].replace(pr["headRefOid"], "0" * 40)
+    other.write_text(json.dumps(alt))
+    real = Path(fake_gh.env["PATH"].split(os.pathsep)[0]) / "gh"
+    real.write_text(
+        FAKE_GH.replace(
+            'jq -e --arg f "$fields"',
+            'case "$query" in *"last // empty"*) FAKE_GH_FIXTURE=$FAKE_GH_OTHER ;; esac\n'
+            'jq -e --arg f "$fields"',
+            1,
+        )
+    )
+    fake_gh.env["FAKE_GH_OTHER"] = str(other)
+    r = status(fake_gh, pr, raw=True)
+    assert (r.returncode, r.stdout) == (3, "")
+
+
+def test_status_a_crashing_format_check_on_a_carry_forward_exits_3(fake_gh, repo):
+    old, m, new = carry_setup(repo)
+    pr = carried_pr(old, new)
+    well_formed(pr["comments"][0])
+    pr["body"] = RED_FIRST_BODY
+    fake_python(fake_gh, 'cat >/dev/null; echo "Traceback" >&2; exit 1')
+    r = status(fake_gh, pr, cwd=repo.work, raw=True)
+    assert (r.returncode, r.stdout) == (3, ""), r.stderr
+
+
+def test_status_a_non_owner_copy_does_not_cure_a_malformed_owner_root(fake_gh):
+    # Only the owner's attestations count, so a well-formed copy from another account,
+    # posted after the owner's malformed root, is not the body the check reads.
+    pr = root_only("pr536.json")
+    copy_ = comment(pr, 0)
+    copy_["body"] = copy_["body"].replace("  - Finding ", "  - finding ")
+    copy_["author"] = {"login": "someone-else"}
+    copy_["authorAssociation"] = "NONE"
+    pr["comments"].append(copy_)
+    state, _, desc = parse(status(fake_gh, pr, raw=True))
+    assert state == "failure"
+    assert desc.startswith("Root attestation's Findings don't parse:")

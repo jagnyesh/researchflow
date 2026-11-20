@@ -90,7 +90,15 @@ def att(*dispositions):
     """An attestation body whose findings carry the given dispositions, one per finding."""
     lines = [f"  - finding {k}: x → {d}" for k, d in enumerate(dispositions, 1)]
     return "\n".join(
-        ["## Review attestation", "- Reviewer 1: x, 1 pass(es), SHIP", "- Findings:", *lines, ""]
+        [
+            "## Review attestation",
+            "- Verdict: SHIP",
+            f"- Reviewed-Commit: {ROOT_SHA}",
+            "- Reviewer 1: x, 1 pass(es), SHIP",
+            "- Findings:",
+            *lines,
+            "",
+        ]
     )
 
 
@@ -1068,3 +1076,91 @@ def test_an_issue_mentioned_before_the_disposition_keyword_is_not_a_warning():
 )
 def test_a_cross_reference_after_a_filed_issue_is_not_an_unread_issue(disp):
     assert rm.parse_findings(att(disp))["warnings"] == []
+
+
+# ------------------------------------------------- #542: the checks the attestation status runs
+
+CLI = [sys.executable, "-I", str(REPO / "scripts/review_metrics.py")]
+
+
+def cli(*args, stdin=None):
+    return subprocess.run([*CLI, *args], input=stdin, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        None,
+        "- Reviewed commit: " + ROOT_SHA,
+        "- Reviewed-Commit: 9edbfd7",
+        "- Reviewed-Commit: none",
+        # The 7.5 reader keeps trailing whitespace and then calls the attestation stale.
+        f"- Reviewed-Commit: {ROOT_SHA} ",
+    ],
+)
+def test_check_body_fails_a_missing_or_misspelled_reviewed_commit(tmp_path, line):
+    body = att("fixed").replace(f"- Reviewed-Commit: {ROOT_SHA}", line or "")
+    f = tmp_path / "a.md"
+    f.write_text(body)
+    r = cli("--check-body", str(f))
+    assert r.returncode == 1
+    assert "Reviewed-Commit" in r.stderr
+
+
+def test_check_root_blocks_only_problems_that_blank_a_metric():
+    assert rm.blocking_problems(att("fixed", "filed #1", "filed #2")) == []
+    assert rm.blocking_problems(att("fixed", "routed to #1 and then #2")) == []
+    assert rm.blocking_problems(att("looks fine")) == [
+        "a disposition is not fixed, accepted, filed, routed or noted"
+    ]
+    assert rm.blocking_problems(att("fixed").replace("1 pass(es)", "one pass")) == [
+        "no pass count on a Reviewer line"
+    ]
+    assert rm.blocking_problems(root_body()) == []
+    assert rm.blocking_problems(root_body("pr317.json")) != []
+
+
+def test_check_root_reads_stdin_and_prints_one_line():
+    ok = cli("--check-root", "-", stdin=att("fixed"))
+    bad = cli("--check-root", "-", stdin=att("fixed").replace("  - finding 1", "  - Finding 1"))
+    assert (ok.returncode, ok.stdout) == (0, "")
+    assert bad.returncode == rm.PROBLEM_EXIT
+    assert bad.stdout.count("\n") == 1 and "finding N" in bad.stdout
+
+
+@pytest.mark.parametrize(
+    "body,problem",
+    [
+        ("- Red-first: n/a (docs-only; no test is added or changed)\n", None),
+        (
+            "Red-first: tests/test_x.py: base 0123 pytest exit 1 (red); here 0123 pytest exit 0\n",
+            None,
+        ),
+        ("- **Red-first:** a manual equivalent was run\n", None),
+        ("- red-first: n/a (pure refactor)\n", None),
+        ("- **Red-first**: a manual equivalent was run\n", None),
+        ("1. Red-first: n/a (docs-only)\n", None),
+        ("> - Red-first: n/a (docs-only)\n", None),
+        ("- Red-first: n/a (docs-only)\r\n", None),
+        ("", "no filled"),
+        ("- Red-first note: x: 2 test(s) pass on the base\n", "no filled"),
+        ("- Red-first: <per validate-and-ship Step 1>\n", "no filled"),
+        ("- Red-first:\n", "an empty Red-first: line"),
+        ("- Red-first:\n  Red-first: tests/x.py::t: base 0123 pytest exit 1 (red)\n", "an empty"),
+        ("- Red-first: n/a\n", "n/a (<reason>)"),
+        ("- Red-first: n/a ( )\n", "n/a (<reason>)"),
+        ("- Red-first: N/A docs\n", "n/a (<reason>)"),
+        ("- Red-first: n/a (docs)\n- Red-first: <per validate-and-ship Step 1>\n", "no filled"),
+    ],
+)
+def test_red_first_problem(body, problem):
+    got = rm.red_first_problem(body)
+    assert (got is None) if problem is None else (problem in got), got
+
+
+def test_check_red_first_cli():
+    ok = cli("--check-red-first", "-", stdin="- Red-first: n/a (docs-only)\n")
+    bad = cli("--check-red-first", "-", stdin="- Commands run: pytest\n")
+    assert (ok.returncode, ok.stdout) == (0, "")
+    assert bad.returncode == rm.PROBLEM_EXIT
+    assert bad.stdout.startswith("PR body has no filled Red-first: line")
