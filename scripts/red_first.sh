@@ -270,7 +270,17 @@ def scrub(text):
                         (repo, "<repo>"), (os.path.expanduser("~"), "~")):
         if path and path != "/":
             text = text.replace(path, label)
-    return text
+    # Then the system temp dir, where a test's tmp_path lives. It goes after the paths above
+    # because the scratch worktree sits inside it, and longest first because macOS prints both
+    # /var/folders/... and its /private/var/folders/... realpath.
+    tmps = set()
+    for t in (tempfile.gettempdir(), os.path.realpath(tempfile.gettempdir())):
+        tmps |= {t, t[len("/private"):] if t.startswith("/private/") else "/private" + t}
+    for t in sorted(tmps, key=len, reverse=True):
+        if t not in ("/", "/private"):
+            text = text.replace(t, "<tmp>")
+    # pytest's basetemp is named after the OS user.
+    return re.sub(r"pytest-of-[^/\\\s'\"]+", "pytest-of-<user>", text)
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
 
