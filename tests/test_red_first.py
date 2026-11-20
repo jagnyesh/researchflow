@@ -4,6 +4,7 @@ Runs against a throwaway git repo in tmp_path (sandbox-first: the script adds an
 worktree). No network, no live services; the tests inside the throwaway repo are trivial.
 """
 
+import getpass
 import os
 import shutil
 import signal
@@ -809,6 +810,45 @@ def test_the_base_output_block_replaces_the_repo_and_home_paths(repo, tmp_path):
     assert r.returncode == 0, r.stderr
     assert "repo=<repo> home=~" in r.stdout
     assert str(repo.resolve()) not in r.stdout and str(home.resolve()) not in r.stdout
+
+
+@pytest.mark.parametrize("logname", [None, "#rf+ci (x)"])
+def test_the_base_output_block_replaces_the_temp_dir_and_the_pytest_user(repo, tmp_path, logname):
+    # A base-run test that prints its tmp_path shows the system temp dir and
+    # pytest-of-<OS username>. TMPDIR is a symlink so the unresolved path and its realpath
+    # both have to go; it is not the helper's scratch-tmp, which must stay empty. pytest
+    # takes the name from getpass.getuser() as is, so LOGNAME can hold any characters.
+    # Held with its prefix: --showlocals prints this local in the base output, and only the
+    # prefixed form is scrubbed.
+    basetemp = "pytest-of-" + (logname or getpass.getuser())
+    systmp = tmp_path / "systmp"
+    systmp.mkdir()
+    link = tmp_path / "systmp-link"
+    link.symlink_to(systmp)
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f(tmp_path):\n"
+            "    assert f() == 2, 'tmp=' + str(tmp_path)\n",
+        },
+    )
+
+    env = {"TMPDIR": str(link)}
+    if logname:
+        env["LOGNAME"] = logname
+    r = _red_first(repo, tmp_path, "tests/test_f.py", extra_env=env)
+
+    assert r.returncode == 0, r.stderr
+    assert "tmp=<tmp>/pytest-of-<user>/pytest-" in r.stdout
+    assert str(systmp.resolve()) not in r.stdout and str(link) not in r.stdout
+    assert basetemp not in r.stdout
+    if logname:
+        # Any piece of the name left behind the placeholder is a leak too.
+        assert "rf+ci" not in r.stdout and "(x)" not in r.stdout
+    # The base run really used that name.
+    assert list((systmp / basetemp).iterdir())
+    assert [p.name for p in systmp.iterdir() if p.name.startswith("red_first_")] == []
 
 
 # #535: code under test that lives under tests/ (the eval harness) is held at the base.
