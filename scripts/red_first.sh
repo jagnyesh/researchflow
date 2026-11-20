@@ -280,7 +280,7 @@ def scrub(text):
         if t not in ("/", "/private"):
             text = text.replace(t, "<tmp>")
     # pytest's basetemp is named after the OS user.
-    return re.sub(r"pytest-of-[^/\\\s'\"]+", "pytest-of-<user>", text)
+    return re.sub(r"pytest-of-[\w.@$-]+", "pytest-of-<user>", text)
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
 
