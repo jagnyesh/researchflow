@@ -28,7 +28,7 @@
 # RED_FIRST_TIMEOUT (seconds per run; default 600).
 set -uo pipefail
 exec python3 -I - "$@" <<'PY'
-import os, re, shutil, signal, subprocess, sys, tempfile
+import getpass, os, re, shutil, signal, subprocess, sys, tempfile
 
 USAGE = "usage: red_first.sh [--base <ref>] [--code <path>]... <test file or file::node id>...\n"
 args = sys.argv[1:]
@@ -279,7 +279,14 @@ def scrub(text):
     for t in sorted(tmps, key=len, reverse=True):
         if t not in ("/", "/private"):
             text = text.replace(t, "<tmp>")
-    # pytest's basetemp is named after the OS user.
+    # pytest's basetemp is pytest-of-<getpass.getuser()>, unsanitized, and pytest runs with
+    # this env, so the exact name goes first; the pattern only catches a different one.
+    try:
+        user = getpass.getuser()
+    except (ImportError, OSError, KeyError):
+        user = ""
+    if user:
+        text = text.replace("pytest-of-" + user, "pytest-of-<user>")
     return re.sub(r"pytest-of-[\w.@$-]+", "pytest-of-<user>", text)
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
