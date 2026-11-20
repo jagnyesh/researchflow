@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # red_first.sh — prove a new or changed test fails on the base before the change.
 #
-# usage: scripts/red_first.sh [--base <ref>] <test file or file::node id>...
+# usage: scripts/red_first.sh [--base <ref>] [--code <path>]... <test file or file::node id>...
 #
 # Builds a temporary worktree at the base (default: merge-base of HEAD and origin/main),
 # copies in the named test files and every test-support file the change touches (anything
 # under tests/, any conftest.py, and the root pytest.ini, pyproject.toml, setup.cfg and
 # tox.ini) from the lane's working tree, and runs each target, one pytest process per
 # target, there and then here. "Here" is the working tree, committed or not, so the
-# Red-first line carries the HEAD SHA and "+uncommitted" when the tree was dirty. Exit codes:
+# Red-first line carries the HEAD SHA and "+uncommitted" when the tree was dirty.
+# --code names a file or directory that is code under test although it lives under tests/
+# (the eval harness, for one): files the change touches at or under it are not copied, so
+# the base run sees their base version, or no file where the change adds one. Repeatable.
+# Exit codes:
 #   0  red on the base (pytest exit 1 or 2) and green here (at least one test passed)
 #   1  not red-first: it passes on the base, collects nothing there, or here it fails or
 #      passes no test (an all-skipped run is not green)
@@ -26,17 +30,21 @@ set -uo pipefail
 exec python3 -I - "$@" <<'PY'
 import os, re, shutil, signal, subprocess, sys, tempfile
 
-USAGE = "usage: red_first.sh [--base <ref>] <test file or file::node id>...\n"
+USAGE = "usage: red_first.sh [--base <ref>] [--code <path>]... <test file or file::node id>...\n"
 args = sys.argv[1:]
 base_ref = None
+code_args = []
 targets = []
 while args:
     a = args.pop(0)
-    if a == "--base":
+    if a in ("--base", "--code"):
         if not args:
             sys.stderr.write(USAGE)
             sys.exit(2)
-        base_ref = args.pop(0)
+        if a == "--base":
+            base_ref = args.pop(0)
+        else:
+            code_args.append(args.pop(0))
     else:
         targets.append(a)
 if not targets:
@@ -117,6 +125,28 @@ if base.returncode != 0:
     sys.stderr.write("red_first: unknown base %s\n" % base_ref)
     sys.exit(2)
 base_sha = base.stdout.strip()
+
+code_paths = []
+for c in code_args:
+    rel = os.path.normpath(c)
+    if os.path.isabs(rel) or rel.startswith("..") or rel == ".":
+        sys.stderr.write("red_first: --code %s is not a path inside the repo\n" % c)
+        sys.exit(2)
+    # A typo would hold nothing back and leave the check as weak as before, so the path
+    # must name something here or on the base (the change may delete the file).
+    if not os.path.exists(os.path.join(repo, rel)) and \
+            run("git", "cat-file", "-e", "%s:%s" % (base_sha, rel), cwd=repo).returncode != 0:
+        sys.stderr.write("red_first: --code %s exists neither here nor on the base\n" % c)
+        sys.exit(2)
+    code_paths.append(rel)
+
+def is_code(rel):
+    return any(rel == c or rel.startswith(c + "/") for c in code_paths)
+
+for rel, t in files:
+    if is_code(rel):
+        sys.stderr.write("red_first: target %s is inside a --code path; a test can't be the code it tests\n" % t)
+        sys.exit(2)
 
 head = run("git", "rev-parse", "HEAD", cwd=repo)
 if head.returncode != 0:
@@ -244,14 +274,17 @@ def scrub(text):
 
 SUPPORT_CONFIG = {"pytest.ini", "pyproject.toml", "setup.cfg", "tox.ini"}
 
-def support_files():
+def changed_files():
+    changed = set(run("git", "diff", "--name-only", "-z", "--no-renames", base_sha, cwd=repo).stdout.split("\0"))
+    changed |= set(run("git", "ls-files", "--others", "--exclude-standard", "-z", cwd=repo).stdout.split("\0"))
+    return sorted(c for c in changed if c)
+
+def support_files(changed):
     # Everything the change touches that a test run reads besides the test itself: without
     # these the base run goes red because a fixture, helper or marker is missing, not
     # because the code under test is.
-    changed = set(run("git", "diff", "--name-only", "-z", "--no-renames", base_sha, cwd=repo).stdout.split("\0"))
-    changed |= set(run("git", "ls-files", "--others", "--exclude-standard", "-z", cwd=repo).stdout.split("\0"))
     keep = []
-    for rel in sorted(c for c in changed if c):
+    for rel in changed:
         parts = rel.split("/")
         if (parts[0] == "tests" and len(parts) > 1) or parts[-1] == "conftest.py" or rel in SUPPORT_CONFIG:
             if os.path.isfile(os.path.join(repo, rel)):
@@ -280,7 +313,11 @@ try:
                 "PYTHONPATH.\n" % (package, stray[0], wt))
             sys.exit(3)
 
-    for rel in sorted({rel for rel, _ in files} | set(support_files())):
+    support = support_files(changed_files())
+    held = [rel for rel in support if is_code(rel)]
+    held_note = "code under test held at the base (--code): " + (
+        ", ".join(held) if held else "none; no file the change would copy to the base is under a --code path")
+    for rel in sorted({rel for rel, _ in files} | {rel for rel in support if not is_code(rel)}):
         dest = os.path.join(wt, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         shutil.copyfile(os.path.join(repo, rel), dest)
@@ -299,8 +336,11 @@ try:
             sys.stderr.write("red_first: %s collected no tests on the base; nothing proves it can fail.\n%s\n" % (target, out))
             sys.exit(1)
         if b.returncode == 0:
+            # A --code path that held nothing (a symlink or case-variant spelling) is the
+            # likely reason, so say what was held.
             sys.stderr.write(
-                "red_first: %s PASSES on the base %s; it does not test the change.\n%s\n" % (target, base_sha[:12], out))
+                "red_first: %s PASSES on the base %s; it does not test the change.\n%s%s\n"
+                % (target, base_sha[:12], ("red_first: %s\n" % held_note) if code_paths else "", out))
             sys.exit(1)
 
         h = pytest(repo, target)
@@ -325,6 +365,8 @@ try:
         if b.returncode == 2:
             print("Red-first note: %s: the base red is a collection error (pytest exit 2). It proves only that "
                   "the test needs the change in order to import; it does not show that an assertion can fail." % target)
+        if code_paths:
+            print("Red-first note: %s: %s" % (target, held_note))
         n_base = passed(b)
         if n_base:
             print("Red-first note: %s: %d test(s) pass on the base, so only the failing ones prove the change. "
