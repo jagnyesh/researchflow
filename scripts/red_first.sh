@@ -315,6 +315,8 @@ try:
 
     support = support_files(changed_files())
     held = [rel for rel in support if is_code(rel)]
+    held_note = "code under test held at the base (--code): " + (
+        ", ".join(held) if held else "none; no file the change would copy to the base is under a --code path")
     for rel in sorted({rel for rel, _ in files} | {rel for rel in support if not is_code(rel)}):
         dest = os.path.join(wt, rel)
         os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -334,8 +336,11 @@ try:
             sys.stderr.write("red_first: %s collected no tests on the base; nothing proves it can fail.\n%s\n" % (target, out))
             sys.exit(1)
         if b.returncode == 0:
+            # A --code path that held nothing (a symlink or case-variant spelling) is the
+            # likely reason, so say what was held.
             sys.stderr.write(
-                "red_first: %s PASSES on the base %s; it does not test the change.\n%s\n" % (target, base_sha[:12], out))
+                "red_first: %s PASSES on the base %s; it does not test the change.\n%s%s\n"
+                % (target, base_sha[:12], ("red_first: %s\n" % held_note) if code_paths else "", out))
             sys.exit(1)
 
         h = pytest(repo, target)
@@ -361,8 +366,7 @@ try:
             print("Red-first note: %s: the base red is a collection error (pytest exit 2). It proves only that "
                   "the test needs the change in order to import; it does not show that an assertion can fail." % target)
         if code_paths:
-            print("Red-first note: %s: code under test held at the base (--code): %s" % (
-                target, ", ".join(held) if held else "none; no file the change would copy to the base is under a --code path"))
+            print("Red-first note: %s: %s" % (target, held_note))
         n_base = passed(b)
         if n_base:
             print("Red-first note: %s: %d test(s) pass on the base, so only the failing ones prove the change. "

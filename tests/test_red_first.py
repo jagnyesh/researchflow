@@ -889,6 +889,60 @@ def test_a_code_path_the_change_does_not_touch_says_nothing_was_held(repo, tmp_p
     assert "held at the base (--code): none;" in r.stdout
 
 
+def test_a_code_directory_does_not_hold_a_sibling_that_shares_its_prefix(repo, tmp_path):
+    # tests/eval_cases.py starts with "tests/eval" but is not under tests/eval/: it is case
+    # data and must reach the base, or the base goes red on a missing file.
+    _repo_with_a_harness(repo)
+    _write(
+        repo,
+        {
+            "tests/eval_cases.py": "WANT = 2\n",
+            "tests/test_score.py": "import os, sys\n\n"
+            "sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'eval'))\n"
+            "from eval_cases import WANT\nfrom harness import score\n\n"
+            "def test_score():\n    assert score() == WANT\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval", "tests/test_score.py")
+
+    assert r.returncode == 0, r.stderr
+    assert "assert 1 == 2" in r.stdout
+    assert (
+        "held at the base (--code): tests/eval/harness.py, tests/eval/test_score.py\n" in r.stdout
+    )
+
+
+def test_a_code_path_the_change_deleted_is_accepted(repo, tmp_path):
+    _write(repo, {"tests/eval/old.py": "X = 1\n"})
+    _commit_all(repo, "old")
+    _git(repo, "update-ref", "refs/remotes/origin/main", "HEAD")
+    (repo / "tests/eval/old.py").unlink()
+    _write(
+        repo,
+        {
+            "pkg/mod.py": "def f():\n    return 2\n",
+            "tests/test_f.py": "from pkg.mod import f\n\ndef test_f():\n    assert f() == 2\n",
+        },
+    )
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval/old.py", "tests/test_f.py")
+
+    assert r.returncode == 0, r.stderr
+
+
+def test_a_code_path_that_held_nothing_is_named_when_the_base_passes(repo, tmp_path):
+    _write(repo, {"tests/eval/other.py": ""})
+    _commit_all(repo, "other")
+    _repo_with_a_harness(repo)
+
+    r = _red_first(repo, tmp_path, "--code", "tests/eval/other.py", "tests/eval/test_score.py")
+
+    assert r.returncode == 1
+    assert "PASSES on the base" in r.stderr
+    assert "held at the base (--code): none;" in r.stderr
+
+
 def test_a_code_path_that_exists_nowhere_is_a_usage_error(repo, tmp_path):
     _write(repo, {"tests/test_f.py": F_TEST})
 
