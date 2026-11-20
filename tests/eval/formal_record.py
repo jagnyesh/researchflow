@@ -125,14 +125,20 @@ async def _batch_anchor_ts(views: set) -> Optional[str]:
     return row["ts"].isoformat() if row["ts"] else None
 
 
-async def record(evidence: Path) -> List[CaseScore]:
+async def record(evidence: Path, only: Optional[str] = None) -> List[CaseScore]:
+    """Record every approved case, or with `only` just that one (#142): its
+    entry is merged into the fixture and the other recordings stay as they are.
+    Either way, every approved case is scored afterwards."""
     from app.database import init_db
 
     from langsmith import trace
 
+    cases = [c for c in approved_cases() if only is None or c.id == only]
+    if not cases:
+        raise ValueError(f"no approved case {only!r}")
     await init_db()  # the agent saves requirements to the app DB
     recording, run_ids = {}, {}
-    for case in approved_cases():
+    for case in cases:
         # One trace per case, so every LLM run it triggers is priced together (#243).
         run_ids[case.id] = str(uuid.uuid4())
         with trace(
@@ -148,10 +154,25 @@ async def record(evidence: Path) -> List[CaseScore]:
         # The agent calls are already billed; keep their requirements, unpriced.
         log_internal_error(logger, "Pricing the gold-set traces failed", exc)
         costs = {}
-    entries = {i: {"requirements": req, "cost_usd": costs.get(i)} for i, req in recording.items()}
+    kept = (
+        {
+            i: {"requirements": req, "cost_usd": cost}
+            for i, (req, cost) in _entries(RECORDING).items()
+        }
+        if only
+        else {}
+    )
+    entries = {
+        **kept,
+        **{i: {"requirements": req, "cost_usd": costs.get(i)} for i, req in recording.items()},
+    }
     RECORDING.parent.mkdir(parents=True, exist_ok=True)
     RECORDING.write_text(json.dumps(entries, indent=2, sort_keys=True, default=str) + "\n")
-    return await _score_all(recording, costs, evidence)
+    return await _score_all(
+        {i: e["requirements"] for i, e in entries.items()},
+        {i: e["cost_usd"] for i, e in entries.items()},
+        evidence,
+    )
 
 
 async def replay(evidence: Path) -> List[CaseScore]:
@@ -160,6 +181,13 @@ async def replay(evidence: Path) -> List[CaseScore]:
 
 def summary(scores: List[CaseScore]) -> str:
     lines = [f"Pass@1: {pass_at_1(scores):.2f} ({sum(s.passed for s in scores)}/{len(scores)})"]
+    # ADR 0042: no required predicate missing. A case that didn't run counts
+    # against it, since its SQL's predicates were never read.
+    stated = {c.id for c in FORMAL_CASES if c.required_predicates}
+    counted = [s for s in scores if s.id in stated]
+    survived = sum(s.executed and not s.missing_predicates for s in counted)
+    rate = survived / len(counted) if counted else 0.0
+    lines.append(f"Predicate survival: {rate:.2f} ({survived}/{len(counted)})")
     reasons = {c.id: c.expected_fail for c in FORMAL_CASES}
     for s in scores:
         reason = reasons.get(s.id, "")

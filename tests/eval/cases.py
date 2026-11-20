@@ -23,7 +23,7 @@ Case kinds:
 """
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -33,6 +33,9 @@ class EvalCase:
     kind: str  # "scored" | "unsupported" | "adversarial"
     nl: str
     oracle_sql: Optional[str] = None  # None for adversarial
+    # #142: the gender and age predicates the request states, as
+    # exploratory_predicates.py reads them; values follow the oracle.
+    required_predicates: Tuple[Tuple[str, str, object], ...] = ()
 
 
 # --- SCORED: scalar-answerable, count toward accuracy ----------------------
@@ -44,6 +47,7 @@ _SCORED: List[EvalCase] = [
         "scored",
         "How many female patients are there?",
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE gender = 'female'",
+        (("gender", "=", "female"),),
     ),
     EvalCase(
         "gender_male",
@@ -51,6 +55,7 @@ _SCORED: List[EvalCase] = [
         "scored",
         "How many male patients are in the database?",
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics WHERE gender = 'male'",
+        (("gender", "=", "male"),),
     ),
     EvalCase(
         "total_patients",
@@ -66,6 +71,7 @@ _SCORED: List[EvalCase] = [
         "How many patients are younger than 65?",
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics "
         "WHERE birth_date::date > CURRENT_DATE - INTERVAL '65 years'",
+        (("age", "<", 65),),
     ),
     EvalCase(
         "age_over_18",
@@ -74,6 +80,7 @@ _SCORED: List[EvalCase] = [
         "How many adult patients (18 or older) are there?",
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics "
         "WHERE birth_date::date <= CURRENT_DATE - INTERVAL '18 years'",
+        (("age", ">=", 18),),
     ),
     EvalCase(
         "female_under_65",
@@ -82,6 +89,7 @@ _SCORED: List[EvalCase] = [
         "How many female patients are under 65?",
         "SELECT COUNT(DISTINCT patient_id) FROM sqlonfhir.patient_demographics "
         "WHERE gender = 'female' AND birth_date::date > CURRENT_DATE - INTERVAL '65 years'",
+        (("gender", "=", "female"), ("age", "<", 65)),
     ),
     EvalCase(
         "cond_diabetes",
@@ -111,6 +119,7 @@ _SCORED: List[EvalCase] = [
         "WHERE p.gender = 'female' AND p.birth_date::date > CURRENT_DATE - INTERVAL '65 years' "
         "AND (c.code_text ILIKE '%hypertension%' OR c.icd10_display ILIKE '%hypertension%' "
         "OR c.snomed_display ILIKE '%hypertension%')",
+        (("gender", "=", "female"), ("age", "<", 65)),
     ),
     EvalCase(
         "male_over_18_diabetes",
@@ -122,6 +131,7 @@ _SCORED: List[EvalCase] = [
         "WHERE p.gender = 'male' AND p.birth_date::date <= CURRENT_DATE - INTERVAL '18 years' "
         "AND (c.code_text ILIKE '%diabetes%' OR c.icd10_display ILIKE '%diabetes%' "
         "OR c.snomed_display ILIKE '%diabetes%')",
+        (("gender", "=", "male"), ("age", ">=", 18)),
     ),
     EvalCase(
         "med_any",
@@ -185,6 +195,7 @@ _SCORED: List[EvalCase] = [
         "SELECT COUNT(DISTINCT p.patient_id) FROM sqlonfhir.patient_demographics p "
         "JOIN sqlonfhir.medication_requests m ON m.patient_id = p.patient_id "
         "WHERE p.gender = 'female'",
+        (("gender", "=", "female"),),
     ),
     EvalCase(
         "diabetes_and_hypertension",

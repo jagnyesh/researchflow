@@ -32,6 +32,7 @@ from app.services.sql_synthesis import SQLSynthesizer, SynthesisError
 from app.services.sql_validator import SQLValidator
 
 from tests.eval.cases import EvalCase, adversarial_cases, scored_cases, unsupported_cases
+from tests.eval.exploratory_predicates import missing_predicates
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures"
 
@@ -86,6 +87,11 @@ def summarize(results: List[Dict], *, n_unsupported: int) -> Dict:
     # Scored queries only, so the cost and the pass rate cover the same population.
     costs = [r["cost_usd"] for r in scored if r.get("cost_usd") is not None]
     median_cost = statistics.median(costs) if costs else None
+    # #142, ADR 0042: scored cases that state a gender or age, and how many of
+    # them carry every stated predicate in their SQL.
+    stated = {c.id: c for c in scored_cases() if c.required_predicates}
+    counted = [r for r in scored if r.get("id") in stated]
+    survived = sum(not missing_predicates(stated[r["id"]], r.get("sql")) for r in counted)
     return {
         "scored_total": len(scored),
         "scored_matched": matched,
@@ -99,6 +105,9 @@ def summarize(results: List[Dict], *, n_unsupported: int) -> Dict:
         "cost_per_passing_query_usd": (
             round(median_cost / accuracy, 6) if median_cost is not None and accuracy else None
         ),
+        "predicate_survived": survived,
+        "predicate_stated": len(counted),
+        "predicate_survival": round(survived / len(counted), 4) if counted else 0.0,
     }
 
 

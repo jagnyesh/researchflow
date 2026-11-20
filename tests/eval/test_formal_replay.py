@@ -42,7 +42,7 @@ def test_only_approved_cases_are_scored():
 async def test_replay_runs_every_approved_case(tmp_path):
     scores = await replay(evidence=tmp_path / "formal_gold_set.jsonl")
 
-    assert len(scores) == len(approved_cases()) == 10
+    assert len(scores) == len(approved_cases()) == 11
     # An expected-fail case may fail by erroring (its SQL can't run); it still
     # counts as a fail in Pass@1. Every other case must execute (#241).
     expected_fail = {c.id for c in approved_cases() if c.expected_fail}
@@ -50,7 +50,7 @@ async def test_replay_runs_every_approved_case(tmp_path):
         s.error_ref for s in scores
     ]
     assert not any(s.passed for s in scores if s.id in expected_fail)
-    assert (tmp_path / "formal_gold_set.jsonl").read_text().count("\n") == 10
+    assert (tmp_path / "formal_gold_set.jsonl").read_text().count("\n") == 11
 
 
 @pytest.mark.asyncio
@@ -78,6 +78,50 @@ async def test_the_anchor_covers_only_the_views_a_case_touches():
     views = touched_views(FORMAL_CASES[0], load_recording()[FORMAL_CASES[0].id])
 
     assert views == {"patient_demographics", "condition_simple"}
+
+
+@pytest.mark.asyncio
+async def test_recording_one_case_leaves_the_other_recordings_untouched(tmp_path, monkeypatch):
+    # #142: adding a case records only that case (one billed agent run), not all of them.
+    import json
+
+    from tests.eval import formal_record
+
+    fixture = tmp_path / "rec.json"
+    original = formal_record.RECORDING.read_text()
+    fixture.write_text(original)
+    monkeypatch.setattr(formal_record, "RECORDING", fixture)
+    target = approved_cases()[-1].id
+    called = []
+
+    async def agent(case):
+        called.append(case.id)
+        return load_recording()[case.id]
+
+    async def trace_costs(run_ids):
+        return {case_id: 0.005 for case_id in run_ids}
+
+    monkeypatch.setattr(formal_record, "_requirements_from_agent", agent)
+    monkeypatch.setattr(formal_record, "_trace_costs", trace_costs)
+
+    scores = await formal_record.record(tmp_path / "evidence.jsonl", only=target)
+
+    assert called == [target]
+    before, after = json.loads(original), json.loads(fixture.read_text())
+    assert {k: v for k, v in after.items() if k != target} == {
+        k: v for k, v in before.items() if k != target
+    }
+    assert after[target] == {"requirements": before[target]["requirements"], "cost_usd": 0.005}
+    assert {s.id for s in scores} == {c.id for c in approved_cases()}
+
+
+def test_recording_an_unknown_case_fails_before_any_call():
+    import asyncio
+
+    from tests.eval import formal_record
+
+    with pytest.raises(ValueError):
+        asyncio.run(formal_record.record(None, only="no_such_case"))
 
 
 def test_the_summary_lists_expected_fail_cases_with_their_reason():
