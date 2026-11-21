@@ -52,7 +52,7 @@ Run `.claude/skills/plan-lanes/preflight.sh`. It runs git and gh queries only, a
 - **Predicted files:** paths the issue names, plus `git grep` on `origin/main` for the symbols it names, plus the test file the lane will add. A High-tier lane also gets `CONTEXT.md` and `docs/decisions/INDEX.md`, because the grill writes them. Say how confident each prediction is.
 - **Tier:** classify the predicted paths with the §1 table. The highest tier among them wins. If the change is in a High category (PHI boundary, cohort or phenotype semantics, auth/RBAC/audit, encryption, IRB scope, golden fixtures) but touches no file on §1's path list, mark it "High?" and let the user decide in Step 4. Don't settle that silently either way.
 - **Overlap:** compare predicted files pairwise, and against in-flight work (`gh pr view <n> --json files`, `git diff --name-only origin/main...<branch>`). §3 says which overlaps run in series; apply it to every pair.
-- **Model and effort:** read each candidate's model and effort level from the Model, effort column of §1's table, for the tier set above. Don't restate the table here.
+- **Model and effort:** read each candidate's model and effort level from the Model, effort column of §1's table, for the tier set above, and its advisor from the rules under that table (an Opus advisor on a Sonnet lane, none otherwise). Don't restate the table here.
 - **Order:** `priority:high` first, then issues that unblock others, then Low and Medium before High. A High-tier lane starts with the user's design time, so the number open is a dial.
 
 ## 4. Present, then ask (the gate)
@@ -83,8 +83,8 @@ Nothing launches without the user's pick.
 ## 5. Launch
 
 Start one session per approved lane, each in its own worktree, with a fresh context and its brief as the first message.
-- **Desktop app:** use the session tool with a worktree, and pass its `model` and `effort` inputs from Step 3. The lane switches to its own `feat|fix/<n>-<slug>` branch from `origin/main` and sets up its own `.venv` (see the brief).
-- **Terminal:** run `scripts/lane.sh open <n> --type <feat|fix> --slug <slug>`, which syncs deps and copies `.env`. Then start `claude --model <id> --effort <level>` in that folder with the brief.
+- **Desktop app:** use the session tool with a worktree, and pass its `model` and `effort` inputs from Step 3, and its advisor if the tool takes one. If it doesn't, say at the gate that the lane runs without an advisor; never set one with `/advisor`, which saves to user settings and reaches every project. The lane switches to its own `feat|fix/<n>-<slug>` branch from `origin/main` and sets up its own `.venv` (see the brief).
+- **Terminal:** run `scripts/lane.sh open <n> --type <feat|fix> --slug <slug>`, which syncs deps and copies `.env`. Then start `claude --model <id> --effort <level>` in that folder with the brief, adding `--advisor opus` for a Sonnet lane.
 
 Never launch a lane without both settings: it would inherit this session's. Never run a lane as a subagent of this session. Lanes outlive this turn, the user has to be able to talk to them (a High-tier lane grills the user), and each lane spawns its own reviewer.
 
