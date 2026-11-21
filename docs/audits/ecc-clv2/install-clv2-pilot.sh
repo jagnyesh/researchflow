@@ -37,6 +37,7 @@ if os.path.exists(p):
     json.dump(s, open(p, "w"), indent=2); open(p, "a").write("\n")
 PY
   echo "Removed hooks and .claude/clv2. Instincts and logs kept in $REPO/.homunculus (delete by hand)."
+  echo "The .git/info/exclude lines stay so that data stays out of git; remove them after deleting it."
   exit 0
 fi
 

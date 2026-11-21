@@ -11,22 +11,26 @@ diff -ruN -x SKILL.md a/agents/observer-loop.sh b/agents/observer-loop.sh
  
  claude_process_alive() {
    local process_pid="$1"
-@@ -396,8 +399,13 @@
+@@ -396,8 +399,17 @@
    # Bash, including macOS's Bash 3.2 and Git Bash. That lets timeout/signal
    # cleanup terminate tool subprocesses as well as the direct CLI process.
    set -m
 +  # LOCAL PATCH (researchflow vet 2026-11-21): contain the analyzer. Read only
-+  # PROJECT_DIR, write only INSTINCTS_DIR, no Bash, no MCP, no skills, and an
-+  # explicit permission mode so a user-level defaultMode can't widen it.
++  # PROJECT_DIR, write only INSTINCTS_DIR, no Bash, no MCP, no skills. No settings
++  # file is loaded (user, project or local), so no allow rule or hook from any of
++  # them can widen this; the session transcript is not saved under ~/.claude.
++  # Empty dirs would turn the rules into Edit(//**): refuse to run instead.
++  : "${PROJECT_DIR:?PROJECT_DIR unset}" "${INSTINCTS_DIR:?INSTINCTS_DIR unset}"
    ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model "${ECC_OBSERVER_MODEL:-haiku}" --max-turns "$max_turns" --print \
 -    --allowedTools "Read,Write" \
++    --setting-sources "" --no-session-persistence \
 +    --permission-mode default --tools "Read,Write,Edit" \
 +    --allowedTools "Read(/${PROJECT_DIR}/**)" "Edit(/${INSTINCTS_DIR}/**)" \
 +    --strict-mcp-config --disable-slash-commands \
      -p "$prompt_content" < /dev/null >&8 2>> "$LOG_FILE" &
    CLAUDE_PID=$!
    CLAUDE_PROCESS_GROUP=1
-@@ -513,7 +521,7 @@
+@@ -513,7 +525,7 @@
  
  # Prune expired pending instincts before analysis (SCRIPT_DIR resolved at top
  # via ${BASH_SOURCE[0]} so it is correct under both execution and sourcing).
@@ -85,7 +89,7 @@ diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
  import json
  import sys
  import os
-@@ -259,13 +260,13 @@
+@@ -259,23 +260,23 @@
  ')
  
  # Check if parsing succeeded
@@ -101,12 +105,15 @@ diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
  import json, sys, os, re
  
  # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
-@@ -275,7 +276,7 @@
-     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
+ # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+ # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+ _SECRET_RE = re.compile(
+-    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
++    r"(?i)((?:api[_-]?key|token|secret|password|passwd|pwd|authorization|credentials?|auth|cookie|session)(?:_access_key|_key)?)"
      r"""(["'"'"'\s:=\\]{1,8})"""
      r"((?:bearer|basic|token|bot)\s+)?"
 -    r"([A-Za-z0-9_\-/.+=]{8,256})"
-+    r"([A-Za-z0-9_\-/.+=]{1,4096})"
++    r"([A-Za-z0-9_\-/.+=]{1,8192})"
  )
  # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
  # end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
@@ -115,7 +122,7 @@ diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
  _SECRET_VALUE_RE = re.compile(
      r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
 -    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-+    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_)[A-Za-z0-9_\-]{10,4096}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,4096})"
++    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,8192}|github_pat_[A-Za-z0-9_]{20,8192}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_|hf_|glpat-)[A-Za-z0-9_\-]{10,8192}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,8192})"
      r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
  )
  
@@ -128,12 +135,16 @@ diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
  import json, sys, os, re
  import signal
  
-@@ -360,7 +361,7 @@
-     r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
+@@ -357,10 +358,10 @@
+ # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+ # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+ _SECRET_RE = re.compile(
+-    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
++    r"(?i)((?:api[_-]?key|token|secret|password|passwd|pwd|authorization|credentials?|auth|cookie|session)(?:_access_key|_key)?)"
      r"""(["'"'"'\s:=\\]{1,8})"""
      r"((?:bearer|basic|token|bot)\s+)?"
 -    r"([A-Za-z0-9_\-/.+=]{8,256})"
-+    r"([A-Za-z0-9_\-/.+=]{1,4096})"
++    r"([A-Za-z0-9_\-/.+=]{1,8192})"
  )
  # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
  # end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
@@ -142,7 +153,7 @@ diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
  _SECRET_VALUE_RE = re.compile(
      r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
 -    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
-+    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_)[A-Za-z0-9_\-]{10,4096}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,4096})"
++    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,8192}|github_pat_[A-Za-z0-9_]{20,8192}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_|hf_|glpat-)[A-Za-z0-9_\-]{10,8192}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,8192})"
      r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
  )
  
