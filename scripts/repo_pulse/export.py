@@ -14,7 +14,6 @@ from pulse import area, ext, lane_status, split_rename
 
 REPO, RAW, OUT = sys.argv[1:4]
 os.makedirs(OUT, exist_ok=True)
-OWNER = os.environ["REPO_PULSE_REPO"].split("/")[0]
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # git's empty tree, not a secret  # pragma: allowlist secret
 
 
@@ -60,7 +59,8 @@ log = git(
 )
 commits, churn = [], []
 file_stats = defaultdict(lambda: [0, 0, 0, ""])  # commits, added, deleted, last date
-for block in log.split("\x00")[1:]:
+# Oldest first, so a rename meets the old path's history already in file_stats.
+for block in reversed(log.split("\x00")[1:]):
     head, *lines = block.strip("\n").split("\n")
     sha, parents, date, subj = head.split("\x1f")
     parent = parents.split()[0] if parents else None
@@ -105,7 +105,6 @@ for block in log.split("\x00")[1:]:
     for ar in sorted(per):
         f, a, dl, mv = per[ar]
         churn.append([sha[:7], d.isoformat(), monday(d), ar, f, a, dl, mv])
-commits.reverse()
 # churn: oldest commit first, areas alphabetical within a commit
 order = {c[0]: i for i, c in enumerate(commits)}
 churn.sort(key=lambda r: (order[r[0]], r[3]))
@@ -255,12 +254,13 @@ def field(body, k):
     return m.group(1).strip() if m else None
 
 
-def owner_atts(d):
+def owner_atts(d, p):
+    owner = p["html_url"].split("/")[3]  # the PR URL's owner, as attestation.sh read takes it
     return sorted(
         [
             c
             for c in d["comments"]
-            if c["user"]["login"] == OWNER
+            if c["user"]["login"] == owner
             and c["author_association"] == "OWNER"
             and ATT.search(c["body"] or "")
         ],
@@ -337,7 +337,7 @@ for p in merged:
     og = round((ts(green) - ts(created)).total_seconds() / 60) if green else ""
     gm = round((ts(merged_at) - ts(green)).total_seconds() / 60) if green else ""
     evidence = 1 if re.search(r"(?im)^\W*Testing evidence", p["body"] or "") else 0
-    unedited = [c for c in owner_atts(d) if not edited(c)]
+    unedited = [c for c in owner_atts(d, p) if not edited(c)]
     if unedited:
         newest = unedited[-1]
         att = "current" if field(newest["body"], "Reviewed-Commit") == p["head"]["sha"] else "stale"
@@ -507,7 +507,7 @@ lanes = []
 for p in lane_prs:
     n = p["number"]
     d = details[n]
-    atts = owner_atts(d)
+    atts = owner_atts(d, p)
     ship = [c for c in atts if SHIPV.search(c["body"])]
     first_ship = ship[0]["created_at"] if ship else ""
     end = p["merged_at"] or ""

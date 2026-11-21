@@ -21,7 +21,6 @@ load = lambda n: json.load(open(os.path.join(RAW, n)))
 NOW = datetime.fromisoformat(
     open(os.path.join(RAW, "exported_at")).read().strip().replace("Z", "+00:00")
 )
-OWNER = os.environ["REPO_PULSE_REPO"].split("/")[0]
 
 pulls = load("pulls.json")
 details = {d["number"]: d for d in load("pr_details.json")}
@@ -37,10 +36,10 @@ def gh_comment(c):
     }
 
 
-def reader_output(comments):
+def reader_output(comments, owner):
     """attestation.sh read, minus the NEWEST/IGNORED lines pick_root_body doesn't use."""
     att = [c for c in comments if c["body"].startswith("## Review attestation")]
-    own = [c for c in att if c["author"]["login"] == OWNER and c["authorAssociation"] == "OWNER"]
+    own = [c for c in att if c["author"]["login"] == owner and c["authorAssociation"] == "OWNER"]
     lines = ["EDITED x" for c in own if c["includesCreatedEdit"]]
     clean = [c["body"] for c in own if not c["includesCreatedEdit"]]
     if not clean:
@@ -102,7 +101,8 @@ for p in merged:
     }
     prs[n] = pr
     comments = [gh_comment(c) for c in d["comments"]]
-    attested[n] = rm.pick_root_body(reader_output(comments), comments, p["html_url"])
+    owner = p["html_url"].split("/")[3]  # the PR URL's owner, as attestation.sh read takes it
+    attested[n] = rm.pick_root_body(reader_output(comments, owner), comments, p["html_url"])
     m = rm.ts(p["merged_at"])
     reopened[n] = sum(
         1
