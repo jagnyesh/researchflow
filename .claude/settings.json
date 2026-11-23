@@ -20,7 +20,13 @@
       "Bash(rm -f -r*)",
       "Bash(rm * -r*)",
       "Bash(rm * -R*)",
-      "Bash(rm *--recursive*)"
+      "Bash(rm *--recursive*)",
+      "Bash(pip install*)",
+      "Bash(pip3 install*)",
+      "Bash(python -m pip install*)",
+      "Bash(python3 -m pip install*)",
+      "Bash(uv pip install*)",
+      "Bash(uv pip sync*)"
     ],
     "deny": [
       "Read(//**/.env)",

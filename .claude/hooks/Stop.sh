@@ -146,7 +146,15 @@ if matchers:
 
 env = dict(os.environ, ANTHROPIC_API_KEY="", LANGCHAIN_TRACING_V2="false", LANGSMITH_TRACING="false")
 venv_py = os.path.join(repo, ".venv", "bin", "python")
-py = venv_py if os.path.exists(venv_py) else "python3"
+if targets and not os.path.exists(venv_py):
+    # The system python3 lacks the project's deps, so its import errors would read as
+    # test failures. Report the tests as not run instead (README "Quick start" makes the venv).
+    msg = ("Stop hook: not run (%d): no .venv/bin/python in this checkout; set it up per the README "
+           "\"Quick start\" and work in it: %s" % (len(targets), "; ".join(sorted(targets))))
+    sys.stderr.write(msg + "\n")
+    print(json.dumps({"systemMessage": msg}))
+    sys.exit(0)
+py = venv_py
 
 not_run, failures, ran = [], [], 0
 start = time.time()
