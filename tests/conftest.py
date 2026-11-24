@@ -170,3 +170,32 @@ def session_audit_redis(event_loop):
     yield fake
     am.set_audit_redis(None)
     event_loop.run_until_complete(fake.aclose())
+
+
+@pytest.fixture(scope="session", autouse=True)
+def apptest_waits_for_shutdown_data():
+    """Close a race in Streamlit's AppTest that flakes UI tests (Linux CI, c905b87).
+
+    LocalScriptRunner records each event as ``events.append(event)`` then
+    ``event_data.append(kwargs)`` on the script thread, but ``script_stopped()``
+    checks only ``events``. When the test thread polls between the two appends,
+    AppTest reads the previous event's kwargs as SHUTDOWN's and raises
+    ``KeyError: 'client_state'``. Counting only events whose kwargs are already
+    recorded makes the wait end after both appends. Still present in streamlit
+    1.67.0; drop this when upstream fixes it. Regression test:
+    tests/test_apptest_shutdown_race.py.
+    """
+    try:
+        from streamlit.runtime.scriptrunner import ScriptRunnerEvent
+        from streamlit.testing.v1.local_script_runner import LocalScriptRunner
+    except ImportError:
+        yield
+        return
+
+    def script_stopped(self):
+        recorded = self.events[: len(self.event_data)]
+        return any(e == ScriptRunnerEvent.SHUTDOWN for e in recorded)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(LocalScriptRunner, "script_stopped", script_stopped)
+        yield
