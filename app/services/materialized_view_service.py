@@ -27,6 +27,19 @@ from app.schemas._errors import failure_text, log_internal_error
 logger = logging.getLogger(__name__)
 
 
+def view_health(view: Dict[str, Any]) -> str:
+    """The one rule combining a view's `status` and `is_stale` into health.
+
+    "failed" (last refresh errored) outranks "stale" (last good refresh is old):
+    the refresh error is the actionable one. Everything else is "healthy".
+    """
+    if view.get("status") == "failed":
+        return "failed"
+    if view.get("is_stale", False):
+        return "stale"
+    return "healthy"
+
+
 class MaterializedViewService:
     """
     Service for managing materialized views

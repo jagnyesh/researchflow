@@ -23,7 +23,7 @@ import asyncio
 
 from ..schemas._errors import internal_error, log_internal_error
 from ..security.dependencies import require_role
-from ..services.materialized_view_service import MaterializedViewService
+from ..services.materialized_view_service import MaterializedViewService, view_health
 from ..sql_on_fhir.view_definition_manager import ViewDefinitionManager
 
 logger = logging.getLogger(__name__)
@@ -412,14 +412,17 @@ async def health_check():
         try:
             views = await service.list_views()
 
-            stale_count = sum(1 for v in views if v.get("is_stale", False))
-            healthy_count = len(views) - stale_count
+            health = {v["view_name"]: view_health(v) for v in views}
+            failed = sorted(n for n, h in health.items() if h == "failed")
+            stale_count = sum(1 for h in health.values() if h == "stale")
+            healthy_count = sum(1 for h in health.values() if h == "healthy")
 
             return {
-                "status": "healthy" if stale_count == 0 else "degraded",
+                "status": "healthy" if healthy_count == len(views) else "degraded",
                 "total_views": len(views),
                 "healthy_views": healthy_count,
                 "stale_views": stale_count,
+                "failed_views": failed,
                 "schema": "sqlonfhir",
             }
 
