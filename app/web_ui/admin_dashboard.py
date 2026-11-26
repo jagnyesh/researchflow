@@ -61,6 +61,7 @@ from app.langchain_orchestrator.approval_bridge import (
     REJECTION_ROUTE_KEY,
 )
 from app.database import get_db_session, get_engine
+from app.database.workflow_states import StateKind, WorkflowState
 from app.services.gate_telemetry import gate_telemetry_rows, load_gate_telemetry
 from app.database.models import AgentExecution
 from app.services.approval_service import ApprovalService
@@ -96,18 +97,35 @@ def dot(tone: str) -> str:
     return f":{tone}[●]"
 
 
+def state_kind(state) -> StateKind | None:
+    """The registry's kind for a stored state; None for a value that is not a member.
+
+    `current_state` is an unconstrained string, so a stray value must not raise here.
+    """
+    try:
+        return WorkflowState((state or "").lower()).info.kind
+    except ValueError:
+        return None
+
+
 def get_status_badge(state: str) -> str:
-    """Status dot for a request state: done, moving, waiting on a person, failed."""
-    state = (state or "").lower()
-    if state in ("delivered", "complete"):
-        return dot("green")
-    if state in ("failed", "not_feasible"):
-        return dot("red")
-    if state.endswith("_review") or state == "human_review":
-        return dot("orange")
-    if state in ("", "new_request"):
+    """Status dot for a request state: done, moving, waiting on a person, failed.
+
+    The kind comes from the state registry (#432). A request that has not started, a
+    legacy value and a value that is not a state all get the gray dot.
+    """
+    if (state or "").lower() == WorkflowState.NEW_REQUEST.value:
         return dot("gray")
-    return dot("blue")
+    kind = state_kind(state)
+    if kind is StateKind.SUCCEEDED:
+        return dot("green")
+    if kind is StateKind.FAILED:
+        return dot("red")
+    if kind is StateKind.AWAITING_REVIEW:
+        return dot("orange")
+    if kind is StateKind.IN_PROGRESS:
+        return dot("blue")
+    return dot("gray")
 
 
 def humanize(value) -> str:
@@ -410,28 +428,14 @@ def show_requests_sidebar():
         "Search", key="search_requests", placeholder="Request ID or researcher"
     )
 
-    # Status filter (all possible workflow states)
-    all_statuses = [
-        "new_request",
-        "requirements_gathering",
-        "requirements_complete",
-        "requirements_review",
-        "feasibility_validation",
-        "phenotype_review",
-        "human_review",
-        "preview_extraction",
-        "preview_qa",
-        "schedule_kickoff",
-        "data_extraction",
-        "qa_validation",
-        "delivery_review",
-        "data_delivery",
-        "delivered",
-        "complete",
-        "failed",
-    ]
+    # Status filter: every state the workflow writes. Legacy values (old rows only) are left out.
+    all_statuses = [s.value for s in WorkflowState if s.info.kind is not StateKind.LEGACY]
     status_filter = st.multiselect(
-        "Status", options=all_statuses, default=[], key="status_filter", format_func=humanize
+        "Status",
+        options=all_statuses,
+        default=[],
+        key="status_filter",
+        format_func=lambda value: WorkflowState(value).info.label,
     )
 
     # Filter requests
@@ -882,12 +886,20 @@ def show_overview():
     """Display system overview"""
     st.header("Overview")
 
-    # Get all active requests
+    # Completed requests too: a request that ended in qa_failed or not_feasible has
+    # completed_at set, and the default query drops it, so Failed would stay 0 (#435).
     try:
-        requests = run_async(st.session_state.orchestrator.get_all_active_requests())
+        requests = run_async(
+            st.session_state.orchestrator.get_all_active_requests(include_completed=True)
+        )
     except Exception as e:
         _render_db_unreachable(e, "system overview")
         return
+
+    kinds = [state_kind(r["current_state"]) for r in requests]
+    in_progress = sum(k in (StateKind.IN_PROGRESS, StateKind.AWAITING_REVIEW) for k in kinds)
+    completed = kinds.count(StateKind.SUCCEEDED)
+    failed = kinds.count(StateKind.FAILED)
 
     # Metrics
     col1, col2, col3, col4 = st.columns(4)
@@ -896,18 +908,18 @@ def show_overview():
         st.metric("Requests", f"{len(requests):,}")
 
     with col2:
-        in_progress = len(
-            [r for r in requests if r["current_state"] not in ["delivered", "complete", "failed"]]
-        )
         st.metric("In progress", f"{in_progress:,}")
 
     with col3:
-        completed = len([r for r in requests if r["current_state"] in ["delivered", "complete"]])
         st.metric("Completed", f"{completed:,}")
 
     with col4:
-        failed = len([r for r in requests if r["current_state"] == "failed"])
         st.metric("Failed", f"{failed:,}", delta=-failed if failed > 0 else None)
+
+    # Legacy and unrecognised values fit none of the three counts; say so, so they add up.
+    other = len(requests) - in_progress - completed - failed
+    if other:
+        st.caption(f"{other:,} in legacy or unrecognised states, not counted above")
 
     # Recent requests
     st.subheader("Recent requests")
