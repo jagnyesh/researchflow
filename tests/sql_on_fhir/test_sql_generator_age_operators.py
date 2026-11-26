@@ -68,3 +68,134 @@ def test_a_newly_parsed_age_brings_the_living_filter(details):
     _, _, sql = _age_predicate(details)
 
     assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# #431 (ADR 0043): "65 and over" built > 65, dropping every patient who is exactly 65.
+@pytest.mark.parametrize(
+    "details", ["65 and over", "65 and above", "65 and older", "65 and up", "65 years and over"]
+)
+def test_a_trailing_and_lower_bound_keeps_the_boundary_age(details):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == (">=", 65)
+
+
+# "18 and under" built < 18.
+@pytest.mark.parametrize("details", ["18 and under", "18 and below", "18 and younger"])
+def test_a_trailing_and_upper_bound_keeps_the_boundary_age(details):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == ("<=", 18)
+
+
+# These built no age predicate, so the request failed.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("65 or more", (">=", 65)),
+        ("65 or greater", (">=", 65)),
+        ("65 or higher", (">=", 65)),
+        ("50 or less", ("<=", 50)),
+        ("50 or fewer", ("<=", 50)),
+        ("50 or lower", ("<=", 50)),
+    ],
+)
+def test_an_or_more_or_less_bound_keeps_the_boundary_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+# "=> 65" and "=< 50" built strict bounds; the others built no age predicate.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("≥ 65", (">=", 65)),
+        ("=> 65", (">=", 65)),
+        ("65+", (">=", 65)),
+        ("65 +", (">=", 65)),
+        ("65+ years", (">=", 65)),
+        ("≤ 50", ("<=", 50)),
+        ("=< 50", ("<=", 50)),
+    ],
+)
+def test_an_inclusive_symbol_keeps_the_boundary_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+def _generate_with_age(side, details):
+    age = RB.build_demographic(details, term="age", details=details)
+    return SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        RB.build_requirements(**{side: [age]}), count_only=True
+    )
+
+
+# One number and both directions has no safe reading; the parser used to take
+# whichever comparison it checked first.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details", ["under 65 and over", "65 and over or under", "over 65 or younger", "≥ 65 or < "]
+)
+def test_an_age_naming_both_directions_for_one_number_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
+
+
+_AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date))"
+
+
+# ADR 0039 reads each side of a two-bound age with the single-bound parser, so
+# "under 18 or 65 and over" built > 65 and dropped the 65-year-olds.
+@pytest.mark.parametrize(
+    "details,join,first,second",
+    [
+        ("under 18 or 65 and over", "OR", ("<", 18), (">=", 65)),
+        ("18 and under or 65 and over", "OR", ("<=", 18), (">=", 65)),
+        ("17 or less or 65+", "OR", ("<=", 17), (">=", 65)),
+        ("18+ and under 65", "AND", (">=", 18), ("<", 65)),
+        ("18 and over and under 65", "AND", (">=", 18), ("<", 65)),
+        ("18 or more and under 65", "AND", (">=", 18), ("<", 65)),
+        ("≥ 18 and =< 65", "AND", (">=", 18), ("<=", 65)),
+    ],
+)
+def test_a_two_bound_age_reads_inclusive_phrasings_on_both_sides(details, join, first, second):
+    sql, params = _generate_with_age("inclusion", details)
+
+    assert f"({_AGE} {first[0]} :age_1 {join} {_AGE} {second[0]} :age_2)" in sql
+    assert params == {"age_1": first[1], "age_2": second[1]}
+    assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# Reads as "<= 18" and a stray 65, or as ">= 18 and < 65"; it failed before #431 too.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_a_bare_and_under_between_two_numbers_fails_the_request(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "18 and under 65")
+
+
+# ADR 0043 keeps ADR 0039's rule: #431's negated rows fail instead of building <= or >=.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "no older than 65",
+        "not over 65",
+        "no less than 65",
+        "not younger than 65",
+        "no more than 50",
+    ],
+)
+def test_a_negated_comparative_age_still_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
+
+
+@pytest.mark.parametrize(
+    "details", ["65 and over", "18 and under", "65 or more", "50 or less", "65+", "≥ 65", "≤ 50"]
+)
+def test_an_age_parsed_since_431_brings_the_living_filter(details):
+    _, _, sql = _age_predicate(details)
+
+    assert sql.count("p.deceased IS NOT TRUE") == 1, sql

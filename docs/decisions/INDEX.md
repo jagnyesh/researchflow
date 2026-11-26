@@ -6,6 +6,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 
 ## Recent (chronological — most recent first)
 
+- **0043** — [Inclusive age phrasings build inclusive bounds, and negated ages still fail (#431)](0043-formal-inclusive-age-phrasings.md) (2026-11-25, accepted)
 - **0042** — [Predicate survival is checked in the SQL's AST on both paths, and #142 closes on four additions (#142)](0042-predicate-survival-eval-remaining-scope.md) (2026-11-18, accepted)
 - **0041** — [The extraction eval gate replays recorded wire responses in CI (#137)](0041-extraction-eval-gate-replays-recorded-wire-responses.md) (2026-11-18, accepted)
 - **0040** — [The extraction eval scores concepts the way the SQL generator reads them (#136)](0040-extraction-eval-scores-concepts-as-the-generator-reads-them.md) (2026-11-16, accepted)
@@ -58,6 +59,7 @@ The numeric prefix (`0000`–`0026`) reflects **append order** in the original `
 - [0036 — Every formal criterion concept becomes SQL or the request fails (amends 0035 for unparseable ages)](0036-formal-criteria-build-or-fail.md)
 - [0038 — Extraction writes every CSV or fails; no package lists a file it didn't write](0038-extraction-writes-every-csv-or-fails.md)
 - [0039 — Family history fails, gender takes one value, two-bound ages build both bounds](0039-formal-family-history-gender-two-bound-age.md)
+- [0043 — Inclusive age phrasings build inclusive bounds; negated ages still fail](0043-formal-inclusive-age-phrasings.md)
 - [0028 — Sprint 6.7: Exploratory portal LLM SQL synthesis behind a default-deny validator](0028-sprint-6-7-exploratory-llm-sql-synthesis.md)
 - [0031 — Sprint 6.7 gate: which layer stopped the adversarial cases](0031-sprint-6-7-adversarial-gate-attribution.md) (corrects 0028's attribution)
 

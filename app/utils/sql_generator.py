@@ -29,6 +29,15 @@ class SQLGenerator:
         r"|except\w*|exclu(?!ded\b|sively\b)\w*|excl|omit\w*|disqualif\w*|remov\w*"
         r"|other\s+than|aside\s+from|rather\s+than|instead\s+of)\b|\bw/o\b|n['’]t\b"
     )
+    # Inclusive forms that follow the number ("65 or older", "65 and over"). The single-bound
+    # parser and the two-bound suffix read the same list so they can't drift (ADR 0043).
+    _AGE_GE_AFTER = (
+        r"(?<=\d)\s*\+"
+        r"|\b(?:or\s+(?:older|over|above|more|greater|higher)|and\s+(?:older|over|above|up))\b"
+    )
+    _AGE_LE_AFTER = (
+        r"\b(?:or\s+(?:younger|under|below|less|fewer|lower)|and\s+(?:younger|under|below))\b"
+    )
     # "familial" and "FH" are left out: they also name the patient's own diagnosis,
     # as in familial hypercholesterolemia.
     _FAMILY_HISTORY = re.compile(
@@ -535,11 +544,11 @@ class SQLGenerator:
         # no comparison of its own. In "under 18 or over 65" it starts the second.
         suffix = None
         if SQLGenerator._parse_age_bound(text[: first.end()])[0] is None:
-            suffix = re.match(
-                r"\s*or\s+(?:older|over|above|younger|under|below)\b",
-                text[first.end() : second.start()],
-            )
-        start = first.end() + (suffix.end() if suffix else 0)
+            # match() at pos, not on a slice, so "(?<=\d)" in "18+" sees the digit.
+            suffix = re.compile(
+                rf"\s*(?:{SQLGenerator._AGE_GE_AFTER}|{SQLGenerator._AGE_LE_AFTER})"
+            ).match(text, first.end(), second.start())
+        start = suffix.end() if suffix else first.end()
         joins = list(re.finditer(r"\b(and|or)\b", text[start : second.start()]))
         if len(joins) != 1:
             return None, None
@@ -568,18 +577,25 @@ class SQLGenerator:
         """Read one comparison and its age from text holding exactly one number."""
         # Inclusive forms first: "65 or over" contains "over" and ">=" contains ">" (#404).
         # Word boundaries keep "senior over 65" strict.
-        ge_pattern = r">=|\bat least\b|\bor (?:older|over|above)\b"
-        le_pattern = r"<=|\bat most\b|\bor (?:younger|under|below)\b"
+        ge_pattern = rf">=|=>|≥|\bat least\b|{SQLGenerator._AGE_GE_AFTER}"
+        le_pattern = rf"<=|=<|≤|\bat most\b|{SQLGenerator._AGE_LE_AFTER}"
         gt_words = ("greater than", "more than", "older than", "above", "over")
         lt_words = ("less than", "fewer than", "younger than", "below", "under")
+        ge = re.search(ge_pattern, text)
+        le = re.search(le_pattern, text)
+        gt = ">" in text or any(w in text for w in gt_words)
+        lt = "<" in text or any(w in text for w in lt_words)
+        if (ge or gt) and (le or lt):
+            # "under 65 and over": one number, both directions (ADR 0043).
+            return None, None
         op = None
-        if re.search(ge_pattern, text):
+        if ge:
             op = ">="
-        elif re.search(le_pattern, text):
+        elif le:
             op = "<="
-        elif ">" in text or any(w in text for w in gt_words):
+        elif gt:
             op = ">"
-        elif "<" in text or any(w in text for w in lt_words):
+        elif lt:
             op = "<"
         if op in (">", "<") and "or equal" in text:
             op += "="
