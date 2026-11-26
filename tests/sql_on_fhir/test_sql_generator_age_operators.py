@@ -68,3 +68,275 @@ def test_a_newly_parsed_age_brings_the_living_filter(details):
     _, _, sql = _age_predicate(details)
 
     assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# #431 (ADR 0043): "65 and over" built > 65, dropping every patient who is exactly 65.
+@pytest.mark.parametrize(
+    "details", ["65 and over", "65 and above", "65 and older", "65 and up", "65 years and over"]
+)
+def test_a_trailing_and_lower_bound_keeps_the_boundary_age(details):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == (">=", 65)
+
+
+# "18 and under" built < 18.
+@pytest.mark.parametrize("details", ["18 and under", "18 and below", "18 and younger"])
+def test_a_trailing_and_upper_bound_keeps_the_boundary_age(details):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == ("<=", 18)
+
+
+# These built no age predicate, so the request failed.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("65 or more", (">=", 65)),
+        ("65 or greater", (">=", 65)),
+        ("65 or higher", (">=", 65)),
+        ("50 or less", ("<=", 50)),
+        ("50 or fewer", ("<=", 50)),
+        ("50 or lower", ("<=", 50)),
+    ],
+)
+def test_an_or_more_or_less_bound_keeps_the_boundary_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+# "=> 65" and "=< 50" built strict bounds; the others built no age predicate.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("≥ 65", (">=", 65)),
+        ("=> 65", (">=", 65)),
+        ("65+", (">=", 65)),
+        ("65 +", (">=", 65)),
+        ("65+ years", (">=", 65)),
+        ("≤ 50", ("<=", 50)),
+        ("=< 50", ("<=", 50)),
+    ],
+)
+def test_an_inclusive_symbol_keeps_the_boundary_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+def _generate_with_age(side, details):
+    age = RB.build_demographic(details, term="age", details=details)
+    return SQLGenerator(use_materialized_views=True).generate_phenotype_sql(
+        RB.build_requirements(**{side: [age]}), count_only=True
+    )
+
+
+# One number and both directions has no safe reading; the parser used to take
+# whichever comparison it checked first.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details", ["under 65 and over", "65 and over or under", "over 65 or younger", "≥ 65 or < "]
+)
+def test_an_age_naming_both_directions_for_one_number_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
+
+
+_AGE = "EXTRACT(YEAR FROM AGE(CURRENT_DATE, p.birth_date::date))"
+
+
+# ADR 0039 reads each side of a two-bound age with the single-bound parser, so
+# "under 18 or 65 and over" built > 65 and dropped the 65-year-olds.
+@pytest.mark.parametrize(
+    "details,join,first,second",
+    [
+        ("under 18 or 65 and over", "OR", ("<", 18), (">=", 65)),
+        ("18 and under or 65 and over", "OR", ("<=", 18), (">=", 65)),
+        ("17 or less or 65+", "OR", ("<=", 17), (">=", 65)),
+        ("18+ and under 65", "AND", (">=", 18), ("<", 65)),
+        ("18 and over and under 65", "AND", (">=", 18), ("<", 65)),
+        ("18 or more and under 65", "AND", (">=", 18), ("<", 65)),
+        ("≥ 18 and =< 65", "AND", (">=", 18), ("<=", 65)),
+    ],
+)
+def test_a_two_bound_age_reads_inclusive_phrasings_on_both_sides(details, join, first, second):
+    sql, params = _generate_with_age("inclusion", details)
+
+    assert f"({_AGE} {first[0]} :age_1 {join} {_AGE} {second[0]} :age_2)" in sql
+    assert params == {"age_1": first[1], "age_2": second[1]}
+    assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# Reads as "<= 18" and a stray 65, or as ">= 18 and < 65"; it failed before #431 too.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_a_bare_and_under_between_two_numbers_fails_the_request(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "18 and under 65")
+
+
+# ADR 0043 keeps ADR 0039's rule: #431's negated rows fail instead of building <= or >=.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "no older than 65",
+        "not over 65",
+        "no less than 65",
+        "not younger than 65",
+        "no more than 50",
+    ],
+)
+def test_a_negated_comparative_age_still_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
+
+
+@pytest.mark.parametrize(
+    "details", ["65 and over", "18 and under", "65 or more", "50 or less", "65+", "≥ 65", "≤ 50"]
+)
+def test_an_age_parsed_since_431_brings_the_living_filter(details):
+    _, _, sql = _age_predicate(details)
+
+    assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# Review of #431: a quantity word elsewhere in the details turned a strict bound
+# inclusive ("> 18 (one or more encounters)" built >= 18). The quantity forms now
+# count only right after the age.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("> 18 (one or more encounters)", (">", 18)),
+        ("under 18 with one or fewer visits", ("<", 18)),
+        ("> 65 and up to date on vaccines", (">", 65)),
+        ("< 18 (pediatric, one or more visits)", ("<", 18)),
+        ("65 years or more", (">=", 65)),
+        ("65 years of age or more", (">=", 65)),
+        ("50 years old or less", ("<=", 50)),
+    ],
+)
+def test_a_quantity_word_counts_only_right_after_the_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+# A strict and an inclusive form for one bound have no single reading: "> 65 or more"
+# built >= 65 and "under 65 or younger" built <= 65. "+" needs the age before it.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "> 65 or more",
+        "over 65 and up",
+        "under 65 or younger",
+        "over 18 or higher risk",
+        "18 or older and under 65 or less",
+        "18 or older and under 65 or younger",
+        "+65",
+    ],
+)
+def test_an_age_mixing_strict_and_inclusive_forms_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
+
+
+# Re-review of #431: "recovered" holds "over", so the conflict checks failed a correct
+# bound. A strict word counts only as a whole word.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        (">= 18 (recovered patients)", (">=", 18)),
+        (">= 18 (overweight adults)", (">=", 18)),
+        ("18 or older (covered by insurance)", (">=", 18)),
+        ("65 or older (moreover frail)", (">=", 65)),
+        ("65 and over (recovery cohort)", (">=", 65)),
+        ("<= 65 (undergoing dialysis)", ("<=", 65)),
+        (">= 65 (with underlying conditions)", (">=", 65)),
+        (">= 65 (founder)", (">=", 65)),
+    ],
+)
+def test_a_strict_word_inside_another_word_is_not_a_bound(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_an_age_whose_only_comparison_is_inside_a_word_fails_the_request(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "65 and overweight")
+
+
+# "Whole word" means bounded by letters: a digit or "_" next to the word still counts,
+# as it did before #431.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("over65", (">", 65)),
+        ("65over", (">", 65)),
+        ("over_65", (">", 65)),
+        ("more than65", (">", 65)),
+        ("under18", ("<", 18)),
+        ("younger than18", ("<", 18)),
+    ],
+)
+def test_a_strict_word_against_the_number_still_counts(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_a_strict_word_against_the_number_still_conflicts(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "under18 or older")
+
+
+# Second review of #431: "and over" before the age read inclusive, so "adults and
+# over 65" built >= 65. The "and" forms count only right after the age.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("adults and over 65", (">", 65)),
+        ("adults and over65", (">", 65)),
+        ("seniors and over 65", (">", 65)),
+        ("elderly and above 65", (">", 65)),
+        ("adults and older than 65", (">", 65)),
+        ("children and under 18", ("<", 18)),
+        ("pediatric and below 18", ("<", 18)),
+    ],
+)
+def test_an_and_form_before_the_age_stays_strict(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+def test_an_and_form_before_a_two_bound_age_stays_strict():
+    sql, params = _generate_with_age("inclusion", "adults and over 18 and under 65")
+
+    assert f"({_AGE} > :age_1 AND {_AGE} < :age_2)" in sql
+    assert params == {"age_1": 18, "age_2": 65}
+
+
+# Round 5: when "and over" misses the age (an unknown unit or punctuation between),
+# its "over" built a strict > 65. An "and" form that is neither right after the age
+# nor right before one fails.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "65 yrs and over",
+        "65 y/o and over",
+        "65, and over",
+        "65 (and over)",
+        "18, and under",
+        "< 65 yrs and older",
+        "> 18 yrs and younger",
+    ],
+)
+def test_an_and_form_cut_off_from_the_age_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
