@@ -437,11 +437,6 @@ class MaterializedViewMetadata(Base):
         return f"<MaterializedViewMetadata(view_name='{self.view_name}', status='{self.status}', row_count={self.row_count})>"
 
     @property
-    def is_healthy(self) -> bool:
-        """Check if view is in healthy state"""
-        return self.status == "active" and not self.is_stale
-
-    @property
     def needs_refresh(self) -> bool:
         """Check if view needs refresh based on staleness"""
         if self.auto_refresh_enabled and self.staleness_hours:

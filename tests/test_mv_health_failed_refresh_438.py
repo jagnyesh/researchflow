@@ -20,6 +20,8 @@ def _view(name, status="active", is_stale=False):
         (_view("a", status="failed", is_stale=True), "failed"),
         # a view that never got metadata has no refresh evidence either way
         (_view("a", status="unknown"), "healthy"),
+        # a refresh in flight is not a failure; the old data is still served
+        (_view("a", status="refreshing"), "healthy"),
     ],
 )
 def test_view_health_rule(view, expected):
