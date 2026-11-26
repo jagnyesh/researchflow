@@ -199,3 +199,44 @@ def test_an_age_parsed_since_431_brings_the_living_filter(details):
     _, _, sql = _age_predicate(details)
 
     assert sql.count("p.deceased IS NOT TRUE") == 1, sql
+
+
+# Review of #431: a quantity word elsewhere in the details turned a strict bound
+# inclusive ("> 18 (one or more encounters)" built >= 18). The quantity forms now
+# count only right after the age.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("> 18 (one or more encounters)", (">", 18)),
+        ("under 18 with one or fewer visits", ("<", 18)),
+        ("> 65 and up to date on vaccines", (">", 65)),
+        ("< 18 (pediatric, one or more visits)", ("<", 18)),
+        ("65 years or more", (">=", 65)),
+        ("65 years of age or more", (">=", 65)),
+        ("50 years old or less", ("<=", 50)),
+    ],
+)
+def test_a_quantity_word_counts_only_right_after_the_age(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+# A strict and an inclusive form for one bound have no single reading: "> 65 or more"
+# built >= 65 and "under 65 or younger" built <= 65. "+" needs the age before it.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    [
+        "> 65 or more",
+        "over 65 and up",
+        "under 65 or younger",
+        "over 18 or higher risk",
+        "18 or older and under 65 or less",
+        "18 or older and under 65 or younger",
+        "+65",
+    ],
+)
+def test_an_age_mixing_strict_and_inclusive_forms_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
