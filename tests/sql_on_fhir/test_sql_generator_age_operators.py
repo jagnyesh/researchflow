@@ -254,6 +254,7 @@ def test_an_age_mixing_strict_and_inclusive_forms_fails_the_request(side, detail
         ("65 and over (recovery cohort)", (">=", 65)),
         ("<= 65 (undergoing dialysis)", ("<=", 65)),
         (">= 65 (with underlying conditions)", (">=", 65)),
+        (">= 65 (founder)", (">=", 65)),
     ],
 )
 def test_a_strict_word_inside_another_word_is_not_a_bound(details, expected):
