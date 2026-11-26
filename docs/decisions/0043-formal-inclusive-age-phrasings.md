@@ -32,6 +32,7 @@ The first four rows count the wrong cohort without an error. `65 and over` drops
 - **A two-bound age reads the same inclusive forms after a bare first number.** ADR 0039 let `or older`, `or over`, `or above`, `or younger`, `or under` and `or below` belong to a first bound that has no comparison before its number. That list is now every form that follows a number, from one constant shared with the single-bound parser. `18+ and under 65`, `18 and over and under 65` and `18 or more and under 65` build `(>= 18 AND < 65)`.
 - **A negated age still fails.** ADR 0039 stands. This decision amends #431's acceptance table: `no older than 65`, `not over 65`, `no less than 65`, `not younger than 65` and `no more than 50` fail with an error instead of building `<=` or `>=`. The researcher writes `<= 65` instead.
 - **Strict forms keep their meaning.** `over 65`, `older than 65`, `> 65`, `senior over 65`, `under 50` and `< 50` still build `>` or `<`.
+- **A strict word counts only as a whole word.** `recovered` holds `over` and `undergoing` holds `under`. With the two checks above, such a word would fail a correct bound, so `>= 18 (recovered patients)` and `<= 65 (undergoing dialysis)` build `>= 18` and `<= 65`.
 
 **Considered options.**
 
@@ -50,4 +51,5 @@ The first four rows count the wrong cohort without an error. `65 and over` drops
 - A trailing `-`, as in `50-`, still fails, because it reads as a range dash.
 - A quantity word after an unrecognized unit fails, as in `65 yrs or more`. Only `years`, `years old` and `years of age` may stand between the number and the word.
 - `18 or older and under 65 or younger` and the other mixed bounds fail where they used to build. The owner chose that over a follow-up after the review found them.
+- A details string whose only comparison word sits inside another word now fails. `65 and overweight` used to build `> 65`.
 - The ages in the extraction eval recording (`tests/eval/fixtures/extraction_recording.json`) use none of the new forms. They are symbols such as `> 65` and `>= 65 (seniors)`, `between` ranges, `< 18 or > 65`, and `50-59 years old`, so the eval gate reads them as before.

@@ -240,3 +240,29 @@ def test_a_quantity_word_counts_only_right_after_the_age(details, expected):
 def test_an_age_mixing_strict_and_inclusive_forms_fails_the_request(side, details):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
         _generate_with_age(side, details)
+
+
+# Re-review of #431: "recovered" holds "over", so the conflict checks failed a correct
+# bound. A strict word counts only as a whole word.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        (">= 18 (recovered patients)", (">=", 18)),
+        (">= 18 (overweight adults)", (">=", 18)),
+        ("18 or older (covered by insurance)", (">=", 18)),
+        ("65 or older (moreover frail)", (">=", 65)),
+        ("65 and over (recovery cohort)", (">=", 65)),
+        ("<= 65 (undergoing dialysis)", ("<=", 65)),
+        (">= 65 (with underlying conditions)", (">=", 65)),
+    ],
+)
+def test_a_strict_word_inside_another_word_is_not_a_bound(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_an_age_whose_only_comparison_is_inside_a_word_fails_the_request(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "65 and overweight")

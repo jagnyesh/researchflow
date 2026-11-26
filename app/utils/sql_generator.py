@@ -583,15 +583,16 @@ class SQLGenerator:
         # Word boundaries keep "senior over 65" strict.
         ge_pattern = rf">=|=>|≥|\bat least\b|{SQLGenerator._AGE_GE_AFTER}"
         le_pattern = rf"<=|=<|≤|\bat most\b|{SQLGenerator._AGE_LE_AFTER}"
-        gt_words = ("greater than", "more than", "older than", "above", "over")
-        lt_words = ("less than", "fewer than", "younger than", "below", "under")
+        # Whole words: "recovered" holds "over" and "undergoing" holds "under".
+        gt_words = r"\b(?:greater than|more than|older than|above|over)\b"
+        lt_words = r"\b(?:less than|fewer than|younger than|below|under)\b"
         ge = re.search(ge_pattern, text)
         le = re.search(le_pattern, text)
         # Strict forms are read from what the inclusive ones leave, so the "over" in
         # "65 or over" isn't a second, strict bound.
         rest = re.sub(f"{ge_pattern}|{le_pattern}", " ", text)
-        gt = ">" in rest or any(w in rest for w in gt_words)
-        lt = "<" in rest or any(w in rest for w in lt_words)
+        gt = ">" in rest or re.search(gt_words, rest)
+        lt = "<" in rest or re.search(lt_words, rest)
         if (ge or gt) and (le or lt):
             # "under 65 and over": one number, both directions (ADR 0043).
             return None, None
