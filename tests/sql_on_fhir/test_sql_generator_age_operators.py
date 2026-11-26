@@ -300,6 +300,7 @@ def test_a_strict_word_against_the_number_still_conflicts(side):
     "details,expected",
     [
         ("adults and over 65", (">", 65)),
+        ("adults and over65", (">", 65)),
         ("seniors and over 65", (">", 65)),
         ("elderly and above 65", (">", 65)),
         ("adults and older than 65", (">", 65)),
