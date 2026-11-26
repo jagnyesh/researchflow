@@ -33,6 +33,24 @@ information. When new information reveals a pre-commit's premise was broken,
 deliberate override is appropriate when documented. Precedent: Sprint 6.2
 Phase 1.5 Q1 refinement; Sprint 6.3 verdict revision GO sqlonfhir.
 
+For reports, PR bodies and review verdicts (added 2026-11-24): label each claim
+**measured** (you ran it and saw the output), **inferred** (it follows from what
+you read) or **guess**. Readers take an unlabeled claim as measured, so label
+anything you did not run yourself. Labels go on the evidence, never on an
+attestation's `- Verdict:` or `- Reviewed-Commit:` lines, which validate-and-ship
+parses exactly.
+
+For any measured number (added 2026-11-24; speedup, token count, eval score, cost): before
+trusting, reporting or acting on it, name what limits it and rule out that it
+measured something other than the intended work. Precedent: the Sprint 8.4
+aggregator double-charged because `input_tokens` already includes
+`cache_read` (ADR 0000 case 8).
+
+For any change (added 2026-11-24): subtract before you add. Remove dead code and unused paths
+first, take the smallest change that does the job, and prefer deletion to a new
+abstraction. The ponytail skill (`.claude/skills/ponytail/SKILL.md`) holds the
+detailed rules for code.
+
 Full context with 10 documented cases: see [ADR 0000](docs/decisions/0000-meta-recurring-workflow-pattern.md)
 "Recurring workflow pattern" in the ADR log.
 
