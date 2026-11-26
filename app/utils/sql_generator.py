@@ -596,6 +596,11 @@ class SQLGenerator:
         rest = re.sub(f"{ge_pattern}|{le_pattern}", " ", text)
         gt = ">" in rest or re.search(gt_words, rest)
         lt = "<" in rest or re.search(lt_words, rest)
+        # An "and over" left in rest missed the age before it; unless an age follows
+        # ("adults and over 65"), it meant inclusive and must not build > 65.
+        and_form = r"\band\s+(?:older|over|above|younger|under|below)\b(?!\s*(?:than\s*)?\d)"
+        if re.search(and_form, rest):
+            return None, None
         if (ge or gt) and (le or lt):
             # "under 65 and over": one number, both directions (ADR 0043).
             return None, None

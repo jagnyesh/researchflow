@@ -50,7 +50,8 @@ The first four rows count the wrong cohort without an error. `65 and over` drops
 - `18 and under 65` fails. It reads both as `<= 18` followed by a stray `65` and as `>= 18 and < 65`, so failing is the safe reading. It failed before this change as well.
 - A trailing `-`, as in `50-`, still fails, because it reads as a range dash.
 - A quantity word right after the age is read as the age's, even when it counts something else. `65 or more comorbidities` builds `>= 65`, where it used to fail.
-- A quantity word after an unrecognized unit fails, as in `65 yrs or more`. Only `years`, `years old` and `years of age` may stand between the number and the word.
+- A quantity word after an unrecognized unit fails, as in `65 yrs or more`.
+- An `and` form cut off from the age fails, as in `65 yrs and over`, `65, and over` and `65 (and over)`. Its `over` used to build `> 65`. An `and` form right before an age, as in `adults and over 65`, is a strict bound. Only `years`, `years old` and `years of age` may stand between the number and the word.
 - `18 or older and under 65 or younger` and the other mixed bounds fail where they used to build. The owner chose that over a follow-up after the review found them.
 - A details string whose only comparison word sits inside another word now fails. `65 and overweight`, `18 or overweight` and `65 (recovered)` used to build `> 65` or `> 18`, which those details don't say.
 - The ages in the extraction eval recording (`tests/eval/fixtures/extraction_recording.json`) use none of the new forms. They are symbols such as `> 65` and `>= 65 (seniors)`, `between` ranges, `< 18 or > 65`, and `50-59 years old`, so the eval gate reads them as before.

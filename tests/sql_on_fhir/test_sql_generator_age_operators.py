@@ -318,3 +318,16 @@ def test_an_and_form_before_a_two_bound_age_stays_strict():
 
     assert f"({_AGE} > :age_1 AND {_AGE} < :age_2)" in sql
     assert params == {"age_1": 18, "age_2": 65}
+
+
+# Round 5: when "and over" misses the age (an unknown unit or punctuation between),
+# its "over" built a strict > 65. An "and" form that is neither right after the age
+# nor right before one fails.
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+@pytest.mark.parametrize(
+    "details",
+    ["65 yrs and over", "65 y/o and over", "65, and over", "65 (and over)", "18, and under"],
+)
+def test_an_and_form_cut_off_from_the_age_fails_the_request(side, details):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, details)
