@@ -327,7 +327,15 @@ def test_an_and_form_before_a_two_bound_age_stays_strict():
 @pytest.mark.parametrize("side", ["inclusion", "exclusion"])
 @pytest.mark.parametrize(
     "details",
-    ["65 yrs and over", "65 y/o and over", "65, and over", "65 (and over)", "18, and under"],
+    [
+        "65 yrs and over",
+        "65 y/o and over",
+        "65, and over",
+        "65 (and over)",
+        "18, and under",
+        "< 65 yrs and older",
+        "> 18 yrs and younger",
+    ],
 )
 def test_an_and_form_cut_off_from_the_age_fails_the_request(side, details):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):

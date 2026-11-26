@@ -40,7 +40,7 @@ The first four rows count the wrong cohort without an error. `65 and over` drops
 - *Only the issue's words.* `65 and up`, `or higher`, `or lower` and `or fewer` would keep failing. They are common wording, and no reading of them is strict.
 - *Keep the check order for mixed phrases.* The diff would be smaller. A phrase naming both directions would then build whichever family the code checks first.
 - *Quantity words anywhere in the details.* The first draft did this. The fresh-context review found that a quantity word about something else, such as the `or more` in `> 18 (one or more encounters)`, turned a correct strict bound inclusive without an error.
-- *Tie every inclusive form to the number.* That would be stricter, but `65 yrs or older`, which builds today, would start to fail. A word such as `older` or `under` is about the age wherever it appears, which a quantity word isn't.
+- *Tie every inclusive form to the number.* That would be stricter, but `65 yrs or older`, which builds today, would start to fail. An `or` age word such as `or older` or `or under` is about the age wherever it appears, which a quantity word isn't. The `and` forms are tied to the number instead, because `adults and over 65` reads as a strict bound.
 - *Keep ADR 0039's six suffixes for the first bound.* `under 18 or 65 and over` would build, because the new forms reach the second bound. `18+ and under 65` would still fail. Two lists for one idea is how `65 and over` came to read as `> 65` inside a two-bound age.
 
 **Consequences.**
