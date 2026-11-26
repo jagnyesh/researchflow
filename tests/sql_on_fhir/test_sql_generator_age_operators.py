@@ -292,3 +292,29 @@ def test_a_strict_word_against_the_number_still_counts(details, expected):
 def test_a_strict_word_against_the_number_still_conflicts(side):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
         _generate_with_age(side, "under18 or older")
+
+
+# Second review of #431: "and over" before the age read inclusive, so "adults and
+# over 65" built >= 65. The "and" forms count only right after the age.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("adults and over 65", (">", 65)),
+        ("seniors and over 65", (">", 65)),
+        ("elderly and above 65", (">", 65)),
+        ("adults and older than 65", (">", 65)),
+        ("children and under 18", ("<", 18)),
+        ("pediatric and below 18", ("<", 18)),
+    ],
+)
+def test_an_and_form_before_the_age_stays_strict(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+def test_an_and_form_before_a_two_bound_age_stays_strict():
+    sql, params = _generate_with_age("inclusion", "adults and over 18 and under 65")
+
+    assert f"({_AGE} > :age_1 AND {_AGE} < :age_2)" in sql
+    assert params == {"age_1": 18, "age_2": 65}

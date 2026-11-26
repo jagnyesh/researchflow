@@ -31,16 +31,18 @@ class SQLGenerator:
     )
     # Inclusive forms that follow the number ("65 or older", "65 and over"). The single-bound
     # parser and the two-bound suffix read the same list so they can't drift (ADR 0043).
-    # Quantity words count only right after the age: in "> 18 (one or more encounters)"
-    # the "or more" isn't about the age.
+    # Quantity words and the "and" forms count only right after the age: in "> 18 (one or
+    # more encounters)" the "or more" isn't about the age, and "adults and over 65" is > 65.
+    # The "or" age words count anywhere, as #404 shipped them.
     _AGE_RIGHT_AFTER = r"(?<=\d)(?:\s*years?(?:\s+of\s+age|\s+old)?)?\s*"
     _AGE_GE_AFTER = (
-        rf"{_AGE_RIGHT_AFTER}(?:\+|\bor\s+(?:more|greater|higher)\b|\band\s+up\b(?!\s+to\b))"
-        r"|\b(?:or|and)\s+(?:older|over|above)\b"
+        rf"{_AGE_RIGHT_AFTER}(?:\+|\bor\s+(?:more|greater|higher)\b"
+        r"|\band\s+(?:up\b(?!\s+to\b)|(?:older|over|above)\b))"
+        r"|\bor\s+(?:older|over|above)\b"
     )
     _AGE_LE_AFTER = (
-        rf"{_AGE_RIGHT_AFTER}\bor\s+(?:less|fewer|lower)\b"
-        r"|\b(?:or|and)\s+(?:younger|under|below)\b"
+        rf"{_AGE_RIGHT_AFTER}(?:\bor\s+(?:less|fewer|lower)\b|\band\s+(?:younger|under|below)\b)"
+        r"|\bor\s+(?:younger|under|below)\b"
     )
     # "familial" and "FH" are left out: they also name the patient's own diagnosis,
     # as in familial hypercholesterolemia.
