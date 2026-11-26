@@ -25,8 +25,9 @@ You need Python 3.11 or 3.12, Docker with Compose, [uv](https://docs.astral.sh/u
 ```bash
 git clone https://github.com/jagnyesh/researchflow.git
 cd researchflow
-python3 -m venv .venv && source .venv/bin/activate
-uv pip sync config/requirements.lock
+uv venv --python 3.11 .venv && source .venv/bin/activate
+uv pip sync --python .venv/bin/python config/requirements.lock
+uv pip install --python .venv/bin/python -c config/requirements.lock -r config/requirements-dev.lock
 cp config/.env.example .env            # then set ANTHROPIC_API_KEY in .env
 
 docker compose -f config/docker-compose.yml up -d hapi-db hapi-fhir redis redis-audit
@@ -35,6 +36,8 @@ python scripts/materialize_views.py    # build the 7 sqlonfhir views
 
 streamlit run app/web_ui/research_notebook.py --server.port 8501
 ```
+
+Do all work in `.venv`: tests, scripts and installs. Every `uv pip` command names `--python .venv/bin/python`. Without it, uv writes into whatever environment `VIRTUAL_ENV` or `CONDA_PREFIX` points to, which is how a shared environment was overwritten in #129.
 
 The Compose command starts HAPI FHIR, an open-source FHIR server, with its Postgres database and two Redis instances. Open <http://localhost:8501> and ask how many patients are available. The portal shows a count, the SQL behind the count, and the time of the last view refresh.
 

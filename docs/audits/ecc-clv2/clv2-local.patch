@@ -1,0 +1,219 @@
+diff -ruN -x SKILL.md a/agents/observer-loop.sh b/agents/observer-loop.sh
+--- a/agents/observer-loop.sh
++++ b/agents/observer-loop.sh
+@@ -31,6 +31,9 @@
+ # this file is executed or sourced. $0 is the *caller* when sourced, so prefer
+ # ${BASH_SOURCE[0]}, which always points at this file (#2370).
+ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++# LOCAL PATCH: session-guardian defaults its log to ~/.claude; keep it in PROJECT_DIR.
++export OBSERVER_LAST_RUN_LOG="${OBSERVER_LAST_RUN_LOG:-${PROJECT_DIR}/observer-last-run.log}"
++umask 077
+ 
+ claude_process_alive() {
+   local process_pid="$1"
+@@ -396,8 +399,17 @@
+   # Bash, including macOS's Bash 3.2 and Git Bash. That lets timeout/signal
+   # cleanup terminate tool subprocesses as well as the direct CLI process.
+   set -m
++  # LOCAL PATCH (researchflow vet 2026-11-21): contain the analyzer. Read only
++  # PROJECT_DIR, write only INSTINCTS_DIR, no Bash, no MCP, no skills. No settings
++  # file is loaded (user, project or local), so no allow rule or hook from any of
++  # them can widen this; the session transcript is not saved under ~/.claude.
++  # Empty dirs would turn the rules into Edit(//**): refuse to run instead.
++  : "${PROJECT_DIR:?PROJECT_DIR unset}" "${INSTINCTS_DIR:?INSTINCTS_DIR unset}"
+   ECC_SKIP_OBSERVE=1 ECC_HOOK_PROFILE=minimal claude --model "${ECC_OBSERVER_MODEL:-haiku}" --max-turns "$max_turns" --print \
+-    --allowedTools "Read,Write" \
++    --setting-sources "" --no-session-persistence \
++    --permission-mode default --tools "Read,Write,Edit" \
++    --allowedTools "Read(/${PROJECT_DIR}/**)" "Edit(/${INSTINCTS_DIR}/**)" \
++    --strict-mcp-config --disable-slash-commands \
+     -p "$prompt_content" < /dev/null >&8 2>> "$LOG_FILE" &
+   CLAUDE_PID=$!
+   CLAUDE_PROCESS_GROUP=1
+@@ -513,7 +525,7 @@
+ 
+ # Prune expired pending instincts before analysis (SCRIPT_DIR resolved at top
+ # via ${BASH_SOURCE[0]} so it is correct under both execution and sourcing).
+-"${CLV2_PYTHON_CMD:-python3}" "${SCRIPT_DIR}/../scripts/instinct-cli.py" prune --quiet >> "$LOG_FILE" 2>&1 || echo "[$(date)] Warning: instinct prune failed (non-fatal)" >> "$LOG_FILE"
++"${CLV2_PYTHON_CMD:-python3}" -I "${SCRIPT_DIR}/../scripts/instinct-cli.py" prune --quiet >> "$LOG_FILE" 2>&1 || echo "[$(date)] Warning: instinct prune failed (non-fatal)" >> "$LOG_FILE"
+ 
+ while true; do
+   exit_if_idle_without_sessions
+diff -ruN -x SKILL.md a/agents/start-observer.sh b/agents/start-observer.sh
+--- a/agents/start-observer.sh
++++ b/agents/start-observer.sh
+@@ -84,7 +84,7 @@
+   if [ -z "$PYTHON_CMD" ]; then
+     echo "No python interpreter found; using built-in observer defaults." >&2
+   else
+-    _config=$(CLV2_CONFIG="$CONFIG_FILE" "$PYTHON_CMD" -c "
++    _config=$(CLV2_CONFIG="$CONFIG_FILE" "$PYTHON_CMD" -I -c "
+ import json, os
+ with open(os.environ['CLV2_CONFIG']) as f:
+     cfg = json.load(f)
+diff -ruN -x SKILL.md a/hooks/observe.sh b/hooks/observe.sh
+--- a/hooks/observe.sh
++++ b/hooks/observe.sh
+@@ -11,6 +11,7 @@
+ # Can also be registered manually in ~/.claude/settings.json.
+ 
+ set -e
++umask 077  # LOCAL PATCH: observation logs readable by the owner only
+ 
+ # Hook phase from CLI argument: "pre" (PreToolUse) or "post" (PostToolUse).
+ # Manual settings.json installs can call this script without the plugin
+@@ -103,7 +104,7 @@
+ # Extract cwd from the hook JSON to use for project detection.
+ # If cwd is a subdirectory inside a git repo, resolve it to the repo root so
+ # observations attach to the project instead of a nested path.
+-STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
++STDIN_CWD=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -I -c '
+ import json, sys
+ try:
+     data = json.load(sys.stdin)
+@@ -166,7 +167,7 @@
+ [ "${ECC_SKIP_OBSERVE:-0}" = "1" ] && exit 0
+ 
+ # Layer 4: subagent sessions are automated by definition.
+-_ECC_AGENT_ID=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -c "import json,sys; print(json.load(sys.stdin).get('agent_id',''))" 2>/dev/null || true)
++_ECC_AGENT_ID=$(echo "$INPUT_JSON" | "$PYTHON_CMD" -I -c "import json,sys; print(json.load(sys.stdin).get('agent_id',''))" 2>/dev/null || true)
+ [ -n "$_ECC_AGENT_ID" ] && exit 0
+ 
+ # Layer 5: known observer-session path exclusions.
+@@ -209,7 +210,7 @@
+ 
+ # Parse using Python via stdin pipe (safe for all JSON payloads)
+ # Pass HOOK_PHASE via env var since Claude Code does not include hook type in stdin JSON
+-PARSED=$(echo "$INPUT_JSON" | HOOK_PHASE="$HOOK_PHASE" "$PYTHON_CMD" -c '
++PARSED=$(echo "$INPUT_JSON" | HOOK_PHASE="$HOOK_PHASE" "$PYTHON_CMD" -I -c '
+ import json
+ import sys
+ import os
+@@ -259,23 +260,23 @@
+ ')
+ 
+ # Check if parsing succeeded
+-PARSED_OK=$(echo "$PARSED" | "$PYTHON_CMD" -c "import json,sys; print(json.load(sys.stdin).get('parsed', False))" 2>/dev/null || echo "False")
++PARSED_OK=$(echo "$PARSED" | "$PYTHON_CMD" -I -c "import json,sys; print(json.load(sys.stdin).get('parsed', False))" 2>/dev/null || echo "False")
+ 
+ if [ "$PARSED_OK" != "True" ]; then
+   # Fallback: log raw input for debugging (scrub secrets before persisting)
+   timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+   export TIMESTAMP="$timestamp"
+-  echo "$INPUT_JSON" | "$PYTHON_CMD" -c '
++  echo "$INPUT_JSON" | "$PYTHON_CMD" -I -c '
+ import json, sys, os, re
+ 
+ # Linear-time secret matcher. Bounded quantifiers and a fixed set of auth
+ # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+ # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+ _SECRET_RE = re.compile(
+-    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
++    r"(?i)((?:api[_-]?key|token|secret|password|passwd|pwd|authorization|credentials?|auth|cookie|session)(?:_access_key|_key)?)"
+     r"""(["'"'"'\s:=\\]{1,8})"""
+     r"((?:bearer|basic|token|bot)\s+)?"
+-    r"([A-Za-z0-9_\-/.+=]{8,256})"
++    r"([A-Za-z0-9_\-/.+=]{1,8192})"
+ )
+ # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+ # end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
+@@ -287,7 +288,7 @@
+ # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+ _SECRET_VALUE_RE = re.compile(
+     r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
+-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
++    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,8192}|github_pat_[A-Za-z0-9_]{20,8192}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_|hf_|glpat-)[A-Za-z0-9_\-]{10,8192}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,8192})"
+     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+ )
+ 
+@@ -327,7 +328,7 @@
+ export PROJECT_NAME_ENV="$PROJECT_NAME"
+ export TIMESTAMP="$timestamp"
+ 
+-echo "$PARSED" | "$PYTHON_CMD" -c '
++echo "$PARSED" | "$PYTHON_CMD" -I -c '
+ import json, sys, os, re
+ import signal
+ 
+@@ -357,10 +358,10 @@
+ # schemes (instead of a generic [A-Za-z]+\s+ that overlapped the value class)
+ # prevent the catastrophic backtracking that pegged python at 100% CPU (#2278).
+ _SECRET_RE = re.compile(
+-    r"(?i)((?:api[_-]?key|token|secret|password|authorization|credentials?|auth)(?:_access_key|_key)?)"
++    r"(?i)((?:api[_-]?key|token|secret|password|passwd|pwd|authorization|credentials?|auth|cookie|session)(?:_access_key|_key)?)"
+     r"""(["'"'"'\s:=\\]{1,8})"""
+     r"((?:bearer|basic|token|bot)\s+)?"
+-    r"([A-Za-z0-9_\-/.+=]{8,256})"
++    r"([A-Za-z0-9_\-/.+=]{1,8192})"
+ )
+ # Value-shaped secrets that carry no keyword: PEM private key blocks (to END or
+ # end of the truncated text), GitHub tokens, AWS key IDs, and DSN passwords
+@@ -372,7 +373,7 @@
+ # any other scheme (postgres://app:1234) is redacted even when the password is numeric (#3568).
+ _SECRET_VALUE_RE = re.compile(
+     r"-----BEGIN[A-Z ]{0,40}PRIVATE KEY-----[\s\S]*?(?:-----END[A-Z ]{0,40}PRIVATE KEY-----|\Z)"
+-    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,255}|github_pat_[A-Za-z0-9_]{20,255}|(?:AKIA|ASIA)[A-Z0-9]{16})\b"
++    r"|(?:(?<![A-Za-z0-9_])|(?<=\\[bfnrt])|(?<=\\u[0-9a-fA-F]{4}))(?:gh[pousr]_[A-Za-z0-9]{20,8192}|github_pat_[A-Za-z0-9_]{20,8192}|(?:AKIA|ASIA)[A-Z0-9]{16}|(?:sk-ant-|sk_live_|sk-|xox[abpr]-|AIza|npm_|hf_|glpat-)[A-Za-z0-9_\-]{10,8192}|eyJ[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,}\.[A-Za-z0-9_\-]{4,8192})"
+     r"""|(?<=://)(?:(?<=https://)|(?<=http://)|(?<!https://)(?<!http://)())([^\s:/@"\\]{1,256}:)(?(1)|(?!\d{1,5}\Z))[^\s@/"\\]{1,256}(?=@|\Z)"""
+ )
+ 
+@@ -520,7 +521,7 @@
+   # Use effective config path for both existence check and reading
+   EFFECTIVE_CONFIG="$CONFIG_FILE"
+   if [ -f "$EFFECTIVE_CONFIG" ] && [ -n "$PYTHON_CMD" ]; then
+-    _enabled=$(CLV2_CONFIG_PATH="$EFFECTIVE_CONFIG" "$PYTHON_CMD" -c "
++    _enabled=$(CLV2_CONFIG_PATH="$EFFECTIVE_CONFIG" "$PYTHON_CMD" -I -c "
+ import json, os
+ with open(os.environ['CLV2_CONFIG_PATH']) as f:
+     cfg = json.load(f)
+@@ -646,7 +647,7 @@
+   # Both fcntl and msvcrt release ownership even on SIGKILL/TerminateProcess.
+   # If locking is unavailable or busy, skip the optional tick without an
+   # unlocked update. Observation capture above has already completed.
+-  should_signal=$("$PYTHON_CMD" - "$SIGNAL_COUNTER_LOCK" "$SIGNAL_COUNTER_FILE" "$SIGNAL_EVERY_N" <<'PY'
++  should_signal=$("$PYTHON_CMD" -I - "$SIGNAL_COUNTER_LOCK" "$SIGNAL_COUNTER_FILE" "$SIGNAL_EVERY_N" <<'PY'
+ import os
+ import re
+ import sys
+diff -ruN -x SKILL.md a/scripts/detect-project.sh b/scripts/detect-project.sh
+--- a/scripts/detect-project.sh
++++ b/scripts/detect-project.sh
+@@ -185,7 +185,7 @@
+   # is locale-independent (shells vary between UTF-8 / CP932 / CP1252, which
+   # would otherwise produce different hashes for the same non-ASCII path).
+   if [ -n "$_CLV2_PYTHON_CMD" ]; then
+-    project_id=$(_CLV2_HASH_INPUT="$hash_input" "$_CLV2_PYTHON_CMD" -c '
++    project_id=$(_CLV2_HASH_INPUT="$hash_input" "$_CLV2_PYTHON_CMD" -I -c '
+ import os, hashlib
+ s = os.environ["_CLV2_HASH_INPUT"]
+ print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
+@@ -211,7 +211,7 @@
+ 
+     local legacy_input legacy_id
+     for legacy_input in "${legacy_inputs[@]}"; do
+-      legacy_id=$(_CLV2_HASH_INPUT="$legacy_input" "$_CLV2_PYTHON_CMD" -c '
++      legacy_id=$(_CLV2_HASH_INPUT="$legacy_input" "$_CLV2_PYTHON_CMD" -I -c '
+ import os, hashlib
+ s = os.environ["_CLV2_HASH_INPUT"]
+ print(hashlib.sha256(s.encode("utf-8")).hexdigest()[:12])
+@@ -267,7 +267,7 @@
+   _CLV2_REG_PREMOTE="$premote" \
+   _CLV2_REG_PDIR="$pdir" \
+   _CLV2_REG_FILE="$_CLV2_REGISTRY_FILE" \
+-  "$_CLV2_PYTHON_CMD" -c '
++  "$_CLV2_PYTHON_CMD" -I -c '
+ import json, os, tempfile
+ from datetime import datetime, timezone
+ 
+@@ -326,9 +326,6 @@
+ PROJECT_ROOT="$_CLV2_PROJECT_ROOT"
+ PROJECT_DIR="$_CLV2_PROJECT_DIR"
+ 
+-if [ -n "$PROJECT_ROOT" ]; then
+-  CLV2_OBSERVER_SENTINEL_FILE="${PROJECT_ROOT}/.observer.lock"
+-else
+-  CLV2_OBSERVER_SENTINEL_FILE="${PROJECT_DIR}/.observer.lock"
+-fi
++# LOCAL PATCH: never write the sentinel into the repo tree.
++CLV2_OBSERVER_SENTINEL_FILE="${PROJECT_DIR}/.observer.lock"
+ export CLV2_OBSERVER_SENTINEL_FILE
