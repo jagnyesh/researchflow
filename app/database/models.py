@@ -414,7 +414,9 @@ class MaterializedViewMetadata(Base):
     query_count = Column(Integer, default=0)  # Total queries against this view
 
     # Health and status
-    status = Column(String, default="active", nullable=False)  # active, stale, refreshing, failed
+    status = Column(
+        String, default="active", nullable=False
+    )  # active, refreshing, failed (written by refresh_view); staleness is is_stale, never a status
     is_stale = Column(Boolean, default=False)  # True if data is considered stale
     staleness_hours = Column(Float, nullable=True)  # Hours since last refresh
     error_message = Column(Text, nullable=True)  # Last error message if refresh failed
@@ -433,11 +435,6 @@ class MaterializedViewMetadata(Base):
 
     def __repr__(self):
         return f"<MaterializedViewMetadata(view_name='{self.view_name}', status='{self.status}', row_count={self.row_count})>"
-
-    @property
-    def is_healthy(self) -> bool:
-        """Check if view is in healthy state"""
-        return self.status == "active" and not self.is_stale
 
     @property
     def needs_refresh(self) -> bool:
