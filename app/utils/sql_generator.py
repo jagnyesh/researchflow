@@ -583,9 +583,10 @@ class SQLGenerator:
         # Word boundaries keep "senior over 65" strict.
         ge_pattern = rf">=|=>|≥|\bat least\b|{SQLGenerator._AGE_GE_AFTER}"
         le_pattern = rf"<=|=<|≤|\bat most\b|{SQLGenerator._AGE_LE_AFTER}"
-        # Whole words: "recovered" holds "over" and "undergoing" holds "under".
-        gt_words = r"\b(?:greater than|more than|older than|above|over)\b"
-        lt_words = r"\b(?:less than|fewer than|younger than|below|under)\b"
+        # Whole words: "recovered" holds "over" and "undergoing" holds "under". Letters bound
+        # them, not \b, so "over65" still counts.
+        gt_words = r"(?<![a-z])(?:greater than|more than|older than|above|over)(?![a-z])"
+        lt_words = r"(?<![a-z])(?:less than|fewer than|younger than|below|under)(?![a-z])"
         ge = re.search(ge_pattern, text)
         le = re.search(le_pattern, text)
         # Strict forms are read from what the inclusive ones leave, so the "over" in

@@ -266,3 +266,28 @@ def test_a_strict_word_inside_another_word_is_not_a_bound(details, expected):
 def test_an_age_whose_only_comparison_is_inside_a_word_fails_the_request(side):
     with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
         _generate_with_age(side, "65 and overweight")
+
+
+# "Whole word" means bounded by letters: a digit or "_" next to the word still counts,
+# as it did before #431.
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ("over65", (">", 65)),
+        ("65over", (">", 65)),
+        ("over_65", (">", 65)),
+        ("more than65", (">", 65)),
+        ("under18", ("<", 18)),
+        ("younger than18", ("<", 18)),
+    ],
+)
+def test_a_strict_word_against_the_number_still_counts(details, expected):
+    op, value, _ = _age_predicate(details)
+
+    assert (op, value) == expected
+
+
+@pytest.mark.parametrize("side", ["inclusion", "exclusion"])
+def test_a_strict_word_against_the_number_still_conflicts(side):
+    with pytest.raises(ValueError, match="A demographic concept produced no SQL condition"):
+        _generate_with_age(side, "under18 or older")
